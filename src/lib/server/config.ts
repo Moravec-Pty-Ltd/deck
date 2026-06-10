@@ -20,11 +20,15 @@ function loadToken(): string {
 
 export const authToken = loadToken();
 
+// When fronted by Tailscale, the tailnet is the access boundary; the token gate
+// is redundant. Set DECK_NO_AUTH=1 to skip it.
+export const noAuth = process.env.DECK_NO_AUTH === '1' || process.env.DECK_NO_AUTH === 'true';
+
 let printed = false;
 export function printAccessUrl(origin: string) {
 	if (printed) return;
 	printed = true;
-	console.log(`[deck] access: ${origin}/?token=${authToken}`);
+	console.log(noAuth ? `[deck] access: ${origin}/ (no auth)` : `[deck] access: ${origin}/?token=${authToken}`);
 }
 
 export function readJson<T>(file: string, fallback: T): T {

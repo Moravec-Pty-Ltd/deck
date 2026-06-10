@@ -1,11 +1,13 @@
 import type { Handle } from '@sveltejs/kit';
 import { redirect, json } from '@sveltejs/kit';
-import { authToken, printAccessUrl } from '$lib/server/config';
+import { authToken, noAuth, printAccessUrl } from '$lib/server/config';
 
 const COOKIE = 'deck_token';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	printAccessUrl(event.url.origin);
+
+	if (noAuth) return resolve(event);
 
 	const urlToken = event.url.searchParams.get('token');
 	if (urlToken === authToken) {

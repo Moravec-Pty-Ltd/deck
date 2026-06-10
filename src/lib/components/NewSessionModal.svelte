@@ -163,6 +163,7 @@
 						placeholder="template first prompt for this project (optional)"
 						bind:value={newProjectTemplate}
 					></textarea>
+					<p class="text-xs opacity-50">placeholders: [title] [branch] [cwd]</p>
 				{/if}
 			</fieldset>
 

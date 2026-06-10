@@ -35,7 +35,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	});
 
 	if (kind === 'claude' && typeof prompt === 'string' && prompt.trim()) {
-		startTurn(session.id, prompt.trim());
+		const resolved = prompt
+			.replaceAll('[title]', session.title)
+			.replaceAll('[branch]', body.worktree?.branch ?? '')
+			.replaceAll('[cwd]', cwd);
+		startTurn(session.id, resolved.trim());
 	}
 
 	return json(session, { status: 201 });
