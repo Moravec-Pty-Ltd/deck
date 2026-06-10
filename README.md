@@ -11,20 +11,25 @@ Single browser app for driving Claude Code sessions and adhoc tmux terminals on 
 
 ## Run
 
+Bind to loopback and let Tailscale terminate TLS, so the tailnet is the access boundary:
+
 ```sh
 npm install
 npm run build
-PORT=4818 node build/index.js
+HOST=127.0.0.1 PORT=4818 ORIGIN="https://<machine>.<tailnet>.ts.net:4818" node build/index.js
+
+# one-time, in another shell: expose it over HTTPS, tailnet-only
+tailscale serve --bg --https=4818 http://127.0.0.1:4818
 ```
 
-The access URL (with token) is printed on first request and the token lives in `~/.deck/token`. Open `http://<host>:4818/?token=<token>` once; a year-long cookie is set. Override with `DECK_TOKEN` / `DECK_DATA` env vars.
+Then open `https://<machine>.<tailnet>.ts.net:4818/` (real Let's Encrypt cert, no warnings). `ORIGIN` lets SvelteKit know its public https origin behind the proxy.
 
-For remote access, put it behind Tailscale (`tailscale serve --bg 4818` for HTTPS on your tailnet).
+**Auth.** Off by default: access is whoever can reach the tailnet. Set `DECK_TOKEN=<secret>` to add a token wall on top (e.g. a shared tailnet); then open `…/?token=<secret>` once and a year-long cookie is set. `DECK_DATA` overrides the state dir.
 
-Dev: `npm run dev`.
+Dev: `npm run dev` (Vite). The tailscale `.ts.net` hostnames are allowlisted in `vite.config.ts` so dev/preview also work behind the proxy.
 
 ## Notes
 
 - Permission modes: new Claude sessions default to YOLO (`--dangerously-skip-permissions`); untick for `acceptEdits`. Headless turns cannot answer permission prompts, so `default`/`plan` modes will stall on gated tools.
 - A server restart loses in-flight turn processes (transcripts and resume state survive; just send again).
-- State: `~/.deck/{sessions.json,projects.json,token,transcripts/}`.
+- State: `~/.deck/{sessions.json,projects.json,transcripts/}`.

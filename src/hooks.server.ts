@@ -7,6 +7,9 @@ const COOKIE = 'deck_token';
 export const handle: Handle = async ({ event, resolve }) => {
 	printAccessUrl(event.url.origin);
 
+	// Auth disabled (no DECK_TOKEN): rely on the network boundary.
+	if (!authToken) return resolve(event);
+
 	const urlToken = event.url.searchParams.get('token');
 	if (urlToken === authToken) {
 		event.cookies.set(COOKIE, authToken, {

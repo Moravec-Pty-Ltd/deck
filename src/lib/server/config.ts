@@ -1,30 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import crypto from 'node:crypto';
 
 export const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
 export const transcriptsDir = path.join(dataDir, 'transcripts');
 
 fs.mkdirSync(transcriptsDir, { recursive: true });
 
-const tokenFile = path.join(dataDir, 'token');
-
-function loadToken(): string {
-	if (process.env.DECK_TOKEN) return process.env.DECK_TOKEN;
-	if (fs.existsSync(tokenFile)) return fs.readFileSync(tokenFile, 'utf8').trim();
-	const token = crypto.randomBytes(24).toString('hex');
-	fs.writeFileSync(tokenFile, token, { mode: 0o600 });
-	return token;
-}
-
-export const authToken = loadToken();
+// Auth is optional: deck is meant to sit behind a network boundary (tailnet-only
+// `tailscale serve`), which is the real access control. Set DECK_TOKEN to add a
+// token wall on top, e.g. on a shared tailnet.
+export const authToken: string | null = process.env.DECK_TOKEN || null;
 
 let printed = false;
 export function printAccessUrl(origin: string) {
 	if (printed) return;
 	printed = true;
-	console.log(`[deck] access: ${origin}/?token=${authToken}`);
+	const suffix = authToken ? `/?token=${authToken}` : '';
+	console.log(`[deck] access: ${origin}${suffix}`);
 }
 
 export function readJson<T>(file: string, fallback: T): T {
