@@ -2,7 +2,7 @@ import { customAlphabet } from 'nanoid';
 import type { DeckSession } from '$lib/types';
 import { listStoredSessions, getStoredSession, saveSession, removeSession } from './store';
 import { listTmuxSessions, createTmuxSession, killTmuxSession, hasTmuxSession } from './tmux';
-import { isTurnRunning, stopTurn } from './claude';
+import { isTurnRunning, stopProcess } from './claude';
 import { removeWorktree } from './git';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
@@ -24,7 +24,9 @@ export async function listSessions(): Promise<DeckSession[]> {
 
 	for (const s of stored) {
 		if (s.kind === 'claude') {
-			result.push({ ...s, status: isTurnRunning(s.id) ? 'running' : s.status });
+			const running = isTurnRunning(s.id);
+			const status = running ? 'running' : s.status === 'running' ? 'idle' : s.status;
+			result.push({ ...s, status });
 		} else {
 			const live = tmuxSessions.find((t) => t.name === s.tmuxName);
 			result.push({
@@ -63,7 +65,9 @@ export async function getSession(id: string): Promise<DeckSession | undefined> {
 	const stored = getStoredSession(id);
 	if (!stored) return undefined;
 	if (stored.kind === 'claude') {
-		return { ...stored, status: isTurnRunning(id) ? 'running' : stored.status };
+		const running = isTurnRunning(id);
+		const status = running ? 'running' : stored.status === 'running' ? 'idle' : stored.status;
+		return { ...stored, status };
 	}
 	const alive = stored.tmuxName ? await hasTmuxSession(stored.tmuxName) : false;
 	return { ...stored, status: alive ? 'idle' : 'dead' };
@@ -116,7 +120,7 @@ export async function deleteSession(
 	}
 	const stored = getStoredSession(id);
 	if (stored?.kind === 'claude') {
-		stopTurn(id);
+		stopProcess(id);
 	} else if (stored?.tmuxName && (await hasTmuxSession(stored.tmuxName))) {
 		await killTmuxSession(stored.tmuxName);
 	}

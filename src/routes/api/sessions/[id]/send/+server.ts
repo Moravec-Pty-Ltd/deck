@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getSession } from '$lib/server/sessions';
-import { startTurn, stopTurn, isTurnRunning } from '$lib/server/claude';
+import { sendMessage, interrupt } from '$lib/server/claude';
 import { sendKeys, sendRawKey } from '$lib/server/tmux';
 import { updateSession } from '$lib/server/store';
 
@@ -11,8 +11,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	const body = await request.json();
 
-	if (body.action === 'stop') {
-		if (session.kind === 'claude') stopTurn(session.id);
+	if (body.action === 'interrupt' || body.action === 'stop') {
+		if (session.kind === 'claude') interrupt(session.id);
 		return json({ ok: true });
 	}
 
@@ -20,8 +20,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	if (session.kind === 'claude') {
 		if (!text.trim()) error(400, 'empty prompt');
-		if (isTurnRunning(session.id)) error(409, 'a turn is already running');
-		startTurn(session.id, text);
+		// no running guard: a message sent mid-turn is queued and runs next
+		sendMessage(session.id, text);
 		return json({ ok: true, status: 'running' });
 	}
 

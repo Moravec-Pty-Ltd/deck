@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import type { RequestHandler } from './$types';
 import { listSessions, createSession } from '$lib/server/sessions';
 import { createWorktree, isGitRepo } from '$lib/server/git';
-import { startTurn } from '$lib/server/claude';
+import { sendMessage } from '$lib/server/claude';
 import { listProjects, updateProject } from '$lib/server/store';
 
 export const GET: RequestHandler = async () => {
@@ -48,7 +48,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			.replaceAll('[title]', session.title)
 			.replaceAll('[branch]', body.worktree?.branch ?? '')
 			.replaceAll('[cwd]', cwd);
-		startTurn(session.id, resolved.trim());
+		sendMessage(session.id, resolved.trim());
 	}
 
 	return json(session, { status: 201 });

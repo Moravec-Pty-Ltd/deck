@@ -32,6 +32,8 @@ Dev: `npm run dev`.
 
 ## Notes
 
+- Each active Claude session runs as one long-lived `claude --input-format stream-json` process. Assistant text streams in live; a message sent mid-turn is queued and runs next; **Interrupt** stops the current turn (via a control_request) without ending the session, so you can immediately redirect it. Idle processes are torn down after 20 min and respawned with `--resume` on the next message.
 - Permission modes: new Claude sessions default to YOLO (`--dangerously-skip-permissions`); untick for `acceptEdits`. Headless turns cannot answer permission prompts, so `default`/`plan` modes will stall on gated tools.
-- A server restart loses in-flight turn processes (transcripts and resume state survive; just send again).
+- A server restart drops live processes (transcripts and resume state survive; the next message respawns and resumes).
+- http(s) links in session output are clickable. The transcript view only auto-scrolls when you're already near the bottom; a jump-to-latest button appears otherwise.
 - State: `~/.deck/{sessions.json,projects.json,token,transcripts/}`.
