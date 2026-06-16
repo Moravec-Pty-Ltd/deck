@@ -1,14 +1,38 @@
 <script lang="ts">
 	import './layout.css';
-	import { LayoutGrid, Sun, Moon, BookOpen } from '@lucide/svelte';
+	import { LayoutGrid, Sun, Moon, BookOpen, Download } from '@lucide/svelte';
 
 	let { children } = $props();
 
 	let theme = $state('light');
+	let installPrompt = $state<{ prompt: () => void; userChoice: Promise<unknown> } | null>(null);
 
 	$effect(() => {
 		theme = document.documentElement.dataset.theme || 'light';
 	});
+
+	// Capture Chrome's install prompt so we can offer an in-app Install button
+	// (the browser menu item is easy to miss, or hidden on some devices).
+	$effect(() => {
+		const onPrompt = (e: Event) => {
+			e.preventDefault();
+			installPrompt = e as unknown as { prompt: () => void; userChoice: Promise<unknown> };
+		};
+		const onInstalled = () => (installPrompt = null);
+		window.addEventListener('beforeinstallprompt', onPrompt);
+		window.addEventListener('appinstalled', onInstalled);
+		return () => {
+			window.removeEventListener('beforeinstallprompt', onPrompt);
+			window.removeEventListener('appinstalled', onInstalled);
+		};
+	});
+
+	async function install() {
+		if (!installPrompt) return;
+		installPrompt.prompt();
+		await installPrompt.userChoice;
+		installPrompt = null;
+	}
 
 	function setTheme(next: string) {
 		theme = next;
@@ -37,6 +61,11 @@
 				deck
 			</a>
 		</div>
+		{#if installPrompt}
+			<button class="btn btn-primary btn-sm mr-2" onclick={install} aria-label="Install app">
+				<Download size={16} /> <span class="hidden sm:inline">Install</span>
+			</button>
+		{/if}
 		<div class="join">
 			{#each themes as t (t.id)}
 				<button

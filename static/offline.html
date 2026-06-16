@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>deck — offline</title>
+		<style>
+			body {
+				font-family: ui-sans-serif, system-ui, sans-serif;
+				background: #fff;
+				color: #111;
+				display: flex;
+				min-height: 100vh;
+				align-items: center;
+				justify-content: center;
+				margin: 0;
+				padding: 2rem;
+				text-align: center;
+			}
+			.box {
+				max-width: 20rem;
+			}
+			h1 {
+				font-weight: 600;
+				font-size: 1.25rem;
+				margin: 0 0 0.5rem;
+			}
+			p {
+				opacity: 0.6;
+				margin: 0 0 1.25rem;
+				font-size: 0.9rem;
+			}
+			button {
+				font: inherit;
+				padding: 0.5rem 1.25rem;
+				border: 1.5px solid #111;
+				background: #111;
+				color: #fff;
+				border-radius: 0.5rem;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="box">
+			<h1>deck is offline</h1>
+			<p>Can't reach the server. Check that you're on the Tailscale network, then retry.</p>
+			<button onclick="location.reload()">Retry</button>
+		</div>
+	</body>
+</html>

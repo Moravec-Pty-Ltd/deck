@@ -40,6 +40,13 @@ self.addEventListener('fetch', (event) => {
 		return;
 	}
 
-	// Navigations and everything else: network-first, fall back to cache when offline.
-	event.respondWith(fetch(request).catch(() => caches.match(request).then((c) => c || caches.match('/'))));
+	// Page navigations: network-first, fall back to the cached offline shell.
+	// Serving something when offline is part of Chrome's installability criteria.
+	if (request.mode === 'navigate') {
+		event.respondWith(fetch(request).catch(() => caches.match('/offline.html')));
+		return;
+	}
+
+	// Anything else: network-first, fall back to cache if present.
+	event.respondWith(fetch(request).catch(() => caches.match(request)));
 });

@@ -34,11 +34,13 @@ Dev: `npm run dev`.
 
 deck ships a web manifest, icons, and a service worker, so Chrome on Android installs it as a WebAPK (its own home-screen icon, standalone window, no browser chrome). This needs a real HTTPS origin, which the Tailscale `serve` setup above provides.
 
-1. On the phone, open the tailnet URL in **Chrome** (e.g. `https://<host>.ts.net:4818`). It must be the `https://` address, not a bare IP.
-2. Chrome menu (⋮) → **Add to Home screen** / **Install app**. (The same install works from desktop Chrome/Edge.)
+1. On the phone, open the tailnet URL in **Chrome** (e.g. `https://<host>.ts.net:4818`). It must be the `https://` address, not a bare IP. Reload once if you'd opened it before the PWA bits existed.
+2. Tap the **Install** button that appears in deck's top bar, or use Chrome menu (⋮) → **Install app** / **Add to Home screen**. (The same install works from desktop Chrome/Edge.)
 3. Launch from the new icon; it opens standalone.
 
-The service worker only caches the static app shell (hashed JS/CSS, icons). All `/api/*` traffic, including the SSE transcript stream, always goes straight to the network, so live sessions are never served stale. The status-bar color follows the active light/dark theme.
+The service worker caches the static app shell (hashed JS/CSS, icons) plus an offline fallback page, so the app satisfies Chrome's "works offline" install criterion. All `/api/*` traffic, including the SSE transcript stream, always goes straight to the network, so live sessions are never served stale. The status-bar color follows the active light/dark theme.
+
+**If no Install option shows:** a true WebAPK install needs Google Play Services to mint the APK. On de-Googled or minimal Android builds without Play Services, Chrome offers only **Add to Home screen**, which still creates a standalone launcher (the manifest's `display: standalone` is honored), just not a real WebAPK. The in-app Install button only appears on Chromium browsers that support web-app install; if it never appears, the browser/device doesn't support it. Firefox for Android can also add a standalone launcher without Play Services.
 
 On iOS, Safari → Share → **Add to Home Screen** gives a similar standalone launcher (Apple doesn't generate a WebAPK, but the manifest and apple-touch-icon are honored).
 
