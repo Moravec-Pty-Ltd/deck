@@ -1,5 +1,16 @@
 @import 'tailwindcss';
 
+/* iOS Safari zooms the page when a focused field has a font-size below 16px.
+   Force the 16px minimum on touch devices so focusing any control never zooms;
+   desktop (fine pointer) keeps the compact daisyUI sizing. */
+@media (pointer: coarse) {
+	input,
+	select,
+	textarea {
+		font-size: 16px !important;
+	}
+}
+
 @plugin 'daisyui' {
 	themes:
 		light --default,

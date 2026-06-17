@@ -30,6 +30,45 @@ export async function listBranches(repo: string): Promise<string[]> {
 	return [...new Set(branches)];
 }
 
+export interface WorktreeEntry {
+	path: string;
+	branch: string;
+	isMain: boolean;
+}
+
+// Existing worktrees for a repo, parsed from `git worktree list --porcelain`.
+// The first entry git reports is the main working tree (the repo itself).
+export async function listWorktrees(repo: string): Promise<WorktreeEntry[]> {
+	let out: string;
+	try {
+		out = await git(repo, 'worktree', 'list', '--porcelain');
+	} catch {
+		return [];
+	}
+	const entries: WorktreeEntry[] = [];
+	let current: { path?: string; branch?: string } = {};
+	const flush = () => {
+		if (current.path) {
+			entries.push({
+				path: current.path,
+				branch: current.branch ?? '(detached)',
+				isMain: entries.length === 0
+			});
+		}
+		current = {};
+	};
+	for (const line of out.split('\n')) {
+		if (line.startsWith('worktree ')) {
+			flush();
+			current.path = line.slice('worktree '.length).trim();
+		} else if (line.startsWith('branch ')) {
+			current.branch = line.slice('branch '.length).trim().replace(/^refs\/heads\//, '');
+		}
+	}
+	flush();
+	return entries;
+}
+
 // Worktrees land next to the repo: <repo>-worktrees/<branch>
 export async function createWorktree(
 	repo: string,

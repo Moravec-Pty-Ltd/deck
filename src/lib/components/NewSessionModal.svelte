@@ -1,24 +1,32 @@
 <script lang="ts">
-	import type { Project } from '$lib/types';
+	import type { NewSessionPreset, Project, SessionKind } from '$lib/types';
 	import { Bot, Terminal } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
+	import PathInput from './PathInput.svelte';
 
-	let { open = $bindable(false) } = $props();
+	let { open = $bindable(false), preset = null }: { open?: boolean; preset?: NewSessionPreset | null } =
+		$props();
 
-	let kind = $state<'claude' | 'shell'>('claude');
+	type Worktree = { path: string; branch: string; isMain: boolean };
+	type WorktreeMode = 'none' | 'existing' | 'new';
+
+	let kind = $state<SessionKind>('claude');
 	let projects = $state<Project[]>([]);
 	let cwd = $state('');
 	let customCwd = $state('');
 	let title = $state('');
 	let model = $state('');
 	let yolo = $state(true);
-	let useWorktree = $state(true);
+	let worktreeMode = $state<WorktreeMode>('new');
+	let worktreeModeDirty = $state(false);
 	let branch = $state('');
 	let branchDirty = $state(false);
 	let newBranch = $state(true);
 	let base = $state('');
 	let baseDirty = $state(false);
 	let branches = $state<string[]>([]);
+	let existingWorktrees = $state<Worktree[]>([]);
+	let existingWorktreeDir = $state('');
 	let prompt = $state('');
 	let promptDirty = $state(false);
 	let command = $state('');
@@ -27,22 +35,49 @@
 	let busy = $state(false);
 	let errorMsg = $state('');
 
+	let wasOpen = false;
 	$effect(() => {
-		if (open) {
-			promptDirty = false;
-			branchDirty = false;
-			baseDirty = false;
-			fetch('/api/projects')
-				.then((r) => r.json())
-				.then((p: Project[]) => {
-					projects = p;
-					if (!cwd && p.length) cwd = p[0].path;
-				});
-		}
+		if (open && !wasOpen) init();
+		wasOpen = open;
 	});
+
+	function init() {
+		promptDirty = false;
+		branchDirty = false;
+		baseDirty = false;
+		errorMsg = '';
+		const p = preset;
+		worktreeModeDirty = !!(p?.kind || p?.cwd);
+		fetch('/api/projects')
+			.then((r) => r.json())
+			.then((list: Project[]) => {
+				projects = list;
+				if (p?.kind) kind = p.kind;
+				if (p?.projectPath) cwd = p.projectPath;
+				else if (p?.cwd) {
+					cwd = '__custom';
+					customCwd = p.cwd;
+				} else if (!cwd && list.length) cwd = list[0].path;
+				if (p?.cwd) worktreeMode = 'none';
+				if (p?.title !== undefined) title = p.title;
+			});
+	}
 
 	const effectiveCwd = $derived(cwd === '__custom' ? customCwd : cwd);
 	const selectedProject = $derived(projects.find((p) => p.path === cwd));
+	const finalCwd = $derived(worktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
+	const titleRequired = $derived(kind === 'claude');
+
+	// Worktree mode defaults to "new" for claude (branch off and work in isolation)
+	// and "none" for shells (run right in the project), until the user overrides.
+	$effect(() => {
+		if (!worktreeModeDirty) worktreeMode = kind === 'claude' ? 'new' : 'none';
+	});
+
+	function setMode(m: WorktreeMode) {
+		worktreeMode = m;
+		worktreeModeDirty = true;
+	}
 
 	// Prefill the first prompt from the project's template until the user edits it.
 	$effect(() => {
@@ -52,7 +87,7 @@
 
 	// Branch defaults to the title until the user edits it.
 	$effect(() => {
-		if (useWorktree && !branchDirty) branch = title.trim();
+		if (worktreeMode === 'new' && !branchDirty) branch = title.trim();
 	});
 
 	// Base branch defaults to the project's remembered last base.
@@ -61,10 +96,22 @@
 	});
 
 	$effect(() => {
-		if (useWorktree && effectiveCwd) {
+		if (worktreeMode === 'new' && effectiveCwd) {
 			fetch(`/api/git/branches?repo=${encodeURIComponent(effectiveCwd)}`)
 				.then((r) => r.json())
 				.then((b: string[]) => (branches = Array.isArray(b) ? b : []));
+		}
+	});
+
+	$effect(() => {
+		if (worktreeMode === 'existing' && effectiveCwd) {
+			fetch(`/api/git/worktrees?repo=${encodeURIComponent(effectiveCwd)}`)
+				.then((r) => r.json())
+				.then((w: Worktree[]) => {
+					existingWorktrees = Array.isArray(w) ? w.filter((x) => !x.isMain) : [];
+					if (!existingWorktrees.some((x) => x.path === existingWorktreeDir))
+						existingWorktreeDir = existingWorktrees[0]?.path ?? '';
+				});
 		}
 	});
 
@@ -92,11 +139,15 @@
 
 	async function create() {
 		errorMsg = '';
-		if (!title.trim()) {
+		if (titleRequired && !title.trim()) {
 			errorMsg = 'title is required';
 			return;
 		}
-		if (!effectiveCwd) {
+		if (worktreeMode === 'existing' && !existingWorktreeDir) {
+			errorMsg = 'pick an existing worktree';
+			return;
+		}
+		if (!finalCwd) {
 			errorMsg = 'pick a project or path';
 			return;
 		}
@@ -107,15 +158,17 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
 					kind,
-					cwd: effectiveCwd,
-					title: title.trim(),
+					cwd: finalCwd,
+					title: title.trim() || undefined,
 					model: model || undefined,
-					permissionMode: kind === 'claude' ? (yolo ? 'bypassPermissions' : 'acceptEdits') : undefined,
+					permissionMode:
+						kind === 'claude' ? (yolo ? 'bypassPermissions' : 'acceptEdits') : undefined,
 					command: kind === 'shell' && command.trim() ? command.trim() : undefined,
 					prompt: kind === 'claude' && prompt.trim() ? prompt.trim() : undefined,
-					worktree: useWorktree && branch.trim()
-						? { branch: branch.trim(), newBranch, base: base || undefined }
-						: undefined
+					worktree:
+						worktreeMode === 'new' && branch.trim()
+							? { branch: branch.trim(), newBranch, base: base || undefined }
+							: undefined
 				})
 			});
 			const data = await res.json();
@@ -127,7 +180,6 @@
 			prompt = '';
 			title = '';
 			branch = '';
-			useWorktree = false;
 			goto(`/s/${encodeURIComponent(data.id)}`);
 		} finally {
 			busy = false;
@@ -164,15 +216,16 @@
 					<option value="__custom">Custom path...</option>
 				</select>
 				{#if cwd === '__custom'}
-					<input class="input w-full" placeholder="/absolute/path" bind:value={customCwd} />
+					<PathInput placeholder="/absolute/path or ~/path" bind:value={customCwd} />
 				{/if}
-				<div class="join mt-1 w-full">
-					<input
-						class="input join-item input-sm flex-1"
+				<div class="mt-1 flex w-full gap-1">
+					<PathInput
+						class="input input-sm flex-1"
 						placeholder="register a project path"
 						bind:value={newProjectPath}
+						onenter={addProject}
 					/>
-					<button class="btn join-item btn-sm" onclick={addProject}>Add</button>
+					<button class="btn btn-sm" onclick={addProject}>Add</button>
 				</div>
 				{#if newProjectPath.trim()}
 					<textarea
@@ -186,21 +239,43 @@
 			</fieldset>
 
 			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Title</legend>
+				<legend class="fieldset-legend">
+					Title {#if !titleRequired}<span class="opacity-50">(optional)</span>{/if}
+				</legend>
 				<input
-					class="input w-full {!title.trim() ? 'input-error' : ''}"
-					placeholder="required"
+					class="input w-full {titleRequired && !title.trim() ? 'input-error' : ''}"
+					placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
 					bind:value={title}
 				/>
 			</fieldset>
 
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend">Worktree</legend>
-				<label class="label cursor-pointer justify-start gap-2">
-					<input type="checkbox" class="checkbox checkbox-sm" bind:checked={useWorktree} />
-					<span>Create session in a git worktree</span>
-				</label>
-				{#if useWorktree}
+				<div class="join w-full">
+					<button
+						class="btn join-item btn-sm flex-1 {worktreeMode === 'none' ? 'btn-active' : ''}"
+						onclick={() => setMode('none')}>None</button
+					>
+					<button
+						class="btn join-item btn-sm flex-1 {worktreeMode === 'existing' ? 'btn-active' : ''}"
+						onclick={() => setMode('existing')}>Existing</button
+					>
+					<button
+						class="btn join-item btn-sm flex-1 {worktreeMode === 'new' ? 'btn-active' : ''}"
+						onclick={() => setMode('new')}>New</button
+					>
+				</div>
+				{#if worktreeMode === 'existing'}
+					{#if existingWorktrees.length}
+						<select class="select w-full" bind:value={existingWorktreeDir}>
+							{#each existingWorktrees as w (w.path)}
+								<option value={w.path}>{w.branch} — {w.path}</option>
+							{/each}
+						</select>
+					{:else}
+						<p class="text-xs opacity-60">no existing worktrees for this repo</p>
+					{/if}
+				{:else if worktreeMode === 'new'}
 					<input
 						class="input w-full"
 						placeholder="branch name (defaults to title)"
@@ -266,7 +341,11 @@
 
 			<div class="modal-action">
 				<button class="btn" onclick={() => (open = false)}>Cancel</button>
-				<button class="btn btn-primary" onclick={create} disabled={busy || !title.trim()}>
+				<button
+					class="btn btn-primary"
+					onclick={create}
+					disabled={busy || (titleRequired && !title.trim())}
+				>
 					{busy ? 'Creating...' : 'Create'}
 				</button>
 			</div>

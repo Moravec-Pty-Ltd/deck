@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { RequestHandler } from './$types';
 import { listProjects, addProject, removeProject } from '$lib/server/store';
+import { expandTilde } from '$lib/server/fsutil';
 
 export const GET: RequestHandler = async () => {
 	return json(listProjects());
@@ -10,7 +11,7 @@ export const GET: RequestHandler = async () => {
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
-	const dir = String(body.path ?? '').replace(/\/+$/, '');
+	const dir = expandTilde(String(body.path ?? '').trim()).replace(/\/+$/, '');
 	if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
 		error(400, 'path is not a directory');
 	}

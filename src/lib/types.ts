@@ -27,3 +27,12 @@ export interface Project {
 	template?: string;
 	lastBase?: string;
 }
+
+// Prefilled values for the new-session modal when launched from a shortcut
+// (sidebar quick-add, "shell in this worktree", etc.).
+export interface NewSessionPreset {
+	kind?: SessionKind;
+	projectPath?: string;
+	cwd?: string;
+	title?: string;
+}

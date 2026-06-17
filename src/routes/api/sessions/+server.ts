@@ -5,6 +5,7 @@ import { listSessions, createSession } from '$lib/server/sessions';
 import { createWorktree, isGitRepo } from '$lib/server/git';
 import { sendMessage } from '$lib/server/claude';
 import { listProjects, updateProject } from '$lib/server/store';
+import { expandTilde } from '$lib/server/fsutil';
 
 export const GET: RequestHandler = async () => {
 	return json(await listSessions());
@@ -13,7 +14,7 @@ export const GET: RequestHandler = async () => {
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
 	const { kind, title, model, permissionMode, command, prompt } = body;
-	let cwd: string = body.cwd;
+	let cwd: string = expandTilde(String(body.cwd ?? ''));
 
 	if (!cwd || !fs.existsSync(cwd)) error(400, 'cwd does not exist');
 	if (kind !== 'claude' && kind !== 'shell') error(400, 'invalid kind');

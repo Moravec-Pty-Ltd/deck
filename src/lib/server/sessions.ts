@@ -4,6 +4,7 @@ import { listStoredSessions, getStoredSession, saveSession, removeSession } from
 import { listTmuxSessions, createTmuxSession, killTmuxSession, hasTmuxSession } from './tmux';
 import { isTurnRunning, stopProcess } from './claude';
 import { removeWorktree } from './git';
+import { pickShipName } from './names';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
@@ -84,7 +85,13 @@ export async function createSession(input: {
 }): Promise<DeckSession> {
 	const id = newId(input.kind);
 	const now = Date.now();
-	const title = input.title?.trim() || input.cwd.split('/').pop() || id;
+	// Untitled shells get a Star Trek starship name; claude sessions fall back to
+	// the directory name so the title still hints at what they're working on.
+	const title =
+		input.title?.trim() ||
+		(input.kind === 'shell'
+			? pickShipName(listStoredSessions().map((s) => s.title))
+			: input.cwd.split('/').pop() || id);
 
 	const session: DeckSession = {
 		id,

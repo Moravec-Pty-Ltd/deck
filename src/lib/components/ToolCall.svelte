@@ -3,6 +3,7 @@
 	import Diff from './Diff.svelte';
 	import { lineDiff, addedLines, looksLikeDiff, parseUnified } from '$lib/diff';
 	import { shortPath } from '$lib/time';
+	import { toolOutput } from '$lib/toolOutput.svelte';
 	import {
 		Wrench,
 		Terminal,
@@ -85,6 +86,16 @@
 	);
 </script>
 
+{#snippet diffToggle()}
+	<button
+		type="button"
+		class="cursor-pointer select-none text-xs opacity-50 hover:opacity-80"
+		onclick={() => (toolOutput.open = !toolOutput.open)}
+	>
+		{toolOutput.open ? 'hide diff' : 'show diff'}
+	</button>
+{/snippet}
+
 <div class="mx-1 overflow-hidden rounded-box border border-base-300 bg-base-100 text-sm">
 	<div class="flex items-center gap-2 px-3 py-1.5">
 		<Icon size={14} class="shrink-0 opacity-60" />
@@ -98,19 +109,40 @@
 			<div class="terminal-output rounded-box bg-base-200 px-2 py-1.5">
 				<span class="opacity-50 select-none">$ </span>{input.command}
 			</div>
-			{#if resText && looksLikeDiff(resText)}
-				<Diff lines={parseUnified(resText)} />
-			{:else if resText}
-				<div class="terminal-output max-h-72 overflow-y-auto rounded-box border border-base-300 px-2 py-1.5 {isErr ? 'text-error' : 'opacity-80'}"><Linked text={shownResult} />{#if clipped}{'\n'}…{/if}</div>
+			{#if resText}
+				<button
+					type="button"
+					class="cursor-pointer select-none text-xs opacity-50 hover:opacity-80"
+					onclick={() => (toolOutput.open = !toolOutput.open)}
+				>
+					{toolOutput.open ? 'hide output' : 'show output'}{#if isErr}
+						<span class="text-error"> (error)</span>{/if}
+				</button>
+				{#if toolOutput.open}
+					{#if looksLikeDiff(resText)}
+						<Diff lines={parseUnified(resText)} />
+					{:else}
+						<div class="terminal-output max-h-72 overflow-y-auto rounded-box border border-base-300 px-2 py-1.5 {isErr ? 'text-error' : 'opacity-80'}"><Linked text={shownResult} />{#if clipped}{'\n'}…{/if}</div>
+					{/if}
+				{/if}
 			{/if}
 		{:else if name === 'Edit'}
-			<Diff lines={lineDiff(String(input.old_string ?? ''), String(input.new_string ?? ''))} />
+			{@render diffToggle()}
+			{#if toolOutput.open}
+				<Diff lines={lineDiff(String(input.old_string ?? ''), String(input.new_string ?? ''))} />
+			{/if}
 		{:else if name === 'MultiEdit'}
-			{#each (input.edits ?? []) as e, i (i)}
-				<Diff lines={lineDiff(String(e.old_string ?? ''), String(e.new_string ?? ''))} />
-			{/each}
+			{@render diffToggle()}
+			{#if toolOutput.open}
+				{#each (input.edits ?? []) as e, i (i)}
+					<Diff lines={lineDiff(String(e.old_string ?? ''), String(e.new_string ?? ''))} />
+				{/each}
+			{/if}
 		{:else if name === 'Write'}
-			<Diff lines={addedLines(String(input.content ?? ''))} max={400} />
+			{@render diffToggle()}
+			{#if toolOutput.open}
+				<Diff lines={addedLines(String(input.content ?? ''))} max={400} />
+			{/if}
 		{:else if name === 'TodoWrite'}
 			<ul class="space-y-0.5">
 				{#each (input.todos ?? []) as t, i (i)}

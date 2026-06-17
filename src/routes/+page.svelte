@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { DeckSession, Project } from '$lib/types';
+	import type { DeckSession, NewSessionPreset, Project } from '$lib/types';
 	import { relativeTime, shortPath, deriveGroup } from '$lib/time';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog } from '@lucide/svelte';
@@ -9,7 +9,18 @@
 	let filter = $state<'all' | 'claude' | 'shell'>('all');
 	let grouped = $state(true);
 	let modalOpen = $state(false);
+	let preset = $state<NewSessionPreset | null>(null);
 	let loaded = $state(false);
+
+	function openNew() {
+		preset = null;
+		modalOpen = true;
+	}
+
+	function quickAdd(path: string) {
+		preset = projects.some((p) => p.path === path) ? { projectPath: path } : { cwd: path };
+		modalOpen = true;
+	}
 
 	async function refresh() {
 		const [sRes, pRes] = await Promise.all([fetch('/api/sessions'), fetch('/api/projects')]);
@@ -113,7 +124,7 @@
 		<button class="btn btn-ghost btn-sm" onclick={refresh} aria-label="Refresh">
 			<RefreshCw size={16} />
 		</button>
-		<button class="btn btn-sm btn-primary" onclick={() => (modalOpen = true)}>
+		<button class="btn btn-sm btn-primary" onclick={openNew}>
 			<Plus size={16} /> New
 		</button>
 	</div>
@@ -166,11 +177,19 @@
 	<div class="space-y-5">
 		{#each groups as g (g.key)}
 			<section>
-				<div class="mb-1.5 flex items-baseline gap-2 px-1">
+				<div class="mb-1.5 flex items-center gap-2 px-1">
 					<FolderGit2 size={14} class="shrink-0 opacity-50" />
 					<h2 class="font-semibold">{g.label}</h2>
 					<span class="text-xs opacity-50">{g.sessions.length}</span>
-					<span class="truncate text-xs opacity-40">{shortPath(g.key)}</span>
+					<span class="min-w-0 truncate text-xs opacity-40">{shortPath(g.key)}</span>
+					<button
+						class="btn btn-ghost btn-xs ml-auto shrink-0"
+						onclick={() => quickAdd(g.key)}
+						aria-label={`New session in ${g.label}`}
+						title="New session here"
+					>
+						<Plus size={15} />
+					</button>
 				</div>
 				<ul class="space-y-2">
 					{#each g.sessions as s (s.id)}
@@ -188,7 +207,7 @@
 	</ul>
 {/if}
 
-<NewSessionModal bind:open={modalOpen} />
+<NewSessionModal bind:open={modalOpen} {preset} />
 
 {#if delTarget}
 	<div class="modal modal-open" role="dialog">

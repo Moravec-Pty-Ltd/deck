@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
+	import PathInput from '$lib/components/PathInput.svelte';
 	import { ArrowLeft, Plus, Trash2, Check } from '@lucide/svelte';
 
 	let projects = $state<Project[]>([]);
@@ -118,7 +119,14 @@
 				<span class="font-medium">Add a project</span>
 			</div>
 			<div class="flex flex-col gap-2 sm:flex-row">
-				<input class="input input-sm flex-1" placeholder="/absolute/path" bind:value={newPath} />
+				<div class="flex-1">
+					<PathInput
+						class="input input-sm w-full"
+						placeholder="/absolute/path or ~/path"
+						bind:value={newPath}
+						onenter={add}
+					/>
+				</div>
 				<input class="input input-sm sm:w-40" placeholder="name (optional)" bind:value={newName} />
 			</div>
 			<textarea
