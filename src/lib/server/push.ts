@@ -32,7 +32,7 @@ webpush.setVapidDetails(
 	vapid.privateKey
 );
 
-export function listSubs(): PushSubscription[] {
+function listSubs(): PushSubscription[] {
 	return readJson<PushSubscription[]>(SUBS_FILE, []);
 }
 

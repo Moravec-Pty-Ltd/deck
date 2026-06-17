@@ -57,7 +57,7 @@ export function looksLikeDiff(text: string): boolean {
 }
 
 // Classify a single line of unified-diff text.
-export function unifiedLineType(line: string): DiffLineType {
+function unifiedLineType(line: string): DiffLineType {
 	if (line.startsWith('@@')) return 'hunk';
 	if (
 		line.startsWith('+++') ||

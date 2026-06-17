@@ -33,7 +33,7 @@ const g = globalThis as { __deckBus?: EventEmitter };
 export const bus = (g.__deckBus ??= new EventEmitter());
 bus.setMaxListeners(200);
 
-export function transcriptPath(id: string) {
+function transcriptPath(id: string) {
 	return path.join(transcriptsDir, `${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.jsonl`);
 }
 

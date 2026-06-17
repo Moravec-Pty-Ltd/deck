@@ -19,10 +19,6 @@ export interface AskQuestion {
 const g = globalThis as { __deckAsks?: Map<string, Pending> };
 const pending = (g.__deckAsks ??= new Map());
 
-export function isAsking(sessionId: string): boolean {
-	return pending.has(sessionId);
-}
-
 export function registerAsk(
 	sessionId: string,
 	questions: AskQuestion[],

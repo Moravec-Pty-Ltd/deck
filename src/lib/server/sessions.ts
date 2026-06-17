@@ -8,11 +8,11 @@ import { pickShipName } from './names';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-export function newId(kind: 'claude' | 'shell') {
+function newId(kind: 'claude' | 'shell') {
 	return `${kind === 'claude' ? 'c' : 's'}_${nanoid()}`;
 }
 
-export function tmuxNameFor(id: string) {
+function tmuxNameFor(id: string) {
 	return `deck-${id.replace(/^s_/, '')}`;
 }
 
@@ -144,9 +144,4 @@ export async function deleteSession(
 	}
 
 	removeSession(id);
-}
-
-export function tmuxTarget(session: DeckSession): string | undefined {
-	if (session.kind !== 'shell') return undefined;
-	return session.tmuxName;
 }

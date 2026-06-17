@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 
-export const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
+const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
 export const transcriptsDir = path.join(dataDir, 'transcripts');
 
 fs.mkdirSync(transcriptsDir, { recursive: true });

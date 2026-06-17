@@ -11,7 +11,7 @@ export function expandTilde(p: string): string {
 }
 
 // Collapse the home directory back to ~ for compact display in path inputs.
-export function collapseHome(p: string): string {
+function collapseHome(p: string): string {
 	const home = os.homedir();
 	if (p === home) return '~';
 	if (p.startsWith(home + path.sep)) return '~' + p.slice(home.length);
