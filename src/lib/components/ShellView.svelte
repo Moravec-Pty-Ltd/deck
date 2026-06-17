@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { DeckSession } from '$lib/types';
-	import Linked from './Linked.svelte';
+	import AnsiText from './AnsiText.svelte';
 	import { Send, RefreshCw } from '@lucide/svelte';
 
 	let { session }: { session: DeckSession } = $props();
@@ -60,7 +60,7 @@
 	<div
 		bind:this={scroller}
 		class="terminal-output min-h-0 flex-1 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-3"
-	><Linked text={text || '(empty)'} /></div>
+	><AnsiText text={text || '(empty)'} /></div>
 
 	<div class="mt-3 space-y-2">
 		<div class="flex items-center gap-2">

@@ -57,6 +57,12 @@
 	scroll-behavior: auto;
 }
 
+/* e-ink: drop captured terminal colors, keep weight/underline -> monochrome */
+[data-theme='eink'] .ansi-seg {
+	color: inherit !important;
+	background-color: transparent !important;
+}
+
 @font-face {
 	font-family: 'Hack Nerd Font Mono';
 	src: url('/fonts/HackNerdFontMono-Regular.woff2') format('woff2');

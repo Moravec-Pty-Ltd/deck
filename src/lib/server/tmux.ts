@@ -64,7 +64,8 @@ export async function hasTmuxSession(name: string): Promise<boolean> {
 }
 
 export async function snapshotPane(name: string, lines = 500): Promise<string> {
-	return tmux('capture-pane', '-p', '-t', `=${name}:`, '-S', `-${lines}`);
+	// -e keeps SGR escape sequences so the client can render ANSI colors.
+	return tmux('capture-pane', '-e', '-p', '-t', `=${name}:`, '-S', `-${lines}`);
 }
 
 // key is a tmux key name like 'C-c', 'Escape', 'Up'
