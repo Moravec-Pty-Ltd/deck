@@ -171,54 +171,75 @@ function scheduleIdleTeardown(id: string, proc: Proc) {
 	}, IDLE_MS);
 }
 
-function handleEvent(id: string, proc: Proc, event: Record<string, unknown>) {
-	const type = event.type;
+type EventHandler = (id: string, proc: Proc, event: Record<string, unknown>) => boolean;
+
+// hook / status / thinking-token chatter is high-volume noise we drop.
+const NOISE_SYSTEM_SUBTYPES = new Set(['status', 'thinking_tokens']);
+function isSystemNoise(subtype: string | undefined): boolean {
+	if (!subtype) return false;
+	return subtype.startsWith('hook') || NOISE_SYSTEM_SUBTYPES.has(subtype);
+}
+
+// Record the resumable session id off the init event; drop system noise.
+function handleSystemEvent(id: string, _proc: Proc, event: Record<string, unknown>): boolean {
+	if (event.type !== 'system') return false;
 	const subtype = event.subtype as string | undefined;
-
-	if (type === 'system') {
-		if (subtype === 'init' && typeof event.session_id === 'string') {
-			updateSession(id, { claudeSessionId: event.session_id });
-		}
-		// hook / status / thinking-token chatter is high-volume noise
-		if (subtype && (subtype.startsWith('hook') || subtype === 'status' || subtype === 'thinking_tokens')) {
-			return;
-		}
+	if (subtype === 'init' && typeof event.session_id === 'string') {
+		updateSession(id, { claudeSessionId: event.session_id });
 	}
+	return isSystemNoise(subtype);
+}
 
-	// Live partial deltas: emit for streaming display, never persist.
-	if (type === 'stream_event') {
-		const ev = event.event as { type?: string } | undefined;
-		if (ev?.type === 'message_start') {
-			proc.running = true;
-			setStatus(id, 'running');
-		}
-		bus.emit(`event:${id}`, event);
-		return;
+// Live partial deltas: emit for streaming display, never persist.
+function handleStreamEvent(id: string, proc: Proc, event: Record<string, unknown>): boolean {
+	if (event.type !== 'stream_event') return false;
+	const ev = event.event as { type?: string } | undefined;
+	if (ev?.type === 'message_start') {
+		proc.running = true;
+		setStatus(id, 'running');
 	}
+	bus.emit(`event:${id}`, event);
+	return true;
+}
 
-	if (type === 'rate_limit_event' || type === 'control_response') return;
+// Rate-limit and control-response chatter is dropped silently.
+function isIgnoredEvent(_id: string, _proc: Proc, event: Record<string, unknown>): boolean {
+	return event.type === 'rate_limit_event' || event.type === 'control_response';
+}
 
-	// Skip replayed user messages (our own echo); keep tool_result turns.
-	if (type === 'user') {
-		const content = (event.message as { content?: unknown })?.content;
-		const hasToolResult =
-			Array.isArray(content) && content.some((b: { type?: string }) => b.type === 'tool_result');
-		if (!hasToolResult) return;
+// Our own replayed user messages echo back; skip them, but keep tool_result turns.
+function isReplayedUserEcho(_id: string, _proc: Proc, event: Record<string, unknown>): boolean {
+	if (event.type !== 'user') return false;
+	const content = (event.message as { content?: unknown })?.content;
+	return !(Array.isArray(content) && content.some((b: { type?: string }) => b.type === 'tool_result'));
+}
+
+// Turn ended (including a user interrupt → error_during_execution). The process
+// is alive and ready, so the session is idle, not errored; the result footer
+// still shows the subtype. Hard failures surface on exit.
+function handleResult(id: string, proc: Proc, event: Record<string, unknown>): boolean {
+	if (event.type !== 'result') return false;
+	proc.running = false;
+	appendEvent(id, event);
+	setStatus(id, 'idle');
+	rejectAsk(id, 'turn ended');
+	scheduleIdleTeardown(id, proc);
+	notifyTurnEnd(id, event);
+	return true;
+}
+
+const EVENT_HANDLERS: EventHandler[] = [
+	handleSystemEvent,
+	handleStreamEvent,
+	isIgnoredEvent,
+	isReplayedUserEcho,
+	handleResult
+];
+
+function handleEvent(id: string, proc: Proc, event: Record<string, unknown>) {
+	for (const handle of EVENT_HANDLERS) {
+		if (handle(id, proc, event)) return;
 	}
-
-	if (type === 'result') {
-		// Turn ended (including a user interrupt → error_during_execution). The
-		// process is alive and ready, so the session is idle, not errored; the
-		// result footer still shows the subtype. Hard failures surface on exit.
-		proc.running = false;
-		appendEvent(id, event);
-		setStatus(id, 'idle');
-		rejectAsk(id, 'turn ended');
-		scheduleIdleTeardown(id, proc);
-		notifyTurnEnd(id, event);
-		return;
-	}
-
 	appendEvent(id, event);
 }
 
