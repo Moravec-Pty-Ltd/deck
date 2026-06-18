@@ -1,4 +1,6 @@
-import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+// cross-spawn so pi/codex resolve when installed as Windows .cmd/.bat shims.
+import spawn from 'cross-spawn';
 import type { DeckSession } from '$lib/types';
 import { appendEvent, setStatus, bus } from '../claude';
 import { getStoredSession, updateSession } from '../store';
@@ -13,7 +15,7 @@ import { codexDriver } from './codex';
 // Claude keeps its own persistent-process engine in claude.ts.
 const drivers: Record<string, AgentDriver> = { pi: piDriver, codex: codexDriver };
 
-const g = globalThis as { __deckAgentProcs?: Map<string, ReturnType<typeof spawn>> };
+const g = globalThis as { __deckAgentProcs?: Map<string, ChildProcess> };
 const procs = (g.__deckAgentProcs ??= new Map());
 
 export function turnRunning(id: string): boolean {

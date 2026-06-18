@@ -1,4 +1,7 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { type ChildProcess } from 'node:child_process';
+// cross-spawn so the `claude` CLI also resolves when installed as a Windows
+// .cmd/.bat shim, which node:child_process.spawn can't launch directly.
+import spawn from 'cross-spawn';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';

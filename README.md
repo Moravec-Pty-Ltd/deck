@@ -12,6 +12,43 @@ It runs headless Claude Code under your normal subscription auth, so there's no 
 - `tmux` and `git`
 - `tailscale` (optional, for remote/phone access over HTTPS)
 
+## Platform support
+
+deck runs on **macOS** and **Linux**. It drives external CLIs (`claude`, `tmux`, `git`) over your shell and depends on `tmux` for the shell sessions, so it needs a POSIX environment. There are no native/compiled dependencies, so any Node 20+ runtime works.
+
+On **Windows** there are two paths. The supported one is [WSL2](https://learn.microsoft.com/windows/wsl/install): run deck inside it and treat it as Linux. There's also an **experimental native-Windows path** using [psmux](https://github.com/psmux/psmux), a tmux-compatible multiplexer, in place of `tmux` (see below).
+
+**macOS** (Homebrew):
+
+```sh
+brew install node pnpm tmux git
+```
+
+**Linux** (Debian/Ubuntu):
+
+```sh
+sudo apt install tmux git
+corepack enable          # provides pnpm at the version the repo pins
+# Node 20+: use nvm, NodeSource, or your distro if it ships 20+
+```
+
+**Windows, via WSL2** (supported): install a distro (`wsl --install`), open it, then follow the Linux steps inside WSL. Run deck from the WSL shell and open the printed URL in a Windows browser. Keep the repo on the Linux filesystem (`~/...`, not `/mnt/c/...`) for sane performance.
+
+**Windows, native** (experimental, unverified): deck shells out to `tmux`, `git`, and the agent CLIs, none of which ship with Windows. The native route is:
+
+```powershell
+winget install psmux        # provides a tmux-compatible `tmux` on PATH
+winget install Git.Git
+# Node 20+: winget install OpenJS.NodeJS, then `corepack enable` for pnpm
+```
+
+Then install the [`claude` CLI](https://docs.claude.com/en/docs/claude-code) and log in. Caveats on native Windows:
+
+- deck resolves agent CLIs installed as `.cmd`/`.bat` shims (via `cross-spawn`), but an agent launched through such a shim runs under a `cmd.exe` wrapper that an interrupt may not fully tear down. Prefer native `.exe` installs of `claude`/`pi`/`codex` so teardown stays clean.
+- psmux needs **PowerShell 7+** for Claude Code integration, and deck leans on tmux's `=name` exact-target syntax and `capture-pane -e` colour output, which haven't been verified against psmux. If shell sessions misbehave, fall back to WSL2.
+
+The [`claude` CLI](https://docs.claude.com/en/docs/claude-code) is the same install everywhere (log in once). The rest of setup is identical on every platform:
+
 ## Setup
 
 ```sh
@@ -46,7 +83,7 @@ HOST=127.0.0.1 PORT=4818 DECK_NO_AUTH=1 node build/index.js
 
 `DECK_NO_AUTH=1` drops the token gate, which is redundant once only the tailnet can reach it. Leave it unset to keep token auth.
 
-The dev server does this for you: `vite dev` runs a small plugin that registers a `tailscale serve` for the lifetime of the process (see `vite.config.ts`).
+The dev server does this for you: `vite dev` runs a small plugin that registers a `tailscale serve` for the lifetime of the process (see `vite.config.ts`). It's on by default; set `DECK_NO_TAILSCALE=1` to opt out (no tailscale installed, native Windows, or you just don't want it), and the dev server runs without touching tailscale.
 
 ## Install on a phone (PWA)
 

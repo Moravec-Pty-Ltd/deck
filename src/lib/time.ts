@@ -10,8 +10,14 @@ export function relativeTime(ts: number): string {
 	return new Date(ts).toLocaleDateString();
 }
 
+// Collapse a home prefix to ~ for display. Runs in the browser, so it can't
+// read the real homedir; instead it matches the common roots: macOS
+// (/Users/<name>), Linux (/home/<name>), root (/root), and Windows
+// (C:\Users\<name>). The two branches are mutually exclusive by separator.
 export function shortPath(p: string): string {
-	return p.replace(/^\/Users\/[^/]+/, '~');
+	return p
+		.replace(/^(\/Users\/[^/]+|\/home\/[^/]+|\/root)(?=\/|$)/, '~')
+		.replace(/^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/, '~');
 }
 
 import type { Project } from '$lib/types';
