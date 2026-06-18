@@ -18,6 +18,8 @@
 	let fileInput: HTMLInputElement | undefined = $state();
 	let atBottom = $state(true);
 	let dragging = $state(false);
+	let connected = $state(true);
+	let loaded = $state(false);
 
 	type Attachment = { media_type: string; data: string; url: string };
 	let attachments = $state<Attachment[]>([]);
@@ -29,6 +31,11 @@
 	const INITIAL_WINDOW = 60;
 	const HYDRATE_CHUNK = 250;
 	let limit = $state(INITIAL_WINDOW);
+	// Absolute index of events[0]. The snapshot only carries recent history;
+	// `baseIndex > 0` means older events live on the server and can be lazily
+	// pulled in via /transcript. Keyed-each uses baseIndex+start+i (an event's
+	// stable absolute index) so prepending older rows still reuses nodes.
+	let baseIndex = $state(0);
 	const start = $derived(Math.max(0, events.length - limit));
 	const visible = $derived(events.slice(start));
 
@@ -75,34 +82,107 @@
 		});
 	}
 
+	// One subscription per session. The body depends only on session.id, so it
+	// re-runs exactly when the viewed session changes — never on its own writes.
 	$effect(() => {
-		const source = new EventSource(`/api/sessions/${encodeURIComponent(session.id)}/events`);
-		// Whole stored history in one frame: set it once (also dedupes on reconnect,
-		// where the old per-line replay used to re-append the entire transcript).
-		source.addEventListener('snapshot', async (e) => {
-			events = JSON.parse(e.data);
-			limit = INITIAL_WINDOW;
-			liveText = '';
-			await tick();
-			forceScroll();
-			hydrateRest();
-		});
-		source.addEventListener('transcript', (e) => {
-			const ev = JSON.parse(e.data);
-			if (ev.type === 'stream_event') {
-				handleStream(ev);
-				return;
+		const id = session.id;
+
+		// Clear the previous session synchronously so its history and live stream
+		// can't bleed into this one while the new snapshot is in flight.
+		events = [];
+		baseIndex = 0;
+		limit = INITIAL_WINDOW;
+		liveText = '';
+		loaded = false;
+		status = session.status;
+
+		let source: EventSource | null = null;
+		let retry: ReturnType<typeof setTimeout> | undefined;
+		let stopped = false;
+
+		const connect = () => {
+			clearTimeout(retry);
+			source?.close();
+			const es = new EventSource(`/api/sessions/${encodeURIComponent(id)}/events`);
+			source = es;
+			// Recent history arrives as several small frames (the server can't push
+			// one big frame reliably). Reassemble the serialized payload by `seq`,
+			// then parse once. `seq === 0` resets the buffer, so a reconnect replaces
+			// the array rather than re-appending the whole transcript.
+			let snapBuf = '';
+			es.addEventListener('snapshot', async (e) => {
+				connected = true;
+				let frame: { seq: number; n: number; data: string };
+				try {
+					frame = JSON.parse((e as MessageEvent).data);
+				} catch {
+					return;
+				}
+				if (stopped) return;
+				if (frame.seq === 0) snapBuf = '';
+				snapBuf += frame.data;
+				if (frame.seq + 1 < frame.n) return; // wait for the rest
+				let snap: { start: number; events: AnyEvent[] };
+				try {
+					snap = JSON.parse(snapBuf);
+				} catch {
+					return;
+				}
+				snapBuf = '';
+				events = snap.events;
+				baseIndex = snap.start;
+				limit = INITIAL_WINDOW;
+				liveText = '';
+				loaded = true;
+				await tick();
+				forceScroll();
+				hydrateRest();
+			});
+			es.addEventListener('transcript', (e) => {
+				const ev = JSON.parse((e as MessageEvent).data);
+				if (ev.type === 'stream_event') {
+					handleStream(ev);
+					return;
+				}
+				if (ev.type === 'assistant') liveText = '';
+				events = [...events, ev];
+				limit += 1; // keep the new event in view without dropping a tail row
+				maybeScroll();
+			});
+			es.addEventListener('status', (e) => {
+				status = JSON.parse((e as MessageEvent).data);
+				if (status !== 'running') liveText = '';
+			});
+			es.addEventListener('ping', () => (connected = true));
+			es.onopen = () => (connected = true);
+			es.onerror = () => {
+				connected = false;
+				// EventSource retries on its own while CONNECTING; only step in once
+				// it has actually given up (CLOSED), e.g. a hard network drop.
+				if (!stopped && es.readyState === EventSource.CLOSED) retry = setTimeout(connect, 2000);
+			};
+		};
+
+		// A backgrounded tab (mobile/PWA) often loses its socket without firing an
+		// error, so the stream silently stalls and nothing comes back. Re-open when
+		// the tab is shown again or the network returns, if the socket isn't open.
+		const wake = () => {
+			if (document.visibilityState === 'visible' && source?.readyState !== EventSource.OPEN) {
+				connect();
 			}
-			if (ev.type === 'assistant') liveText = '';
-			events = [...events, ev];
-			limit += 1; // keep the new event in view without dropping a tail row
-			maybeScroll();
-		});
-		source.addEventListener('status', (e) => {
-			status = JSON.parse(e.data);
-			if (status !== 'running') liveText = '';
-		});
-		return () => source.close();
+		};
+		document.addEventListener('visibilitychange', wake);
+		window.addEventListener('online', wake);
+
+		connect();
+
+		return () => {
+			stopped = true;
+			clearTimeout(retry);
+			document.removeEventListener('visibilitychange', wake);
+			window.removeEventListener('online', wake);
+			source?.close();
+		};
 	});
 
 	function handleStream(ev: AnyEvent) {
@@ -118,8 +198,12 @@
 	function onScroll() {
 		if (!scroller) return;
 		atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
-		// Scrolling toward the top: make sure older history is being filled in.
-		if (scroller.scrollTop < 400) hydrateRest();
+		// Scrolling toward the top: widen the window over loaded rows, then pull
+		// older history from the server once the loaded slice is exhausted.
+		if (scroller.scrollTop < 400) {
+			if (limit < events.length) hydrateRest();
+			else loadOlder();
+		}
 	}
 
 	function maybeScroll() {
@@ -159,6 +243,35 @@
 			growWindow(HYDRATE_CHUNK).then(() => idle(step));
 		};
 		idle(step);
+	}
+
+	// Fetch the slice of history just before what's loaded and prepend it,
+	// holding scroll position (same gap trick as growWindow). `baseIndex` walks
+	// back toward 0; at 0 there's nothing older to load.
+	let loadingOlder = $state(false);
+	async function loadOlder() {
+		if (loadingOlder || baseIndex <= 0) return;
+		loadingOlder = true;
+		try {
+			const res = await fetch(
+				`/api/sessions/${encodeURIComponent(session.id)}/transcript?before=${baseIndex}&limit=${HYDRATE_CHUNK}`
+			);
+			if (!res.ok) return;
+			const slice: { start: number; events: AnyEvent[] } = await res.json();
+			const added = baseIndex - slice.start;
+			if (added <= 0) {
+				baseIndex = slice.start;
+				return;
+			}
+			const gap = scroller ? scroller.scrollHeight - scroller.scrollTop : 0;
+			events = [...slice.events, ...events];
+			baseIndex = slice.start;
+			limit += added; // keep the just-loaded rows inside the render window
+			await tick();
+			if (scroller) scroller.scrollTop = scroller.scrollHeight - gap;
+		} finally {
+			loadingOlder = false;
+		}
 	}
 
 	function toBase64(buf: ArrayBuffer): string {
@@ -261,12 +374,30 @@
 	ondragleave={() => (dragging = false)}
 	ondrop={onDrop}
 >
+	{#if !connected}
+		<div
+			class="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-content shadow"
+		>
+			reconnecting…
+		</div>
+	{/if}
+
 	<div
 		bind:this={scroller}
 		onscroll={onScroll}
 		class="min-h-0 flex-1 space-y-3 overflow-y-auto px-1 py-3"
 	>
-		{#each visible as event, i (start + i)}
+		{#if !loaded}
+			<div class="flex h-full items-center justify-center">
+				<span class="loading loading-spinner loading-md opacity-50"></span>
+			</div>
+		{/if}
+		{#if loadingOlder}
+			<div class="flex justify-center py-1">
+				<span class="loading loading-spinner loading-xs opacity-60"></span>
+			</div>
+		{/if}
+		{#each visible as event, i (baseIndex + start + i)}
 			{#if event.type === 'deck.user'}
 				<div class="chat chat-end">
 					<div class="chat-bubble chat-bubble-primary max-w-[85%] break-words whitespace-pre-wrap">
@@ -317,13 +448,13 @@
 			{/if}
 		{/each}
 
-		{#if liveText.trim()}
+		{#if loaded && liveText.trim()}
 			<div class="chat chat-start">
 				<div class="chat-bubble max-w-[85%] break-words whitespace-pre-wrap bg-base-100 text-base-content">
 					<Linked text={liveText} />
 				</div>
 			</div>
-		{:else if status === 'running'}
+		{:else if loaded && status === 'running'}
 			<div class="px-2 text-sm opacity-60">working...</div>
 		{/if}
 	</div>

@@ -18,7 +18,7 @@
 		return out;
 	});
 </script>
-{#each parts as p (p.value + p.url)}{#if p.url}<a
+{#each parts as p, i (i)}{#if p.url}<a
 			href={p.value}
 			target="_blank"
 			rel="noopener noreferrer"

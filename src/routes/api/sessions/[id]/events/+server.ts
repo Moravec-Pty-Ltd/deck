@@ -2,10 +2,10 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { isAgentKind } from '$lib/types';
 import { getSession } from '$lib/server/sessions';
-import { bus, readTranscript } from '$lib/server/claude';
+import { bus, snapshotFrames } from '$lib/server/claude';
 import { agentTurnRunning } from '$lib/server/agents/dispatch';
 
-// SSE: replay the stored transcript, then stream live events for the session.
+// SSE: send the recent stored history, then stream live events for the session.
 export const GET: RequestHandler = async ({ params }) => {
 	const session = await getSession(params.id);
 	if (!session) error(404, 'session not found');
@@ -25,10 +25,10 @@ export const GET: RequestHandler = async ({ params }) => {
 				}
 			};
 
-			// One batched frame for the whole stored history, then live events one
-			// at a time. Replaying per-line made the client rebuild its event array
-			// (and rescan it) once per line — O(n²) on long sessions.
-			send('snapshot', readTranscript(id));
+			// Recent history first (chunked into small frames so it actually flushes
+			// — see snapshotFrames), then live events. Older history loads lazily via
+			// /transcript on back-scroll.
+			for (const frame of snapshotFrames(id)) send('snapshot', frame);
 			send('status', agentTurnRunning(id) ? 'running' : session.status);
 
 			const onEvent = (event: unknown) => send('transcript', event);
@@ -36,9 +36,11 @@ export const GET: RequestHandler = async ({ params }) => {
 			bus.on(`event:${id}`, onEvent);
 			bus.on(`status:${id}`, onStatus);
 
+			// Named event (not a bare comment) so the client can use it as a
+			// liveness heartbeat and reconnect a silently-dead socket.
 			const ping = setInterval(() => {
 				try {
-					controller.enqueue(encoder.encode(': ping\n\n'));
+					controller.enqueue(encoder.encode('event: ping\ndata: 1\n\n'));
 				} catch {
 					cleanup();
 				}

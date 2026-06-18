@@ -70,13 +70,13 @@
 
 				{#if answered}
 					<div class="flex flex-wrap gap-1.5">
-						{#each answer?.[qi]?.labels ?? [] as l (l)}
+						{#each answer?.[qi]?.labels ?? [] as l, li (li)}
 							<span class="badge badge-success badge-sm gap-1"><Check size={11} /> {l}</span>
 						{/each}
 					</div>
 				{:else}
 					<div class="flex flex-col gap-1.5">
-						{#each q.options as opt (opt.label)}
+						{#each q.options as opt, oi (oi)}
 							<button
 								class="btn btn-sm h-auto justify-start py-1.5 text-left {selected[qi].includes(opt.label)
 									? 'btn-primary'
