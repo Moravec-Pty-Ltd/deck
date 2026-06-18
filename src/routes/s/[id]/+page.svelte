@@ -43,6 +43,43 @@
 		modalOpen = true;
 		sidebarOpen = false;
 	}
+
+	let delTarget = $state<DeckSession | null>(null);
+	let delWorktree = $state(true);
+	let delBranch = $state(true);
+	let deletingId = $state<string | null>(null);
+
+	function requestDelete(s: DeckSession) {
+		if (deletingId) return;
+		if (s.id === session.id) return; // never delete the active session
+		if (s.worktree) {
+			delWorktree = true;
+			delBranch = s.worktree.createdBranch;
+			delTarget = s;
+			return;
+		}
+		if (!confirm(`Kill and remove "${s.title}"?`)) return;
+		doDelete(s, {});
+	}
+
+	async function doDelete(
+		s: DeckSession,
+		opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
+	) {
+		if (deletingId) return;
+		deletingId = s.id;
+		try {
+			await fetch(`/api/sessions/${encodeURIComponent(s.id)}`, {
+				method: 'DELETE',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(opts)
+			});
+			delTarget = null;
+			await refresh();
+		} finally {
+			deletingId = null;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -54,8 +91,10 @@
 		{projects}
 		{sessions}
 		currentId={session.id}
+		{deletingId}
 		onQuickAdd={quickAdd}
 		onShellHere={shellHere}
+		onDelete={requestDelete}
 	/>
 {/snippet}
 
@@ -125,3 +164,56 @@
 {/if}
 
 <NewSessionModal bind:open={modalOpen} {preset} />
+
+{#if delTarget}
+	<div class="modal modal-open" role="dialog">
+		<div class="modal-box max-w-sm">
+			<h3 class="mb-2 text-lg font-semibold">Remove "{delTarget.title}"</h3>
+			<p class="mb-3 text-sm opacity-70">
+				Kills the session. This session lives in a git worktree on branch
+				<span class="font-mono">{delTarget.worktree?.branch}</span>.
+			</p>
+			<div class="space-y-2">
+				<label class="label cursor-pointer justify-start gap-2">
+					<input type="checkbox" class="checkbox checkbox-sm" bind:checked={delWorktree} />
+					<span>Delete the worktree</span>
+				</label>
+				<label class="label cursor-pointer justify-start gap-2">
+					<input
+						type="checkbox"
+						class="checkbox checkbox-sm"
+						bind:checked={delBranch}
+						disabled={!delWorktree || !delTarget.worktree?.createdBranch}
+					/>
+					<span>
+						Delete the branch
+						{#if !delTarget.worktree?.createdBranch}
+							<span class="opacity-50">(existing branch, kept)</span>
+						{/if}
+					</span>
+				</label>
+			</div>
+			<div class="modal-action">
+				<button class="btn" onclick={() => (delTarget = null)} disabled={!!deletingId}>Cancel</button>
+				<button
+					class="btn btn-error"
+					disabled={!!deletingId}
+					onclick={() =>
+						delTarget &&
+						doDelete(delTarget, { deleteWorktree: delWorktree, deleteBranch: delBranch })}
+				>
+					{#if deletingId}
+						<span class="loading loading-spinner loading-xs"></span> Removing...
+					{:else}
+						Remove
+					{/if}
+				</button>
+			</div>
+		</div>
+		<button
+			class="modal-backdrop"
+			onclick={() => !deletingId && (delTarget = null)}
+			aria-label="close"
+		></button>
+	</div>
+{/if}

@@ -156,7 +156,7 @@
 		</div>
 	</header>
 
-	<main class="mx-auto w-full max-w-5xl min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+	<main class="w-full min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
 		{@render children()}
 	</main>
 </div>
