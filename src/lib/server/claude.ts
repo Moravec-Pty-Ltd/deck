@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { transcriptsDir } from './config';
+import { appendLine } from './transcript-writer';
 import { getStoredSession, updateSession } from './store';
 import { ensureMcp, mcpUrl } from './mcp';
 import { rejectAsk } from './ask';
@@ -101,8 +102,14 @@ export function readTranscriptRange(id: string, before: number, limit: number): 
 }
 
 export function appendEvent(id: string, event: Record<string, unknown>) {
-	fs.appendFileSync(transcriptPath(id), JSON.stringify(event) + '\n');
-	bus.emit(`event:${id}`, event);
+	// Persist off the event loop (no more blocking appendFileSync), then emit only
+	// once the write settles. Emitting after the write keeps the live bus
+	// consistent with the on-disk snapshot a (re)connecting client reads first:
+	// anything a subscriber has seen is already durable, so a fresh snapshot can't
+	// miss it. A write that fails still emits, so live clients aren't starved.
+	appendLine(transcriptPath(id), JSON.stringify(event) + '\n')
+		.catch((err) => console.error(`[deck] transcript append failed for ${id}:`, err))
+		.finally(() => bus.emit(`event:${id}`, event));
 }
 
 export function setStatus(id: string, status: 'running' | 'idle' | 'error') {
