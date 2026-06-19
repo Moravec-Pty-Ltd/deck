@@ -84,15 +84,20 @@ function applySgr(state: State, codes: number[]) {
 	}
 }
 
+// One pass handles everything: alternative 1 (group 1 = params) is an SGR colour
+// code we interpret; the other alternatives are stray escapes — OSC strings
+// (hyperlinks/titles) and other CSI/escape codes (cursor moves) — which we drop
+// so they don't leak into the rendered text. Because every escape is consumed by
+// the regex, the text between matches is already clean; no per-segment scrubbing.
 // eslint-disable-next-line no-control-regex
-const SGR = /\x1b\[([0-9;]*)m/g;
+const ANSI = /\x1b\[([0-9;]*)m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[[\]()][0-9;?]*[A-Za-z]?/g;
 
 export function parseAnsi(input: string): AnsiSegment[] {
 	const segments: AnsiSegment[] = [];
 	const state = fresh();
 	let last = 0;
 	let m: RegExpExecArray | null;
-	SGR.lastIndex = 0;
+	ANSI.lastIndex = 0;
 
 	const push = (text: string) => {
 		if (!text) return;
@@ -108,21 +113,14 @@ export function parseAnsi(input: string): AnsiSegment[] {
 		});
 	};
 
-	while ((m = SGR.exec(input)) !== null) {
+	while ((m = ANSI.exec(input)) !== null) {
 		push(input.slice(last, m.index));
-		const codes = m[1] === '' ? [0] : m[1].split(';').map((n) => parseInt(n, 10) || 0);
-		applySgr(state, codes);
+		if (m[1] !== undefined) {
+			const codes = m[1] === '' ? [0] : m[1].split(';').map((n) => parseInt(n, 10) || 0);
+			applySgr(state, codes);
+		}
 		last = m.index + m[0].length;
 	}
 	push(input.slice(last));
-	// Drop other stray escape sequences (cursor moves, OSC hyperlinks/titles) so
-	// they don't leak into the rendered text.
-	for (const s of segments) {
-		s.text = s.text
-			// eslint-disable-next-line no-control-regex
-			.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-			// eslint-disable-next-line no-control-regex
-			.replace(/\x1b[\[\]()][0-9;?]*[A-Za-z]?/g, '');
-	}
 	return segments;
 }

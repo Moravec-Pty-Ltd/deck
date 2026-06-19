@@ -13,11 +13,13 @@
 	let input = $state('');
 	let autoRefresh = $state(true);
 	let scroller: HTMLDivElement | undefined = $state();
+	let lastHash = ''; // last snapshot tag; lets the server skip resending unchanged output
 
 	async function refresh() {
 		let res: Response;
+		const q = lastHash ? `?h=${encodeURIComponent(lastHash)}` : '';
 		try {
-			res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/snapshot`);
+			res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/snapshot${q}`);
 		} catch {
 			connected = false; // server momentarily unreachable (e.g. dev-server restart)
 			return;
@@ -25,12 +27,14 @@
 		connected = true;
 		if (!res.ok) return;
 		const data = await res.json();
+		loaded = true;
+		if (data.unchanged) return; // pane output identical since last poll; nothing to re-render
+		lastHash = String(data.h ?? '').slice(0, 64);
 		const atBottom =
 			!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
 		text = data.text;
 		dead = data.dead;
 		cleared = !!data.cleared;
-		loaded = true;
 		if (atBottom) queueMicrotask(() => scroller?.scrollTo({ top: scroller.scrollHeight }));
 	}
 
@@ -48,6 +52,7 @@
 			body: JSON.stringify({ text: input, submit })
 		});
 		input = '';
+		lastHash = ''; // force a full snapshot so the command's output shows immediately
 		setTimeout(refresh, 300);
 	}
 
@@ -57,6 +62,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ key })
 		});
+		lastHash = ''; // force a full snapshot so the keystroke's effect shows immediately
 		setTimeout(refresh, 300);
 	}
 

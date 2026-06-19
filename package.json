@@ -10,6 +10,7 @@
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo '' ; husky || true",
 		"audit": "fallow audit",
+		"test": "vitest run",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
@@ -27,7 +28,8 @@
 		"svelte-check": "^4.4.6",
 		"tailwindcss": "^4.2.2",
 		"typescript": "^6.0.2",
-		"vite": "^8.0.7"
+		"vite": "^8.0.7",
+		"vitest": "^4.1.9"
 	},
 	"dependencies": {
 		"@lucide/svelte": "^1.17.0",
