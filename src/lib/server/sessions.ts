@@ -6,6 +6,7 @@ import { listTmuxSessions, createTmuxSession, killTmuxSession, hasTmuxSession } 
 import { agentTurnRunning, agentStop } from './agents/dispatch';
 import { removeWorktree } from './git';
 import { pickShipName } from './names';
+import { DEMO, demoSessions, demoSession } from './demo';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
@@ -21,6 +22,7 @@ function tmuxNameFor(id: string) {
 // Flat, recency-sorted view across claude sessions and every live tmux session
 // (managed or not), so adhoc terminals show up without registration.
 export async function listSessions(): Promise<DeckSession[]> {
+	if (DEMO) return demoSessions().sort((a, b) => b.lastActiveAt - a.lastActiveAt);
 	const stored = listStoredSessions();
 	const tmuxSessions = await listTmuxSessions();
 	const result: DeckSession[] = [];
@@ -62,6 +64,7 @@ export async function listSessions(): Promise<DeckSession[]> {
 }
 
 export async function getSession(id: string): Promise<DeckSession | undefined> {
+	if (DEMO) return demoSession(id);
 	if (id.startsWith('t_')) {
 		return (await listSessions()).find((s) => s.id === id);
 	}

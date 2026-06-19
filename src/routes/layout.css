@@ -11,12 +11,94 @@
 	}
 }
 
+/* daisyUI is scaffolding here; the three themes below are fully custom so the
+   Moravec palette (orange primary, teal secondary, teal-tinted neutrals) and a
+   flat, border-led, small-radius shape language own the look. No built-ins. */
 @plugin 'daisyui' {
-	themes:
-		light --default,
-		dark --prefersdark;
+	themes: false;
 }
 
+/* ── dark: home. designed first, off-black tinted toward the brand teal hue ── */
+@plugin 'daisyui/theme' {
+	name: 'dark';
+	default: true;
+	prefersdark: true;
+	color-scheme: dark;
+
+	--color-base-100: oklch(21% 0.014 220); /* surfaces: header, cards, inputs */
+	--color-base-200: oklch(17% 0.013 220); /* page field (sits behind surfaces) */
+	--color-base-300: oklch(28% 0.017 220); /* hairlines, hover fills */
+	--color-base-content: oklch(92% 0.012 220); /* primary text */
+
+	--color-primary: oklch(67% 0.2 40); /* Moravec orange, the one accent */
+	--color-primary-content: oklch(20% 0.04 45); /* near-black on orange for AA */
+	--color-secondary: oklch(47% 0.075 212); /* Moravec teal, lifted for dark */
+	--color-secondary-content: oklch(97% 0.01 210);
+	--color-accent: oklch(72% 0.1 205); /* bright teal for links/hover */
+	--color-accent-content: oklch(20% 0.03 215);
+	--color-neutral: oklch(30% 0.015 220);
+	--color-neutral-content: oklch(92% 0.012 220);
+
+	--color-info: oklch(68% 0.1 220);
+	--color-info-content: oklch(18% 0.03 220);
+	--color-success: oklch(61% 0.075 155); /* calm: idle is the resting state */
+	--color-success-content: oklch(16% 0.02 155);
+	--color-warning: oklch(80% 0.12 85);
+	--color-warning-content: oklch(25% 0.04 85);
+	--color-error: oklch(63% 0.19 27);
+	--color-error-content: oklch(98% 0.01 27);
+
+	--radius-selector: 0.25rem;
+	--radius-field: 0.3125rem;
+	--radius-box: 0.375rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+}
+
+/* ── light: derived from dark, near-white surfaces, same cool teal tint ── */
+@plugin 'daisyui/theme' {
+	name: 'light';
+	default: false;
+	prefersdark: false;
+	color-scheme: light;
+
+	--color-base-100: oklch(99% 0.004 220);
+	--color-base-200: oklch(97.3% 0.005 220);
+	--color-base-300: oklch(91% 0.008 220);
+	--color-base-content: oklch(26% 0.02 222);
+
+	--color-primary: oklch(62% 0.21 40); /* slightly deeper orange on white */
+	--color-primary-content: oklch(22% 0.04 45);
+	--color-secondary: oklch(43% 0.055 215); /* true Moravec teal */
+	--color-secondary-content: oklch(99% 0.005 215);
+	--color-accent: oklch(46% 0.06 210);
+	--color-accent-content: oklch(99% 0.005 210);
+	--color-neutral: oklch(28% 0.015 222);
+	--color-neutral-content: oklch(97% 0.005 220);
+
+	--color-info: oklch(52% 0.1 220);
+	--color-info-content: oklch(99% 0.01 220);
+	--color-success: oklch(55% 0.11 152);
+	--color-success-content: oklch(99% 0.01 152);
+	--color-warning: oklch(75% 0.13 80);
+	--color-warning-content: oklch(25% 0.04 80);
+	--color-error: oklch(55% 0.2 27);
+	--color-error-content: oklch(99% 0.01 27);
+
+	--radius-selector: 0.25rem;
+	--radius-field: 0.3125rem;
+	--radius-box: 0.375rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+}
+
+/* ── eink: monochrome reading mode. square, zero depth, heavier border ── */
 @plugin 'daisyui/theme' {
 	name: 'eink';
 	default: false;
@@ -52,6 +134,119 @@
 	--border: 1.5px;
 	--depth: 0;
 	--noise: 0;
+}
+
+/* ── global base ──────────────────────────────────────────────────────────
+   System sans on purpose (zero font payload). Identity lives in scale,
+   spacing, and the Moravec palette, not in a typeface. The bundled Nerd Font
+   is reserved for shell rendering only (see .terminal-* below). */
+:root {
+	--font-sans:
+		ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+		'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+}
+
+html {
+	font-family: var(--font-sans);
+	background-color: var(--color-base-200);
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	letter-spacing: -0.011em;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
+}
+
+/* Tighten brand/heading text a touch more, matching the Moravec website. */
+h1,
+h2,
+h3,
+.tracking-tight {
+	letter-spacing: -0.02em;
+}
+
+/* Orange is the focus signal too: one consistent, visible ring everywhere. */
+:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+	border-radius: var(--radius-field);
+}
+
+::selection {
+	background-color: color-mix(in oklch, var(--color-primary) 28%, transparent);
+}
+
+/* Quiet, themed scrollbars that read as part of the surface, not chrome. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-base-300) transparent;
+}
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+::-webkit-scrollbar-thumb {
+	background-color: var(--color-base-300);
+	border: 2px solid transparent;
+	border-radius: 99px;
+	background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+	background-color: color-mix(in oklch, var(--color-base-300) 65%, var(--color-base-content));
+	background-clip: padding-box;
+}
+
+/* Honour reduced motion in addition to e-ink's blanket motion kill below. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+/* ── deck mark: two offset cards (a "deck"), the lead card in brand orange.
+   The single deliberate spark of colour in the chrome. */
+.deck-mark {
+	position: relative;
+	display: inline-block;
+	width: 0.85rem;
+	height: 0.85rem;
+	flex: none;
+}
+.deck-mark::before,
+.deck-mark::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: 3px;
+}
+.deck-mark::before {
+	/* trailing card: a faint second card so the mark reads as a "deck" */
+	transform: translate(3px, 3px);
+	border: 1px solid color-mix(in oklch, var(--color-base-content) 32%, transparent);
+}
+.deck-mark::after {
+	/* lead card */
+	background-color: var(--color-primary);
+	transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.deck-brand:hover .deck-mark::after {
+	transform: translate(-1px, -1px);
+}
+
+/* e-ink: square the mark and drop colour to monochrome. */
+[data-theme='eink'] .deck-mark::before,
+[data-theme='eink'] .deck-mark::after {
+	border-radius: 0;
+}
+[data-theme='eink'] .deck-mark::after {
+	background-color: var(--color-base-content);
 }
 
 /* e-ink: kill all motion and shadows */

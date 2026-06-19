@@ -88,6 +88,7 @@ Dev server: `pnpm dev`.
 | `DECK_DATA` | `~/.deck` | Data directory (state, transcripts, keys) |
 | `DECK_TOKEN` | random | Override the generated access token |
 | `DECK_NO_AUTH` | unset | Set to `1` to skip the token gate entirely |
+| `DECK_DEMO` | unset | Set to `1` to serve a fixed, sanitized demo dataset instead of `~/.deck` (used for the README screenshots). Skips auth and the host tmux scan, so it never shows real sessions or paths. |
 | `DECK_PUSH_SUBJECT` | `mailto:deck@localhost` | VAPID contact for web push |
 
 ## Remote access (Tailscale)

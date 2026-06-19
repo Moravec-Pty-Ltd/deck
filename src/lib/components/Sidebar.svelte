@@ -17,12 +17,13 @@
 
 	const projectPaths = $derived(new Set(projects.map((p) => p.path)));
 
-	// Status dot colour, mirroring the badge palette on the home page.
+	// Status dot, mirroring the home list: orange = running, red = error, neutral
+	// for idle, a hollow ring for dead (so it survives e-ink without colour).
 	function dotClass(s: DeckSession) {
-		if (s.status === 'running') return 'bg-warning';
+		if (s.status === 'running') return 'bg-primary';
 		if (s.status === 'error') return 'bg-error';
-		if (s.status === 'dead') return 'bg-base-content/30';
-		return 'bg-success';
+		if (s.status === 'dead') return 'border border-base-content/40';
+		return 'bg-base-content/35';
 	}
 
 	// Group every session under its derived project (worktrees fold back to their
@@ -57,13 +58,13 @@
 						aria-label={`New session in ${g.label}`}
 						title="New session here"
 					>
-						<Plus size={14} />
+						<Plus size={14} class="text-primary" />
 					</button>
 				{/if}
 			</div>
 			<ul class="mt-0.5 space-y-0.5">
 				{#each g.sessions as s (s.id)}
-					<li class="flex items-center gap-1">
+					<li class="flex items-center gap-1 px-1">
 						<a
 							href={`/s/${encodeURIComponent(s.id)}`}
 							class="flex min-w-0 flex-1 items-center gap-1.5 rounded-btn px-2 py-1 hover:bg-base-200 {s.id ===

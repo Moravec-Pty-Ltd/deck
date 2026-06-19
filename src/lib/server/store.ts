@@ -1,6 +1,7 @@
 import type { DeckSession, IssueSource, Project } from '$lib/types';
 import { readJson, writeJson } from './config';
 import { invalidateIssues } from './issues/cache';
+import { DEMO, demoProjects } from './demo';
 
 const SESSIONS_FILE = 'sessions.json';
 const PROJECTS_FILE = 'projects.json';
@@ -37,6 +38,7 @@ export function removeSession(id: string) {
 }
 
 export function listProjects(): Project[] {
+	if (DEMO) return demoProjects();
 	return readJson<Project[]>(PROJECTS_FILE, []);
 }
 

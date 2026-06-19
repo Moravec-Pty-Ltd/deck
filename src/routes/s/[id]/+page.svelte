@@ -170,7 +170,9 @@
 			onclick={() => (sidebarOpen = false)}
 			aria-label="Close sessions"
 		></button>
-		<div class="absolute inset-y-0 left-0 w-72 max-w-[80%] overflow-y-auto bg-base-100 p-3 shadow-xl">
+		<div
+			class="absolute inset-y-0 left-0 w-72 max-w-[80%] overflow-y-auto border-r border-base-300 bg-base-100 p-3"
+		>
 			<div class="mb-2 flex justify-end">
 				<button class="btn btn-ghost btn-sm" onclick={() => (sidebarOpen = false)} aria-label="Close">
 					<X size={16} />

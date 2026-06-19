@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { DEMO } from './demo';
 
 const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
 export const transcriptsDir = path.join(dataDir, 'transcripts');
@@ -24,8 +25,9 @@ function loadToken(): string {
 export const authToken = loadToken();
 
 // When fronted by Tailscale, the tailnet is the access boundary; the token gate
-// is redundant. Set DECK_NO_AUTH=1 to skip it.
-export const noAuth = process.env.DECK_NO_AUTH === '1' || process.env.DECK_NO_AUTH === 'true';
+// is redundant. Set DECK_NO_AUTH=1 to skip it. Demo mode also bypasses auth.
+export const noAuth =
+	DEMO || process.env.DECK_NO_AUTH === '1' || process.env.DECK_NO_AUTH === 'true';
 
 let printed = false;
 export function printAccessUrl(origin: string) {

@@ -95,11 +95,21 @@
 		}
 	}
 
-	function statusClass(s: DeckSession) {
-		if (s.status === 'running') return 'badge-warning';
-		if (s.status === 'error') return 'badge-error';
-		if (s.status === 'dead') return 'badge-ghost';
-		return 'badge-success';
+	// Status as a quiet dot + label. Saturated colour is reserved for the states
+	// that want attention (running = brand orange, error = red); idle and dead stay
+	// neutral so a list at rest reads calm. Solid vs hollow keeps idle and dead
+	// apart under e-ink, where colour collapses to monochrome.
+	function statusDot(s: DeckSession) {
+		if (s.status === 'running') return 'bg-primary';
+		if (s.status === 'error') return 'bg-error';
+		if (s.status === 'dead') return 'border border-base-content/40';
+		return 'bg-base-content/35';
+	}
+	function statusText(s: DeckSession) {
+		if (s.status === 'running') return 'font-medium text-primary';
+		if (s.status === 'error') return 'font-medium text-error';
+		if (s.status === 'dead') return 'text-base-content/40';
+		return 'text-base-content/55';
 	}
 </script>
 
@@ -160,7 +170,10 @@
 		{#if s.managed === false}
 			<span class="badge badge-ghost badge-sm">adhoc</span>
 		{/if}
-		<span class="badge badge-sm {statusClass(s)}">{s.status}</span>
+		<span class="flex shrink-0 items-center gap-1.5">
+			<span class="size-2 shrink-0 rounded-full {statusDot(s)}"></span>
+			<span class="text-xs {statusText(s)}">{s.status}</span>
+		</span>
 		<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>
 		<button
 			class="btn btn-ghost btn-xs"
@@ -198,7 +211,7 @@
 						aria-label={`New session in ${g.label}`}
 						title="New session here"
 					>
-						<Plus size={15} />
+						<Plus size={15} class="text-primary" />
 					</button>
 				</div>
 				<ul class="space-y-2">

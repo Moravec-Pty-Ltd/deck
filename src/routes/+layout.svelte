@@ -1,11 +1,11 @@
 <script lang="ts">
 	import './layout.css';
-	import { LayoutGrid, Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff } from '@lucide/svelte';
+	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff } from '@lucide/svelte';
 	import { urlBase64ToUint8Array } from '$lib/push';
 
 	let { children } = $props();
 
-	let theme = $state('light');
+	let theme = $state('dark');
 	let installPrompt = $state<{ prompt: () => void; userChoice: Promise<unknown> } | null>(null);
 
 	let pushSupported = $state(false);
@@ -62,7 +62,7 @@
 	}
 
 	$effect(() => {
-		theme = document.documentElement.dataset.theme || 'light';
+		theme = document.documentElement.dataset.theme || 'dark';
 	});
 
 	// Capture Chrome's install prompt so we can offer an in-app Install button
@@ -88,17 +88,24 @@
 		installPrompt = null;
 	}
 
+	// Browser UI bar colour per theme, matching each theme's header (base-100).
+	const themeColor: Record<string, string> = {
+		light: '#fbfcfd',
+		dark: '#1a1f24',
+		eink: '#ffffff'
+	};
+
 	function setTheme(next: string) {
 		theme = next;
 		document.documentElement.dataset.theme = next;
 		localStorage.setItem('deck-theme', next);
 		const m = document.querySelector('meta[name="theme-color"]');
-		if (m) m.setAttribute('content', next === 'dark' ? '#1d232a' : '#ffffff');
+		if (m) m.setAttribute('content', themeColor[next] ?? themeColor.dark);
 	}
 
 	const themes = [
-		{ id: 'light', label: 'Light', icon: Sun },
 		{ id: 'dark', label: 'Dark', icon: Moon },
+		{ id: 'light', label: 'Light', icon: Sun },
 		{ id: 'eink', label: 'E-ink', icon: BookOpen }
 	];
 </script>
@@ -108,51 +115,55 @@
 </svelte:head>
 
 <div class="flex h-[100dvh] flex-col overflow-hidden bg-base-200">
-	<header class="navbar min-h-12 shrink-0 border-b border-base-300 bg-base-100 px-3 sm:px-4">
-		<div class="flex-1">
-			<a href="/" class="flex items-center gap-2 text-lg font-semibold">
-				<LayoutGrid size={20} />
-				deck
+	<header class="navbar min-h-12 shrink-0 gap-2 border-b border-base-300 bg-base-100 px-3 sm:px-4">
+		<div class="flex flex-1 items-center">
+			<a href="/" class="deck-brand flex items-center gap-2.5" aria-label="deck home">
+				<span class="deck-mark" aria-hidden="true"></span>
+				<span class="text-base font-semibold tracking-tight">deck</span>
 			</a>
 		</div>
-		{#if installPrompt}
-			<button class="btn btn-primary btn-sm mr-2" onclick={install} aria-label="Install app">
-				<Download size={16} /> <span class="hidden sm:inline">Install</span>
-			</button>
-		{/if}
-		{#if pushSupported}
-			<button
-				class="btn btn-ghost btn-sm mr-2"
-				onclick={togglePush}
-				disabled={pushBusy || pushPermission === 'denied'}
-				title={pushPermission === 'denied'
-					? 'Notifications blocked in browser settings'
-					: subscribed
-						? 'Notifications on'
-						: 'Enable notifications'}
-				aria-label="Toggle notifications"
-			>
-				{#if pushPermission === 'denied'}
-					<BellOff size={16} />
-				{:else if subscribed}
-					<BellRing size={16} />
-				{:else}
-					<Bell size={16} />
-				{/if}
-			</button>
-		{/if}
-		<div class="join">
-			{#each themes as t (t.id)}
-				<button
-					class="btn join-item btn-sm {theme === t.id ? 'btn-active' : 'btn-ghost'}"
-					onclick={() => setTheme(t.id)}
-					title={t.label}
-					aria-label={t.label}
-				>
-					<t.icon size={16} />
-					<span class="hidden sm:inline">{t.label}</span>
+
+		<div class="flex items-center gap-1.5">
+			{#if installPrompt}
+				<button class="btn btn-primary btn-sm" onclick={install} aria-label="Install app">
+					<Download size={16} /> <span class="hidden sm:inline">Install</span>
 				</button>
-			{/each}
+			{/if}
+			{#if pushSupported}
+				<button
+					class="btn btn-square btn-ghost btn-sm"
+					onclick={togglePush}
+					disabled={pushBusy || pushPermission === 'denied'}
+					title={pushPermission === 'denied'
+						? 'Notifications blocked in browser settings'
+						: subscribed
+							? 'Notifications on'
+							: 'Enable notifications'}
+					aria-label="Toggle notifications"
+				>
+					{#if pushPermission === 'denied'}
+						<BellOff size={16} />
+					{:else if subscribed}
+						<BellRing size={16} />
+					{:else}
+						<Bell size={16} />
+					{/if}
+				</button>
+			{/if}
+			<div class="join" role="group" aria-label="Theme">
+				{#each themes as t (t.id)}
+					<button
+						class="btn join-item btn-sm {theme === t.id ? 'btn-active' : 'btn-ghost'}"
+						onclick={() => setTheme(t.id)}
+						title={t.label}
+						aria-label={t.label}
+						aria-pressed={theme === t.id}
+					>
+						<t.icon size={16} />
+						<span class="hidden sm:inline">{t.label}</span>
+					</button>
+				{/each}
+			</div>
 		</div>
 	</header>
 

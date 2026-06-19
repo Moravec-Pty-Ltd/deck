@@ -98,7 +98,7 @@
 	/>
 	{#if open && suggestions.length}
 		<ul
-			class="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-box border border-base-300 bg-base-100 py-1 shadow-lg"
+			class="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-box border border-base-300 bg-base-100 py-1"
 		>
 			{#each suggestions as s, i (s)}
 				<li>

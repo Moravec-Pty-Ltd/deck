@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getSession } from '$lib/server/sessions';
 import { stableSnapshot } from '$lib/server/tmux';
+import { DEMO, demoTerminalText } from '$lib/server/demo';
 
 // FNV-1a, cheap enough to run per poll. Lets the client skip transferring and
 // re-parsing a snapshot it already holds (see the `h`/`unchanged` round-trip).
@@ -17,6 +18,7 @@ function tag(text: string, cleared: boolean): string {
 export const GET: RequestHandler = async ({ params, url }) => {
 	const session = await getSession(params.id);
 	if (!session) error(404, 'session not found');
+	if (DEMO) return json({ text: demoTerminalText(params.id), cleared: false, dead: false });
 	if (session.kind !== 'shell' || !session.tmuxName) error(400, 'not a shell session');
 	if (session.status === 'dead') return json({ text: '(session is dead)', dead: true });
 

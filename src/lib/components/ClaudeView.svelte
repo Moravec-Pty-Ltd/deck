@@ -376,7 +376,7 @@
 >
 	{#if !connected}
 		<div
-			class="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-content shadow"
+			class="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-content"
 		>
 			reconnecting…
 		</div>
@@ -400,7 +400,7 @@
 		{#each visible as event, i (baseIndex + start + i)}
 			{#if event.type === 'deck.user'}
 				<div class="chat chat-end">
-					<div class="chat-bubble chat-bubble-primary max-w-[85%] break-words whitespace-pre-wrap">
+					<div class="chat-bubble max-w-[85%] break-words whitespace-pre-wrap bg-base-300 text-base-content">
 						{#if event.images?.length}
 							<div class="mb-2 flex flex-wrap gap-2">
 								{#each event.images as img, k (k)}
@@ -467,7 +467,7 @@
 
 	{#if !atBottom}
 		<button
-			class="btn btn-circle btn-sm absolute bottom-28 left-1/2 -translate-x-1/2 shadow"
+			class="btn btn-circle btn-sm absolute bottom-28 left-1/2 -translate-x-1/2 border border-base-300"
 			onclick={forceScroll}
 			aria-label="Jump to latest"
 		>
