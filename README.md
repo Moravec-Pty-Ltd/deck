@@ -4,6 +4,24 @@ A single browser app for driving Claude Code sessions and tmux terminals on one 
 
 It runs headless Claude Code under your normal subscription auth, so there's no API key to manage, and it installs as a PWA on a phone so you can drive sessions from anywhere on your tailnet.
 
+## Screenshots
+
+A structured chat view for Claude sessions, with inline diffs and collapsible tool output:
+
+![Claude chat view](docs/screenshots/claude-chat.png)
+
+One flat, recency-sorted list of every session across claude, pi, codex, and shells:
+
+![Session list](docs/screenshots/sessions-list.png)
+
+A polled terminal view for tmux shells:
+
+![Terminal view](docs/screenshots/terminal.png)
+
+Light, dark, and e-ink themes (e-ink drops all motion and shadows for a flat, monochrome render):
+
+![Light, dark, and e-ink themes](docs/screenshots/themes.png)
+
 ## Requirements
 
 - Node 20 or newer
