@@ -45,11 +45,19 @@ export function indexForward(maps: IndexMaps, ev: AnyEvent) {
 	if (ans) maps.answered.set(ans.id, ans.answers);
 }
 
-// Fold an older event (history pulled in after the fact) without overwriting:
-// an id already present came from a newer event and must win. This keeps the
-// maps equal to a front-to-back rebuild regardless of the order rows load in.
-export function indexOlder(maps: IndexMaps, ev: AnyEvent) {
+// Fold one older event without overwriting an id already present (it came from
+// a newer event, which must win).
+function indexOlder(maps: IndexMaps, ev: AnyEvent) {
 	for (const [id, block] of toolResultsIn(ev)) if (!maps.results.has(id)) maps.results.set(id, block);
 	const ans = answerIn(ev);
 	if (ans && !maps.answered.has(ans.id)) maps.answered.set(ans.id, ans.answers);
+}
+
+// Fold a contiguous batch of older events (history pulled in after the fact)
+// into the maps. Iterating newest-first means that within the batch the newest
+// event wins on a duplicate id, while keep-existing protects even-newer entries
+// already in the maps. The result equals a front-to-back rebuild of the whole
+// transcript, regardless of the order rows actually loaded in.
+export function indexOlderBatch(maps: IndexMaps, events: AnyEvent[]) {
+	for (let i = events.length - 1; i >= 0; i--) indexOlder(maps, events[i]);
 }

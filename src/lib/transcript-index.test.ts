@@ -3,7 +3,7 @@ import {
 	toolResultsIn,
 	answerIn,
 	indexForward,
-	indexOlder,
+	indexOlderBatch,
 	type Answer,
 	type IndexMaps
 } from './transcript-index';
@@ -105,10 +105,10 @@ describe('incremental folding matches a full rebuild', () => {
 	});
 });
 
-describe('indexOlder preserves newest-wins regardless of load order', () => {
+describe('indexOlderBatch preserves newest-wins regardless of load order', () => {
 	// loadOlder prepends older history after newer events are already indexed.
-	// Folding it with indexOlder must never clobber a newer entry, so the maps
-	// equal a single front-to-back rebuild of the whole transcript.
+	// The batch must never clobber a newer entry, so the maps equal a single
+	// front-to-back rebuild of the whole transcript.
 	const older = [
 		userResult(result('dup', { content: 'OLD' })),
 		{ type: 'deck.answer', answersFor: 'ask', answers: [{ header: 'H', labels: ['old'] }] }
@@ -121,16 +121,31 @@ describe('indexOlder preserves newest-wins regardless of load order', () => {
 	it('older history fills gaps but does not overwrite newer ids', () => {
 		const maps = emptyMaps();
 		for (const ev of newer) indexForward(maps, ev); // newer arrives first (stream/snapshot)
-		for (const ev of older) indexOlder(maps, ev); // older pulled in afterwards
+		indexOlderBatch(maps, older); // older pulled in afterwards
 		expect(maps.results.get('dup')).toEqual(result('dup', { content: 'NEW' }));
 		expect(maps.results.get('only-new')).toEqual(result('only-new', { content: 'n' }));
 		expect(maps.answered.get('ask')).toEqual([{ header: 'H', labels: ['new'] }]);
 	});
 
+	it('keeps the newest entry when an id repeats within the older batch', () => {
+		// Two answers for the same id inside one fetched slice: the later (newer)
+		// one must win, matching a front-to-back rebuild of that slice.
+		const olderWithDup = [
+			{ type: 'deck.user', answersFor: 'ask-dup', answers: [{ header: 'H', labels: ['old'] }] },
+			{ type: 'deck.answer', answersFor: 'ask-dup', answers: [{ header: 'H', labels: ['newer'] }] }
+		];
+		const batch = emptyMaps();
+		indexOlderBatch(batch, olderWithDup);
+		const rebuilt = emptyMaps();
+		for (const ev of olderWithDup) indexForward(rebuilt, ev);
+		expect(batch.answered.get('ask-dup')).toEqual([{ header: 'H', labels: ['newer'] }]);
+		expect(batch.answered.get('ask-dup')).toEqual(rebuilt.answered.get('ask-dup'));
+	});
+
 	it('matches a front-to-back rebuild of older ++ newer', () => {
 		const incremental = emptyMaps();
 		for (const ev of newer) indexForward(incremental, ev);
-		for (const ev of older) indexOlder(incremental, ev);
+		indexOlderBatch(incremental, older);
 
 		const rebuilt = emptyMaps();
 		for (const ev of [...older, ...newer]) indexForward(rebuilt, ev);

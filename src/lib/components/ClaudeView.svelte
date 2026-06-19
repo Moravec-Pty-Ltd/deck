@@ -2,7 +2,7 @@
 	import { tick } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { DeckSession } from '$lib/types';
-	import { indexForward, indexOlder, type Answer } from '$lib/transcript-index';
+	import { indexForward, indexOlderBatch, type Answer } from '$lib/transcript-index';
 	import Linked from './Linked.svelte';
 	import ToolCall from './ToolCall.svelte';
 	import AskQuestion from './AskQuestion.svelte';
@@ -270,7 +270,7 @@
 			}
 			const gap = scroller ? scroller.scrollHeight - scroller.scrollTop : 0;
 			events.unshift(...slice.events);
-			for (const ev of slice.events) indexOlder(index, ev);
+			indexOlderBatch(index, slice.events);
 			baseIndex = slice.start;
 			limit += added; // keep the just-loaded rows inside the render window
 			await tick();
