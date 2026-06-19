@@ -80,25 +80,35 @@ describe('snapshotFrames tail', () => {
 });
 
 describe('incremental index across appends', () => {
-	it('reflects newly appended events without re-reading the whole file', () => {
+	it('reflects newly appended events on the next read', () => {
 		const id = 'growing';
 		seed(id, [ev(0), ev(1)]);
 		expect(snapshot(id)).toEqual({ start: 0, total: 2, events: [ev(0), ev(1)] });
-
-		// Once the index is warm, a later read should only scan the appended bytes.
-		const readSpy = vi.spyOn(fs, 'readSync');
 		append(id, [ev(2), ev(3)]);
-		const snap = snapshot(id);
-		expect(snap).toEqual({ start: 0, total: 4, events: [ev(0), ev(1), ev(2), ev(3)] });
+		expect(snapshot(id)).toEqual({ start: 0, total: 4, events: [ev(0), ev(1), ev(2), ev(3)] });
+	});
 
-		// The scan that extended the index plus the read of the returned slice must
-		// never touch more bytes than the (small) tail; a full re-read would dwarf it.
+	it('rescans only the appended bytes, not the whole file, when the index is warm', () => {
+		const id = 'growing-large';
+		// Many small events so the 250-event tail is a fraction of the file: a read
+		// bounded to the tail (plus a scan of just the appended bytes) is provably
+		// smaller than one full pass, which a naive rebuild-then-slice would cost.
+		seed(id, Array.from({ length: 2000 }, (_, i) => ev(i)));
+		snapshot(id); // warm the index
+		const fileSize = fs.statSync(transcriptPath(id)).size;
+
+		const readSpy = vi.spyOn(fs, 'readSync');
+		append(id, [ev(2000), ev(2001)]);
+		const snap = snapshot(id);
 		const bytesRead = readSpy.mock.results.reduce(
 			(n, r) => n + (typeof r.value === 'number' ? r.value : 0),
 			0
 		);
 		readSpy.mockRestore();
-		expect(bytesRead).toBeLessThan(fs.statSync(transcriptPath(id)).size * 2);
+
+		expect(snap.total).toBe(2002); // the appended events are indexed...
+		expect(snap.events.at(-1)).toEqual(ev(2001)); // ...and served in the tail
+		expect(bytesRead).toBeLessThan(fileSize); // never re-read the whole history
 	});
 
 	it('reuses the cached index when the file is unchanged', () => {
