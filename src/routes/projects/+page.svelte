@@ -2,6 +2,7 @@
 	import type { Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
 	import PathInput from '$lib/components/PathInput.svelte';
+	import IssueSources from '$lib/components/IssueSources.svelte';
 	import { ArrowLeft, Plus, Trash2, Check } from '@lucide/svelte';
 
 	let projects = $state<Project[]>([]);
@@ -103,13 +104,14 @@
 					bind:value={p.lastBase}
 				/>
 				<div class="mt-1 flex items-center gap-2">
-					<span class="text-xs opacity-50">placeholders: [title] [branch] [cwd]</span>
+					<span class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</span>
 					<div class="flex-1"></div>
 					{#if savedPath === p.path}
 						<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
 					{/if}
 					<button class="btn btn-sm btn-primary" onclick={() => save(p)}>Save</button>
 				</div>
+				<IssueSources project={p} onchanged={load} />
 			</div>
 		{/each}
 

@@ -6,6 +6,7 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import { shortPath } from '$lib/time';
+	import { ISSUE_BADGE } from '$lib/issues';
 	import { ArrowLeft, Bot, Terminal, Menu, X, Plus } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
@@ -125,6 +126,23 @@
 			{/if}
 			<div class="flex min-w-0 flex-1 items-baseline gap-2">
 				<span class="truncate font-medium">{session.title}</span>
+				{#if session.issue}
+					{#if session.issue.url}
+						<a
+							href={session.issue.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="badge badge-outline badge-sm link link-hover shrink-0 gap-1"
+							title="{ISSUE_BADGE[session.issue.source].label} {session.issue.id}"
+						>
+							{ISSUE_BADGE[session.issue.source].label} {session.issue.id}
+						</a>
+					{:else}
+						<span class="badge badge-outline badge-sm shrink-0 gap-1">
+							{ISSUE_BADGE[session.issue.source].label} {session.issue.id}
+						</span>
+					{/if}
+				{/if}
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
 			{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}

@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import fs from 'node:fs';
 import type { RequestHandler } from './$types';
-import { isAgentKind, type SessionKind } from '$lib/types';
+import { isAgentKind, type SessionIssue, type SessionKind, type IssueSourceType } from '$lib/types';
 import { listSessions, createSession } from '$lib/server/sessions';
 import { createWorktree, isGitRepo } from '$lib/server/git';
 import { agentSend } from '$lib/server/agents/dispatch';
@@ -9,26 +9,53 @@ import { listProjects, updateProject } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
 
 const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'shell'];
+const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
 
 type WorktreeReq = { branch?: string; newBranch?: boolean; base?: string };
 type Worktree = { repo: string; branch: string; createdBranch: boolean };
 
-// Substitute [title]/[branch-name]/[base-branch]/[cwd] in a first prompt.
-// [branch] is kept as a back-compat alias for [branch-name].
+// Substitute [title]/[branch-name]/[base-branch]/[cwd]/[issue_id]/[issue_url] in
+// a first prompt. [branch] is kept as a back-compat alias for [branch-name].
 function resolvePrompt(
 	template: string,
 	title: string,
 	wt: WorktreeReq | undefined,
-	cwd: string
+	cwd: string,
+	issue: SessionIssue | undefined
 ): string {
 	const { branch = '', base = '' } = wt ?? {};
+	const { id = '', url = '' } = issue ?? {};
 	return template
 		.replaceAll('[title]', title)
 		.replaceAll('[branch-name]', branch)
 		.replaceAll('[base-branch]', base)
 		.replaceAll('[branch]', branch)
 		.replaceAll('[cwd]', cwd)
+		.replaceAll('[issue_id]', id)
+		.replaceAll('[issue_url]', url)
 		.trim();
+}
+
+const asStr = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+
+// Only http(s) — the url is rendered as a clickable header link, so reject
+// javascript:/data: and other schemes even though the body is auth-gated.
+function safeHttpUrl(url: unknown): string {
+	if (typeof url !== 'string') return '';
+	try {
+		return /^https?:$/.test(new URL(url).protocol) ? url : '';
+	} catch {
+		return '';
+	}
+}
+
+// Issue metadata the picker attaches; stored on the session for the header link.
+function parseIssue(raw: unknown): SessionIssue | undefined {
+	const o = (raw ?? {}) as Record<string, unknown>;
+	const source = o.source as IssueSourceType;
+	const id = asStr(o.id);
+	if (!id || !ISSUE_SOURCES.includes(source)) return undefined;
+	return { source, id, url: safeHttpUrl(o.url) };
 }
 
 function resolveCwd(raw: unknown): string {
@@ -73,11 +100,12 @@ function maybeDispatch(
 	kind: SessionKind,
 	prompt: unknown,
 	wt: WorktreeReq | undefined,
-	cwd: string
+	cwd: string,
+	issue: SessionIssue | undefined
 ): void {
 	if (!isAgentKind(kind)) return;
 	if (typeof prompt !== 'string' || !prompt.trim()) return;
-	agentSend(session, resolvePrompt(prompt, session.title, wt, cwd));
+	agentSend(session, resolvePrompt(prompt, session.title, wt, cwd, issue));
 }
 
 export const GET: RequestHandler = async () => {
@@ -90,6 +118,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
 
 	const { cwd, worktree, wt, branch } = await resolveWorktree(resolveCwd(body.cwd), body);
+	const issue = parseIssue(body.issue);
 
 	const session = await createSession({
 		kind,
@@ -99,9 +128,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		provider,
 		permissionMode,
 		command,
-		worktree
+		worktree,
+		issue
 	});
 
-	maybeDispatch(session, kind, prompt, wt, cwd);
+	maybeDispatch(session, kind, prompt, wt, cwd, issue);
 	return json(session, { status: 201 });
 };

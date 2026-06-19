@@ -1,5 +1,5 @@
 import { customAlphabet } from 'nanoid';
-import type { DeckSession, SessionKind } from '$lib/types';
+import type { DeckSession, SessionIssue, SessionKind } from '$lib/types';
 import { isAgentKind } from '$lib/types';
 import { listStoredSessions, getStoredSession, saveSession, removeSession } from './store';
 import { listTmuxSessions, createTmuxSession, killTmuxSession, hasTmuxSession } from './tmux';
@@ -85,6 +85,7 @@ export async function createSession(input: {
 	permissionMode?: DeckSession['permissionMode'];
 	command?: string;
 	worktree?: { repo: string; branch: string; createdBranch: boolean };
+	issue?: SessionIssue;
 }): Promise<DeckSession> {
 	const id = newId(input.kind);
 	const now = Date.now();
@@ -105,7 +106,8 @@ export async function createSession(input: {
 		lastActiveAt: now,
 		status: 'idle',
 		managed: true,
-		worktree: input.worktree
+		worktree: input.worktree,
+		issue: input.issue
 	};
 
 	if (isAgentKind(input.kind)) {

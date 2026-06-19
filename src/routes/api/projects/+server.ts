@@ -15,11 +15,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
 		error(400, 'path is not a directory');
 	}
+	// Sources are managed through /api/projects/sources, never sent in this body,
+	// so carry the existing project's sources across a name/template/base edit.
+	const existing = listProjects().find((p) => p.path === dir);
 	const project = {
 		name: String(body.name ?? '').trim() || path.basename(dir),
 		path: dir,
 		template: String(body.template ?? '').trim() || undefined,
-		lastBase: typeof body.lastBase === 'string' ? body.lastBase.trim() || undefined : undefined
+		lastBase: typeof body.lastBase === 'string' ? body.lastBase.trim() || undefined : undefined,
+		sources: existing?.sources
 	};
 	addProject(project);
 	return json(project, { status: 201 });

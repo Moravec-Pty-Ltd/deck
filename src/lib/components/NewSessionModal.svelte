@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { isAgentKind } from '$lib/types';
-	import type { NewSessionPreset, Project, SessionKind } from '$lib/types';
-	import { Bot, Terminal, Sparkles, Braces } from '@lucide/svelte';
+	import type { Issue, NewSessionPreset, Project, SessionKind } from '$lib/types';
+	import { Bot, Terminal, Sparkles, Braces, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
+	import IssuePicker from './IssuePicker.svelte';
 
 	const KIND_OPTIONS = [
 		{ id: 'claude', label: 'Claude', icon: Bot },
@@ -43,6 +44,8 @@
 	let newProjectTemplate = $state('');
 	let busy = $state(false);
 	let errorMsg = $state('');
+	let showPicker = $state(false);
+	let pickedIssue = $state<Issue | null>(null);
 
 	let wasOpen = false;
 	$effect(() => {
@@ -55,6 +58,8 @@
 		branchDirty = false;
 		baseDirty = false;
 		errorMsg = '';
+		showPicker = false;
+		pickedIssue = null;
 		const p = preset;
 		worktreeModeDirty = !!(p?.kind || p?.cwd);
 		fetch('/api/projects')
@@ -76,6 +81,23 @@
 	const selectedProject = $derived(projects.find((p) => p.path === cwd));
 	const finalCwd = $derived(worktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
 	const titleRequired = $derived(isAgentKind(kind));
+	const projectHasSources = $derived(!!selectedProject?.sources?.length);
+
+	// Picking an issue drops its bare ref into the title (which the branch then
+	// follows) and remembers the issue so the session links back to it.
+	function pickIssue(issue: Issue) {
+		pickedIssue = issue;
+		title = issue.id;
+		branchDirty = false;
+		showPicker = false;
+	}
+
+	// Drop any picked issue when the project changes — an issue from one project
+	// must not ride along into a session created under another.
+	$effect(() => {
+		cwd;
+		pickedIssue = null;
+	});
 
 	// Worktree mode defaults to "new" for agents (branch off and work in isolation)
 	// and "none" for shells (run right in the project), until the user overrides.
@@ -178,7 +200,10 @@
 					worktree:
 						worktreeMode === 'new' && branch.trim()
 							? { branch: branch.trim(), newBranch, base: base || undefined }
-							: undefined
+							: undefined,
+					issue: pickedIssue
+						? { source: pickedIssue.sourceType, id: pickedIssue.id, url: pickedIssue.url }
+						: undefined
 				})
 			});
 			const data = await res.json();
@@ -190,6 +215,7 @@
 			prompt = '';
 			title = '';
 			branch = '';
+			pickedIssue = null;
 			goto(`/s/${encodeURIComponent(data.id)}`);
 		} finally {
 			busy = false;
@@ -240,7 +266,7 @@
 						placeholder="template first prompt for this project (optional)"
 						bind:value={newProjectTemplate}
 					></textarea>
-					<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd]</p>
+					<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</p>
 				{/if}
 			</fieldset>
 
@@ -248,11 +274,46 @@
 				<legend class="fieldset-legend">
 					Title {#if !titleRequired}<span class="opacity-50">(optional)</span>{/if}
 				</legend>
-				<input
-					class="input w-full {titleRequired && !title.trim() ? 'input-error' : ''}"
-					placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
-					bind:value={title}
-				/>
+				<div class="flex w-full gap-1">
+					<input
+						class="input flex-1 {titleRequired && !title.trim() ? 'input-error' : ''}"
+						placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
+						bind:value={title}
+					/>
+					{#if projectHasSources}
+						<button
+							class="btn {showPicker ? 'btn-active' : ''}"
+							onclick={() => (showPicker = !showPicker)}
+						>
+							<Ticket size={16} /> <span class="hidden sm:inline">From issue</span>
+						</button>
+					{/if}
+				</div>
+				{#if pickedIssue}
+					<div class="mt-1 flex items-center gap-2 text-xs">
+						<span class="opacity-60">issue:</span>
+						<span class="font-mono">{pickedIssue.id}</span>
+						<button class="btn btn-ghost btn-xs gap-1" onclick={() => (pickedIssue = null)}>
+							<X size={12} /> clear
+						</button>
+					</div>
+				{/if}
+				{#if pickedIssue?.blockers.length}
+					<div class="alert alert-warning mt-1 items-start py-1 text-xs">
+						<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+						<div class="min-w-0">
+							<div class="font-medium">
+								{pickedIssue.blockers.length} incomplete blocker(s) — you can still start.
+							</div>
+							{#each pickedIssue.blockers as b (b.id)}
+								<div class="truncate"><span class="font-mono">{b.id}</span> {b.title}</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+				{#if showPicker && selectedProject}
+					<div class="mt-1"><IssuePicker project={selectedProject} onpick={pickIssue} /></div>
+				{/if}
 			</fieldset>
 
 			<fieldset class="fieldset">
@@ -357,7 +418,7 @@
 					{#if selectedProject?.template && !promptDirty}
 						<p class="text-xs opacity-50">prefilled from {selectedProject.name} template</p>
 					{:else}
-						<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd]</p>
+						<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</p>
 					{/if}
 				</fieldset>
 			{/if}
