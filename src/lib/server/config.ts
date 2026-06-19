@@ -8,9 +8,12 @@ const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
 export const transcriptsDir = path.join(dataDir, 'transcripts');
 // Per-session resume files for per-turn agents (pi session files, etc).
 export const agentSessionsDir = path.join(dataDir, 'agent-sessions');
+// User image attachments, stored out-of-band so the transcript JSONL stays small.
+export const imagesDir = path.join(dataDir, 'images');
 
 fs.mkdirSync(transcriptsDir, { recursive: true });
 fs.mkdirSync(agentSessionsDir, { recursive: true });
+fs.mkdirSync(imagesDir, { recursive: true });
 
 const tokenFile = path.join(dataDir, 'token');
 

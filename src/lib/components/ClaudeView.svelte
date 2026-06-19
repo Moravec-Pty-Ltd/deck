@@ -405,7 +405,8 @@
 							<div class="mb-2 flex flex-wrap gap-2">
 								{#each event.images as img, k (k)}
 									<img
-										src={`data:${img.media_type};base64,${img.data}`}
+										src={img.file ? `/api/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(img.file)}` : `data:${img.media_type};base64,${img.data}`}
+										loading="lazy"
 										alt="attachment"
 										class="max-h-40 rounded-box border border-base-300"
 									/>

@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { transcriptsDir } from './config';
+import { persistImage } from './images';
 import { getStoredSession, updateSession } from './store';
 import { ensureMcp, mcpUrl } from './mcp';
 import { rejectAsk } from './ask';
@@ -58,7 +59,7 @@ function readTranscript(id: string): unknown[] {
 
 // Initial snapshot for the live view: only the most recent events, bounded by
 // both count and serialized size. Long coding sessions accumulate megabytes of
-// tool output and inline images; shipping the whole transcript in one SSE frame
+// tool output; shipping the whole transcript in one SSE frame
 // blocks first paint (and the live stream behind it) for seconds on mobile.
 // Older history loads lazily via the /transcript endpoint when scrolled to.
 const SNAPSHOT_MAX = 250;
@@ -318,10 +319,13 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 	const proc = ensureProcess(id);
 	if (proc.idleTimer) clearTimeout(proc.idleTimer);
 	const hasImages = !!images && images.length > 0;
+	// Persist attachments out-of-band; the transcript keeps only file references so
+	// the JSONL (and every full re-parse of it) stays small. The CLI still gets the
+	// base64 inline below since that's how stream-json carries image content.
 	appendEvent(id, {
 		type: 'deck.user',
 		text,
-		images: hasImages ? images : undefined,
+		images: hasImages ? images!.map((im) => persistImage(id, im.media_type, im.data)) : undefined,
 		answersFor: meta?.answersFor,
 		answers: meta?.answers,
 		ts: Date.now()
