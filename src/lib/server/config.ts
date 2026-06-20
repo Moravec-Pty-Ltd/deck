@@ -19,13 +19,32 @@ const tokenFile = path.join(dataDir, 'token');
 
 function loadToken(): string {
 	if (process.env.DECK_TOKEN) return process.env.DECK_TOKEN;
-	if (fs.existsSync(tokenFile)) return fs.readFileSync(tokenFile, 'utf8').trim();
+	if (fs.existsSync(tokenFile)) {
+		// An empty/whitespace file would yield an empty token, which the auth gate
+		// would then accept from any empty credential. Treat it as absent and mint a
+		// fresh one.
+		const existing = fs.readFileSync(tokenFile, 'utf8').trim();
+		if (existing) return existing;
+	}
 	const token = crypto.randomBytes(24).toString('hex');
 	fs.writeFileSync(tokenFile, token, { mode: 0o600 });
 	return token;
 }
 
 export const authToken = loadToken();
+
+// Pre-hash the secret once so request-time comparison hits a fixed-length digest.
+const authTokenHash = crypto.createHash('sha256').update(authToken).digest();
+
+// Constant-time token check. Hashing both sides to a fixed-length digest equalises
+// length (so we leak neither a prefix-match signal nor the token length) and keeps
+// timingSafeEqual happy, which throws on length-mismatched buffers. A non-string
+// candidate (missing query param / cookie) can never match.
+export function tokenMatches(candidate: string | null | undefined): boolean {
+	if (typeof candidate !== 'string') return false;
+	const candidateHash = crypto.createHash('sha256').update(candidate).digest();
+	return crypto.timingSafeEqual(candidateHash, authTokenHash);
+}
 
 // When fronted by Tailscale, the tailnet is the access boundary; the token gate
 // is redundant. Set DECK_NO_AUTH=1 to skip it. Demo mode also bypasses auth.

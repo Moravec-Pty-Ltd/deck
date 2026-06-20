@@ -1,6 +1,6 @@
 import type { Handle } from '@sveltejs/kit';
 import { redirect, json } from '@sveltejs/kit';
-import { authToken, noAuth, printAccessUrl } from '$lib/server/config';
+import { authToken, noAuth, printAccessUrl, tokenMatches } from '$lib/server/config';
 import { ensureMcp } from '$lib/server/mcp';
 import '$lib/server/monitor';
 
@@ -16,7 +16,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (noAuth) return resolve(event);
 
 	const urlToken = event.url.searchParams.get('token');
-	if (urlToken === authToken) {
+	if (tokenMatches(urlToken)) {
 		event.cookies.set(COOKIE, authToken, {
 			path: '/',
 			httpOnly: true,
@@ -29,7 +29,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		redirect(302, clean.pathname + clean.search);
 	}
 
-	const authed = event.cookies.get(COOKIE) === authToken;
+	const authed = tokenMatches(event.cookies.get(COOKIE));
 	if (!authed && event.url.pathname !== '/login') {
 		if (event.url.pathname.startsWith('/api/')) {
 			return json({ error: 'unauthorized' }, { status: 401 });
