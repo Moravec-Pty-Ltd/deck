@@ -18,6 +18,10 @@ async function cu<T>(apiKey: string, path: string): Promise<T> {
 	return JSON.parse(text) as T;
 }
 
+// Encode an id before it's interpolated into a request path, so a value
+// containing `/`, `?`, `#`, or `..` can't reshape the URL against the fixed host.
+const seg = (id: string): string => encodeURIComponent(id);
+
 export interface ClickupMe {
 	id: number;
 	username: string;
@@ -42,13 +46,13 @@ export function clickupTeams(apiKey: string): Promise<CuNamed[]> {
 }
 
 export function clickupSpaces(apiKey: string, teamId: string): Promise<CuNamed[]> {
-	return cu<{ spaces: CuNamed[] }>(apiKey, `/team/${teamId}/space?archived=false`).then(
+	return cu<{ spaces: CuNamed[] }>(apiKey, `/team/${seg(teamId)}/space?archived=false`).then(
 		(d) => d.spaces ?? []
 	);
 }
 
 export function clickupFolders(apiKey: string, spaceId: string): Promise<CuNamed[]> {
-	return cu<{ folders: CuNamed[] }>(apiKey, `/space/${spaceId}/folder?archived=false`).then(
+	return cu<{ folders: CuNamed[] }>(apiKey, `/space/${seg(spaceId)}/folder?archived=false`).then(
 		(d) => d.folders ?? []
 	);
 }
@@ -58,14 +62,17 @@ export function clickupLists(
 	apiKey: string,
 	scope: { folderId?: string; spaceId?: string }
 ): Promise<CuNamed[]> {
+	if (!scope.folderId && !scope.spaceId) {
+		throw new Error('clickupLists requires a folderId or spaceId');
+	}
 	const path = scope.folderId
-		? `/folder/${scope.folderId}/list?archived=false`
-		: `/space/${scope.spaceId}/list?archived=false`;
+		? `/folder/${seg(scope.folderId)}/list?archived=false`
+		: `/space/${seg(scope.spaceId!)}/list?archived=false`;
 	return cu<{ lists: CuNamed[] }>(apiKey, path).then((d) => d.lists ?? []);
 }
 
 export function clickupStatuses(apiKey: string, listId: string): Promise<CuStatus[]> {
-	return cu<{ statuses: CuStatus[] }>(apiKey, `/list/${listId}`).then((d) => d.statuses ?? []);
+	return cu<{ statuses: CuStatus[] }>(apiKey, `/list/${seg(listId)}`).then((d) => d.statuses ?? []);
 }
 
 interface CuTask {
@@ -84,7 +91,7 @@ export async function fetchClickupIssues(source: ClickupSource, apiKey: string):
 	params.append('assignees[]', String(source.assigneeUserId));
 	for (const s of source.statuses) params.append('statuses[]', s);
 
-	const data = await cu<{ tasks: CuTask[] }>(apiKey, `/list/${source.listId}/task?${params}`);
+	const data = await cu<{ tasks: CuTask[] }>(apiKey, `/list/${seg(source.listId)}/task?${params}`);
 	const tasks = data.tasks ?? [];
 	const blockers = await resolveBlockers(apiKey, tasks);
 
@@ -129,7 +136,7 @@ function collectWaitingOn(tasks: CuTask[]): { waitingOn: Map<string, string[]>; 
 // Resolve one blocker id to its title, or null when done/unreachable.
 async function lookupBlocker(apiKey: string, id: string): Promise<readonly [string, IssueBlocker | null]> {
 	try {
-		const task = await cu<CuTask>(apiKey, `/task/${id}`);
+		const task = await cu<CuTask>(apiKey, `/task/${seg(id)}`);
 		return [id, CU_DONE.has(task.status.type) ? null : { id: `#${id}`, title: task.name }];
 	} catch {
 		return [id, null];
