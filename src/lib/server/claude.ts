@@ -4,13 +4,17 @@ import { type ChildProcess } from 'node:child_process';
 import spawn from 'cross-spawn';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import path from 'node:path';
-import { transcriptsDir } from './config';
 import { persistImage } from './images';
 import { getStoredSession, updateSession } from './store';
 import { ensureMcp, mcpUrl } from './mcp';
 import { rejectAsk } from './ask';
 import { notify } from './push';
+import { transcriptPath } from './transcript';
+
+// Reading the stored transcript (snapshot tail + lazy back-scroll ranges) lives
+// in ./transcript, which serves bounded slices off a per-session line index
+// instead of re-parsing the whole file on each connect.
+export { snapshotFrames, readTranscriptRange } from './transcript';
 
 // Questions go through deck's blocking MCP `ask` tool instead of the built-in
 // AskUserQuestion, which the headless CLI can only auto-dismiss.
@@ -37,68 +41,8 @@ const g = globalThis as { __deckBus?: EventEmitter };
 export const bus = (g.__deckBus ??= new EventEmitter());
 bus.setMaxListeners(200);
 
-function transcriptPath(id: string) {
-	return path.join(transcriptsDir, `${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.jsonl`);
-}
-
 export function isTurnRunning(id: string) {
 	return procs.get(id)?.running ?? false;
-}
-
-function readTranscript(id: string): unknown[] {
-	try {
-		return fs
-			.readFileSync(transcriptPath(id), 'utf8')
-			.split('\n')
-			.filter(Boolean)
-			.map((line) => JSON.parse(line));
-	} catch {
-		return [];
-	}
-}
-
-// Initial snapshot for the live view: only the most recent events, bounded by
-// both count and serialized size. Long coding sessions accumulate megabytes of
-// tool output; shipping the whole transcript in one SSE frame
-// blocks first paint (and the live stream behind it) for seconds on mobile.
-// Older history loads lazily via the /transcript endpoint when scrolled to.
-const SNAPSHOT_MAX = 250;
-const SNAPSHOT_BYTES = 256 * 1024;
-function readTranscriptTail(id: string): { total: number; start: number; events: unknown[] } {
-	const all = readTranscript(id);
-	let bytes = 0;
-	let start = all.length;
-	// Walk back from the newest event, including each before testing the caps so
-	// at least the newest always makes it in even if it alone exceeds the budget.
-	while (start > 0) {
-		bytes += JSON.stringify(all[start - 1]).length;
-		start--;
-		if (all.length - start >= SNAPSHOT_MAX) break;
-		if (bytes > SNAPSHOT_BYTES) break;
-	}
-	return { total: all.length, start, events: all.slice(start) };
-}
-
-// The recent-history snapshot split into small frames the client reassembles by
-// `seq`. One big SSE frame doesn't reliably flush through the dev server when the
-// stream opens amid the page-load request burst; ~32KB frames deliver like the
-// old per-line replay did.
-export function snapshotFrames(id: string): { seq: number; n: number; data: string }[] {
-	const tail = readTranscriptTail(id);
-	const payload = JSON.stringify({ start: tail.start, total: tail.total, events: tail.events });
-	const CHUNK = 32 * 1024;
-	const n = Math.max(1, Math.ceil(payload.length / CHUNK));
-	const frames = [];
-	for (let i = 0; i < n; i++) frames.push({ seq: i, n, data: payload.slice(i * CHUNK, (i + 1) * CHUNK) });
-	return frames;
-}
-
-// A contiguous older slice [start, end) for lazy back-scroll, oldest-first.
-export function readTranscriptRange(id: string, before: number, limit: number): { start: number; events: unknown[] } {
-	const all = readTranscript(id);
-	const end = Math.max(0, Math.min(before, all.length));
-	const start = Math.max(0, end - Math.max(0, limit));
-	return { start, events: all.slice(start, end) };
 }
 
 export function appendEvent(id: string, event: Record<string, unknown>) {
