@@ -145,7 +145,7 @@ function lineStart(newlines: number[], i: number): number {
 
 // Initial snapshot for the live view: only the most recent events, bounded by
 // both count and serialized size. Long coding sessions accumulate megabytes of
-// tool output and inline images; shipping the whole transcript in one SSE frame
+// tool output; shipping the whole transcript in one SSE frame
 // blocks first paint (and the live stream behind it) for seconds on mobile.
 // Older history loads lazily via the /transcript endpoint when scrolled to.
 const SNAPSHOT_MAX = 250;

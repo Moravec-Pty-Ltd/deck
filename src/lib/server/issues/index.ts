@@ -6,7 +6,7 @@ import { readSecret } from '../store';
 import { fetchGithubIssues } from './github';
 import { fetchLinearIssues } from './linear';
 import { fetchClickupIssues } from './clickup';
-import { getCached, setCached, type IssuesResult, type SourceError } from './cache';
+import { getOrFetch, type IssuesResult, type SourceError } from './cache';
 
 // Linear/ClickUp need the stored key; GitHub rides on gh's own auth.
 function fetchKeyed(source: LinearSource | ClickupSource, apiKey: string): Promise<Issue[]> {
@@ -20,12 +20,15 @@ async function fetchSource(source: IssueSource): Promise<Issue[]> {
 	return fetchKeyed(source, apiKey);
 }
 
-export async function getProjectIssues(project: Project, refresh = false): Promise<IssuesResult> {
-	if (!refresh) {
-		const cached = getCached(project.path);
-		if (cached) return cached;
-	}
+export function getProjectIssues(project: Project, refresh = false): Promise<IssuesResult> {
+	// The cache single-flights this: concurrent misses for one project share the
+	// fan-out below rather than each spawning their own.
+	return getOrFetch(project.path, refresh, () => fanOut(project));
+}
 
+// Fan out to every source at once; a failure surfaces as an error entry instead
+// of sinking the whole list.
+async function fanOut(project: Project): Promise<IssuesResult> {
 	const sources = project.sources ?? [];
 	const settled = await Promise.allSettled(sources.map((s) => fetchSource(s)));
 
@@ -37,7 +40,5 @@ export async function getProjectIssues(project: Project, refresh = false): Promi
 	});
 	issues.sort((a, b) => b.updatedAt - a.updatedAt);
 
-	const result: IssuesResult = { issues, errors, fetchedAt: Date.now() };
-	setCached(project.path, result);
-	return result;
+	return { issues, errors, fetchedAt: Date.now() };
 }
