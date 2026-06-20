@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import type { DeckSession } from '$lib/types';
+	import { indexForward, indexOlderBatch, type Answer } from '$lib/transcript-index';
 	import Linked from './Linked.svelte';
 	import ToolCall from './ToolCall.svelte';
 	import AskQuestion from './AskQuestion.svelte';
@@ -39,31 +41,31 @@
 	const start = $derived(Math.max(0, events.length - limit));
 	const visible = $derived(events.slice(start));
 
-	// Pair tool_result blocks back to their originating tool_use by id.
-	const resultsById = $derived.by(() => {
-		const m = new Map<string, AnyEvent>();
-		for (const ev of events) {
-			if (ev.type !== 'user') continue;
-			const content = ev.message?.content;
-			if (!Array.isArray(content)) continue;
-			for (const b of content) {
-				if (b.type === 'tool_result' && b.tool_use_id) m.set(b.tool_use_id, b);
-			}
-		}
-		return m;
-	});
-
-	// Questions go through deck's blocking MCP `ask` tool. The pick is posted to
+	// Two lookups the template needs while rendering the visible window:
+	//   resultsById       — tool_use_id → its tool_result block (ToolCall)
+	//   answeredQuestions  — ask tool_use id → the chosen answers (AskQuestion)
+	// Questions go through deck's blocking MCP `ask` tool; the pick is posted to
 	// /answer, which resolves the still-open tool call (continuing the same turn)
 	// and records a deck.answer marker so the chosen options persist on reload.
-	const answeredQuestions = $derived.by(() => {
-		const m = new Map<string, { header: string; labels: string[] }[]>();
-		for (const ev of events) {
-			if ((ev.type === 'deck.answer' || ev.type === 'deck.user') && ev.answersFor)
-				m.set(ev.answersFor, ev.answers ?? []);
-		}
-		return m;
-	});
+	//
+	// Maintained incrementally as events arrive rather than re-derived over the
+	// whole transcript on every event: a long, hydrated session would otherwise
+	// re-scan thousands of events twice per streamed event. `$lib/transcript-index`
+	// holds what each event contributes; we fold those into reactive maps here.
+	const resultsById = new SvelteMap<string, AnyEvent>();
+	const answeredQuestions = new SvelteMap<string, Answer[]>();
+	const index = { results: resultsById, answered: answeredQuestions };
+
+	function clearIndex() {
+		resultsById.clear();
+		answeredQuestions.clear();
+	}
+
+	// Rebuild both maps from a full list (a fresh snapshot replaces the transcript).
+	function reindex(list: AnyEvent[]) {
+		clearIndex();
+		for (const ev of list) indexForward(index, ev);
+	}
 
 	function isAskTool(block: AnyEvent): boolean {
 		return block.name === 'mcp__deck__ask' || block.name === 'AskUserQuestion';
@@ -90,6 +92,7 @@
 		// Clear the previous session synchronously so its history and live stream
 		// can't bleed into this one while the new snapshot is in flight.
 		events = [];
+		clearIndex();
 		baseIndex = 0;
 		limit = INITIAL_WINDOW;
 		liveText = '';
@@ -130,6 +133,7 @@
 				}
 				snapBuf = '';
 				events = snap.events;
+				reindex(snap.events);
 				baseIndex = snap.start;
 				limit = INITIAL_WINDOW;
 				liveText = '';
@@ -145,7 +149,8 @@
 					return;
 				}
 				if (ev.type === 'assistant') liveText = '';
-				events = [...events, ev];
+				events.push(ev); // in-place: a full re-spread is O(n) on every event
+				indexForward(index, ev);
 				limit += 1; // keep the new event in view without dropping a tail row
 				maybeScroll();
 			});
@@ -264,7 +269,8 @@
 				return;
 			}
 			const gap = scroller ? scroller.scrollHeight - scroller.scrollTop : 0;
-			events = [...slice.events, ...events];
+			events.unshift(...slice.events);
+			indexOlderBatch(index, slice.events);
 			baseIndex = slice.start;
 			limit += added; // keep the just-loaded rows inside the render window
 			await tick();
@@ -405,7 +411,8 @@
 							<div class="mb-2 flex flex-wrap gap-2">
 								{#each event.images as img, k (k)}
 									<img
-										src={`data:${img.media_type};base64,${img.data}`}
+										src={img.file ? `/api/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(img.file)}` : `data:${img.media_type};base64,${img.data}`}
+										loading="lazy"
 										alt="attachment"
 										class="max-h-40 rounded-box border border-base-300"
 									/>

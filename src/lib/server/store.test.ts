@@ -1,96 +1,128 @@
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { DeckSession } from '$lib/types';
 
-// Point the data dir at a throwaway tmp dir before config.ts captures it, then
-// import the store dynamically so the module under test reads/writes there.
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-store-'));
+// Point the data dir at a throwaway tmpdir before importing the store, so the
+// module's config side effects (mkdir, token) and every read/write land there.
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-store-test-'));
 process.env.DECK_DATA = dataDir;
 const sessionsFile = path.join(dataDir, 'sessions.json');
 
-type Store = typeof import('./store');
-let store: Store;
+const {
+	listStoredSessions,
+	getStoredSession,
+	saveSession,
+	updateSession,
+	removeSession,
+	setSessionStatus,
+	setSessionsMutatedHook
+} = await import('./store');
 
-beforeAll(async () => {
-	store = await import('./store');
-});
+afterAll(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+
+function shell(id: string): DeckSession {
+	return {
+		id,
+		kind: 'shell',
+		title: id,
+		cwd: '/tmp',
+		createdAt: 1,
+		lastActiveAt: 1,
+		status: 'idle',
+		managed: true
+	};
+}
 
 function readFile(): DeckSession[] {
 	return JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
 }
 
-function session(id: string): DeckSession {
-	return { id, kind: 'claude', title: id, cwd: '/tmp', createdAt: 1, lastActiveAt: 1, status: 'idle' };
-}
+const sessionReads = (spy: ReturnType<typeof vi.spyOn>) =>
+	spy.mock.calls.filter((c: unknown[]) => String(c[0]).endsWith('sessions.json')).length;
 
-beforeEach(() => {
-	// Fresh authoritative map + empty file so each test starts from nothing.
-	delete (globalThis as { __deckSessions?: unknown }).__deckSessions;
-	fs.rmSync(sessionsFile, { force: true });
-});
+// writeJson commits with renameSync(tmp, target); the target ends in the file name.
+const sessionWrites = (spy: ReturnType<typeof vi.spyOn>) =>
+	spy.mock.calls.filter((c: unknown[]) => String(c[1]).endsWith('sessions.json')).length;
 
-describe('session store', () => {
-	it('serves reads from memory after a save', () => {
-		store.saveSession(session('a'));
-		expect(store.getStoredSession('a')?.id).toBe('a');
-		expect(store.listStoredSessions().map((s) => s.id)).toEqual(['a']);
-		expect(readFile().map((s) => s.id)).toEqual(['a']);
+describe('store session cache', () => {
+	it('reflects writes through getStoredSession', () => {
+		saveSession(shell('a1'));
+		expect(getStoredSession('a1')).toMatchObject({ id: 'a1', title: 'a1' });
+
+		updateSession('a1', { title: 'renamed' });
+		expect(getStoredSession('a1')?.title).toBe('renamed');
+
+		removeSession('a1');
+		expect(getStoredSession('a1')).toBeUndefined();
 	});
 
-	it('getStoredSession returns a copy, so mutating it cannot corrupt the cache', () => {
-		store.saveSession(session('a'));
-		const snap = store.getStoredSession('a')!;
-		snap.status = 'error';
-		snap.title = 'mutated';
-		expect(store.getStoredSession('a')?.status).toBe('idle');
-		expect(store.getStoredSession('a')?.title).toBe('a');
+	it('reads the file once across repeated calls and re-reads after a write', () => {
+		const spy = vi.spyOn(fs, 'readFileSync');
+		try {
+			saveSession(shell('c1')); // a write invalidates the cache
+			const base = sessionReads(spy);
+
+			listStoredSessions();
+			listStoredSessions();
+			getStoredSession('c1');
+			expect(sessionReads(spy) - base).toBe(1); // only the first call hits disk
+
+			removeSession('c1'); // invalidate again
+			listStoredSessions();
+			expect(sessionReads(spy) - base).toBe(2); // exactly one more disk read
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
-	it('updateSession is a keyed merge that preserves other fields and persists', () => {
-		store.saveSession(session('a'));
-		store.updateSession('a', { claudeSessionId: 'resume-1' });
-		expect(store.getStoredSession('a')?.claudeSessionId).toBe('resume-1');
-		expect(store.getStoredSession('a')?.title).toBe('a');
-		expect(readFile()[0].claudeSessionId).toBe('resume-1');
+	it('notifies the mutation hook on every write', () => {
+		const hook = vi.fn();
+		setSessionsMutatedHook(hook);
+		try {
+			saveSession(shell('h1'));
+			updateSession('h1', { title: 'x' });
+			removeSession('h1');
+			expect(hook).toHaveBeenCalledTimes(3);
+		} finally {
+			setSessionsMutatedHook(() => {});
+		}
 	});
 
-	it('does not touch disk on a running flip (it is derived live on read)', () => {
-		store.saveSession(session('a'));
-		const before = fs.readFileSync(sessionsFile, 'utf8');
-		store.setSessionStatus('a', 'running', 999);
-		expect(store.getStoredSession('a')?.status).toBe('running');
-		expect(store.getStoredSession('a')?.lastActiveAt).toBe(999);
-		// In-memory record advanced, but the file is untouched by the hot path.
-		expect(fs.readFileSync(sessionsFile, 'utf8')).toBe(before);
+	it('keeps a running flip in memory and only flushes terminal states', () => {
+		saveSession(shell('s1'));
+		const spy = vi.spyOn(fs, 'renameSync');
+		try {
+			setSessionStatus('s1', 'running', 100);
+			expect(getStoredSession('s1')?.status).toBe('running');
+			expect(getStoredSession('s1')?.lastActiveAt).toBe(100);
+			expect(sessionWrites(spy)).toBe(0); // running never touches disk
+
+			setSessionStatus('s1', 'idle', 200);
+			expect(sessionWrites(spy)).toBe(1); // terminal state is persisted
+			expect(readFile().find((s) => s.id === 's1')?.status).toBe('idle');
+
+			setSessionStatus('s1', 'error', 300);
+			expect(sessionWrites(spy)).toBe(2);
+			expect(readFile().find((s) => s.id === 's1')?.status).toBe('error');
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
-	it('persists terminal idle/error states', () => {
-		store.saveSession(session('a'));
-		store.setSessionStatus('a', 'running', 2);
-		store.setSessionStatus('a', 'idle', 3);
-		expect(readFile()[0].status).toBe('idle');
-		store.setSessionStatus('a', 'error', 4);
-		expect(readFile()[0].status).toBe('error');
-		expect(readFile()[0].lastActiveAt).toBe(4);
-	});
-
-	it('a status flip on one session does not clobber another (no lost update)', () => {
-		store.saveSession(session('a'));
-		store.saveSession(session('b'));
-		store.updateSession('a', { claudeSessionId: 'resume-a' });
-		store.setSessionStatus('b', 'error', 5);
-		const onDisk = readFile();
-		expect(onDisk.find((s) => s.id === 'a')?.claudeSessionId).toBe('resume-a');
-		expect(onDisk.find((s) => s.id === 'b')?.status).toBe('error');
-	});
-
-	it('removeSession drops the record and persists', () => {
-		store.saveSession(session('a'));
-		store.saveSession(session('b'));
-		store.removeSession('a');
-		expect(store.getStoredSession('a')).toBeUndefined();
-		expect(readFile().map((s) => s.id)).toEqual(['b']);
+	it('busts the list memo on a running flip without writing', () => {
+		saveSession(shell('m1'));
+		const hook = vi.fn();
+		setSessionsMutatedHook(hook);
+		const spy = vi.spyOn(fs, 'renameSync');
+		try {
+			setSessionStatus('m1', 'running', 5);
+			expect(hook).toHaveBeenCalledTimes(1);
+			expect(sessionWrites(spy)).toBe(0);
+		} finally {
+			spy.mockRestore();
+			setSessionsMutatedHook(() => {});
+		}
 	});
 });

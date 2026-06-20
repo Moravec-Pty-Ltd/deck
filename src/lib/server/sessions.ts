@@ -1,8 +1,20 @@
 import { customAlphabet } from 'nanoid';
-import type { DeckSession, SessionIssue, SessionKind } from '$lib/types';
+import type { DeckSession, SessionIssue, SessionKind, SessionStatus } from '$lib/types';
 import { isAgentKind } from '$lib/types';
-import { listStoredSessions, getStoredSession, saveSession, removeSession } from './store';
-import { listTmuxSessions, createTmuxSession, killTmuxSession, hasTmuxSession } from './tmux';
+import {
+	listStoredSessions,
+	getStoredSession,
+	saveSession,
+	removeSession,
+	setSessionsMutatedHook
+} from './store';
+import {
+	listTmuxSessions,
+	createTmuxSession,
+	killTmuxSession,
+	hasTmuxSession,
+	type TmuxSession
+} from './tmux';
 import { agentTurnRunning, agentStop } from './agents/dispatch';
 import { removeWorktree } from './git';
 import { pickShipName } from './names';
@@ -21,43 +33,76 @@ function tmuxNameFor(id: string) {
 
 // Flat, recency-sorted view across claude sessions and every live tmux session
 // (managed or not), so adhoc terminals show up without registration.
-export async function listSessions(): Promise<DeckSession[]> {
-	if (DEMO) return demoSessions().sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+//
+// Memoised for a short window so the simultaneous tab polls (every 5s) and the
+// monitor poll (every 10s) collapse onto one computation and one
+// `tmux list-sessions` exec rather than spawning one each (see #9). Concurrent
+// callers share the in-flight promise; any store write busts the memo (see the
+// hook below) so a poll never serves a list that contradicts the store.
+const LIST_TTL_MS = 1000;
+let listCache: { at: number; promise: Promise<DeckSession[]> } | null = null;
+
+// Drop the memo on every create/update/delete/status write so freshly changed
+// status or lastActiveAt show up on the next poll rather than after the TTL.
+setSessionsMutatedHook(() => {
+	listCache = null;
+});
+
+export function listSessions(): Promise<DeckSession[]> {
+	if (DEMO) return Promise.resolve(demoSessions().sort((a, b) => b.lastActiveAt - a.lastActiveAt));
+	if (listCache && Date.now() - listCache.at < LIST_TTL_MS) return listCache.promise;
+	const promise = computeSessions();
+	const entry = { at: Date.now(), promise };
+	listCache = entry;
+	// Don't pin a failed computation for the whole window; let the next call retry.
+	promise.catch(() => {
+		if (listCache === entry) listCache = null;
+	});
+	return promise;
+}
+
+// A live agent turn always reads as running; a persisted 'running' that has no
+// live turn is stale, so it falls back to idle.
+function agentStatus(s: DeckSession): SessionStatus {
+	if (agentTurnRunning(s.id)) return 'running';
+	return s.status === 'running' ? 'idle' : s.status;
+}
+
+// A managed shell's liveness comes from its tmux session; absent means dead.
+function shellView(s: DeckSession, tmuxSessions: TmuxSession[]): DeckSession {
+	const live = tmuxSessions.find((t) => t.name === s.tmuxName);
+	if (!live) return { ...s, status: 'dead', attached: false };
+	return { ...s, status: 'idle', attached: live.attached, lastActiveAt: live.activity };
+}
+
+function storedView(s: DeckSession, tmuxSessions: TmuxSession[]): DeckSession {
+	return isAgentKind(s.kind) ? { ...s, status: agentStatus(s) } : shellView(s, tmuxSessions);
+}
+
+// An unregistered tmux session surfaced as an adhoc terminal.
+function adhocView(t: TmuxSession): DeckSession {
+	return {
+		id: `t_${t.name}`,
+		kind: 'shell',
+		title: t.name,
+		cwd: t.cwd,
+		createdAt: t.created,
+		lastActiveAt: t.activity,
+		status: 'idle',
+		tmuxName: t.name,
+		managed: false,
+		attached: t.attached
+	};
+}
+
+async function computeSessions(): Promise<DeckSession[]> {
 	const stored = listStoredSessions();
 	const tmuxSessions = await listTmuxSessions();
-	const result: DeckSession[] = [];
-
-	for (const s of stored) {
-		if (isAgentKind(s.kind)) {
-			const running = agentTurnRunning(s.id);
-			const status = running ? 'running' : s.status === 'running' ? 'idle' : s.status;
-			result.push({ ...s, status });
-		} else {
-			const live = tmuxSessions.find((t) => t.name === s.tmuxName);
-			result.push({
-				...s,
-				status: live ? 'idle' : 'dead',
-				attached: live?.attached ?? false,
-				lastActiveAt: live?.activity ?? s.lastActiveAt
-			});
-		}
-	}
+	const result = stored.map((s) => storedView(s, tmuxSessions));
 
 	const managedNames = new Set(stored.map((s) => s.tmuxName).filter(Boolean));
 	for (const t of tmuxSessions) {
-		if (managedNames.has(t.name)) continue;
-		result.push({
-			id: `t_${t.name}`,
-			kind: 'shell',
-			title: t.name,
-			cwd: t.cwd,
-			createdAt: t.created,
-			lastActiveAt: t.activity,
-			status: 'idle',
-			tmuxName: t.name,
-			managed: false,
-			attached: t.attached
-		});
+		if (!managedNames.has(t.name)) result.push(adhocView(t));
 	}
 
 	return result.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
@@ -131,7 +176,9 @@ export async function deleteSession(
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean } = {}
 ): Promise<void> {
 	if (id.startsWith('t_')) {
+		// Adhoc tmux session: no store write, so bust the list memo by hand.
 		await killTmuxSession(id.slice(2));
+		listCache = null;
 		return;
 	}
 	const stored = getStoredSession(id);

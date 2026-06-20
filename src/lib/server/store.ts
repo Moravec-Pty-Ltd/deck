@@ -7,66 +7,82 @@ const SESSIONS_FILE = 'sessions.json';
 const PROJECTS_FILE = 'projects.json';
 const SECRETS_FILE = 'secrets.json';
 
-// sessions.json is the hot store: setStatus fires on every message_start and
-// turn boundary, and the old code did a full read-parse-mutate-serialise-rename
-// of the whole array each time. Keep the authoritative copy in memory (loaded
-// once, surviving HMR via globalThis like the event bus and proc maps) so reads
-// are O(1) and each write is a single keyed update flushed by one writer rather
-// than an O(N) rewrite per status flip. Reads hand back shallow copies and
-// writes replace the entry, so no caller can mutate the cache and a record
-// returned earlier stays a stable snapshot.
-const g = globalThis as { __deckSessions?: Map<string, DeckSession> };
-function sessionMap(): Map<string, DeckSession> {
-	return (g.__deckSessions ??= new Map(
-		readJson<DeckSession[]>(SESSIONS_FILE, []).map((s) => [s.id, s])
-	));
+// In-memory cache of the sessions store. This module is the sole writer of
+// sessions.json, so every mutation here invalidates the cache and reads
+// repopulate it lazily. Avoids a full readFileSync + JSON.parse on each poll,
+// which the session list and monitor hit constantly (see #9).
+let sessionsCache: DeckSession[] | null = null;
+let sessionsById: Map<string, DeckSession> | null = null;
+
+// sessions.ts hooks its own list memo here so any store write also drops it,
+// without store.ts importing sessions.ts (that would be an import cycle).
+let onSessionsMutated: (() => void) | null = null;
+export function setSessionsMutatedHook(cb: () => void) {
+	onSessionsMutated = cb;
 }
 
-function flushSessions() {
-	writeJson(SESSIONS_FILE, [...sessionMap().values()]);
+function loadSessions(): DeckSession[] {
+	if (!sessionsCache) {
+		sessionsCache = readJson<DeckSession[]>(SESSIONS_FILE, []);
+		sessionsById = new Map(sessionsCache.map((s) => [s.id, s]));
+	}
+	return sessionsCache;
 }
 
+function writeSessions(sessions: DeckSession[]) {
+	writeJson(SESSIONS_FILE, sessions);
+	sessionsCache = null;
+	sessionsById = null;
+	onSessionsMutated?.();
+}
+
+// Returns the shared cached array; callers must treat it (and its sessions) as
+// read-only and mutate only through updateSession/saveSession/removeSession,
+// which is the contract the in-memory cache relies on.
 export function listStoredSessions(): DeckSession[] {
-	return [...sessionMap().values()].map((s) => ({ ...s }));
+	return loadSessions();
 }
 
-// Returns a shallow copy, so mutating the result can't corrupt the cache; route
-// changes through updateSession/setSessionStatus so they're flushed to disk.
 export function getStoredSession(id: string): DeckSession | undefined {
-	const session = sessionMap().get(id);
-	return session && { ...session };
+	loadSessions();
+	return sessionsById!.get(id);
 }
 
 export function saveSession(session: DeckSession) {
-	sessionMap().set(session.id, session);
-	flushSessions();
+	const sessions = loadSessions().filter((s) => s.id !== session.id);
+	sessions.push(session);
+	writeSessions(sessions);
 }
 
 export function updateSession(id: string, patch: Partial<DeckSession>): DeckSession | undefined {
-	const session = sessionMap().get(id);
+	const sessions = loadSessions();
+	const session = sessions.find((s) => s.id === id);
 	if (!session) return undefined;
-	const updated = { ...session, ...patch };
-	sessionMap().set(id, updated);
-	flushSessions();
-	return { ...updated };
+	Object.assign(session, patch);
+	writeSessions(sessions);
+	return session;
 }
 
 export function removeSession(id: string) {
-	if (sessionMap().delete(id)) flushSessions();
+	writeSessions(loadSessions().filter((s) => s.id !== id));
 }
 
-// Volatile run status. The list/SSE read path derives running/idle live from
-// the process map (see sessions.ts), so a persisted `running` is never trusted
-// across a read; that is what lets the per-message_start flip stay in memory. We
-// don't proactively flush on `running`, only on the terminal idle/error states
-// (which clear a prior error and advance lastActiveAt). A concurrent flush from
-// another session's write can still snapshot an in-memory `running` to disk,
-// which is harmless precisely because the read path downgrades it.
+// Volatile run status, written on every message_start and turn boundary. The
+// list/SSE read path derives running/idle live from the process map (see
+// sessions.ts agentStatus), so a persisted `running` is never trusted across a
+// read. That lets the hot per-message_start flip stay in memory: mutate the
+// cached record in place and bust the list memo so the new lastActiveAt shows up
+// on the next poll, but don't rewrite sessions.json. Only the terminal
+// idle/error states are flushed (they clear a prior error and survive a
+// restart). A later write of the whole array can still carry an in-memory
+// `running` to disk, which is harmless because the read path downgrades it.
 export function setSessionStatus(id: string, status: SessionStatus, lastActiveAt: number) {
-	const session = sessionMap().get(id);
+	loadSessions();
+	const session = sessionsById!.get(id);
 	if (!session) return;
-	sessionMap().set(id, { ...session, status, lastActiveAt });
-	if (status !== 'running') flushSessions();
+	Object.assign(session, { status, lastActiveAt });
+	if (status === 'running') onSessionsMutated?.();
+	else writeSessions(sessionsCache!);
 }
 
 export function listProjects(): Project[] {
