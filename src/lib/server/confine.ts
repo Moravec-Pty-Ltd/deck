@@ -25,21 +25,23 @@ function within(child: string, root: string): boolean {
 	return child.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
 }
 
-function withinAny(child: string, roots: string[]): boolean {
-	return roots.some((root) => {
-		const r = canonical(root);
-		return r !== null && within(child, r);
-	});
+function isUnder(dir: string, roots: string[]): boolean {
+	const real = canonical(dir);
+	return real !== null && roots.some((root) => within(real, root));
 }
 
-// Each registered project plus the sibling `<repo>-worktrees` dir where deck's
-// worktrees land (see createWorktree). These are the only roots git operations
-// may target.
+// Canonical roots a confined path must fall under. A registered project path is
+// resolved as-is (the user registered that location, symlink or not). Its
+// sibling `<name>-worktrees` dir, where deck's worktrees land (see
+// createWorktree), is anchored to the *resolved* project path and matched
+// literally, so a symlink planted at the worktrees root can't redirect
+// confinement to the symlink's target.
 function projectRoots(): string[] {
 	const roots: string[] = [];
 	for (const p of listProjects()) {
-		roots.push(p.path);
-		roots.push(path.join(path.dirname(p.path), `${path.basename(p.path)}-worktrees`));
+		const proj = canonical(p.path);
+		if (proj === null) continue;
+		roots.push(proj, `${proj}-worktrees`);
 	}
 	return roots;
 }
@@ -47,13 +49,12 @@ function projectRoots(): string[] {
 // Is `dir` a registered project or one of its worktrees? Confines the `repo`
 // target of the git endpoints to the registered project set.
 export function isWithinProjects(dir: string): boolean {
-	const real = canonical(dir);
-	return real !== null && withinAny(real, projectRoots());
+	return isUnder(dir, projectRoots());
 }
 
 // Is `dir` somewhere the path picker may enumerate? The picker also needs $HOME,
 // since a new project's directory is chosen before it is registered.
 export function isPickerAllowed(dir: string): boolean {
-	const real = canonical(dir);
-	return real !== null && withinAny(real, [os.homedir(), ...projectRoots()]);
+	const home = canonical(os.homedir());
+	return isUnder(dir, home === null ? projectRoots() : [home, ...projectRoots()]);
 }

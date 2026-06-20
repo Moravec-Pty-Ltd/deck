@@ -70,6 +70,20 @@ export async function listWorktrees(repo: string): Promise<WorktreeEntry[]> {
 	return entries;
 }
 
+// Build the `git worktree add` argv. Positional args (the worktree dir and the
+// branch/base ref) go after `--` so none can be read as an option even if an
+// upstream guard is missed.
+export function worktreeAddArgs(
+	dir: string,
+	branch: string,
+	opts: { newBranch?: boolean; base?: string }
+): string[] {
+	if (!opts.newBranch) return ['worktree', 'add', '--', dir, branch];
+	const args = ['worktree', 'add', '-b', branch, '--', dir];
+	if (opts.base) args.push(opts.base);
+	return args;
+}
+
 // Worktrees land next to the repo: <repo>-worktrees/<branch>
 export async function createWorktree(
 	repo: string,
@@ -77,24 +91,20 @@ export async function createWorktree(
 	opts: { newBranch?: boolean; base?: string } = {}
 ): Promise<string> {
 	// branch/base reach git as ref arguments; a value starting with `-` would be
-	// parsed as a git flag (the flag-injection class isFlagSafe guards elsewhere).
-	// Two defenses: reject crafted refs here, and pass every positional arg after
-	// a `--` separator so nothing downstream (dir included) is read as an option.
+	// parsed as a flag (the class isFlagSafe guards elsewhere), and `.`/`..`
+	// survive the dir sanitiser as path segments. Reject crafted refs, keep the
+	// worktree dir a direct child of the -worktrees root, and pass positionals
+	// after `--` (see worktreeAddArgs).
 	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);
 	if (opts.base !== undefined && !isFlagSafe(opts.base))
 		throw new Error(`unsafe base branch: ${opts.base}`);
 	const safe = branch.replace(/[^a-zA-Z0-9._/-]/g, '-').replace(/\//g, '-');
-	const dir = path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`, safe);
+	const worktrees = path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`);
+	const dir = path.join(worktrees, safe);
+	if (!dir.startsWith(worktrees + path.sep)) throw new Error(`unsafe branch name: ${branch}`);
 	if (fs.existsSync(dir)) return dir;
 	fs.mkdirSync(path.dirname(dir), { recursive: true });
-	const args = ['worktree', 'add'];
-	if (opts.newBranch) {
-		args.push('-b', branch, '--', dir);
-		if (opts.base) args.push(opts.base);
-	} else {
-		args.push('--', dir, branch);
-	}
-	await git(repo, ...args);
+	await git(repo, ...worktreeAddArgs(dir, branch, opts));
 	return dir;
 }
 

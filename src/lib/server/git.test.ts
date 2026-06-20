@@ -3,11 +3,42 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createWorktree } from './git';
+import { createWorktree, worktreeAddArgs } from './git';
 
-// The isFlagSafe guards run before any fs/git work, so these reject without
-// touching the (non-existent) repo path.
-describe('createWorktree flag-injection guard', () => {
+// Lock the argv ordering: every positional arg must sit after `--`, so the test
+// fails if the separator is dropped or reordered (the S4 regression guard).
+describe('worktreeAddArgs', () => {
+	it('puts the dir after `--` for a new branch', () => {
+		expect(worktreeAddArgs('/d', 'b', { newBranch: true })).toEqual([
+			'worktree',
+			'add',
+			'-b',
+			'b',
+			'--',
+			'/d'
+		]);
+	});
+
+	it('appends the base as a positional after the dir', () => {
+		expect(worktreeAddArgs('/d', 'b', { newBranch: true, base: 'main' })).toEqual([
+			'worktree',
+			'add',
+			'-b',
+			'b',
+			'--',
+			'/d',
+			'main'
+		]);
+	});
+
+	it('puts dir and branch after `--` for an existing branch', () => {
+		expect(worktreeAddArgs('/d', 'b', {})).toEqual(['worktree', 'add', '--', '/d', 'b']);
+	});
+});
+
+// The guards run before any fs/git work, so these reject without touching the
+// (non-existent) repo path.
+describe('createWorktree input guards', () => {
 	it('rejects a branch name that would be parsed as a git flag', async () => {
 		await expect(createWorktree('/repo', '--force', { newBranch: true })).rejects.toThrow(
 			/unsafe branch/
@@ -19,6 +50,13 @@ describe('createWorktree flag-injection guard', () => {
 		await expect(
 			createWorktree('/repo', 'feature', { newBranch: true, base: '--detach' })
 		).rejects.toThrow(/unsafe base/);
+	});
+
+	it('rejects a branch that escapes the worktrees root via path traversal', async () => {
+		await expect(createWorktree('/repo', '..', { newBranch: true })).rejects.toThrow(
+			/unsafe branch/
+		);
+		await expect(createWorktree('/repo', '.', {})).rejects.toThrow(/unsafe branch/);
 	});
 });
 

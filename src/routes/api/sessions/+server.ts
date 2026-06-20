@@ -71,11 +71,18 @@ function rememberBase(repo: string, newBranch: boolean, base: string | undefined
 	if (listProjects().some((p) => p.path === repo)) updateProject(repo, { lastBase: base });
 }
 
+// A worktree ref is safe only if it is a string git won't read as a flag. The
+// request body is untyped JSON, so a non-string truthy value must 400, not throw
+// a 500 inside isFlagSafe's .startsWith.
+function isSafeRef(v: unknown): boolean {
+	return typeof v === 'string' && isFlagSafe(v);
+}
+
 // branch/base become git ref args; a leading dash is flag injection. createWorktree
 // guards the sink too; this is the boundary check that returns a clean 400.
 function assertRefsSafe(wt: WorktreeReq): void {
-	if (!isFlagSafe(wt.branch)) error(400, 'invalid branch name');
-	if (wt.base && !isFlagSafe(wt.base)) error(400, 'invalid base branch');
+	if (!isSafeRef(wt.branch)) error(400, 'invalid branch name');
+	if (wt.base && !isSafeRef(wt.base)) error(400, 'invalid base branch');
 }
 
 // Create the isolated worktree the session will run in.
