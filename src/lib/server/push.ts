@@ -7,6 +7,9 @@ import { readJson, writeJson } from './config';
 
 const VAPID_FILE = 'vapid.json';
 const SUBS_FILE = 'push-subscriptions.json';
+// A handful of devices per user is plenty; cap so a caller can't grow the file
+// unbounded. When over the cap the newest subscriptions win.
+const MAX_SUBS = 20;
 
 interface Vapid {
 	publicKey: string;
@@ -36,10 +39,25 @@ function listSubs(): PushSubscription[] {
 	return readJson<PushSubscription[]>(SUBS_FILE, []);
 }
 
+// The server POSTs web-push payloads to this endpoint, so require an absolute
+// https: URL and reject other schemes/garbage. We deliberately don't allowlist
+// hosts: real push endpoints are arbitrary public hosts (self-hosted push
+// servers included), so a static host filter would reject legitimate clients.
+// The residual is a constrained, authenticated, response-less probe (the body
+// is web-push encrypted), an accepted risk for this self-hosted tool.
+export function isValidPushEndpoint(endpoint: unknown): endpoint is string {
+	if (typeof endpoint !== 'string') return false;
+	try {
+		return new URL(endpoint).protocol === 'https:';
+	} catch {
+		return false;
+	}
+}
+
 export function addSub(sub: PushSubscription) {
 	const subs = listSubs().filter((s) => s.endpoint !== sub.endpoint);
 	subs.push(sub);
-	writeJson(SUBS_FILE, subs);
+	writeJson(SUBS_FILE, subs.slice(-MAX_SUBS));
 }
 
 export function removeSub(endpoint: string) {
