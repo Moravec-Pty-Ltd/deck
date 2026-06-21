@@ -16,6 +16,8 @@ import {
 	type TmuxSession
 } from './tmux';
 import { agentTurnRunning, agentStop } from './agents/dispatch';
+import { stopSessionServers } from './devservers';
+import { SERVER_TMUX_PREFIX } from './devservers-core';
 import { removeWorktree } from './git';
 import { pickShipName } from './names';
 import { DEMO, demoSessions, demoSession } from './demo';
@@ -102,7 +104,10 @@ async function computeSessions(): Promise<DeckSession[]> {
 
 	const managedNames = new Set(stored.map((s) => s.tmuxName).filter(Boolean));
 	for (const t of tmuxSessions) {
-		if (!managedNames.has(t.name)) result.push(adhocView(t));
+		// Dev-server panes belong to their parent session's Servers tab (issue #32),
+		// not the flat list, so they're excluded from adhoc-shell surfacing.
+		if (managedNames.has(t.name) || t.name.startsWith(SERVER_TMUX_PREFIX)) continue;
+		result.push(adhocView(t));
 	}
 
 	return result.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
@@ -184,6 +189,8 @@ export async function deleteSession(
 	const stored = getStoredSession(id);
 	if (stored && isAgentKind(stored.kind)) {
 		agentStop(id);
+		// Tear down any dev servers running on this session's worktree (issue #32).
+		await stopSessionServers(id).catch(() => {});
 	} else if (stored?.tmuxName && (await hasTmuxSession(stored.tmuxName))) {
 		await killTmuxSession(stored.tmuxName);
 	}

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { PaneStatus } from './devservers-core';
 
 const exec = promisify(execFile);
 
@@ -59,6 +60,48 @@ export async function createTmuxSession(name: string, cwd: string, command?: str
 	await tmux(...args);
 }
 
+// A dev-server pane (issue #32). remain-on-exit (a window option, so -w and the
+// `name:` window target) keeps the pane after the command exits, so its exit
+// status (running vs errored vs clean stop) and final output stay readable until
+// deck kills it. Best-effort: a command that exits before the option is set just
+// loses the dead-pane capture, which reads as a clean teardown.
+export async function createDevPane(name: string, cwd: string, command: string) {
+	await tmux('new-session', '-d', '-s', name, '-c', cwd, command);
+	try {
+		await tmux('set-option', '-w', '-t', `=${name}:`, 'remain-on-exit', 'on');
+	} catch {
+		// window already gone (insta-exit) — nothing to keep alive
+	}
+}
+
+// Liveness + exit status of a dev pane, or null if the tmux session is gone.
+// PaneStatus is owned by devservers-core (the pure module that consumes it). The
+// has-session guard matters: display-message doesn't error on a missing target
+// (it falls back to a current session and returns empty fields), so an absent
+// server would otherwise read as a live, never-ready pane.
+export async function paneStatus(name: string): Promise<PaneStatus | null> {
+	if (!(await hasTmuxSession(name))) return null;
+	try {
+		const out = await tmux(
+			'display-message',
+			'-p',
+			'-t',
+			`=${name}:`,
+			'#{pane_dead}\t#{pane_dead_status}\t#{session_created}\t#{session_activity}'
+		);
+		const [dead, status, created, activity] = out.trim().split('\t');
+		if (dead !== '0' && dead !== '1') return null; // not a real pane
+		return {
+			dead: dead === '1',
+			exitStatus: status === '' ? null : Number(status),
+			created: (Number(created) || 0) * 1000,
+			activity: (Number(activity) || 0) * 1000
+		};
+	} catch {
+		return null;
+	}
+}
+
 export async function killTmuxSession(name: string) {
 	paneBuf.delete(name);
 	await tmux('kill-session', '-t', `=${name}`);
@@ -76,6 +119,18 @@ export async function hasTmuxSession(name: string): Promise<boolean> {
 async function snapshotPane(name: string, lines = 500): Promise<string> {
 	// -e keeps SGR escape sequences so the client can render ANSI colors.
 	return tmux('capture-pane', '-e', '-p', '-t', `=${name}:`, '-S', `-${lines}`);
+}
+
+// FNV-1a tag over a pane snapshot; lets a client skip re-fetching and re-parsing
+// output it already holds (the `h`/`unchanged` round-trip). Shared by the
+// terminal snapshot and dev-server log endpoints.
+export function snapshotTag(text: string, cleared: boolean): string {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < text.length; i++) {
+		h ^= text.charCodeAt(i);
+		h = Math.imul(h, 0x01000193);
+	}
+	return `${cleared ? 'c' : 'l'}${(h >>> 0).toString(36)}`;
 }
 
 // Capture that tolerates program-side screen/scrollback clears. Returns the live

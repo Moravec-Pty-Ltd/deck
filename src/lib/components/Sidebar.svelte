@@ -1,19 +1,26 @@
 <script lang="ts">
-	import type { DeckSession, Project } from '$lib/types';
+	import type { DeckSession, Project, ServerState } from '$lib/types';
 	import { deriveGroup } from '$lib/time';
+	import { aggregateState, SERVER_DOT, SERVER_LABEL } from '$lib/servers';
 	import { Plus, Terminal, Bot, GitBranch, FolderGit2, Trash2 } from '@lucide/svelte';
 
 	interface Props {
 		projects: Project[];
 		sessions: DeckSession[];
+		serverStates?: Record<string, ServerState[]>;
 		currentId?: string;
 		deletingId?: string | null;
 		onQuickAdd: (path: string) => void;
 		onShellHere: (session: DeckSession) => void;
 		onDelete: (session: DeckSession) => void;
 	}
-	let { projects, sessions, currentId, deletingId, onQuickAdd, onShellHere, onDelete }: Props =
+	let { projects, sessions, serverStates, currentId, deletingId, onQuickAdd, onShellHere, onDelete }: Props =
 		$props();
+
+	// Aggregate dev-server state for a session, or null when it runs none (issue #32).
+	function serverDot(id: string): ServerState | null {
+		return aggregateState(serverStates?.[id] ?? []);
+	}
 
 	const projectPaths = $derived(new Set(projects.map((p) => p.path)));
 
@@ -83,6 +90,10 @@
 								title={s.status}
 							></span>
 							<span class="min-w-0 flex-1 truncate text-sm">{s.title}</span>
+							{#if serverDot(s.id)}
+								{@const st = serverDot(s.id)!}
+								<span class="size-1.5 shrink-0 rounded-full {SERVER_DOT[st]}" title={`servers: ${SERVER_LABEL[st]}`}></span>
+							{/if}
 							{#if s.worktree}
 								<GitBranch size={11} class="shrink-0 opacity-40" />
 							{/if}

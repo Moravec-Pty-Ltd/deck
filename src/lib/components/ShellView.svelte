@@ -3,7 +3,20 @@
 	import AnsiText from './AnsiText.svelte';
 	import { Send, RefreshCw } from '@lucide/svelte';
 
-	let { session }: { session: DeckSession } = $props();
+	// Defaults drive the session's own terminal; pass snapshotPath/sendPath to
+	// repoint at another tmux pane (e.g. a dev server's log, issue #32). readonly
+	// hides the input + key controls for a log-only view.
+	let {
+		session,
+		snapshotPath = `/api/sessions/${encodeURIComponent(session.id)}/snapshot`,
+		sendPath = `/api/sessions/${encodeURIComponent(session.id)}/send`,
+		readonly = false
+	}: {
+		session: DeckSession;
+		snapshotPath?: string;
+		sendPath?: string;
+		readonly?: boolean;
+	} = $props();
 
 	let text = $state('');
 	let dead = $state(false);
@@ -17,9 +30,10 @@
 
 	async function refresh() {
 		let res: Response;
-		const q = lastHash ? `?h=${encodeURIComponent(lastHash)}` : '';
+		const sep = snapshotPath.includes('?') ? '&' : '?';
+		const q = lastHash ? `${sep}h=${encodeURIComponent(lastHash)}` : '';
 		try {
-			res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/snapshot${q}`);
+			res = await fetch(`${snapshotPath}${q}`);
 		} catch {
 			connected = false; // server momentarily unreachable (e.g. dev-server restart)
 			return;
@@ -46,7 +60,7 @@
 	});
 
 	async function send(submit = true) {
-		await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
+		await fetch(sendPath, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ text: input, submit })
@@ -57,7 +71,7 @@
 	}
 
 	async function sendKey(key: string) {
-		await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
+		await fetch(sendPath, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ key })
@@ -87,6 +101,7 @@
 		class="terminal-output min-h-0 flex-1 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-3"
 	><AnsiText text={text || (loaded ? '(empty)' : 'connecting…')} /></div>
 
+	{#if !readonly}
 	<div class="mt-3 space-y-2">
 		<div class="flex items-center gap-2">
 			<input
@@ -117,4 +132,5 @@
 			</button>
 		</div>
 	</div>
+	{/if}
 </div>

@@ -58,3 +58,16 @@ export function isPickerAllowed(dir: string): boolean {
 	const home = canonical(os.homedir());
 	return isUnder(dir, home === null ? projectRoots() : [home, ...projectRoots()]);
 }
+
+// Resolve a user-supplied relative path under `root`, rejecting absolute paths
+// and any `..` escape. Returns the joined absolute path, or null if it would
+// escape. Purely lexical (no fs), so it validates paths that don't exist yet:
+// dev-config copyFromMain destinations and setup-step cwds (see devservers.ts).
+export function confineRelative(root: string, rel: string): string | null {
+	if (rel.includes('\0')) return null; // NUL would truncate the path at the fs syscall
+	if (path.isAbsolute(rel)) return null;
+	const base = path.resolve(root);
+	const joined = path.resolve(base, rel);
+	if (joined === base) return joined;
+	return joined.startsWith(base + path.sep) ? joined : null;
+}

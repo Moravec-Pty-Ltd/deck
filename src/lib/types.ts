@@ -50,6 +50,84 @@ export interface Project {
 	// Issue sources are per-project and additive. API keys never live here; they
 	// sit in ~/.deck/secrets.json keyed by source id (see server/store.ts).
 	sources?: IssueSource[];
+	// Dev-server standup config (issue #32): copy env files in, run ordered setup,
+	// then launch one or more monitored dev commands on an agent session's worktree.
+	dev?: DevConfig;
+}
+
+// A port a dev server listens on. `primary` marks which one the preview link
+// opens; `label` is shown in the UI for multi-port stacks.
+export interface PortSpec {
+	port: number;
+	label?: string;
+	primary?: boolean;
+}
+
+// One ordered, idempotent setup step. `cwd` is relative to the worktree root so a
+// subdirectory build is just a step. `run` executes through the pane's shell.
+export interface SetupStep {
+	label: string;
+	run: string;
+	cwd?: string;
+}
+
+// A long-running dev command, independently start/stop/restartable and monitored.
+export interface ServerSpec {
+	name: string;
+	run: string;
+	cwd?: string;
+	setup?: SetupStep[];
+	ports?: PortSpec[];
+	readyPattern?: string;
+}
+
+// Per-project dev config, stored on the project (see store.ts), validated with
+// zod on write (see server/devservers-core.ts).
+export interface DevConfig {
+	copyFromMain?: string[];
+	setup?: SetupStep[];
+	servers?: ServerSpec[];
+}
+
+// Health a managed dev server is in. setup -> starting -> running, with stalled /
+// errored / dead / stopped as the off-happy-path states.
+export type ServerState =
+	| 'stopped'
+	| 'setup'
+	| 'starting'
+	| 'running'
+	| 'stalled'
+	| 'errored'
+	| 'dead';
+
+export type SetupStepState = 'pending' | 'running' | 'ok' | 'failed';
+
+// Progress of a single setup step, surfaced live while a server is being started.
+export interface SetupStepProgress {
+	label: string;
+	state: SetupStepState;
+	exitCode?: number;
+	output?: string;
+}
+
+// A configured port plus its live listening status, for the Servers tab.
+export interface PortStatus {
+	port: number;
+	label?: string;
+	primary?: boolean;
+	listening: boolean;
+}
+
+// Live view of a configured server: its derived state, ports, preview URL, and
+// the progress of its last setup run.
+export interface ServerRuntime {
+	name: string;
+	state: ServerState;
+	tmuxName: string;
+	ports: PortStatus[];
+	previewUrl?: string;
+	setup: SetupStepProgress[];
+	error?: string;
 }
 
 export type IssueSourceType = 'github' | 'linear' | 'clickup';

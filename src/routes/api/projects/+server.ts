@@ -2,8 +2,22 @@ import { json, error } from '@sveltejs/kit';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { RequestHandler } from './$types';
+import type { DevConfig } from '$lib/types';
 import { listProjects, addProject, removeProject } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
+import { parseDevConfig } from '$lib/server/devservers-core';
+
+// Validate the dev-server config when present; carry the existing one across an
+// edit that doesn't touch it (the form sends the whole object when it does). A
+// bad config is a 400, not a 500.
+function resolveDev(body: { dev?: unknown }, existing: DevConfig | undefined): DevConfig | undefined {
+	if (body.dev === undefined) return existing;
+	try {
+		return parseDevConfig(body.dev);
+	} catch (e) {
+		error(400, e instanceof Error ? e.message : 'invalid dev config');
+	}
+}
 
 export const GET: RequestHandler = async () => {
 	return json(listProjects());
@@ -23,7 +37,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		path: dir,
 		template: String(body.template ?? '').trim() || undefined,
 		lastBase: typeof body.lastBase === 'string' ? body.lastBase.trim() || undefined : undefined,
-		sources: existing?.sources
+		sources: existing?.sources,
+		dev: resolveDev(body, existing?.dev)
 	};
 	addProject(project);
 	return json(project, { status: 201 });

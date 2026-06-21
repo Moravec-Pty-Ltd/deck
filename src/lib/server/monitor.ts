@@ -1,9 +1,12 @@
 import { listSessions } from './sessions';
+import { pollServers } from './devservers';
 import { notify } from './push';
 
 // Claude lifecycle (turn end, crash, question) is notified inline from the event
 // stream in claude.ts. Shells have no event stream, so a lightweight poll watches
-// for managed shells transitioning to dead and pushes a notification once.
+// for managed shells transitioning to dead and pushes a notification once. The
+// same poll refreshes dev-server health (issue #32) and notifies on its
+// errored / dead / ready transitions.
 
 const g = globalThis as { __deckMonitor?: boolean; __deckPrevStatus?: Map<string, string> };
 
@@ -30,6 +33,7 @@ function start() {
 			}
 		}
 		for (const id of prev.keys()) if (!seen.has(id)) prev.delete(id);
+		await pollServers(sessions).catch(() => {});
 	}, 10000);
 	timer.unref();
 }

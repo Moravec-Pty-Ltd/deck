@@ -3,6 +3,7 @@
 	import { shortPath } from '$lib/time';
 	import PathInput from '$lib/components/PathInput.svelte';
 	import IssueSources from '$lib/components/IssueSources.svelte';
+	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
 	import { ArrowLeft, Plus, Trash2, Check } from '@lucide/svelte';
 
 	let projects = $state<Project[]>([]);
@@ -112,6 +113,7 @@
 					<button class="btn btn-sm btn-primary" onclick={() => save(p)}>Save</button>
 				</div>
 				<IssueSources project={p} onchanged={load} />
+				<DevConfigForm project={p} onchanged={load} />
 			</div>
 		{/each}
 

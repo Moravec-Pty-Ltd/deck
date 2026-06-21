@@ -1,13 +1,16 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
-	import type { DeckSession, NewSessionPreset, Project } from '$lib/types';
+	import type { DeckSession, NewSessionPreset, Project, ServerState } from '$lib/types';
 	import ClaudeView from '$lib/components/ClaudeView.svelte';
 	import ShellView from '$lib/components/ShellView.svelte';
 	import DiffView from '$lib/components/DiffView.svelte';
+	import DevServers from '$lib/components/DevServers.svelte';
+	import ServerChip from '$lib/components/ServerChip.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE } from '$lib/issues';
+	import { aggregateState } from '$lib/servers';
 	import { ArrowLeft, Bot, Terminal, Menu, X, Plus } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
@@ -22,17 +25,30 @@
 	// The Changes tab (worktree diff). Shown only when the session's cwd is a git
 	// repo. The badge count and the diff itself auto-refresh on turn end; the live
 	// status comes from the existing /api/sessions poll, not a separate stream.
-	let tab = $state<'main' | 'changes'>('main');
+	let tab = $state<'main' | 'changes' | 'servers'>('main');
 	let gitRepo = $state(false);
 	let changedCount = $state<number | null>(null);
 	const liveStatus = $derived(
 		sessions.find((s) => s.id === session.id)?.status ?? session.status
 	);
 
+	// Dev-server states per session, from the monitor's cached poll (cheap), for
+	// the header chip and the sidebar dots (issue #32). The Servers tab fetches
+	// live per-server detail itself; its onStates keeps this fresh while open.
+	let serverStates = $state<Record<string, ServerState[]>>({});
+	const myServers = $derived(serverStates[session.id] ?? []);
+	const serverChip = $derived(aggregateState(myServers));
+	const hasServers = $derived(myServers.length > 0);
+
 	async function refresh() {
-		const [pRes, sRes] = await Promise.all([fetch('/api/projects'), fetch('/api/sessions')]);
+		const [pRes, sRes, vRes] = await Promise.all([
+			fetch('/api/projects'),
+			fetch('/api/sessions'),
+			fetch('/api/servers')
+		]);
 		if (pRes.ok) projects = await pRes.json();
 		if (sRes.ok) sessions = await sRes.json();
+		if (vRes.ok) serverStates = await vRes.json();
 	}
 
 	$effect(() => {
@@ -74,6 +90,11 @@
 		const s = liveStatus;
 		if (prevLive === 'running' && s !== 'running' && tab !== 'changes') void loadDiffMeta();
 		prevLive = s;
+	});
+
+	// Don't strand the Servers tab if its config is removed mid-session.
+	$effect(() => {
+		if (tab === 'servers' && !hasServers) tab = 'main';
 	});
 
 	function openNew() {
@@ -137,6 +158,7 @@
 	<Sidebar
 		{projects}
 		{sessions}
+		{serverStates}
 		currentId={session.id}
 		{deletingId}
 		onQuickAdd={quickAdd}
@@ -191,6 +213,9 @@
 				{/if}
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
+			{#if serverChip}
+				<ServerChip state={serverChip} count={myServers.length} />
+			{/if}
 			{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}
 				<span class="badge badge-outline badge-sm shrink-0">yolo</span>
 			{/if}
@@ -199,7 +224,7 @@
 			</button>
 		</div>
 
-		{#if gitRepo}
+		{#if gitRepo || hasServers}
 			<div class="join mb-2 shrink-0 self-start">
 				<button
 					class="btn join-item btn-sm {tab === 'main' ? 'btn-active' : 'btn-ghost'}"
@@ -208,19 +233,31 @@
 				>
 					{session.kind === 'shell' ? 'Terminal' : 'Chat'}
 				</button>
-				<button
-					class="btn join-item btn-sm gap-1 {tab === 'changes' ? 'btn-active' : 'btn-ghost'}"
-					onclick={() => (tab = 'changes')}
-					aria-pressed={tab === 'changes'}
-				>
-					Changes
-					{#if changedCount}<span class="badge badge-neutral badge-sm">{changedCount}</span>{/if}
-				</button>
+				{#if gitRepo}
+					<button
+						class="btn join-item btn-sm gap-1 {tab === 'changes' ? 'btn-active' : 'btn-ghost'}"
+						onclick={() => (tab = 'changes')}
+						aria-pressed={tab === 'changes'}
+					>
+						Changes
+						{#if changedCount}<span class="badge badge-neutral badge-sm">{changedCount}</span>{/if}
+					</button>
+				{/if}
+				{#if hasServers}
+					<button
+						class="btn join-item btn-sm gap-1 {tab === 'servers' ? 'btn-active' : 'btn-ghost'}"
+						onclick={() => (tab = 'servers')}
+						aria-pressed={tab === 'servers'}
+					>
+						Servers
+						<span class="badge badge-neutral badge-sm">{myServers.length}</span>
+					</button>
+				{/if}
 			</div>
 		{/if}
 
 		<div class="min-h-0 flex-1">
-			<div class="h-full" class:hidden={tab === 'changes'}>
+			<div class="h-full" class:hidden={tab !== 'main'}>
 				{#if session.kind === 'shell'}
 					<ShellView {session} />
 				{:else}
@@ -234,6 +271,12 @@
 					onCount={(n) => {
 						if (n !== null) changedCount = n;
 					}}
+				/>
+			{/if}
+			{#if tab === 'servers'}
+				<DevServers
+					{session}
+					onStates={(states) => (serverStates = { ...serverStates, [session.id]: states })}
 				/>
 			{/if}
 		</div>

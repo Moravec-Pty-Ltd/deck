@@ -39,7 +39,7 @@ fs.writeFileSync(
 	])
 );
 
-const { isWithinProjects, isPickerAllowed } = await import('./confine');
+const { isWithinProjects, isPickerAllowed, confineRelative } = await import('./confine');
 const { completeDirs } = await import('./fsutil');
 
 afterAll(() => {
@@ -101,5 +101,29 @@ describe('completeDirs confinement', () => {
 	it('returns nothing for a directory outside the allowed roots', () => {
 		expect(completeDirs('/etc/')).toEqual([]);
 		expect(completeDirs(`${outside}/`)).toEqual([]);
+	});
+});
+
+describe('confineRelative', () => {
+	const root = '/tmp/wt';
+	it('joins a relative path under the root', () => {
+		expect(confineRelative(root, 'apps/api/.env')).toBe(path.join(root, 'apps/api/.env'));
+	});
+	it('allows the root itself', () => {
+		expect(confineRelative(root, '.')).toBe(path.resolve(root));
+	});
+	it('rejects an absolute path', () => {
+		expect(confineRelative(root, '/etc/passwd')).toBeNull();
+	});
+	it('rejects a parent-directory escape', () => {
+		expect(confineRelative(root, '../other/.env')).toBeNull();
+		expect(confineRelative(root, 'a/../../b')).toBeNull();
+	});
+	it('rejects an embedded NUL byte', () => {
+		expect(confineRelative(root, 'a\0b')).toBeNull();
+	});
+	it('does not treat a sibling prefix as inside', () => {
+		// /tmp/wt-evil shares the /tmp/wt prefix but is not under it.
+		expect(confineRelative('/tmp/wt', '../wt-evil/x')).toBeNull();
 	});
 });
