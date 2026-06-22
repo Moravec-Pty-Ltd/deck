@@ -207,7 +207,7 @@
 					{:else}
 						<ChevronRight size={16} class="shrink-0 opacity-60" />
 					{/if}
-					<h2 class="font-semibold">{group.name}</h2>
+					<span class="font-semibold">{group.name}</span>
 					<span class="text-xs opacity-50">{group.sessionCount}</span>
 				</button>
 				{#if isOpen}
@@ -216,7 +216,7 @@
 							<section>
 								<div class="mb-1.5 flex items-center gap-2 px-1">
 									<FolderGit2 size={14} class="shrink-0 opacity-50" />
-									<h3 class="font-semibold">{g.label}</h3>
+									<h2 class="font-semibold">{g.label}</h2>
 									<span class="text-xs opacity-50">{g.sessions.length}</span>
 									<span class="min-w-0 truncate text-xs opacity-40">{shortPath(g.key)}</span>
 									<button

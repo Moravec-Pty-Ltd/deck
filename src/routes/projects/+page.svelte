@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
-	import { groupProjects, existingGroupNames } from '$lib/groups';
+	import { groupProjects, UNGROUPED } from '$lib/groups';
 	import PathInput from '$lib/components/PathInput.svelte';
 	import IssueSources from '$lib/components/IssueSources.svelte';
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
@@ -25,7 +25,9 @@
 		layout = groupProjects(projects).map((g) => ({ name: g.name, paths: g.projects.map((p) => p.path) }));
 	}
 
-	const groupSuggestions = $derived(existingGroupNames(projects));
+	// Suggest only committed group names (from the load-time snapshot), so a group
+	// you're still typing into a card doesn't show up as an existing one.
+	const groupSuggestions = $derived(layout.map((s) => s.name).filter((name) => name !== UNGROUPED));
 
 	async function load() {
 		const res = await fetch('/api/projects');

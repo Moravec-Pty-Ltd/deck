@@ -24,7 +24,15 @@ export function createCollapseState(key: string) {
 			if (next.has(name)) next.delete(name);
 			else next.add(name);
 			expanded = next;
-			if (browser) localStorage.setItem(key, JSON.stringify([...next]));
+			// Persist best-effort: a write can throw in private mode or when the quota
+			// is exceeded, and that mustn't abort the expand/collapse click.
+			if (browser) {
+				try {
+					localStorage.setItem(key, JSON.stringify([...next]));
+				} catch {
+					// Keep the in-memory state; persistence is non-critical.
+				}
+			}
 		}
 	};
 }

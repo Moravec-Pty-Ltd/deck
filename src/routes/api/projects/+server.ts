@@ -24,7 +24,9 @@ function resolveDev(body: { dev?: unknown }, existing: DevConfig | undefined): D
 // form), mirroring how sources/dev are preserved.
 function resolveGroup(body: { group?: unknown }, existing: string | undefined): string | undefined {
 	if (body.group === undefined) return existing;
-	return typeof body.group === 'string' ? body.group.trim() || undefined : undefined;
+	// Reject a malformed group rather than silently clearing the stored one.
+	if (typeof body.group !== 'string') error(400, 'group must be a string');
+	return body.group.trim() || undefined;
 }
 
 export const GET: RequestHandler = async () => {
