@@ -1,8 +1,10 @@
 <script lang="ts">
 	import type { DeckSession, NewSessionPreset, Project, SessionKind } from '$lib/types';
-	import { relativeTime, shortPath, deriveGroup } from '$lib/time';
+	import { relativeTime, shortPath } from '$lib/time';
+	import { groupSessions } from '$lib/groups';
+	import { createCollapseState } from '$lib/collapse.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
-	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog } from '@lucide/svelte';
+	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, ChevronRight, ChevronDown } from '@lucide/svelte';
 
 	let sessions = $state<DeckSession[]>([]);
 	let projects = $state<Project[]>([]);
@@ -44,18 +46,12 @@
 		)
 	);
 
-	// Group sessions by derived project, ordered by each group's most recent session.
-	const groups = $derived.by(() => {
-		const map = new Map<string, { label: string; sessions: DeckSession[] }>();
-		for (const s of visible) {
-			const { key, label } = deriveGroup(s.cwd, projects);
-			if (!map.has(key)) map.set(key, { label, sessions: [] });
-			map.get(key)!.sessions.push(s);
-		}
-		return [...map.entries()]
-			.map(([key, g]) => ({ key, ...g }))
-			.sort((a, b) => b.sessions[0].lastActiveAt - a.sessions[0].lastActiveAt);
-	});
+	// Two-level grouping: project-group -> per-project subgroup -> sessions (issue #34).
+	const groups = $derived(groupSessions(visible, projects));
+
+	// Collapse state for the grouped view, default-collapsed and persisted
+	// independently from the sidebar's (no auto-expand).
+	const collapse = createCollapseState('deck:home:expandedGroups');
 
 	let delTarget = $state<DeckSession | null>(null);
 	let delWorktree = $state(true);
@@ -197,28 +193,50 @@
 		No sessions yet. Create one to get started.
 	</div>
 {:else if grouped}
-	<div class="space-y-5">
-		{#each groups as g (g.key)}
+	<div class="space-y-4">
+		{#each groups as group (group.name)}
+			{@const isOpen = collapse.has(group.name)}
 			<section>
-				<div class="mb-1.5 flex items-center gap-2 px-1">
-					<FolderGit2 size={14} class="shrink-0 opacity-50" />
-					<h2 class="font-semibold">{g.label}</h2>
-					<span class="text-xs opacity-50">{g.sessions.length}</span>
-					<span class="min-w-0 truncate text-xs opacity-40">{shortPath(g.key)}</span>
-					<button
-						class="btn btn-ghost btn-xs ml-auto shrink-0"
-						onclick={() => quickAdd(g.key)}
-						aria-label={`New session in ${g.label}`}
-						title="New session here"
-					>
-						<Plus size={15} class="text-primary" />
-					</button>
-				</div>
-				<ul class="space-y-2">
-					{#each g.sessions as s (s.id)}
-						<li>{@render row(s)}</li>
-					{/each}
-				</ul>
+				<button
+					class="flex w-full items-center gap-2 rounded-btn px-1 py-1 text-left hover:bg-base-200"
+					onclick={() => collapse.toggle(group.name)}
+					aria-expanded={isOpen}
+				>
+					{#if isOpen}
+						<ChevronDown size={16} class="shrink-0 opacity-60" />
+					{:else}
+						<ChevronRight size={16} class="shrink-0 opacity-60" />
+					{/if}
+					<h2 class="font-semibold">{group.name}</h2>
+					<span class="text-xs opacity-50">{group.sessionCount}</span>
+				</button>
+				{#if isOpen}
+					<div class="mt-2 space-y-5 pl-4">
+						{#each group.subgroups as g (g.key)}
+							<section>
+								<div class="mb-1.5 flex items-center gap-2 px-1">
+									<FolderGit2 size={14} class="shrink-0 opacity-50" />
+									<h3 class="font-semibold">{g.label}</h3>
+									<span class="text-xs opacity-50">{g.sessions.length}</span>
+									<span class="min-w-0 truncate text-xs opacity-40">{shortPath(g.key)}</span>
+									<button
+										class="btn btn-ghost btn-xs ml-auto shrink-0"
+										onclick={() => quickAdd(g.key)}
+										aria-label={`New session in ${g.label}`}
+										title="New session here"
+									>
+										<Plus size={15} class="text-primary" />
+									</button>
+								</div>
+								<ul class="space-y-2">
+									{#each g.sessions as s (s.id)}
+										<li>{@render row(s)}</li>
+									{/each}
+								</ul>
+							</section>
+						{/each}
+					</div>
+				{/if}
 			</section>
 		{/each}
 	</div>

@@ -19,6 +19,14 @@ function resolveDev(body: { dev?: unknown }, existing: DevConfig | undefined): D
 	}
 }
 
+// Resolve the optional group: trim a provided value (blank clears it), or carry
+// the existing project's group across a save that omits it (e.g. the dev-config
+// form), mirroring how sources/dev are preserved.
+function resolveGroup(body: { group?: unknown }, existing: string | undefined): string | undefined {
+	if (body.group === undefined) return existing;
+	return typeof body.group === 'string' ? body.group.trim() || undefined : undefined;
+}
+
 export const GET: RequestHandler = async () => {
 	return json(listProjects());
 };
@@ -35,6 +43,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const project = {
 		name: String(body.name ?? '').trim() || path.basename(dir),
 		path: dir,
+		group: resolveGroup(body, existing?.group),
 		template: String(body.template ?? '').trim() || undefined,
 		lastBase: typeof body.lastBase === 'string' ? body.lastBase.trim() || undefined : undefined,
 		sources: existing?.sources,

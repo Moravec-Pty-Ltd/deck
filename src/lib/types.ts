@@ -45,6 +45,10 @@ export interface SessionIssue {
 export interface Project {
 	name: string;
 	path: string;
+	// Optional grouping label (issue #34). Projects sharing the string cluster
+	// together in the lists/pickers; absent falls into the "Ungrouped" bucket.
+	// Single group per project, no separate entity, no migration.
+	group?: string;
 	template?: string;
 	lastBase?: string;
 	// Issue sources are per-project and additive. API keys never live here; they

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
+	import { groupProjects, existingGroupNames } from '$lib/groups';
 	import PathInput from '$lib/components/PathInput.svelte';
 	import IssueSources from '$lib/components/IssueSources.svelte';
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
@@ -12,12 +13,24 @@
 
 	let newPath = $state('');
 	let newName = $state('');
+	let newGroup = $state('');
 	let newTemplate = $state('');
 	let errorMsg = $state('');
+
+	// Section layout is snapshotted at load, not derived live: editing a card's
+	// group input mustn't make the card jump between sections mid-keystroke. It
+	// re-settles into its new section on save (which reloads).
+	let layout = $state<{ name: string; paths: string[] }[]>([]);
+	function rebuildLayout() {
+		layout = groupProjects(projects).map((g) => ({ name: g.name, paths: g.projects.map((p) => p.path) }));
+	}
+
+	const groupSuggestions = $derived(existingGroupNames(projects));
 
 	async function load() {
 		const res = await fetch('/api/projects');
 		if (res.ok) projects = await res.json();
+		rebuildLayout();
 		loaded = true;
 	}
 
@@ -30,13 +43,22 @@
 		const res = await fetch('/api/projects', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ path: p.path, name: p.name, template: p.template, lastBase: p.lastBase })
+			body: JSON.stringify({
+				path: p.path,
+				name: p.name,
+				group: p.group ?? '',
+				template: p.template,
+				lastBase: p.lastBase
+			})
 		});
 		if (!res.ok) {
 			errorMsg = (await res.json()).message ?? 'failed to save';
 			return;
 		}
 		savedPath = p.path;
+		// Reload so the card re-settles into its (possibly new) group section and the
+		// group suggestions pick up a newly-named group.
+		await load();
 		setTimeout(() => (savedPath === p.path ? (savedPath = null) : null), 1500);
 	}
 
@@ -49,6 +71,7 @@
 			body: JSON.stringify({
 				path: newPath.trim(),
 				name: newName.trim() || undefined,
+				group: newGroup.trim() || undefined,
 				template: newTemplate.trim() || undefined
 			})
 		});
@@ -58,6 +81,7 @@
 		}
 		newPath = '';
 		newName = '';
+		newGroup = '';
 		newTemplate = '';
 		load();
 	}
@@ -83,37 +107,60 @@
 {#if !loaded}
 	<p class="p-8 text-center opacity-60">Loading...</p>
 {:else}
-	<div class="space-y-3">
-		{#each projects as p (p.path)}
-			<div class="rounded-box border border-base-300 bg-base-100 p-4">
-				<div class="mb-2 flex items-center gap-2">
-					<input class="input input-sm flex-1 font-medium" bind:value={p.name} />
-					<button class="btn btn-ghost btn-sm" onclick={() => remove(p)} aria-label="Remove">
-						<Trash2 size={15} />
-					</button>
+	<datalist id="project-groups">
+		{#each groupSuggestions as g (g)}
+			<option value={g}></option>
+		{/each}
+	</datalist>
+	<div class="space-y-5">
+		{#each layout as section (section.name)}
+			<div>
+				<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide opacity-50">
+					{section.name}
+				</h2>
+				<div class="space-y-3">
+					{#each section.paths as path (path)}
+						{@const p = projects.find((x) => x.path === path)}
+						{#if p}
+							<div class="rounded-box border border-base-300 bg-base-100 p-4">
+								<div class="mb-2 flex items-center gap-2">
+									<input class="input input-sm flex-1 font-medium" bind:value={p.name} />
+									<input
+										class="input input-sm w-40"
+										placeholder="group (optional)"
+										list="project-groups"
+										bind:value={p.group}
+									/>
+									<button class="btn btn-ghost btn-sm" onclick={() => remove(p)} aria-label="Remove">
+										<Trash2 size={15} />
+									</button>
+								</div>
+								<div class="mb-2 truncate font-mono text-xs opacity-50">{shortPath(p.path)}</div>
+								<textarea
+									class="textarea textarea-sm w-full"
+									rows="3"
+									placeholder="default first prompt (optional)"
+									bind:value={p.template}
+								></textarea>
+								<input
+									class="input input-sm mt-2 w-full sm:w-72"
+									placeholder="default base branch (remembered automatically)"
+									bind:value={p.lastBase}
+								/>
+								<div class="mt-1 flex items-center gap-2">
+									<span class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</span>
+									<div class="flex-1"></div>
+									{#if savedPath === p.path}
+										<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
+									{/if}
+									<button class="btn btn-sm btn-primary" onclick={() => save(p)}>Save</button>
+								</div>
+								<IssueSources project={p} onchanged={load} />
+								<DevConfigForm project={p} onchanged={load} />
+							</div>
+						{/if}
+					{/each}
 				</div>
-				<div class="mb-2 truncate font-mono text-xs opacity-50">{shortPath(p.path)}</div>
-				<textarea
-					class="textarea textarea-sm w-full"
-					rows="3"
-					placeholder="default first prompt (optional)"
-					bind:value={p.template}
-				></textarea>
-				<input
-					class="input input-sm mt-2 w-full sm:w-72"
-					placeholder="default base branch (remembered automatically)"
-					bind:value={p.lastBase}
-				/>
-				<div class="mt-1 flex items-center gap-2">
-					<span class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</span>
-					<div class="flex-1"></div>
-					{#if savedPath === p.path}
-						<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
-					{/if}
-					<button class="btn btn-sm btn-primary" onclick={() => save(p)}>Save</button>
-				</div>
-				<IssueSources project={p} onchanged={load} />
-				<DevConfigForm project={p} onchanged={load} />
 			</div>
 		{/each}
 
@@ -132,6 +179,12 @@
 					/>
 				</div>
 				<input class="input input-sm sm:w-40" placeholder="name (optional)" bind:value={newName} />
+				<input
+					class="input input-sm sm:w-40"
+					placeholder="group (optional)"
+					list="project-groups"
+					bind:value={newGroup}
+				/>
 			</div>
 			<textarea
 				class="textarea textarea-sm mt-2 w-full"

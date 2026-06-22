@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { isAgentKind } from '$lib/types';
 	import type { Issue, NewSessionPreset, Project, SessionKind } from '$lib/types';
+	import { groupProjects, existingGroupNames } from '$lib/groups';
 	import { Bot, Terminal, Sparkles, Braces, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
@@ -41,6 +42,7 @@
 	let promptDirty = $state(false);
 	let command = $state('');
 	let newProjectPath = $state('');
+	let newProjectGroup = $state('');
 	let newProjectTemplate = $state('');
 	let busy = $state(false);
 	let errorMsg = $state('');
@@ -79,6 +81,8 @@
 
 	const effectiveCwd = $derived(cwd === '__custom' ? customCwd : cwd);
 	const selectedProject = $derived(projects.find((p) => p.path === cwd));
+	const projectGroups = $derived(groupProjects(projects));
+	const groupSuggestions = $derived(existingGroupNames(projects));
 	const finalCwd = $derived(worktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
 	const titleRequired = $derived(isAgentKind(kind));
 	const projectHasSources = $derived(!!selectedProject?.sources?.length);
@@ -153,6 +157,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
 				path: newProjectPath.trim(),
+				group: newProjectGroup.trim() || undefined,
 				template: newProjectTemplate.trim() || undefined
 			})
 		});
@@ -162,6 +167,7 @@
 			cwd = p.path;
 			promptDirty = false;
 			newProjectPath = '';
+			newProjectGroup = '';
 			newProjectTemplate = '';
 		} else {
 			errorMsg = (await res.json()).message ?? 'failed to add project';
@@ -242,14 +248,23 @@
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend">Project</legend>
 				<select class="select w-full" bind:value={cwd}>
-					{#each projects as p (p.path)}
-						<option value={p.path}>{p.name} ({p.path})</option>
+					{#each projectGroups as pg (pg.name)}
+						<optgroup label={pg.name}>
+							{#each pg.projects as p (p.path)}
+								<option value={p.path}>{p.name} ({p.path})</option>
+							{/each}
+						</optgroup>
 					{/each}
 					<option value="__custom">Custom path...</option>
 				</select>
 				{#if cwd === '__custom'}
 					<PathInput placeholder="/absolute/path or ~/path" bind:value={customCwd} />
 				{/if}
+				<datalist id="new-session-project-groups">
+					{#each groupSuggestions as g (g)}
+						<option value={g}></option>
+					{/each}
+				</datalist>
 				<div class="mt-1 flex w-full gap-1">
 					<PathInput
 						class="input input-sm flex-1"
@@ -260,6 +275,12 @@
 					<button class="btn btn-sm" onclick={addProject}>Add</button>
 				</div>
 				{#if newProjectPath.trim()}
+					<input
+						class="input input-sm w-full"
+						placeholder="group (optional)"
+						list="new-session-project-groups"
+						bind:value={newProjectGroup}
+					/>
 					<textarea
 						class="textarea textarea-sm w-full"
 						rows="2"
