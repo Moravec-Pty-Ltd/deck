@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="deck">
+	<rect width="512" height="512" rx="112" fill="#111a1d"/>
+	<rect x="144.5" y="144.5" width="292" height="292" rx="57.5" fill="none" stroke="#dce7ea" stroke-opacity="0.32" stroke-width="23"/>
+	<rect x="64" y="64" width="315" height="315" rx="69" fill="#f55d1a"/>
+</svg>
