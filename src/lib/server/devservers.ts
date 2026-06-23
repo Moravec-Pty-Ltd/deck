@@ -654,9 +654,13 @@ async function beginRerun(inst: Instance, ctx: ServerCtx): Promise<{ epoch: numb
 // Force the full standup, ignoring a prior setupComplete; re-mark complete on
 // success. false => failed or superseded (don't relaunch).
 async function prepareResetup(inst: Instance, ctx: ServerCtx, epoch: number): Promise<boolean> {
-	inst.setupComplete = false;
+	const wasComplete = inst.setupComplete;
+	inst.setupComplete = false; // a re-run re-derives completion from scratch
 	const ok = await runSetup(inst, ctx, epoch);
 	if (ok) inst.setupComplete = true;
+	// Superseded (a stop/restart bumped the epoch) rather than failed: restore the
+	// prior flag so the abandoned re-run doesn't force a needless setup next start.
+	else if (inst.epoch !== epoch) inst.setupComplete = wasComplete;
 	return ok;
 }
 
@@ -688,7 +692,7 @@ function resolveStepTask(tasks: Task[], index: number, label?: string): Task {
 	const task = tasks[index];
 	if (!task) throw new Error(`no setup step at index ${index}`);
 	if (label !== undefined && task.label !== label)
-		throw new Error('setup steps changed since the page loaded; reopen the Servers tab');
+		throw new Error('setup steps changed since the page loaded; re-run setup to refresh');
 	return task;
 }
 

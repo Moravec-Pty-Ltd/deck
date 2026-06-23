@@ -32,8 +32,8 @@ function actionFor(name: unknown) {
 function stepCall(body: { step?: unknown; label?: unknown }, id: string, name: string) {
 	const index = parseStepIndex(body.step);
 	if (index === null) error(400, 'invalid step index');
-	const label = typeof body.label === 'string' ? body.label : undefined;
-	return () => runSetupStep(id, name, index, label);
+	if (body.label !== undefined && typeof body.label !== 'string') error(400, 'invalid step label');
+	return () => runSetupStep(id, name, index, body.label as string | undefined);
 }
 
 // Resolve the request to a server call. `step` is dispatched apart from the
