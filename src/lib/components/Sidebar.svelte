@@ -3,6 +3,7 @@
 	import { groupSessions } from '$lib/groups';
 	import { createCollapseState } from '$lib/collapse.svelte';
 	import { aggregateState, SERVER_DOT, SERVER_LABEL } from '$lib/servers';
+	import { PR_STATE_COLOR } from '$lib/pr';
 	import { Plus, Terminal, Bot, GitBranch, FolderGit2, Trash2, ChevronRight, ChevronDown } from '@lucide/svelte';
 
 	interface Props {
@@ -110,7 +111,13 @@
 												<span class="size-1.5 shrink-0 rounded-full {SERVER_DOT[st]}" title={`servers: ${SERVER_LABEL[st]}`}></span>
 											{/if}
 											{#if s.worktree}
-												<GitBranch size={11} class="shrink-0 opacity-40" />
+												{@const prColor = s.pr?.state ? PR_STATE_COLOR[s.pr.state] : undefined}
+												<GitBranch
+													size={11}
+													class="shrink-0 {prColor ? '' : 'opacity-40'}"
+													style={prColor ? `color:${prColor}` : undefined}
+													title={prColor ? `PR ${s.pr?.state}` : undefined}
+												/>
 											{/if}
 										</a>
 										{#if s.kind !== 'shell' && s.worktree}

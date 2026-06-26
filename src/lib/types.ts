@@ -41,15 +41,23 @@ export interface DeckSession {
 	prBackfilled?: boolean;
 }
 
-// Live GitHub state of a captured PR, mapped from `gh pr view`'s state + isDraft
-// (see lib/pr.ts). Coloured with the standard GitHub palette in the header chip.
+// Live GitHub state of a captured PR, mapped from a PR's state + isDraft (see
+// lib/pr.ts). Coloured with the standard GitHub palette in the header chip and
+// the sidebar worktree icon.
 export type PrState = 'open' | 'merged' | 'closed' | 'draft';
 
-// A captured GitHub PR link. `repo` is owner/repo; `number` and `url` come from
-// the github.com/<owner>/<repo>/pull/<n> match (see lib/pr.ts). `state` is the
-// last fetched GitHub state (absent until the first fetch lands or if it fails),
-// `checkedAt` when that fetch ran; both persist so reopening shows the last-known
-// colour instantly.
+// Mergeability and review-decision enums, passed through verbatim from GitHub's
+// GraphQL PR object so the chip/menu can gate the Merge action and show a verdict.
+export type PrMergeable = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+export type PrReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
+
+// A captured GitHub PR link plus its last-synced live state. `repo` is owner/repo;
+// `number` and `url` come from the github.com/<owner>/<repo>/pull/<n> match (see
+// lib/pr.ts). Everything below `seenAt` is filled by the background bulk sync
+// (server/pr.ts) and persists, so reopening shows the last-known colour, tally,
+// and merge-ability instantly. `approvals`/`changesRequested` are latest-per-
+// reviewer counts from the PR's reviews. A captured-but-never-synced PR has only
+// the first four fields.
 export interface SessionPR {
 	url: string;
 	repo: string;
@@ -57,6 +65,10 @@ export interface SessionPR {
 	seenAt: number;
 	state?: PrState;
 	checkedAt?: number;
+	mergeable?: PrMergeable;
+	reviewDecision?: PrReviewDecision | null;
+	approvals?: number;
+	changesRequested?: number;
 }
 
 // The issue a session was launched from, persisted so the header can deep-link

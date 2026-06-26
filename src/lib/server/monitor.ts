@@ -1,5 +1,6 @@
 import { listSessions } from './sessions';
 import { pollServers } from './devservers';
+import { syncCapturedPrs } from './pr';
 import { notify } from './push';
 
 // Claude lifecycle (turn end, crash, question) is notified inline from the event
@@ -7,6 +8,11 @@ import { notify } from './push';
 // for managed shells transitioning to dead and pushes a notification once. The
 // same poll refreshes dev-server health (issue #32) and notifies on its
 // errored / dead / ready transitions.
+
+// Captured PRs sync on their own slower tick (issue #44): one bulk gh GraphQL
+// call covers every non-terminal PR across all repos, so it doesn't belong on the
+// 10s health poll. 75s keeps the chip/tally fresh without hammering gh.
+const PR_SYNC_INTERVAL_MS = 75_000;
 
 const g = globalThis as { __deckMonitor?: boolean; __deckPrevStatus?: Map<string, string> };
 
@@ -47,6 +53,12 @@ function start() {
 		}
 	}, 10000);
 	timer.unref();
+
+	// syncCapturedPrs is single-flight internally, so a slow gh call just skips the
+	// overlapping tick rather than queueing. Best-effort: swallow a stray rejection
+	// (e.g. a failed store write) so the timer keeps ticking.
+	const prTimer = setInterval(() => void syncCapturedPrs().catch(() => {}), PR_SYNC_INTERVAL_MS);
+	prTimer.unref();
 }
 
 start();

@@ -8,20 +8,11 @@
 	import ServerChip from '$lib/components/ServerChip.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
+	import PrMenu from '$lib/components/PrMenu.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE } from '$lib/issues';
-	import { PR_STATE_COLOR } from '$lib/pr';
 	import { aggregateState } from '$lib/servers';
-	import {
-		ArrowLeft,
-		Bot,
-		Terminal,
-		Menu,
-		X,
-		GitPullRequest,
-		Ticket,
-		TriangleAlert
-	} from '@lucide/svelte';
+	import { ArrowLeft, Bot, Terminal, Menu, X, Ticket, TriangleAlert } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 	const session = $derived(data.session);
@@ -42,48 +33,17 @@
 		sessions.find((s) => s.id === session.id)?.status ?? session.status
 	);
 
-	// Captured PR link for the header chip. Trust the polled session once it's
+	// Captured PR link for the header chip/menu. Trust the polled session once it's
 	// loaded (it reflects server truth, including a dismiss that cleared `pr`);
 	// fall back to the page-load session only until the first poll lands. Mirrors
 	// liveStatus, but `pr` can legitimately be undefined, so don't `??`-coalesce
-	// back to the stale page-load value.
+	// back to the stale page-load value. Live state (colour, tally, mergeability)
+	// is kept fresh by the background sync and surfaced through this poll, so the
+	// chip needs no per-open fetch (issue #44).
 	const livePr = $derived.by(() => {
 		const live = sessions.find((s) => s.id === session.id);
 		return live ? live.pr : session.pr;
 	});
-
-	async function clearPr() {
-		// Best-effort: on failure the next poll keeps the prior PR, so just reconcile
-		// from the store rather than waiting for the 5s tick (cf. loadDiffMeta).
-		try {
-			await fetch(`/api/sessions/${encodeURIComponent(session.id)}/pr`, { method: 'DELETE' });
-		} catch {
-			// transient failure: the chip stays until the dismiss retries or succeeds
-		}
-		await refresh();
-	}
-
-	// Fetch the captured PR's live GitHub state to colour the chip. Runs once when
-	// a PR is present and again only if the captured URL changes (no polling); the
-	// server persists the state on session.pr, so a subsequent poll/reopen shows
-	// the last-known colour without a refetch. Keyed on the URL so the 5s session
-	// poll doesn't re-trigger it.
-	let prStateFetchedFor = '';
-	$effect(() => {
-		const url = livePr?.url;
-		if (!url || prStateFetchedFor === url) return;
-		prStateFetchedFor = url;
-		void fetchPrState();
-	});
-
-	async function fetchPrState() {
-		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/pr`);
-			if (res.ok) await refresh();
-		} catch {
-			// best-effort: leave the chip at its last-known colour
-		}
-	}
 
 	// Dev-server states per session, from the monitor's cached poll (cheap), for
 	// the header chip and the sidebar dots (issue #32). The Servers tab fetches
@@ -272,30 +232,7 @@
 					{/if}
 				{/if}
 				{#if livePr}
-					{@const prColor = livePr.state ? PR_STATE_COLOR[livePr.state] : undefined}
-					<span
-						class="badge badge-outline badge-sm shrink-0 gap-1"
-						style={prColor ? `color:${prColor};border-color:${prColor}` : undefined}
-						title="{livePr.repo}#{livePr.number}{livePr.state ? ` (${livePr.state})` : ''}"
-					>
-						<a
-							href={livePr.url}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="link link-hover inline-flex items-center gap-1"
-							aria-label="{livePr.repo}#{livePr.number}"
-						>
-							<GitPullRequest size={12} />
-							<span class="hidden sm:inline">{livePr.repo}#{livePr.number}</span>
-						</a>
-						<button
-							class="hidden opacity-60 hover:opacity-100 sm:inline-flex"
-							onclick={clearPr}
-							aria-label="Dismiss PR link"
-						>
-							<X size={12} />
-						</button>
-					</span>
+					<PrMenu id={session.id} pr={livePr} onChange={refresh} />
 				{/if}
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
