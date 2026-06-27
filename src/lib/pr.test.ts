@@ -161,6 +161,18 @@ describe('parsePrSyncResponse', () => {
 		expect(parsePrSyncResponse(raw, 2)).toEqual([null, null]);
 	});
 
+	it('keeps the good aliases when a partial GraphQL error nulls one (one dead PR does not freeze the chunk)', () => {
+		// gh exits non-zero but still writes `data` for the resolvable aliases; the
+		// errored alias comes back as { pullRequest: null }.
+		const raw = JSON.stringify({
+			data: { p0: node(), p1: { pullRequest: null } },
+			errors: [{ message: 'Could not resolve to a Repository' }]
+		});
+		const out = parsePrSyncResponse(raw, 2);
+		expect(out[0]).toMatchObject({ state: 'open' });
+		expect(out[1]).toBeNull();
+	});
+
 	it('coerces an unexpected reviewDecision to null and drops an unknown mergeable', () => {
 		const raw = JSON.stringify({ data: { p0: node({ reviewDecision: null, mergeable: 'MERGING' }) } });
 		expect(parsePrSyncResponse(raw, 1)[0]).toMatchObject({ reviewDecision: null });

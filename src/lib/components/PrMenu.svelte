@@ -1,7 +1,14 @@
 <script lang="ts">
-	import type { SessionPR } from '$lib/types';
+	import type { PrReviewDecision, SessionPR } from '$lib/types';
 	import { PR_STATE_COLOR, REVIEW_COLOR } from '$lib/pr';
 	import { GitPullRequest, Check, X, ExternalLink, GitMerge, ChevronLeft } from '@lucide/svelte';
+
+	// GitHub's overall review decision, shown as a verdict line in the menu header.
+	const VERDICT: Record<PrReviewDecision, { label: string; color?: string }> = {
+		APPROVED: { label: 'Approved', color: REVIEW_COLOR.approve },
+		CHANGES_REQUESTED: { label: 'Changes requested', color: REVIEW_COLOR.changes },
+		REVIEW_REQUIRED: { label: 'Review required' }
+	};
 
 	// The captured-PR chip turned into an action menu (issue #44). The chip shows
 	// the state-coloured icon (+ label at sm+); clicking opens a daisyUI dropdown
@@ -22,6 +29,7 @@
 	let deleteBranch = $state(false);
 
 	const prColor = $derived(pr.state ? PR_STATE_COLOR[pr.state] : undefined);
+	const verdict = $derived(pr.reviewDecision ? VERDICT[pr.reviewDecision] : undefined);
 	const approvals = $derived(pr.approvals ?? 0);
 	const changes = $derived(pr.changesRequested ?? 0);
 	// Merge is offered only for a clean, mergeable, open (non-draft) PR.
@@ -117,11 +125,22 @@
 			class="dropdown-content z-20 mt-1 w-64 rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg"
 		>
 			{#if panel === 'menu'}
-				{#if approvals > 0 || changes > 0}
-					<div class="mb-1 flex items-center gap-2 px-1 py-0.5 text-xs opacity-70" title={tallyTitle}>
-						{@render marks(approvals, REVIEW_COLOR.approve, Check)}
-						{@render marks(changes, REVIEW_COLOR.changes, X)}
-						<span class="opacity-70">{approvals} / {changes}</span>
+				{#if verdict || approvals > 0 || changes > 0}
+					<div class="mb-1 flex items-center gap-2 px-1 py-0.5 text-xs" title={tallyTitle}>
+						{#if verdict}
+							<span
+								class="font-medium {verdict.color ? '' : 'opacity-70'}"
+								style={verdict.color ? `color:${verdict.color}` : undefined}
+							>
+								{verdict.label}
+							</span>
+						{/if}
+						{#if approvals > 0 || changes > 0}
+							<span class="ml-auto inline-flex items-center gap-0.5">
+								{@render marks(approvals, REVIEW_COLOR.approve, Check)}
+								{@render marks(changes, REVIEW_COLOR.changes, X)}
+							</span>
+						{/if}
 					</div>
 				{/if}
 				<ul class="menu menu-sm w-full p-0">
