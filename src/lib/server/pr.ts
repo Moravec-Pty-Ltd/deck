@@ -32,8 +32,20 @@ export type ReviewDecision = keyof typeof REVIEW_FLAG;
 export type MergeMethod = keyof typeof MERGE_FLAG;
 
 async function gh(args: string[]): Promise<string> {
-	const { stdout } = await exec('gh', args, { maxBuffer: 16 * 1024 * 1024, timeout: GH_TIMEOUT_MS });
-	return stdout;
+	try {
+		const { stdout } = await exec('gh', args, { maxBuffer: 16 * 1024 * 1024, timeout: GH_TIMEOUT_MS });
+		return stdout;
+	} catch (e) {
+		// `gh api graphql` exits non-zero on a partial error (a deleted/renamed repo,
+		// revoked access, a PR that now 404s) but still writes valid `data` for every
+		// other alias to stdout. Use that stdout so one dead PR doesn't freeze the
+		// whole chunk: parsePrSyncResponse maps the errored alias to null and the rest
+		// sync normally. A genuine total failure (offline, gh missing) has no stdout,
+		// so it rethrows and the syncChunk catch skips the chunk.
+		const out = (e as { stdout?: string }).stdout;
+		if (out) return out;
+		throw e;
+	}
 }
 
 // Run a gh action (review/merge) and surface gh's own stderr on failure so the
@@ -67,6 +79,8 @@ async function syncChunk(items: SyncItem[]): Promise<void> {
 	const refs: PrRef[] = items.map((it) => ({ repo: it.pr.repo, number: it.pr.number }));
 	const raw = await gh(['api', 'graphql', '-f', `query=${buildPrSyncQuery(refs)}`]).catch(() => null);
 	if (raw === null) return;
+	// ponytail: one store write per changed PR (matches the existing per-update
+	// pattern); batch a chunk into a single write only if PR counts ever grow.
 	parsePrSyncResponse(raw, items.length).forEach((patch, i) => {
 		if (patch) persistPatch(items[i], patch);
 	});
