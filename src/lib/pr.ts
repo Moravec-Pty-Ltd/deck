@@ -71,8 +71,7 @@ export type PrSyncPatch = Pick<
 	'state' | 'mergeable' | 'reviewDecision' | 'approvals' | 'changesRequested'
 >;
 
-const PR_FIELDS =
-	'state isDraft mergeable reviewDecision url latestReviews(first:100){nodes{state}}';
+const PR_FIELDS = 'state isDraft mergeable reviewDecision latestReviews(first:100){nodes{state}}';
 
 // One aliased GraphQL selection per captured PR, so a single request covers every
 // non-terminal PR across all repos. Aliases are positional (p0, p1, ...) and the

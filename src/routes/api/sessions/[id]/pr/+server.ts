@@ -1,21 +1,13 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getStoredSession, updateSession } from '$lib/server/store';
-import {
-	reviewPr,
-	mergePr,
-	refreshPr,
-	REVIEW_FLAG,
-	MERGE_FLAG,
-	type ReviewDecision,
-	type MergeMethod
-} from '$lib/server/pr';
+import { reviewPr, mergePr, REVIEW_FLAG, MERGE_FLAG, type ReviewDecision, type MergeMethod } from '$lib/server/pr';
 
 // Actions on a session's captured PR. Status itself is kept fresh by the
 // background bulk sync (server/pr.ts), so there's no on-open GET: review / merge
-// run a `gh` command and return the freshly re-synced PR, and refresh just
-// re-syncs. The PR's repo + number are always resolved from the stored session,
-// never from the request, so an action can only ever touch this session's own PR.
+// run a `gh` command and return the freshly re-synced PR. The PR's repo + number
+// are always resolved from the stored session, never from the request, so an
+// action can only ever touch this session's own PR.
 type Body = {
 	action?: unknown;
 	decision?: unknown;
@@ -53,7 +45,6 @@ function mergeCall(id: string, b: Body) {
 function resolveCall(id: string, b: Body) {
 	if (b.action === 'review') return reviewCall(id, b);
 	if (b.action === 'merge') return mergeCall(id, b);
-	if (b.action === 'refresh') return () => refreshPr(id);
 	error(400, 'invalid action');
 }
 

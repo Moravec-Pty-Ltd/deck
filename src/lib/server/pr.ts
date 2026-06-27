@@ -121,10 +121,9 @@ export async function syncCapturedPrs(): Promise<void> {
 	}
 }
 
-// Refresh a single session's PR immediately (after a review/merge, or the menu's
-// Refresh) and return the updated PR so the caller can echo it back without
-// waiting for the next tick.
-export async function refreshPr(id: string): Promise<SessionPR | undefined> {
+// Refresh a single session's PR immediately after a review/merge so the chip's
+// colour and tally update at once rather than waiting for the next tick.
+async function refreshPr(id: string): Promise<SessionPR | undefined> {
 	const pr = getStoredSession(id)?.pr;
 	if (pr) await syncChunk([{ id, pr }]);
 	return getStoredSession(id)?.pr;

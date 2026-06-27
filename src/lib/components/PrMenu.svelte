@@ -145,7 +145,7 @@
 				{/if}
 				<ul class="menu menu-sm w-full p-0">
 					<li>
-						<a href={pr.url} target="_blank" rel="noopener noreferrer">
+						<a href={pr.url} target="_blank" rel="noopener noreferrer" onclick={() => (open = false)}>
 							<ExternalLink size={14} /> Open in browser
 						</a>
 					</li>
