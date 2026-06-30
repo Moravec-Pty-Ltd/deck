@@ -54,6 +54,12 @@ export function registerAsk(
 	});
 }
 
+// Whether a session is currently blocked on an ask. Surfaced on /api/sessions as
+// `awaitingInput` so the sidebar can bucket it under "Needs attention" (issue #48).
+export function hasPendingAsk(id: string): boolean {
+	return pending.has(id);
+}
+
 // Resolve the pending ask for a session with the user's answer text. Returns
 // false if nothing was waiting (e.g. a stale UI click).
 export function resolveAsk(sessionId: string, text: string): boolean {

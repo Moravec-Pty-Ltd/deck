@@ -19,6 +19,7 @@ import {
 	type TmuxSession
 } from './tmux';
 import { agentTurnRunning, agentStop } from './agents/dispatch';
+import { hasPendingAsk } from './ask';
 import { stopSessionServers } from './devservers';
 import { SERVER_TMUX_PREFIX } from './devservers-core';
 import { removeWorktree } from './git';
@@ -81,7 +82,9 @@ function shellView(s: DeckSession, tmuxSessions: TmuxSession[]): DeckSession {
 }
 
 function storedView(s: DeckSession, tmuxSessions: TmuxSession[]): DeckSession {
-	return isAgentKind(s.kind) ? { ...s, status: agentStatus(s) } : shellView(s, tmuxSessions);
+	return isAgentKind(s.kind)
+		? { ...s, status: agentStatus(s), awaitingInput: hasPendingAsk(s.id) }
+		: shellView(s, tmuxSessions);
 }
 
 // An unregistered tmux session surfaced as an adhoc terminal.

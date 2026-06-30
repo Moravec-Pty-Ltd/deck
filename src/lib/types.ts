@@ -14,6 +14,10 @@ export interface DeckSession {
 	createdAt: number;
 	lastActiveAt: number;
 	status: SessionStatus;
+	// true while the session is blocked on an MCP `ask` (a pending entry in the ask
+	// map, see server/ask.ts). Derived per /api/sessions poll so the sidebar's
+	// status view can bucket it under "Needs attention" (issue #48).
+	awaitingInput?: boolean;
 	// agents (claude/pi/codex)
 	claudeSessionId?: string;
 	// resume handle for pi/codex (pi session-file path, codex thread id)
