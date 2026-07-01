@@ -10,6 +10,7 @@ import { ensureMcp, mcpUrl } from './mcp';
 import { rejectAsk } from './ask';
 import { notify } from './push';
 import { transcriptPath } from './transcript';
+import { agentEnv } from './agents/env';
 import { lastPrLink } from '../pr';
 
 // Reading the stored transcript (snapshot tail + lazy back-scroll ranges) lives
@@ -151,7 +152,7 @@ function startProcess(id: string): Proc {
 
 	const child = spawn('claude', args, {
 		cwd: session.cwd,
-		env: process.env,
+		env: agentEnv(id),
 		stdio: ['pipe', 'pipe', 'pipe']
 	});
 	const proc: Proc = { child, running: false, buf: '', stderrTail: '', reqSeq: 0 };

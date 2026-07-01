@@ -5,6 +5,7 @@ import type { DeckSession } from '$lib/types';
 import { appendEvent, setStatus, bus } from '../claude';
 import { getStoredSession, updateSession } from '../store';
 import { notify } from '../push';
+import { agentEnv } from './env';
 import { deckError, resultEvent } from './events';
 import type { AgentDriver, TurnContext } from './types';
 import { piDriver } from './pi';
@@ -66,7 +67,7 @@ export async function runTurn(session: DeckSession, text: string) {
 	const turn = driver.buildTurn(session, text, session.agentSessionId);
 	const child = spawn(turn.cmd, turn.args, {
 		cwd: session.cwd,
-		env: process.env,
+		env: agentEnv(session.id),
 		stdio: ['pipe', 'pipe', 'pipe']
 	});
 	procs.set(session.id, child);
