@@ -123,13 +123,16 @@ async function makeWorktree(
 	cwd: string,
 	wt: WorktreeReq
 ): Promise<{ cwd: string; worktree: Worktree }> {
+	// `repo` (canonical) drives the git/fs work; `worktree.repo` keeps the original
+	// cwd so downstream project matching (projectForSession compares p.path by
+	// string, and project paths are stored un-canonicalized) still resolves.
 	const repo = await assertWorktreeCwd(cwd);
-	if (wt.fromPr !== undefined) return makePrWorktree(repo, wt);
+	if (wt.fromPr !== undefined) return makePrWorktree(cwd, repo, wt);
 	assertRefsSafe(wt);
 	const base = wt.base || undefined;
 	const dir = await createWorktree(repo, wt.branch!, { newBranch: wt.newBranch, base });
 	rememberBase(cwd, !!wt.newBranch, base);
-	return { cwd: dir, worktree: { repo, branch: wt.branch!, createdBranch: !!wt.newBranch, base } };
+	return { cwd: dir, worktree: { repo: cwd, branch: wt.branch!, createdBranch: !!wt.newBranch, base } };
 }
 
 // Fetch the PR head into a local pr/<n> branch, surfacing a fetch failure as a 400.
@@ -146,13 +149,14 @@ async function fetchPrBranch(cwd: string, number: number): Promise<string> {
 // diff (base...head) with no extra work.
 async function makePrWorktree(
 	cwd: string,
+	repo: string,
 	wt: WorktreeReq
 ): Promise<{ cwd: string; worktree: Worktree }> {
 	const number = toPrNumber(wt.fromPr);
 	if (number === null) error(400, 'invalid PR number');
 	const base = safeBase(wt);
-	const branch = await fetchPrBranch(cwd, number);
-	const dir = await createWorktree(cwd, branch, { newBranch: false });
+	const branch = await fetchPrBranch(repo, number);
+	const dir = await createWorktree(repo, branch, { newBranch: false });
 	return { cwd: dir, worktree: { repo: cwd, branch, createdBranch: false, base } };
 }
 
