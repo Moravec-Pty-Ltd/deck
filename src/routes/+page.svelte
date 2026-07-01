@@ -62,9 +62,7 @@
 	const deletingIds = new SvelteSet<string>();
 	let deleteError = $state<string | null>(null);
 
-	function remove(session: DeckSession, e: Event) {
-		e.preventDefault();
-		e.stopPropagation();
+	function remove(session: DeckSession) {
 		if (deletingIds.has(session.id)) return;
 		if (session.worktree) {
 			delWorktree = true;
@@ -159,36 +157,40 @@
 </div>
 
 {#snippet row(s: DeckSession)}
-	<a
-		href={`/s/${encodeURIComponent(s.id)}`}
-		class="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-3 hover:border-base-content/30 sm:gap-3 sm:px-4"
+	<div
+		class="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 pr-2 hover:border-base-content/30 sm:gap-3 sm:pr-3"
 	>
-		{#if s.kind === 'shell'}
-			<Terminal size={18} class="shrink-0 opacity-70" />
-		{:else}
-			<Bot size={18} class="shrink-0 opacity-70" />
-		{/if}
-		<div class="min-w-0 flex-1">
-			<div class="truncate font-medium">{s.title}</div>
-			<div class="truncate text-xs opacity-60">{shortPath(s.cwd)}</div>
-		</div>
-		{#if s.kind === 'pi' || s.kind === 'codex'}
-			<span class="badge badge-ghost badge-sm">{s.kind}</span>
-		{/if}
-		{#if s.kind === 'shell' && s.attached}
-			<span class="badge badge-outline badge-sm">attached</span>
-		{/if}
-		{#if s.managed === false}
-			<span class="badge badge-ghost badge-sm">adhoc</span>
-		{/if}
-		<span class="flex shrink-0 items-center gap-1.5">
-			<span class="size-2 shrink-0 rounded-full {statusDot(s)}"></span>
-			<span class="text-xs {statusText(s)}">{s.status}</span>
-		</span>
-		<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>
+		<a
+			href={`/s/${encodeURIComponent(s.id)}`}
+			class="flex min-w-0 flex-1 items-center gap-2 py-3 pl-3 sm:gap-3 sm:pl-4"
+		>
+			{#if s.kind === 'shell'}
+				<Terminal size={18} class="shrink-0 opacity-70" />
+			{:else}
+				<Bot size={18} class="shrink-0 opacity-70" />
+			{/if}
+			<div class="min-w-0 flex-1">
+				<div class="truncate font-medium">{s.title}</div>
+				<div class="truncate text-xs opacity-60">{shortPath(s.cwd)}</div>
+			</div>
+			{#if s.kind === 'pi' || s.kind === 'codex'}
+				<span class="badge badge-ghost badge-sm">{s.kind}</span>
+			{/if}
+			{#if s.kind === 'shell' && s.attached}
+				<span class="badge badge-outline badge-sm">attached</span>
+			{/if}
+			{#if s.managed === false}
+				<span class="badge badge-ghost badge-sm">adhoc</span>
+			{/if}
+			<span class="flex shrink-0 items-center gap-1.5">
+				<span class="size-2 shrink-0 rounded-full {statusDot(s)}"></span>
+				<span class="text-xs {statusText(s)}">{s.status}</span>
+			</span>
+			<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>
+		</a>
 		<button
 			class="btn btn-ghost btn-xs"
-			onclick={(e) => remove(s, e)}
+			onclick={() => remove(s)}
 			disabled={deletingIds.has(s.id)}
 			aria-label="Remove session"
 		>
@@ -198,7 +200,7 @@
 				<Trash2 size={14} />
 			{/if}
 		</button>
-	</a>
+	</div>
 {/snippet}
 
 {#if deleteError}
