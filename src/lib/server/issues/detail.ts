@@ -157,7 +157,11 @@ async function downloadImage(
 	source: SessionIssue['source'],
 	apiKey?: string
 ): Promise<boolean> {
-	const headers = authHeaders(source, new URL(url).hostname, apiKey);
+	// Normalise the host the same way isSafeImageUrl does (fold a trailing dot;
+	// hostname is already lowercased by the URL parser) so a "uploads.linear.app."
+	// form still matches the Linear allowlist instead of losing its auth header.
+	const host = new URL(url).hostname.replace(/\.$/, '');
+	const headers = authHeaders(source, host, apiKey);
 	const res = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(IMG_TIMEOUT_MS) });
 	if (!isImageOk(res)) return false;
 	const buf = Buffer.from(await res.arrayBuffer());
