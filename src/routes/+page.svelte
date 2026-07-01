@@ -192,7 +192,7 @@
 			class="btn btn-ghost btn-xs"
 			onclick={() => remove(s)}
 			disabled={deletingIds.has(s.id)}
-			aria-label="Remove session"
+			aria-label={`Remove ${s.title}`}
 		>
 			{#if deletingIds.has(s.id)}
 				<span class="loading loading-spinner loading-xs"></span>
