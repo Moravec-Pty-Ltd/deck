@@ -4,8 +4,21 @@
 	import { urlBase64ToUint8Array } from '$lib/push';
 	import { watchForUpdate } from '$lib/pwa-update';
 	import { page } from '$app/state';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 
 	let { children } = $props();
+
+	let paletteOpen = $state(false);
+
+	// Cmd+K (Ctrl+K elsewhere) toggles the palette from any page. deck's terminal is
+	// snapshot-based, not a live pty, so the chord carries no meaning in the shell/
+	// chat inputs; every other key is left untouched for those.
+	function onWindowKeydown(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+			e.preventDefault();
+			paletteOpen = !paletteOpen;
+		}
+	}
 
 	// The session view (/s/[id]) runs its own full-height, edge-to-edge layout
 	// (sidebar + panel flush under the header); every other route wants the body
@@ -128,11 +141,26 @@
 		{ id: 'light', label: 'Light', icon: Sun },
 		{ id: 'eink', label: 'E-ink', icon: BookOpen }
 	];
+
+	// Advance to the next theme in the header order, for the palette's Switch theme.
+	function cycleTheme() {
+		const order = themes.map((t) => t.id);
+		setTheme(order[(order.indexOf(theme) + 1) % order.length]);
+	}
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <svelte:head>
 	<title>deck</title>
 </svelte:head>
+
+<CommandPalette
+	bind:open={paletteOpen}
+	{cycleTheme}
+	notificationsSupported={pushSupported}
+	toggleNotifications={togglePush}
+/>
 
 <div class="flex h-[100dvh] flex-col overflow-hidden bg-base-200">
 	<header class="navbar min-h-12 shrink-0 gap-2 border-b border-base-300 bg-base-100 px-3 sm:px-4">

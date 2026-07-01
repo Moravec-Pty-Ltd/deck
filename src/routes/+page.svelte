@@ -6,6 +6,8 @@
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, ChevronRight, ChevronDown, X } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 
 	let sessions = $state<DeckSession[]>([]);
 	let projects = $state<Project[]>([]);
@@ -19,6 +21,15 @@
 		preset = null;
 		modalOpen = true;
 	}
+
+	// The palette's "New session" navigates here with ?new=1; open the modal and
+	// drop the flag so a reload or back-nav doesn't reopen it.
+	$effect(() => {
+		if (page.url.searchParams.has('new')) {
+			openNew();
+			goto('/', { replaceState: true, keepFocus: true, noScroll: true });
+		}
+	});
 
 	function quickAdd(path: string) {
 		preset = projects.some((p) => p.path === path) ? { projectPath: path } : { cwd: path };
