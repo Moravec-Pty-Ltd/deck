@@ -517,6 +517,7 @@
 					{#if kind === 'claude'}
 						<select class="select w-full" bind:value={model}>
 							<option value="">default model</option>
+							<option value="fable">fable</option>
 							<option value="opus">opus</option>
 							<option value="sonnet">sonnet</option>
 							<option value="haiku">haiku</option>
