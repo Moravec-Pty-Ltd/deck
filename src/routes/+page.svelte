@@ -90,8 +90,15 @@
 				body: JSON.stringify(opts)
 			});
 			if (!res.ok) throw new Error(`delete failed: ${res.status}`);
-			await refresh();
-			deleteError = null; // clear a prior failure only once a delete actually succeeds
+			// Delete succeeded: clear any prior failure, then reconcile the list. A
+			// refresh failure is transient (the 5s poll catches up) and must not be
+			// reported as a delete failure.
+			deleteError = null;
+			try {
+				await refresh();
+			} catch {
+				// ignore; the poll will drop the row
+			}
 		} catch {
 			deleteError = `Couldn't remove "${session.title}".`;
 		} finally {
