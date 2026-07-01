@@ -55,6 +55,9 @@ export function watchForUpdate(onReady: () => void): () => void {
 			}
 		};
 		worker.addEventListener('statechange', onStateChange);
+		// The worker may already be `installed` when we attach (fast install), so no
+		// further statechange would fire; evaluate the current state once now.
+		onStateChange();
 	};
 
 	// Reopening/refocusing the PWA should actually ask the server for a new worker.
