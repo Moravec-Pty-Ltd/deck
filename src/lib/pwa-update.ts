@@ -29,7 +29,17 @@ export function watchForUpdate(onReady: () => void): () => void {
 
 	let registration: ServiceWorkerRegistration | null = null;
 	let lastCheck = 0;
+	let disposed = false;
 	const tracked = new WeakSet<ServiceWorker>();
+
+	// Report readiness at most once per watcher: the statechange and controllerchange
+	// paths can both fire for one update, and a dismissed prompt shouldn't pop back.
+	let readyNotified = false;
+	const notifyReady = () => {
+		if (readyNotified) return;
+		readyNotified = true;
+		onReady();
+	};
 
 	// Follow one installing worker to readiness. Guarded so a worker is tracked once,
 	// and the listener removes itself once it has reported (or gone redundant).
@@ -39,7 +49,7 @@ export function watchForUpdate(onReady: () => void): () => void {
 		const onStateChange = () => {
 			if (isUpdateReady(worker.state, !!sw.controller)) {
 				worker.removeEventListener('statechange', onStateChange);
-				onReady();
+				notifyReady();
 			} else if (worker.state === 'redundant') {
 				worker.removeEventListener('statechange', onStateChange);
 			}
@@ -59,6 +69,7 @@ export function watchForUpdate(onReady: () => void): () => void {
 	const onUpdateFound = () => track(registration?.installing ?? null);
 
 	sw.ready.then((reg) => {
+		if (disposed) return; // torn down before the registration resolved
 		registration = reg;
 		reg.addEventListener('updatefound', onUpdateFound);
 		track(reg.installing);
@@ -70,7 +81,7 @@ export function watchForUpdate(onReady: () => void): () => void {
 	// A new worker taking control is also an update, but only if one was already in
 	// charge (guards the first install, where skipWaiting()/claim() still fire this).
 	const onControllerChange = () => {
-		if (hadController) onReady();
+		if (hadController) notifyReady();
 	};
 	sw.addEventListener('controllerchange', onControllerChange);
 
@@ -78,6 +89,7 @@ export function watchForUpdate(onReady: () => void): () => void {
 	window.addEventListener('focus', check);
 
 	return () => {
+		disposed = true;
 		registration?.removeEventListener('updatefound', onUpdateFound);
 		sw.removeEventListener('controllerchange', onControllerChange);
 		document.removeEventListener('visibilitychange', check);
