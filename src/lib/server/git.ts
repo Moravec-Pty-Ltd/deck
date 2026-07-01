@@ -126,7 +126,9 @@ export async function createWorktree(
 // repo, which holds for registered projects; anything else fails with a clear
 // error. Returns the local branch name.
 export async function fetchPullRef(repo: string, prNumber: number): Promise<string> {
-	if (!Number.isInteger(prNumber) || prNumber <= 0) throw new Error(`invalid PR number: ${prNumber}`);
+	// Safe integer only: rejects scientific-notation / oversized coercions so a
+	// crafted number can't form a bogus pull/<n> ref (the route bounds it too).
+	if (!Number.isSafeInteger(prNumber) || prNumber <= 0) throw new Error(`invalid PR number: ${prNumber}`);
 	const branch = `pr/${prNumber}`;
 	// branch reaches git as a ref arg; pr/<n> is isFlagSafe, but assert at the sink.
 	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);

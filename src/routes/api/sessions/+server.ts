@@ -42,10 +42,12 @@ function parseIssue(raw: unknown): SessionIssue | undefined {
 	return { source, id, url: safeHttpUrl(o.url) };
 }
 
-// A positive-integer PR number coerced from untyped JSON, or null.
+// A PR number coerced from untyped JSON: a safe positive integer, so
+// scientific-notation and oversized coercions can't reach the git fetch ref.
+// null otherwise.
 function toPrNumber(v: unknown): number | null {
 	const n = typeof v === 'number' ? v : Number(v);
-	return Number.isInteger(n) && n > 0 ? n : null;
+	return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
 // PR metadata the Review-mode picker attaches; stored on the session to seed the

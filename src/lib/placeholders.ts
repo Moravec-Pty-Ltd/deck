@@ -53,7 +53,10 @@ export function contextFromSession(session: DeckSession): PlaceholderContext {
 		prUrl: session.pr?.url,
 		prNumber: session.pr ? String(session.pr.number) : undefined,
 		prTitle: session.pr?.title,
-		prBranch: session.worktree?.branch,
-		prBase: session.worktree?.base
+		// Only resolve the PR branch/base for a session that actually has a PR (a
+		// review session), so these tokens stay blank in ordinary sessions rather
+		// than expanding to the worktree's own branch/base.
+		prBranch: session.pr ? session.worktree?.branch : undefined,
+		prBase: session.pr ? session.worktree?.base : undefined
 	};
 }

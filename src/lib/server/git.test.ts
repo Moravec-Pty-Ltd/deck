@@ -118,6 +118,7 @@ describe('fetchPullRef input guards', () => {
 		await expect(fetchPullRef('/repo', -3)).rejects.toThrow(/invalid PR number/);
 		await expect(fetchPullRef('/repo', 1.5)).rejects.toThrow(/invalid PR number/);
 		await expect(fetchPullRef('/repo', Number.NaN)).rejects.toThrow(/invalid PR number/);
+		await expect(fetchPullRef('/repo', 1e21)).rejects.toThrow(/invalid PR number/);
 	});
 });
 
