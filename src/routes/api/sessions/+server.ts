@@ -8,6 +8,7 @@ import { isFlagSafe } from '$lib/server/agents/args';
 import { agentSend } from '$lib/server/agents/dispatch';
 import { listProjects, updateProject } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
+import { isWithinProjects } from '$lib/server/confine';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 
 const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'shell'];
@@ -102,13 +103,23 @@ function worktreeRequested(wt?: WorktreeReq): boolean {
 	return !!wt && (wt.fromPr !== undefined || !!wt.branch);
 }
 
+// Both worktree paths run `git -C <cwd>` and write to <cwd>-worktrees, the same
+// git sink the /api/git/* endpoints confine. The picker feeding cwd is confined
+// to $HOME + projects, but a direct POST is not, so gate the worktree cwd to the
+// registered project set here too (custom-cwd sessions without a worktree are
+// unaffected: they reach no git sink).
+async function assertWorktreeCwd(cwd: string): Promise<void> {
+	if (!isWithinProjects(cwd)) error(403, 'worktree cwd must be a registered project');
+	if (!(await isGitRepo(cwd))) error(400, 'worktree requested but cwd is not a git repo');
+}
+
 // Create the isolated worktree the session will run in. A `fromPr` request forks
 // off to the PR checkout; otherwise it's a normal branch/base worktree.
 async function makeWorktree(
 	cwd: string,
 	wt: WorktreeReq
 ): Promise<{ cwd: string; worktree: Worktree }> {
-	if (!(await isGitRepo(cwd))) error(400, 'worktree requested but cwd is not a git repo');
+	await assertWorktreeCwd(cwd);
 	if (wt.fromPr !== undefined) return makePrWorktree(cwd, wt);
 	assertRefsSafe(wt);
 	const base = wt.base || undefined;
