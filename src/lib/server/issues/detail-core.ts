@@ -84,25 +84,38 @@ export function imageUrls(markdown: string): string[] {
 	return [...new Set(urls)];
 }
 
-// SSRF guard for image URLs pulled from issue bodies: http(s) only, and refuse
-// loopback / link-local / private literals + localhost. deck is single-user and
-// the URLs come from the user's own sources, so this isn't a full allowlist —
-// just closes the cloud-metadata / internal-service vector before a blind fetch.
-// It screens the literal host only; the download also refuses redirects
+// SSRF guard for image URLs pulled from issue bodies. deck is single-user and the
+// URLs come from the user's own sources, so this isn't a full allowlist — it just
+// closes the cloud-metadata / internal-service vector before a blind fetch. Range
+// checks apply only to actual IP literals (the WHATWG parser canonicalises IPv4,
+// incl. decimal/octal/hex forms), so a public host that merely looks numeric or
+// starts with fc/fd/fe (e.g. 127.example.com, fc.example.com) is not dropped. It
+// screens the literal host only; the download also refuses redirects
 // (redirect: 'manual', see detail.ts), so DNS-rebinding is the accepted residual.
-const BLOCKED_HOST =
-	/^(localhost$|.*\.localhost$|127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|\[?::\]?$|\[?::ffff:|\[?f[cde])/i;
+const LOCALHOST = /^(.*\.)?localhost$/;
+const IPV4_LITERAL = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+const PRIVATE_IPV4 = /^(127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+// URL.hostname keeps the brackets on an IPv6 literal: loopback ::1, unspecified
+// ::, IPv4-mapped ::ffff:*, unique-local fc/fd, link-local fe80.
+const INTERNAL_IPV6 = /^\[(::1|::|::ffff:.*|f[cd][0-9a-f]*:.*|fe80:.*)\]$/i;
+
+function isBlockedHost(host: string): boolean {
+	if (LOCALHOST.test(host)) return true;
+	if (host.startsWith('[')) return INTERNAL_IPV6.test(host);
+	return IPV4_LITERAL.test(host) && PRIVATE_IPV4.test(host);
+}
+
 export function isSafeImageUrl(raw: string): boolean {
 	let host: string;
 	try {
 		const u = new URL(raw);
 		if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
 		// Fold a fully-qualified trailing dot ("localhost.") so it can't slip past.
-		host = u.hostname.replace(/\.$/, '');
+		host = u.hostname.replace(/\.$/, '').toLowerCase();
 	} catch {
 		return false;
 	}
-	return !BLOCKED_HOST.test(host);
+	return !isBlockedHost(host);
 }
 
 const IMAGE_NOTE =

@@ -56,6 +56,9 @@
 	let pickedPr = $state<PullRequest | null>(null);
 
 	const issueKey = (i: Issue) => `${i.sourceId}:${i.id}`;
+	// Mirror the server's ISSUE_CAP (POST /api/sessions) so the selection can't
+	// grow past what actually gets persisted and fetched.
+	const MAX_ISSUES = 10;
 
 	let wasOpen = false;
 	$effect(() => {
@@ -115,9 +118,13 @@
 	// multi-select; the modal renders removable chips for what's picked.
 	function pickIssue(issue: Issue) {
 		const k = issueKey(issue);
-		pickedIssues = pickedIssues.some((i) => issueKey(i) === k)
-			? pickedIssues.filter((i) => issueKey(i) !== k)
-			: [...pickedIssues, issue];
+		const has = pickedIssues.some((i) => issueKey(i) === k);
+		if (!has && pickedIssues.length >= MAX_ISSUES) {
+			errorMsg = `attach at most ${MAX_ISSUES} issues`;
+			return;
+		}
+		errorMsg = '';
+		pickedIssues = has ? pickedIssues.filter((i) => issueKey(i) !== k) : [...pickedIssues, issue];
 		title = pickedIssues.map((i) => i.id).join('+');
 		branchDirty = false;
 	}

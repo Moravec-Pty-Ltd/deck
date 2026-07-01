@@ -65,6 +65,14 @@ describe('isSafeImageUrl', () => {
 		expect(isSafeImageUrl('https://user-images.githubusercontent.com/1/x.png')).toBe(true);
 	});
 
+	it('allows public hostnames that merely look internal', () => {
+		// Range checks apply only to real IP literals, so these DNS names are fine.
+		expect(isSafeImageUrl('https://fc.example.com/x.png')).toBe(true);
+		expect(isSafeImageUrl('https://fe80.example.com/x.png')).toBe(true);
+		expect(isSafeImageUrl('https://127.example.com/x.png')).toBe(true);
+		expect(isSafeImageUrl('https://10.example.org/x.png')).toBe(true);
+	});
+
 	it('rejects non-http(s) schemes', () => {
 		expect(isSafeImageUrl('file:///etc/passwd')).toBe(false);
 		expect(isSafeImageUrl('data:image/png;base64,AAAA')).toBe(false);

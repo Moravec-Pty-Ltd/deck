@@ -240,14 +240,16 @@ export interface IssuePromptContext {
 const EMPTY: IssuePromptContext = { issueTitle: '', issueBody: '', issueComments: '' };
 const hasImages = (d: IssueDetail) => d.images.length > 0;
 
-// Fetch every attached issue's detail (best-effort; failures drop out).
+// Fetch every attached issue's detail in parallel (best-effort; failures drop
+// out), so total latency is the slowest source rather than the sum. fetchIssueDetail
+// never rejects, so Promise.all is safe here.
 async function fetchAll(items: IssueForFetch[]): Promise<{ detail: IssueDetail; apiKey?: string }[]> {
-	const kept: { detail: IssueDetail; apiKey?: string }[] = [];
-	for (const { issue, apiKey } of items) {
-		const detail = await fetchIssueDetail(issue, apiKey);
-		if (detail) kept.push({ detail, apiKey });
-	}
-	return kept;
+	const results = await Promise.all(
+		items.map(async ({ issue, apiKey }) => ({ detail: await fetchIssueDetail(issue, apiKey), apiKey }))
+	);
+	return results.filter(
+		(r): r is { detail: IssueDetail; apiKey: string | undefined } => r.detail !== null
+	);
 }
 
 // Fetch every attached issue's detail, download its images into the worktree
