@@ -37,19 +37,6 @@ export function watchForUpdate(onReady: () => void): () => void {
 	let registration: ServiceWorkerRegistration | null = null;
 	let lastCheck = 0;
 
-	sw.ready.then((reg) => {
-		registration = reg;
-		track(reg.installing);
-		reg.addEventListener('updatefound', () => track(reg.installing));
-	});
-
-	// A new worker taking control is also an update, but only if one was already in
-	// charge (guards the first install, where skipWaiting()/claim() still fire this).
-	const onControllerChange = () => {
-		if (hadController) onReady();
-	};
-	sw.addEventListener('controllerchange', onControllerChange);
-
 	// Reopening/refocusing the PWA should actually ask the server for a new worker.
 	const check = () => {
 		if (document.visibilityState !== 'visible' || !registration) return;
@@ -58,6 +45,22 @@ export function watchForUpdate(onReady: () => void): () => void {
 		lastCheck = now;
 		registration.update().catch(() => {});
 	};
+
+	sw.ready.then((reg) => {
+		registration = reg;
+		track(reg.installing);
+		reg.addEventListener('updatefound', () => track(reg.installing));
+		// A resume's focus/visibility event can land before `sw.ready` resolves, so
+		// run one check now that the registration exists; the first one isn't lost.
+		check();
+	});
+
+	// A new worker taking control is also an update, but only if one was already in
+	// charge (guards the first install, where skipWaiting()/claim() still fire this).
+	const onControllerChange = () => {
+		if (hadController) onReady();
+	};
+	sw.addEventListener('controllerchange', onControllerChange);
 
 	document.addEventListener('visibilitychange', check);
 	window.addEventListener('focus', check);
