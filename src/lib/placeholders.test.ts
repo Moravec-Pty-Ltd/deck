@@ -56,6 +56,18 @@ describe('expandPlaceholders', () => {
 	it('resolves missing issue-detail tokens to empty', () => {
 		expect(expandPlaceholders('[issue_title][issue_body][issue_comments]', {})).toBe('');
 	});
+
+	it('does not re-expand tokens that appear inside a substituted value', () => {
+		// An issue body that literally contains "[pr_url]" / "[title]" must survive
+		// verbatim — the substitution is a single pass, not recursive.
+		expect(
+			expandPlaceholders('[issue_body]', {
+				issueBody: 'reported at [pr_url] for [title]',
+				prUrl: 'https://example.com/pull/1',
+				title: 'X'
+			})
+		).toBe('reported at [pr_url] for [title]');
+	});
 });
 
 describe('contextFromSession', () => {

@@ -26,24 +26,32 @@ export interface PlaceholderContext {
 // back-compat alias for [branch-name]. A token with no value resolves to ''
 // (e.g. no PR captured -> [pr_url] is blank). Shared by the new-session
 // first-prompt path and quick messages so the token set lives in one place.
+//
+// Single pass over the template: every token is replaced once from `map`, so a
+// token that appears *inside* a substituted value (e.g. "[pr_url]" written in a
+// fetched issue body) is left literal rather than re-expanded. The regex is
+// derived from the map keys so the two can't drift.
 export function expandPlaceholders(text: string, ctx: PlaceholderContext): string {
-	return text
-		.replaceAll('[title]', ctx.title ?? '')
-		.replaceAll('[branch-name]', ctx.branch ?? '')
-		.replaceAll('[base-branch]', ctx.base ?? '')
-		.replaceAll('[branch]', ctx.branch ?? '')
-		.replaceAll('[cwd]', ctx.cwd ?? '')
-		.replaceAll('[issue_id]', ctx.issueId ?? '')
-		.replaceAll('[issue_url]', ctx.issueUrl ?? '')
-		.replaceAll('[issue_title]', ctx.issueTitle ?? '')
-		.replaceAll('[issue_body]', ctx.issueBody ?? '')
-		.replaceAll('[issue_comments]', ctx.issueComments ?? '')
-		.replaceAll('[pr_url]', ctx.prUrl ?? '')
-		.replaceAll('[pr_number]', ctx.prNumber ?? '')
-		.replaceAll('[pr_title]', ctx.prTitle ?? '')
-		.replaceAll('[pr_branch]', ctx.prBranch ?? '')
-		.replaceAll('[pr_base]', ctx.prBase ?? '')
-		.trim();
+	const map: Record<string, string> = {
+		'[title]': ctx.title ?? '',
+		'[branch-name]': ctx.branch ?? '',
+		'[base-branch]': ctx.base ?? '',
+		'[branch]': ctx.branch ?? '',
+		'[cwd]': ctx.cwd ?? '',
+		'[issue_id]': ctx.issueId ?? '',
+		'[issue_url]': ctx.issueUrl ?? '',
+		'[issue_title]': ctx.issueTitle ?? '',
+		'[issue_body]': ctx.issueBody ?? '',
+		'[issue_comments]': ctx.issueComments ?? '',
+		'[pr_url]': ctx.prUrl ?? '',
+		'[pr_number]': ctx.prNumber ?? '',
+		'[pr_title]': ctx.prTitle ?? '',
+		'[pr_branch]': ctx.prBranch ?? '',
+		'[pr_base]': ctx.prBase ?? ''
+	};
+	const names = Object.keys(map).map((k) => k.slice(1, -1));
+	const re = new RegExp(`\\[(?:${names.join('|')})\\]`, 'g');
+	return text.replace(re, (m) => map[m]).trim();
 }
 
 // Build the expansion context from a live session: title, worktree branch/base,

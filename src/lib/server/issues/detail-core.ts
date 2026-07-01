@@ -91,7 +91,7 @@ export function imageUrls(markdown: string): string[] {
 // It screens the literal host only; the download also refuses redirects
 // (redirect: 'manual', see detail.ts), so DNS-rebinding is the accepted residual.
 const BLOCKED_HOST =
-	/^(localhost$|.*\.localhost$|127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|\[?f[cde])/i;
+	/^(localhost$|.*\.localhost$|127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|\[?::\]?$|\[?::ffff:|\[?f[cde])/i;
 export function isSafeImageUrl(raw: string): boolean {
 	let host: string;
 	try {

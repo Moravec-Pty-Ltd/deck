@@ -94,6 +94,10 @@ function fetchIssueDetail(issue: SessionIssue, apiKey?: string): Promise<IssueDe
 
 const ASSETS_DIR = '.deck/issue-assets';
 const IMG_TIMEOUT_MS = 15_000;
+// Bound the per-issue download fan-out: an issue body with a huge number of image
+// links shouldn't spawn unbounded background work / disk use. The rest drop
+// best-effort, like any other image that doesn't come through.
+const MAX_IMAGES_PER_ISSUE = 20;
 const IMG_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
 
 function imageExt(url: string): string {
@@ -133,10 +137,14 @@ function authHeaders(
 // memory / fill the worktree; the fetch timeout bounds a slow drip.
 const MAX_IMG_BYTES = 10 * 1024 * 1024;
 
-// A response worth keeping: 2xx and an actual image content-type, so a non-image
-// or error body from an issue URL is dropped before we read it into memory.
+// A response worth keeping: 2xx, an actual image content-type, and a declared
+// size within the cap — so a non-image / error / oversized body from an issue
+// URL is dropped before we read it into memory (a lying content-length is caught
+// again after the read).
 function isImageOk(res: Response): boolean {
-	return res.ok && (res.headers.get('content-type') ?? '').startsWith('image/');
+	const type = res.headers.get('content-type') ?? '';
+	const len = Number(res.headers.get('content-length'));
+	return res.ok && type.startsWith('image/') && !(len > MAX_IMG_BYTES);
 }
 
 // `redirect: 'manual'` so a 3xx from an allowed host to an internal target can't
@@ -187,7 +195,7 @@ async function saveImages(worktree: string, detail: IssueDetail, apiKey?: string
 	const dir = path.join(worktree, rel);
 	fs.mkdirSync(dir, { recursive: true });
 	const saved: string[] = [];
-	for (const url of detail.images) {
+	for (const url of detail.images.slice(0, MAX_IMAGES_PER_ISSUE)) {
 		const p = await saveOne(url, dir, rel, detail.source, apiKey);
 		if (p) saved.push(p);
 	}

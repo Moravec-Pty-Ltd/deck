@@ -81,6 +81,11 @@ describe('isSafeImageUrl', () => {
 		expect(isSafeImageUrl('http://[::1]/x.png')).toBe(false);
 	});
 
+	it('rejects IPv4-mapped IPv6 and the unspecified address', () => {
+		expect(isSafeImageUrl('http://[::ffff:127.0.0.1]/x.png')).toBe(false);
+		expect(isSafeImageUrl('http://[::]/x.png')).toBe(false);
+	});
+
 	it('folds a trailing-dot fqdn before matching', () => {
 		expect(isSafeImageUrl('http://localhost./x.png')).toBe(false);
 	});
