@@ -36,7 +36,7 @@ export function watchForUpdate(onReady: () => void): () => void {
 	// paths can both fire for one update, and a dismissed prompt shouldn't pop back.
 	let readyNotified = false;
 	const notifyReady = () => {
-		if (readyNotified) return;
+		if (readyNotified || disposed) return;
 		readyNotified = true;
 		onReady();
 	};
