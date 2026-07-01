@@ -149,13 +149,13 @@ export async function fetchPullRef(repo: string, prNumber: number): Promise<stri
 // compare case-insensitively (GitHub owners/repos are case-insensitive).
 export function parseOriginRepo(remoteUrl: string): string | null {
 	const url = remoteUrl.trim();
-	// Only real fetchable remotes resolve: `scheme://host/…` with a non-empty host
-	// (so not `file:///…`), or scp-style `host:owner/repo` where the colon is
-	// followed by the path (so not a Windows drive `C:/…`). Bare/relative paths,
-	// `file://`, and drive paths are local origins that can't serve pull/* refs, so
-	// return null and let scopeToOrigin skip filtering rather than scope to a bogus
-	// owner/repo.
-	const hasHostUrl = /:\/\/[^/]/.test(url);
+	// Only real fetchable remotes resolve: a network `scheme://host/…` with a
+	// non-empty host (http(s)/ssh/git only, so every `file://…` form is out), or
+	// scp-style `host:owner/repo` where the colon is followed by the path (so not a
+	// Windows drive `C:/…`). Bare/relative paths, file URLs, and drive paths are
+	// local origins that can't serve pull/* refs, so return null and let
+	// scopeToOrigin skip filtering rather than scope to a bogus owner/repo.
+	const hasHostUrl = /^(?:https?|ssh|git):\/\/[^/]/i.test(url);
 	const isScp = !url.includes('://') && /^[^/]*[^/:]:[^/]/.test(url);
 	if (!hasHostUrl && !isScp) return null;
 	const m = url
