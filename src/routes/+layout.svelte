@@ -10,14 +10,25 @@
 
 	let paletteOpen = $state(false);
 
-	// Cmd+K (Ctrl+K elsewhere) toggles the palette from any page. deck's terminal is
-	// snapshot-based, not a live pty, so the chord carries no meaning in the shell/
-	// chat inputs; every other key is left untouched for those.
+	function isEditable(el: EventTarget | null): boolean {
+		const node = el as HTMLElement | null;
+		if (!node || typeof node.tagName !== 'string') return false;
+		const tag = node.tagName;
+		return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || node.isContentEditable;
+	}
+
+	// Cmd+K (Ctrl+K elsewhere) toggles the palette from any page. Leave Ctrl+K to
+	// editable controls (it's kill-line in macOS text fields and readline, so the
+	// chat/terminal inputs keep it) and never override a handler that already
+	// claimed the event; Cmd+K carries no text-edit meaning, so it still opens the
+	// palette even from an input.
 	function onWindowKeydown(e: KeyboardEvent) {
-		if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-			e.preventDefault();
-			paletteOpen = !paletteOpen;
-		}
+		if (e.key !== 'k' && e.key !== 'K') return;
+		if (!e.metaKey && !e.ctrlKey) return;
+		if (e.defaultPrevented) return;
+		if (!e.metaKey && isEditable(e.target)) return;
+		e.preventDefault();
+		paletteOpen = !paletteOpen;
 	}
 
 	// The session view (/s/[id]) runs its own full-height, edge-to-edge layout
