@@ -80,9 +80,15 @@
 	}
 
 	// Refetch the list when the session changes (and once on mount) so primary/menu
-	// names are ready before a click.
+	// names are ready before a click. Clear the previous session's list first so a
+	// click during the switch can't POST the new session id with a stale server
+	// name; the button just stays disabled until the refetch lands.
 	$effect(() => {
 		session.id;
+		servers = [];
+		err = null;
+		loadErr = null;
+		menuOpen = false;
 		void refreshServers();
 	});
 
