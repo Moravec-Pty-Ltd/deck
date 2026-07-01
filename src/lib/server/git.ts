@@ -148,8 +148,12 @@ export async function fetchPullRef(repo: string, prNumber: number): Promise<stri
 // aliases, and an optional .git suffix / trailing slash. Case is preserved;
 // compare case-insensitively (GitHub owners/repos are case-insensitive).
 export function parseOriginRepo(remoteUrl: string): string | null {
-	const m = remoteUrl
-		.trim()
+	const url = remoteUrl.trim();
+	// A local-path remote (./x, /x, x/y) isn't fetchable via pull/* refs, so treat
+	// it as unresolved. Every real remote (scheme:// or scp host:owner/repo) has a
+	// colon before the first slash; a unix path never does.
+	if (!/^[^/]*:/.test(url)) return null;
+	const m = url
 		.replace(/\/$/, '')
 		.replace(/\.git$/i, '')
 		.match(/[/:]([^/:]+)\/([^/:]+)$/);

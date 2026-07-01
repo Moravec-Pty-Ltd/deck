@@ -167,6 +167,12 @@ describe('parseOriginRepo', () => {
 		expect(parseOriginRepo('')).toBeNull();
 		expect(parseOriginRepo('not-a-url')).toBeNull();
 	});
+
+	it('returns null for a local-path remote (not fetchable via pull/*)', () => {
+		expect(parseOriginRepo('../acme/web')).toBeNull();
+		expect(parseOriginRepo('/home/me/acme/web')).toBeNull();
+		expect(parseOriginRepo('~/code/acme/web')).toBeNull();
+	});
 });
 
 describe('parseNumstat', () => {
