@@ -125,10 +125,12 @@
 		}
 	});
 
-	// Reset the highlight to the top whenever the query changes.
+	// Reset the highlight to the top whenever the query changes, and clear a stale
+	// error from a prior failed action so it doesn't linger while you type on.
 	$effect(() => {
 		query;
 		selected = 0;
+		err = '';
 	});
 
 	function move(delta: number) {
@@ -258,6 +260,9 @@
 					<li class="px-2 py-3 text-sm opacity-50">No matching commands.</li>
 				{/each}
 			</ul>
+			{#if err}
+				<p class="border-t border-base-300 px-3 py-2 text-xs text-error">{err}</p>
+			{/if}
 		{:else}
 			<div class="flex flex-col gap-3 p-4">
 				<div class="flex items-center gap-2">
