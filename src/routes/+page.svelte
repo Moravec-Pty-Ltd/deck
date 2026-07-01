@@ -82,7 +82,6 @@
 	) {
 		if (deletingIds.has(session.id)) return;
 		delTarget = null; // close the confirm modal immediately; cleanup runs in the background
-		deleteError = null;
 		deletingIds.add(session.id);
 		try {
 			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
@@ -92,6 +91,7 @@
 			});
 			if (!res.ok) throw new Error(`delete failed: ${res.status}`);
 			await refresh();
+			deleteError = null; // clear a prior failure only once a delete actually succeeds
 		} catch {
 			deleteError = `Couldn't remove "${session.title}".`;
 		} finally {
