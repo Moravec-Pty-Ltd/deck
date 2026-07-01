@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { expandPlaceholders, contextFromSession } from './placeholders';
+import {
+	expandPlaceholders,
+	contextFromSession,
+	SESSION_PLACEHOLDERS,
+	REVIEW_PLACEHOLDERS
+} from './placeholders';
 import type { DeckSession } from '$lib/types';
 
 describe('expandPlaceholders', () => {
@@ -67,6 +72,36 @@ describe('expandPlaceholders', () => {
 				title: 'X'
 			})
 		).toBe('reported at [pr_url] for [title]');
+	});
+});
+
+describe('hint placeholder constants', () => {
+	// Every token the UI hints advertise must be one expandPlaceholders actually
+	// substitutes, so a hint can't promise a [token] that expands to nothing.
+	const ctx = {
+		title: 't',
+		branch: 'b',
+		base: 'ba',
+		cwd: 'c',
+		issueId: 'i',
+		issueUrl: 'u',
+		issueTitle: 'it',
+		issueBody: 'ib',
+		issueComments: 'ic',
+		prUrl: 'pu',
+		prNumber: 'pn',
+		prTitle: 'pt',
+		prBranch: 'pb',
+		prBase: 'pba'
+	};
+
+	it('advertises only tokens expandPlaceholders substitutes', () => {
+		const tokens = `${SESSION_PLACEHOLDERS} ${REVIEW_PLACEHOLDERS}`.match(/\[[^\]]+\]/g) ?? [];
+		expect(tokens.length).toBeGreaterThan(0);
+		for (const token of tokens) {
+			// A recognised token expands to its value; an unknown one stays literal.
+			expect(expandPlaceholders(token, ctx)).not.toBe(token);
+		}
 	});
 });
 

@@ -2,6 +2,7 @@
 	import type { Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
 	import { groupProjects, UNGROUPED } from '$lib/groups';
+	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import PathInput from '$lib/components/PathInput.svelte';
 	import IssueSources from '$lib/components/IssueSources.svelte';
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
@@ -157,7 +158,7 @@
 									bind:value={p.lastBase}
 								/>
 								<div class="mt-1 flex items-center gap-2">
-									<span class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]; review adds [pr_number] [pr_title] [pr_branch] [pr_base] [pr_url]</span>
+									<span class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}; review adds {REVIEW_PLACEHOLDERS}</span>
 									<div class="flex-1"></div>
 									{#if savedPath === p.path}
 										<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>

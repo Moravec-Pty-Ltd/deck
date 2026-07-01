@@ -2,6 +2,7 @@
 	import { isAgentKind } from '$lib/types';
 	import type { Issue, NewSessionPreset, Project, PullRequest, SessionKind } from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
+	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { Bot, Terminal, Sparkles, Braces, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
@@ -368,7 +369,7 @@
 						placeholder="template first prompt for this project (optional)"
 						bind:value={newProjectTemplate}
 					></textarea>
-					<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body] [issue_comments]</p>
+					<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
 				{/if}
 			</fieldset>
 
@@ -555,9 +556,9 @@
 					{:else if !reviewMode && selectedProject?.template && !promptDirty}
 						<p class="text-xs opacity-50">prefilled from {selectedProject.name} template</p>
 					{:else if reviewMode}
-						<p class="text-xs opacity-50">placeholders: [pr_number] [pr_title] [pr_branch] [pr_base] [pr_url] [cwd]</p>
+						<p class="text-xs opacity-50">placeholders: {REVIEW_PLACEHOLDERS} [cwd]</p>
 					{:else}
-						<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body] [issue_comments]</p>
+						<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
 					{/if}
 				</fieldset>
 			{/if}

@@ -54,6 +54,15 @@ export function expandPlaceholders(text: string, ctx: PlaceholderContext): strin
 	return text.replace(re, (m) => map[m]).trim();
 }
 
+// UI hint copy for the [token] set above, kept beside expandPlaceholders so the
+// project-setup and new-session hints can't drift from the tokens it supports.
+// SESSION lists what any first prompt can use; REVIEW is the extra PR set a
+// review-mode prompt adds. ([branch] is an undocumented back-compat alias, so
+// it's intentionally left out here.)
+export const SESSION_PLACEHOLDERS =
+	'[title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body] [issue_comments]';
+export const REVIEW_PLACEHOLDERS = '[pr_number] [pr_title] [pr_branch] [pr_base] [pr_url]';
+
 // Build the expansion context from a live session: title, worktree branch/base,
 // cwd, the issue it was launched from, and the captured PR. For a Review-mode
 // session the worktree branch is the checked-out `pr/<n>` head and its base is
