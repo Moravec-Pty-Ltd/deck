@@ -1,9 +1,23 @@
 <script lang="ts">
 	import './layout.css';
-	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff } from '@lucide/svelte';
+	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff, RefreshCw, X } from '@lucide/svelte';
 	import { urlBase64ToUint8Array } from '$lib/push';
+	import { watchForUpdate } from '$lib/pwa-update';
 
 	let { children } = $props();
+
+	let updateReady = $state(false);
+	let refreshing = false;
+
+	// Surface a non-blocking prompt when a newer service worker is installed; the
+	// reload is what swaps the content-hashed app. Never reload out from under work.
+	$effect(() => watchForUpdate(() => (updateReady = true)));
+
+	function reloadForUpdate() {
+		if (refreshing) return; // controllerchange can also fire; reload at most once
+		refreshing = true;
+		location.reload();
+	}
 
 	let theme = $state('dark');
 	let installPrompt = $state<{ prompt: () => void; userChoice: Promise<unknown> } | null>(null);
@@ -171,3 +185,26 @@
 		{@render children()}
 	</main>
 </div>
+
+{#if updateReady}
+	<div
+		class="fixed inset-x-0 bottom-4 z-50 flex justify-center px-3"
+		role="status"
+		aria-live="polite"
+	>
+		<div class="alert w-auto max-w-sm gap-3 border border-base-300 bg-base-100 shadow-lg">
+			<RefreshCw size={16} class="shrink-0" />
+			<span class="text-sm">A new version of deck is available.</span>
+			<div class="flex items-center gap-1">
+				<button class="btn btn-primary btn-sm" onclick={reloadForUpdate}>Reload</button>
+				<button
+					class="btn btn-square btn-ghost btn-sm"
+					onclick={() => (updateReady = false)}
+					aria-label="Dismiss"
+				>
+					<X size={16} />
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
