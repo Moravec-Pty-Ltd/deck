@@ -6,6 +6,7 @@
 	import DiffView from '$lib/components/DiffView.svelte';
 	import DevServers from '$lib/components/DevServers.svelte';
 	import ServerChip from '$lib/components/ServerChip.svelte';
+	import RunButton from '$lib/components/RunButton.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import PrMenu from '$lib/components/PrMenu.svelte';
@@ -376,6 +377,7 @@
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
 			{#if serverChip}
+				<RunButton {session} serverState={serverChip} onRefresh={refresh} />
 				<ServerChip state={serverChip} count={myServers.length} />
 			{/if}
 			{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}

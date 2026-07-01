@@ -2,7 +2,8 @@
 // buildCommands(ctx) assembles the session-aware list, filterCommands(list, q)
 // scores it. Every side effect goes through a CommandContext method the palette
 // supplies, so the registry stays unit-testable in isolation.
-import type { DeckSession, ServerState } from './types';
+import type { DeckSession, ServerRuntime } from './types';
+import { canStart, canStop, isInFlight, type ServerAction } from './servers-client';
 
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 export type ReviewDecision = 'approve' | 'request-changes' | 'comment';
@@ -20,8 +21,9 @@ export interface CommandContext {
 	session: DeckSession | null;
 	// All sessions, for the "go to session" switch list.
 	sessions: DeckSession[];
-	// Aggregate server states for the current session (empty when it runs none).
-	serverStates: ServerState[];
+	// The current session's configured servers (empty when it runs none), for the
+	// run/stop/restart commands.
+	servers: ServerRuntime[];
 	goto: (url: string) => void;
 	openUrl: (url: string) => void;
 	copy: (text: string) => void;
@@ -31,6 +33,8 @@ export interface CommandContext {
 	// PR review/merge; rejects with gh's message on failure so the palette shows it.
 	prAction: (payload: PrActionPayload) => Promise<void>;
 	dismissPr: () => Promise<void>;
+	// Run a lifecycle action on one of the current session's servers.
+	serverAction: (name: string, action: ServerAction) => Promise<void>;
 }
 
 // A command awaiting a second step before it runs: 'text' collects a message,
@@ -147,6 +151,43 @@ function issueCommands(ctx: CommandContext, s: DeckSession): Command[] {
 		}));
 }
 
+// Run/stop/restart the current session's primary (first) server, sharing the
+// servers-client code path the header Run button uses. The caret menu on that
+// button covers the rest; the palette keeps to the common one-server case.
+function serverCommands(ctx: CommandContext): Command[] {
+	const primary = ctx.servers[0];
+	if (!primary) return [];
+	const cmds: Command[] = [];
+	if (canStart(primary.state)) {
+		cmds.push({
+			id: 'server-run',
+			title: 'Run dev server',
+			keywords: ['run', 'start', 'server', 'dev'],
+			hint: primary.name,
+			run: () => ctx.serverAction(primary.name, 'start')
+		});
+	}
+	if (canStop(primary.state)) {
+		cmds.push({
+			id: 'server-stop',
+			title: 'Stop dev server',
+			keywords: ['stop', 'server', 'dev'],
+			hint: primary.name,
+			run: () => ctx.serverAction(primary.name, 'stop')
+		});
+		if (!isInFlight(primary.state)) {
+			cmds.push({
+				id: 'server-restart',
+				title: 'Restart dev server',
+				keywords: ['restart', 'server', 'dev'],
+				hint: primary.name,
+				run: () => ctx.serverAction(primary.name, 'restart')
+			});
+		}
+	}
+	return cmds;
+}
+
 // Always-available actions, independent of any session.
 function globalCommands(ctx: CommandContext): Command[] {
 	const cmds: Command[] = [
@@ -195,6 +236,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
 	return [
 		...(s?.pr ? prCommands(ctx, s.pr) : []),
 		...(s ? issueCommands(ctx, s) : []),
+		...(s ? serverCommands(ctx) : []),
 		...globalCommands(ctx),
 		...jumpCommands(ctx)
 	];

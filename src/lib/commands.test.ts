@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildCommands, filterCommands, type CommandContext } from './commands';
-import type { DeckSession, SessionPR } from './types';
+import type { DeckSession, ServerRuntime, ServerState, SessionPR } from './types';
 
 function session(over: Partial<DeckSession> = {}): DeckSession {
 	return {
@@ -19,11 +19,15 @@ function pr(over: Partial<SessionPR> = {}): SessionPR {
 	return { url: 'https://github.com/acme/web/pull/7', repo: 'acme/web', number: 7, seenAt: 0, ...over };
 }
 
+function server(name: string, state: ServerState): ServerRuntime {
+	return { name, state, tmuxName: name, ports: [], setup: [] };
+}
+
 function ctx(over: Partial<CommandContext> = {}): CommandContext {
 	return {
 		session: null,
 		sessions: [],
-		serverStates: [],
+		servers: [],
 		goto: vi.fn(),
 		openUrl: vi.fn(),
 		copy: vi.fn(),
@@ -32,6 +36,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
 		toggleNotifications: vi.fn(),
 		prAction: vi.fn().mockResolvedValue(undefined),
 		dismissPr: vi.fn().mockResolvedValue(undefined),
+		serverAction: vi.fn().mockResolvedValue(undefined),
 		...over
 	};
 }
@@ -93,6 +98,31 @@ describe('buildCommands', () => {
 		expect(ids(ctx({ session: s }))).toContain('issue-open:linear:LIN-9');
 	});
 
+	it('a stopped server offers Run only', () => {
+		const list = ids(ctx({ session: session(), servers: [server('web', 'stopped')] }));
+		expect(list).toContain('server-run');
+		expect(list).not.toContain('server-stop');
+		expect(list).not.toContain('server-restart');
+	});
+
+	it('a running server offers Stop and Restart, not Run', () => {
+		const list = ids(ctx({ session: session(), servers: [server('web', 'running')] }));
+		expect(list).toContain('server-stop');
+		expect(list).toContain('server-restart');
+		expect(list).not.toContain('server-run');
+	});
+
+	it('a server mid bring-up offers Stop but not Restart', () => {
+		const list = ids(ctx({ session: session(), servers: [server('web', 'starting')] }));
+		expect(list).toContain('server-stop');
+		expect(list).not.toContain('server-restart');
+	});
+
+	it('no server commands off a session page or with no servers', () => {
+		expect(ids(ctx({ servers: [server('web', 'running')] })).some((id) => id.startsWith('server-'))).toBe(false);
+		expect(ids(ctx({ session: session(), servers: [] })).some((id) => id.startsWith('server-'))).toBe(false);
+	});
+
 	it('offers a jump command for every other session, not the current one', () => {
 		const c = ctx({
 			session: session({ id: 's1' }),
@@ -118,6 +148,13 @@ describe('command dispatch', () => {
 		expect(merge.step).toBe('merge');
 		await merge.run({ method: 'rebase', deleteBranch: true });
 		expect(c.prAction).toHaveBeenCalledWith({ action: 'merge', method: 'rebase', deleteBranch: true });
+	});
+
+	it('Run dev server starts the primary server by name', async () => {
+		const c = ctx({ session: session(), servers: [server('web', 'stopped'), server('api', 'running')] });
+		const run = buildCommands(c).find((cmd) => cmd.id === 'server-run')!;
+		await run.run();
+		expect(c.serverAction).toHaveBeenCalledWith('web', 'start');
 	});
 
 	it('Request changes trims the message into a request-changes review', async () => {

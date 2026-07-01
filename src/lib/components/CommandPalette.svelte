@@ -9,7 +9,8 @@
 		type MergeMethod,
 		type PrActionPayload
 	} from '$lib/commands';
-	import type { DeckSession, ServerState } from '$lib/types';
+	import type { DeckSession, ServerRuntime } from '$lib/types';
+	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
 	import { Search, CornerDownLeft, ChevronLeft } from '@lucide/svelte';
 
 	// Global Cmd+K palette. Rendered once in the layout; `open` is toggled by the
@@ -37,7 +38,7 @@
 	let query = $state('');
 	let selected = $state(0);
 	let sessions = $state<DeckSession[]>([]);
-	let serverStates = $state<Record<string, ServerState[]>>({});
+	let sessionServers = $state<ServerRuntime[]>([]);
 
 	// Second-step panel: a command awaiting its input before it runs.
 	let active = $state<Command | null>(null);
@@ -51,7 +52,6 @@
 	const currentSession = $derived(
 		currentId ? (sessions.find((s) => s.id === currentId) ?? null) : null
 	);
-	const myStates = $derived(currentId ? (serverStates[currentId] ?? []) : []);
 
 	async function prPost(payload: PrActionPayload) {
 		if (!currentSession) throw new Error('no session');
@@ -83,7 +83,7 @@
 		return {
 			session: currentSession,
 			sessions,
-			serverStates: myStates,
+			servers: sessionServers,
 			goto: (url) => goto(url),
 			openUrl: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
 			copy: (text) => navigator.clipboard?.writeText(text).catch(() => {}),
@@ -91,7 +91,12 @@
 			notificationsSupported,
 			toggleNotifications,
 			prAction: prPost,
-			dismissPr: prDismiss
+			dismissPr: prDismiss,
+			serverAction: async (name, action) => {
+				if (!currentSession) return;
+				await postServerAction(currentSession.id, name, action);
+				await loadData();
+			}
 		};
 	}
 
@@ -100,12 +105,12 @@
 	// Keep the highlight in range as the list narrows.
 	const active_index = $derived(Math.min(selected, Math.max(0, filtered.length - 1)));
 
-	// Pull the switch-list + current session's PR/server state whenever the palette
-	// opens (and after a PR action mutates it). Cheap and on-demand, no new poller.
+	// Pull the switch-list + current session's servers whenever the palette opens
+	// (and after an action mutates them). Cheap and on-demand, no new poller.
 	async function loadData() {
-		const [sRes, vRes] = await Promise.allSettled([fetch('/api/sessions'), fetch('/api/servers')]);
-		if (sRes.status === 'fulfilled' && sRes.value.ok) sessions = await sRes.value.json();
-		if (vRes.status === 'fulfilled' && vRes.value.ok) serverStates = await vRes.value.json();
+		const sRes = await fetch('/api/sessions').catch(() => null);
+		if (sRes?.ok) sessions = await sRes.json();
+		sessionServers = currentId ? await fetchServers(currentId).catch(() => []) : [];
 	}
 
 	// Drive the native dialog from `open`, resetting transient state on each open.
