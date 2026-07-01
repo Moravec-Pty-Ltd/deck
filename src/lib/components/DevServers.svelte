@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { DeckSession, ServerRuntime, ServerState, SetupStepProgress } from '$lib/types';
+	import { canStart, canStop, isInFlight } from '$lib/servers-client';
 	import ShellView from './ShellView.svelte';
 	import ServerChip from './ServerChip.svelte';
 	import {
@@ -96,20 +97,6 @@
 		openLogs = { ...openLogs, [name]: !openLogs[name] };
 	}
 
-	// Start is offered only from a settled off state; everything else (setup,
-	// starting, running, stalled) is stoppable.
-	const STOPPED: ServerState[] = ['stopped', 'dead', 'errored'];
-	function canStart(s: ServerRuntime) {
-		return STOPPED.includes(s.state);
-	}
-	function canStop(s: ServerRuntime) {
-		return !STOPPED.includes(s.state);
-	}
-	// A re-run (full or single step) is refused server-side while a bring-up is in
-	// flight; mirror that in the UI by disabling its controls during setup/starting.
-	function inFlight(s: ServerRuntime) {
-		return s.state === 'setup' || s.state === 'starting';
-	}
 	function logsPath(name: string) {
 		return `/api/sessions/${encodeURIComponent(session.id)}/servers/${encodeURIComponent(name)}/logs`;
 	}
@@ -155,7 +142,7 @@
 						<button
 							class="btn join-item btn-sm"
 							onclick={() => act(s.name, 'start')}
-							disabled={busy[s.name] || !canStart(s)}
+							disabled={busy[s.name] || !canStart(s.state)}
 							title="Start"
 							aria-label="Start"
 						>
@@ -173,7 +160,7 @@
 						<button
 							class="btn join-item btn-sm"
 							onclick={() => act(s.name, 'stop')}
-							disabled={busy[s.name] || !canStop(s)}
+							disabled={busy[s.name] || !canStop(s.state)}
 							title="Stop"
 							aria-label="Stop"
 						>
@@ -182,7 +169,7 @@
 						<button
 							class="btn join-item btn-sm"
 							onclick={() => act(s.name, 'resetup')}
-							disabled={busy[s.name] || inFlight(s)}
+							disabled={busy[s.name] || isInFlight(s.state)}
 							title="Re-run setup (full re-standup)"
 							aria-label="Re-run setup"
 						>
@@ -233,7 +220,7 @@
 								<button
 									class="btn btn-ghost btn-xs shrink-0"
 									onclick={() => runStep(s.name, i, step.label)}
-									disabled={busy[s.name] || inFlight(s)}
+									disabled={busy[s.name] || isInFlight(s.state)}
 									title="Run this step"
 									aria-label={`Run setup step: ${step.label}`}
 								>

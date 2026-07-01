@@ -96,6 +96,13 @@
 		run(primary.name, runningLike ? 'stop' : 'start');
 	}
 
+	// If the caret is no longer rendered (config change, the list briefly empties),
+	// drop the open flag so no dangling outside-click listener or stuck-open state
+	// survives the <details> unmounting.
+	$effect(() => {
+		if (!showCaret) menuOpen = false;
+	});
+
 	// Close the menu on an outside click, and refresh its server states on open.
 	$effect(() => {
 		if (!menuOpen) return;
