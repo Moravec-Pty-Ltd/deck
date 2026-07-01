@@ -8,7 +8,7 @@ import { isFlagSafe } from '$lib/server/agents/args';
 import { agentSend } from '$lib/server/agents/dispatch';
 import { listProjects, updateProject } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
-import { isWithinProjects } from '$lib/server/confine';
+import { resolveWithinProjects } from '$lib/server/confine';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 
 const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'shell'];
@@ -103,14 +103,18 @@ function worktreeRequested(wt?: WorktreeReq): boolean {
 	return !!wt && (wt.fromPr !== undefined || !!wt.branch);
 }
 
-// Both worktree paths run `git -C <cwd>` and write to <cwd>-worktrees, the same
+// Both worktree paths run `git -C <repo>` and write to <repo>-worktrees, the same
 // git sink the /api/git/* endpoints confine. The picker feeding cwd is confined
 // to $HOME + projects, but a direct POST is not, so gate the worktree cwd to the
 // registered project set here too (custom-cwd sessions without a worktree are
-// unaffected: they reach no git sink).
-async function assertWorktreeCwd(cwd: string): Promise<void> {
-	if (!isWithinProjects(cwd)) error(403, 'worktree cwd must be a registered project');
-	if (!(await isGitRepo(cwd))) error(400, 'worktree requested but cwd is not a git repo');
+// unaffected: they reach no git sink). Returns the canonical repo path, which the
+// git/fs operations below must use so a symlink whose realpath is in bounds can't
+// redirect the derived <repo>-worktrees dir out of bounds.
+async function assertWorktreeCwd(cwd: string): Promise<string> {
+	const repo = resolveWithinProjects(cwd);
+	if (repo === null) error(403, 'worktree cwd must be a registered project');
+	if (!(await isGitRepo(repo))) error(400, 'worktree requested but cwd is not a git repo');
+	return repo;
 }
 
 // Create the isolated worktree the session will run in. A `fromPr` request forks
@@ -119,13 +123,13 @@ async function makeWorktree(
 	cwd: string,
 	wt: WorktreeReq
 ): Promise<{ cwd: string; worktree: Worktree }> {
-	await assertWorktreeCwd(cwd);
-	if (wt.fromPr !== undefined) return makePrWorktree(cwd, wt);
+	const repo = await assertWorktreeCwd(cwd);
+	if (wt.fromPr !== undefined) return makePrWorktree(repo, wt);
 	assertRefsSafe(wt);
 	const base = wt.base || undefined;
-	const dir = await createWorktree(cwd, wt.branch!, { newBranch: wt.newBranch, base });
+	const dir = await createWorktree(repo, wt.branch!, { newBranch: wt.newBranch, base });
 	rememberBase(cwd, !!wt.newBranch, base);
-	return { cwd: dir, worktree: { repo: cwd, branch: wt.branch!, createdBranch: !!wt.newBranch, base } };
+	return { cwd: dir, worktree: { repo, branch: wt.branch!, createdBranch: !!wt.newBranch, base } };
 }
 
 // Fetch the PR head into a local pr/<n> branch, surfacing a fetch failure as a 400.

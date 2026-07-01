@@ -31,6 +31,13 @@ const outside2 = mkrealdir('deck-confine-out2-');
 fs.mkdirSync(path.join(outside2, 'secret'), { recursive: true });
 fs.symlinkSync(outside2, `${proj2Root}-worktrees`);
 
+// A symlink that sits *outside* the project set but points *into* a project. Its
+// realpath is in bounds, so it passes the check; resolveWithinProjects must hand
+// back the canonical project path, not the symlink, so a caller can't operate on
+// the alias and land a derived path (e.g. <repo>-worktrees) out of bounds.
+const linkIn = path.join(outside, 'link-in');
+fs.symlinkSync(projRoot, linkIn);
+
 fs.writeFileSync(
 	path.join(dataDir, 'projects.json'),
 	JSON.stringify([
@@ -39,7 +46,8 @@ fs.writeFileSync(
 	])
 );
 
-const { isWithinProjects, isPickerAllowed, confineRelative } = await import('./confine');
+const { isWithinProjects, resolveWithinProjects, isPickerAllowed, confineRelative } =
+	await import('./confine');
 const { completeDirs } = await import('./fsutil');
 
 afterAll(() => {
@@ -75,6 +83,23 @@ describe('isWithinProjects', () => {
 	it('does not let a symlinked worktrees root extend confinement', () => {
 		expect(isWithinProjects(proj2Root)).toBe(true);
 		expect(isWithinProjects(path.join(outside2, 'secret'))).toBe(false);
+	});
+});
+
+describe('resolveWithinProjects', () => {
+	it('returns the canonical path for a registered project', () => {
+		expect(resolveWithinProjects(projRoot)).toBe(projRoot);
+	});
+
+	it('canonicalizes an in-bounds symlink to its real project path', () => {
+		// linkIn lives outside the set but resolves into the project: the caller
+		// must get projRoot back, never the alias.
+		expect(resolveWithinProjects(linkIn)).toBe(projRoot);
+	});
+
+	it('returns null outside the project set', () => {
+		expect(resolveWithinProjects(outside)).toBe(null);
+		expect(resolveWithinProjects('/etc')).toBe(null);
 	});
 });
 

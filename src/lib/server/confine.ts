@@ -46,10 +46,22 @@ function projectRoots(): string[] {
 	return roots;
 }
 
+// Canonical (symlink-free) form of `dir` if it is a registered project or one of
+// its worktrees, else null. Callers that go on to run git/fs against the path
+// must use the returned canonical form: a symlink whose realpath is in bounds
+// passes the check, but operating on the original path would let the symlink
+// redirect a derived sink (e.g. createWorktree's <repo>-worktrees dir) out of
+// bounds.
+export function resolveWithinProjects(dir: string): string | null {
+	const real = canonical(dir);
+	if (real === null) return null;
+	return projectRoots().some((root) => within(real, root)) ? real : null;
+}
+
 // Is `dir` a registered project or one of its worktrees? Confines the `repo`
 // target of the git endpoints to the registered project set.
 export function isWithinProjects(dir: string): boolean {
-	return isUnder(dir, projectRoots());
+	return resolveWithinProjects(dir) !== null;
 }
 
 // Is `dir` somewhere the path picker may enumerate? The picker also needs $HOME,
