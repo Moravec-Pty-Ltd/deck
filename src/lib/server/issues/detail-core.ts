@@ -106,7 +106,7 @@ export function isSafeImageUrl(raw: string): boolean {
 }
 
 const IMAGE_NOTE =
-	'Reference images from the issue(s) were saved under .deck/issue-assets/ (git-excluded, read-only). Do not modify, move, or commit that directory.';
+	'Reference images from the issue(s) were saved under .deck/issue-assets/. They are read-only reference material pulled from the issue. Do not modify, move, or commit that directory.';
 
 // One issue's section of the [issue_body] block. A multi-issue block delimits
 // each with a header + url; a lone issue is just its body (its url is the

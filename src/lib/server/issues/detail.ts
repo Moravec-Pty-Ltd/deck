@@ -129,6 +129,16 @@ function authHeaders(
 		: {};
 }
 
+// Cap a single reference image so a huge (or lying) response can't balloon
+// memory / fill the worktree; the fetch timeout bounds a slow drip.
+const MAX_IMG_BYTES = 10 * 1024 * 1024;
+
+// A response worth keeping: 2xx and an actual image content-type, so a non-image
+// or error body from an issue URL is dropped before we read it into memory.
+function isImageOk(res: Response): boolean {
+	return res.ok && (res.headers.get('content-type') ?? '').startsWith('image/');
+}
+
 // `redirect: 'manual'` so a 3xx from an allowed host to an internal target can't
 // be followed (it reads as !ok and drops). isSafeImageUrl has already screened
 // the literal host; DNS-rebinding stays an accepted residual for a single-user
@@ -141,9 +151,9 @@ async function downloadImage(
 ): Promise<boolean> {
 	const headers = authHeaders(source, new URL(url).hostname, apiKey);
 	const res = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(IMG_TIMEOUT_MS) });
-	if (!res.ok) return false;
+	if (!isImageOk(res)) return false;
 	const buf = Buffer.from(await res.arrayBuffer());
-	if (!buf.length) return false;
+	if (buf.length === 0 || buf.length > MAX_IMG_BYTES) return false;
 	fs.writeFileSync(dest, buf);
 	return true;
 }

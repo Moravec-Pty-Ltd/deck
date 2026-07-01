@@ -115,7 +115,7 @@ describe('render single issue', () => {
 	it('appends image refs and one read-only note', () => {
 		const out = renderIssueBody([detail({ images: ['.deck/issue-assets/acme_app_1/a.png'] })]);
 		expect(out).toContain('Images:\n- .deck/issue-assets/acme_app_1/a.png');
-		expect(out).toContain('.deck/issue-assets/ (git-excluded, read-only)');
+		expect(out).toContain('Do not modify, move, or commit');
 	});
 
 	it('falls back when the body is empty', () => {

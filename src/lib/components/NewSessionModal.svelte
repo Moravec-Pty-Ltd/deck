@@ -361,7 +361,7 @@
 						placeholder="template first prompt for this project (optional)"
 						bind:value={newProjectTemplate}
 					></textarea>
-					<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body]</p>
+					<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body] [issue_comments]</p>
 				{/if}
 			</fieldset>
 
@@ -550,7 +550,7 @@
 					{:else if reviewMode}
 						<p class="text-xs opacity-50">placeholders: [pr_number] [pr_title] [pr_branch] [pr_base] [pr_url] [cwd]</p>
 					{:else}
-						<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body]</p>
+						<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body] [issue_comments]</p>
 					{/if}
 				</fieldset>
 			{/if}
