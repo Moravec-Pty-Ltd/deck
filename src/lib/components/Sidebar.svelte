@@ -178,8 +178,7 @@
 					<span
 						class="min-w-0 truncate text-xs font-semibold {bucket.key === 'needs-attention'
 							? 'text-error'
-							: 'opacity-70'}">{bucket.label}</span
-					>
+							: 'opacity-70'}">{bucket.label}</span>
 					<span class="badge badge-ghost badge-sm shrink-0">{bucket.sessions.length}</span>
 					<div class="flex-1"></div>
 				</button>
