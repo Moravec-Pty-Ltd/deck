@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { DeckSession, ServerRuntime, ServerState } from '$lib/types';
 	import { SERVER_LABEL } from '$lib/servers';
 	import {
@@ -29,6 +30,9 @@
 	let servers = $state<ServerRuntime[]>([]);
 	let busy = $state(false);
 	let err = $state<string | null>(null);
+	// A load failure while we still have nothing to show, kept apart from `err`
+	// (action failures) so an action error isn't wiped by a background refetch.
+	let loadErr = $state<string | null>(null);
 	let menuOpen = $state(false);
 	let menuEl = $state<HTMLDetailsElement>();
 	let loadToken = 0;
@@ -62,9 +66,16 @@
 		try {
 			const list = await fetchServers(session.id);
 			// Drop a stale response (a later fetch, or a session switch, already won).
-			if (my === loadToken) servers = list;
-		} catch {
-			// transient (e.g. a dev-server restart racing the fetch); keep the last list
+			if (my === loadToken) {
+				servers = list;
+				loadErr = null;
+			}
+		} catch (e) {
+			// Surface only while we have nothing to show, so a transient mid-session
+			// failure (list already loaded) doesn't clobber a working control.
+			if (my === loadToken && servers.length === 0) {
+				loadErr = e instanceof Error ? e.message : 'failed to load servers';
+			}
 		}
 	}
 
@@ -73,6 +84,14 @@
 	$effect(() => {
 		session.id;
 		void refreshServers();
+	});
+
+	// If the list still hasn't loaded (e.g. the first fetch failed), retry off the
+	// page's aggregate poll rather than adding our own timer. untrack keeps this
+	// reacting to the aggregate only, never re-firing on our writes to `servers`.
+	$effect(() => {
+		serverState;
+		if (untrack(() => servers.length === 0)) void refreshServers();
 	});
 
 	async function run(name: string, action: ServerAction) {
@@ -182,7 +201,7 @@
 			{/if}
 		</div>
 	{/if}
-	{#if err}
-		<span class="max-w-[12rem] truncate text-xs text-error" title={err}>{err}</span>
+	{#if err || loadErr}
+		<span class="max-w-[12rem] truncate text-xs text-error" title={err || loadErr}>{err || loadErr}</span>
 	{/if}
 </span>
