@@ -67,6 +67,9 @@ export interface SessionPR {
 	repo: string;
 	number: number;
 	seenAt: number;
+	// PR title, set when a session is started in Review mode (server sync doesn't
+	// fetch it, so it's only present for review-seeded PRs). Feeds [pr_title].
+	title?: string;
 	state?: PrState;
 	checkedAt?: number;
 	mergeable?: PrMergeable;
@@ -102,6 +105,9 @@ export interface Project {
 	// Single group per project, no separate entity, no migration.
 	group?: string;
 	template?: string;
+	// First-prompt template for Review-mode sessions (started on a PR awaiting
+	// review). Empty means an empty prompt field, exactly like `template`.
+	reviewPrompt?: string;
 	lastBase?: string;
 	// Issue sources are per-project and additive. API keys never live here; they
 	// sit in ~/.deck/secrets.json keyed by source id (see server/store.ts).
@@ -244,6 +250,23 @@ export interface Issue {
 	url: string;
 	updatedAt: number;
 	blockers: IssueBlocker[];
+}
+
+// An open GitHub PR awaiting the authenticated user's review, as surfaced in the
+// Review-mode PR picker. `repo` is owner/repo; `headRefName`/`baseRefName` are the
+// PR's head/base branches; the worktree is checked out to a local `pr/<number>`
+// ref fetched from the base repo's pull/* refs.
+export interface PullRequest {
+	sourceId: string;
+	repo: string;
+	number: number;
+	title: string;
+	url: string;
+	headRefName: string;
+	baseRefName: string;
+	isDraft: boolean;
+	author: string;
+	updatedAt: number;
 }
 
 // Prefilled values for the new-session modal when launched from a shortcut

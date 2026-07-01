@@ -161,6 +161,7 @@ export async function createSession(input: {
 	command?: string;
 	worktree?: { repo: string; branch: string; createdBranch: boolean; base?: string };
 	issue?: SessionIssue;
+	pr?: SessionPR;
 }): Promise<DeckSession> {
 	const id = newId(input.kind);
 	const now = Date.now();
@@ -182,7 +183,10 @@ export async function createSession(input: {
 		status: 'idle',
 		managed: true,
 		worktree: input.worktree,
-		issue: input.issue
+		issue: input.issue,
+		// Seeded in Review mode so the header PR chip lights up immediately; the
+		// background sync (server/pr.ts) hydrates its live status on the next tick.
+		pr: input.pr
 	};
 
 	if (isAgentKind(input.kind)) {

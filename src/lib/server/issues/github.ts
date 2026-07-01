@@ -4,7 +4,7 @@
 // batched GraphQL call and treated as best-effort.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { GithubSource, Issue, IssueBlocker } from '$lib/types';
+import type { GithubSource, Issue, IssueBlocker, PullRequest } from '$lib/types';
 
 const exec = promisify(execFile);
 
@@ -51,6 +51,51 @@ export async function fetchGithubIssues(source: GithubSource): Promise<Issue[]> 
 		url: i.url,
 		updatedAt: Date.parse(i.updatedAt) || 0,
 		blockers: blockers.get(i.number) ?? []
+	}));
+}
+
+interface GhPr {
+	number: number;
+	title: string;
+	url: string;
+	headRefName: string;
+	baseRefName: string;
+	isDraft: boolean;
+	author: { login: string } | null;
+	updatedAt: string;
+}
+
+// Open PRs in the source's repo where review is requested from the authenticated
+// `gh` user — the Review-mode picker. Same scope model as fetchGithubIssues
+// (repo from source.owner/source.repo, rides on gh's own auth, no stored secret).
+export async function fetchReviewRequestedPrs(source: GithubSource): Promise<PullRequest[]> {
+	const repo = `${source.owner}/${source.repo}`;
+	const out = await gh([
+		'pr',
+		'list',
+		'-R',
+		repo,
+		'--search',
+		'review-requested:@me',
+		'--state',
+		'open',
+		'--limit',
+		'100',
+		'--json',
+		'number,title,url,headRefName,baseRefName,isDraft,author,updatedAt'
+	]);
+	const items = JSON.parse(out) as GhPr[];
+	return items.map((p) => ({
+		sourceId: source.id,
+		repo,
+		number: p.number,
+		title: p.title,
+		url: p.url,
+		headRefName: p.headRefName,
+		baseRefName: p.baseRefName,
+		isDraft: p.isDraft,
+		author: p.author?.login ?? '',
+		updatedAt: Date.parse(p.updatedAt) || 0
 	}));
 }
 

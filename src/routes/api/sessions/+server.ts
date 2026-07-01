@@ -1,9 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import fs from 'node:fs';
 import type { RequestHandler } from './$types';
-import { isAgentKind, type SessionIssue, type SessionKind, type IssueSourceType } from '$lib/types';
+import { isAgentKind, type SessionIssue, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
 import { listSessions, createSession } from '$lib/server/sessions';
-import { createWorktree, isGitRepo } from '$lib/server/git';
+import { createWorktree, fetchPullRef, isGitRepo } from '$lib/server/git';
 import { isFlagSafe } from '$lib/server/agents/args';
 import { agentSend } from '$lib/server/agents/dispatch';
 import { listProjects, updateProject } from '$lib/server/store';
@@ -13,8 +13,12 @@ import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'shell'];
 const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
 
-type WorktreeReq = { branch?: string; newBranch?: boolean; base?: string };
+type WorktreeReq = { branch?: string; newBranch?: boolean; base?: string; fromPr?: unknown };
 type Worktree = { repo: string; branch: string; createdBranch: boolean; base?: string };
+
+// owner/repo, the only shape the PR sync/actions pass to `gh -R`; validated here
+// so a crafted body can't reach that sink.
+const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 
 const asStr = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
@@ -36,6 +40,24 @@ function parseIssue(raw: unknown): SessionIssue | undefined {
 	const id = asStr(o.id);
 	if (!id || !ISSUE_SOURCES.includes(source)) return undefined;
 	return { source, id, url: safeHttpUrl(o.url) };
+}
+
+// A positive-integer PR number coerced from untyped JSON, or null.
+function toPrNumber(v: unknown): number | null {
+	const n = typeof v === 'number' ? v : Number(v);
+	return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+// PR metadata the Review-mode picker attaches; stored on the session to seed the
+// header PR chip and the [pr_*] placeholders. repo/number are validated (they
+// reach the gh PR sync/actions); url/title are best-effort.
+function parsePr(raw: unknown): SessionPR | undefined {
+	const o = (raw ?? {}) as Record<string, unknown>;
+	const repo = asStr(o.repo);
+	const number = toPrNumber(o.number);
+	if (!REPO_RE.test(repo) || number === null) return undefined;
+	// title mirrors url: '' when absent (the picker always sends a real one).
+	return { repo, number, url: safeHttpUrl(o.url), title: asStr(o.title), seenAt: Date.now() };
 }
 
 function resolveCwd(raw: unknown): string {
@@ -64,29 +86,69 @@ function assertRefsSafe(wt: WorktreeReq): void {
 	if (wt.base && !isSafeRef(wt.base)) error(400, 'invalid base branch');
 }
 
-// Create the isolated worktree the session will run in.
+// Validate + normalise the PR base ref (the PR path skips assertRefsSafe, which
+// also expects a branch). Returns undefined when no base was given.
+function safeBase(wt: WorktreeReq): string | undefined {
+	const base = wt.base || undefined;
+	if (base && !isSafeRef(base)) error(400, 'invalid base branch');
+	return base;
+}
+
+// Whether the request asked for a worktree at all: an existing/new branch, or a PR.
+function worktreeRequested(wt?: WorktreeReq): boolean {
+	return !!wt && (wt.fromPr !== undefined || !!wt.branch);
+}
+
+// Create the isolated worktree the session will run in. A `fromPr` request forks
+// off to the PR checkout; otherwise it's a normal branch/base worktree.
 async function makeWorktree(
 	cwd: string,
 	wt: WorktreeReq
 ): Promise<{ cwd: string; worktree: Worktree }> {
 	if (!(await isGitRepo(cwd))) error(400, 'worktree requested but cwd is not a git repo');
+	if (wt.fromPr !== undefined) return makePrWorktree(cwd, wt);
 	assertRefsSafe(wt);
-	const repo = cwd;
 	const base = wt.base || undefined;
-	const dir = await createWorktree(repo, wt.branch!, { newBranch: wt.newBranch, base });
-	rememberBase(repo, !!wt.newBranch, base);
-	return { cwd: dir, worktree: { repo, branch: wt.branch!, createdBranch: !!wt.newBranch, base } };
+	const dir = await createWorktree(cwd, wt.branch!, { newBranch: wt.newBranch, base });
+	rememberBase(cwd, !!wt.newBranch, base);
+	return { cwd: dir, worktree: { repo: cwd, branch: wt.branch!, createdBranch: !!wt.newBranch, base } };
 }
 
-// Resolve the effective cwd + worktree for the request (no-op when no branch given).
+// Fetch the PR head into a local pr/<n> branch, surfacing a fetch failure as a 400.
+async function fetchPrBranch(cwd: string, number: number): Promise<string> {
+	try {
+		return await fetchPullRef(cwd, number);
+	} catch (e) {
+		error(400, e instanceof Error ? e.message : 'failed to fetch PR branch');
+	}
+}
+
+// Review mode: check out an existing-branch worktree on the fetched pr/<n> head.
+// `base` (the PR's base ref) is persisted so the Changes tab renders the true PR
+// diff (base...head) with no extra work.
+async function makePrWorktree(
+	cwd: string,
+	wt: WorktreeReq
+): Promise<{ cwd: string; worktree: Worktree }> {
+	const number = toPrNumber(wt.fromPr);
+	if (number === null) error(400, 'invalid PR number');
+	const base = safeBase(wt);
+	const branch = await fetchPrBranch(cwd, number);
+	const dir = await createWorktree(cwd, branch, { newBranch: false });
+	return { cwd: dir, worktree: { repo: cwd, branch, createdBranch: false, base } };
+}
+
+// Resolve the effective cwd + worktree for the request (no-op when neither a
+// branch nor a PR is given). Both worktree paths return the effective branch via
+// the built worktree, so the caller's title default works uniformly.
 async function resolveWorktree(
 	cwd: string,
 	body: { worktree?: WorktreeReq }
 ): Promise<{ cwd: string; worktree?: Worktree; branch: string }> {
-	const wt = body.worktree?.branch ? body.worktree : undefined;
-	if (!wt) return { cwd, branch: '' };
-	const made = await makeWorktree(cwd, wt);
-	return { cwd: made.cwd, worktree: made.worktree, branch: wt.branch! };
+	const wt = body.worktree;
+	if (!worktreeRequested(wt)) return { cwd, branch: '' };
+	const made = await makeWorktree(cwd, wt!);
+	return { cwd: made.cwd, worktree: made.worktree, branch: made.worktree.branch };
 }
 
 // Kick off the agent's first turn if a non-empty prompt was supplied, expanding
@@ -112,6 +174,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const { cwd, worktree, branch } = await resolveWorktree(resolveCwd(body.cwd), body);
 	const issue = parseIssue(body.issue);
+	const pr = parsePr(body.pr);
 
 	const session = await createSession({
 		kind,
@@ -122,7 +185,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		permissionMode,
 		command,
 		worktree,
-		issue
+		issue,
+		pr
 	});
 
 	maybeDispatch(session, kind, prompt);

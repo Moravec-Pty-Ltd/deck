@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Issue, IssueSourceType, Project } from '$lib/types';
 	import { ISSUE_BADGE } from '$lib/issues';
+	import { runLoad } from '$lib/picker';
 	import { RefreshCw, TriangleAlert, ChevronRight } from '@lucide/svelte';
 
 	let { project, onpick }: { project: Project; onpick: (issue: Issue) => void } = $props();
@@ -20,33 +21,21 @@
 
 	// Guards against a slow fetch for a previous project landing after a newer
 	// one and overwriting the current project's issues.
-	let loadSeq = 0;
+	const seq = { n: 0 };
 
-	async function load(refresh = false) {
-		const seq = ++loadSeq;
-		loading = true;
-		loadError = '';
-		try {
-			const res = await fetch(
-				`/api/issues?project=${encodeURIComponent(project.path)}${refresh ? '&refresh=1' : ''}`
-			);
-			if (seq !== loadSeq) return;
-			if (!res.ok) {
-				const msg = (await res.json().catch(() => ({}))).message ?? 'failed to load issues';
-				if (seq !== loadSeq) return;
-				loadError = msg;
-				return;
+	function load(refresh = false) {
+		return runLoad<{ issues?: Issue[]; errors?: SourceError[] }>(
+			`/api/issues?project=${encodeURIComponent(project.path)}${refresh ? '&refresh=1' : ''}`,
+			seq,
+			{
+				loading: (v) => (loading = v),
+				error: (m) => (loadError = m),
+				ok: (d) => {
+					issues = d.issues ?? [];
+					errors = d.errors ?? [];
+				}
 			}
-			const data = await res.json();
-			if (seq !== loadSeq) return;
-			issues = data.issues ?? [];
-			errors = data.errors ?? [];
-		} catch (e) {
-			if (seq !== loadSeq) return;
-			loadError = e instanceof Error ? e.message : 'failed to load issues';
-		} finally {
-			if (seq === loadSeq) loading = false;
-		}
+		);
 	}
 
 	// Reload and reset the view whenever the bound project changes — a filter or

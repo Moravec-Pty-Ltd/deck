@@ -50,6 +50,7 @@
 				name: p.name,
 				group: p.group ?? '',
 				template: p.template,
+				reviewPrompt: p.reviewPrompt ?? '',
 				lastBase: p.lastBase
 			})
 		});
@@ -144,13 +145,19 @@
 									placeholder="default first prompt (optional)"
 									bind:value={p.template}
 								></textarea>
+								<textarea
+									class="textarea textarea-sm mt-2 w-full"
+									rows="3"
+									placeholder="review-mode first prompt (optional)"
+									bind:value={p.reviewPrompt}
+								></textarea>
 								<input
 									class="input input-sm mt-2 w-full sm:w-72"
 									placeholder="default base branch (remembered automatically)"
 									bind:value={p.lastBase}
 								/>
 								<div class="mt-1 flex items-center gap-2">
-									<span class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</span>
+									<span class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]; review adds [pr_number] [pr_title] [pr_branch] [pr_base] [pr_url]</span>
 									<div class="flex-1"></div>
 									{#if savedPath === p.path}
 										<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
