@@ -1,6 +1,7 @@
 import type { DeckSession, IssueSource, Project } from '$lib/types';
 import { readJson, writeJson } from './config';
 import { invalidateIssues } from './issues/cache';
+import { invalidatePrs } from './prs';
 import { DEMO, demoProjects } from './demo';
 
 const SESSIONS_FILE = 'sessions.json';
@@ -89,6 +90,13 @@ export function setSessionStatus(
 	else writeSessions(sessionsCache!);
 }
 
+// Drop both on-demand caches for a project (issues + PRs) after a source/project
+// mutation so neither keeps serving a stale list for the rest of its TTL window.
+function invalidateProjectCaches(projectPath: string) {
+	invalidateIssues(projectPath);
+	invalidatePrs(projectPath);
+}
+
 export function listProjects(): Project[] {
 	if (DEMO) return demoProjects();
 	return readJson<Project[]>(PROJECTS_FILE, []);
@@ -120,7 +128,7 @@ export function removeProject(path: string) {
 		listProjects().filter((p) => p.path !== path)
 	);
 	for (const s of project?.sources ?? []) deleteSecret(s.id);
-	invalidateIssues(path);
+	invalidateProjectCaches(path);
 }
 
 // --- Issue sources (stored on the project, secrets kept separately) ---
@@ -131,7 +139,7 @@ export function addSource(projectPath: string, source: IssueSource): Project | u
 	if (!project) return undefined;
 	project.sources = [...(project.sources ?? []), source];
 	writeJson(PROJECTS_FILE, projects);
-	invalidateIssues(projectPath);
+	invalidateProjectCaches(projectPath);
 	return project;
 }
 
@@ -142,7 +150,7 @@ export function removeSource(projectPath: string, sourceId: string): Project | u
 	project.sources = (project.sources ?? []).filter((s) => s.id !== sourceId);
 	writeJson(PROJECTS_FILE, projects);
 	deleteSecret(sourceId);
-	invalidateIssues(projectPath);
+	invalidateProjectCaches(projectPath);
 	return project;
 }
 

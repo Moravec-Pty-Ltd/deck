@@ -24,6 +24,13 @@ export function getProjectPrs(project: Project, refresh = false): Promise<PrsRes
 	return cache.getOrFetch(project.path, refresh, () => fanOut(project));
 }
 
+// Drop a project's entry so adding/removing a source or deleting the project
+// doesn't keep serving its stale PR list for the rest of the TTL window (mirrors
+// invalidateIssues; called from the same store mutations).
+export function invalidatePrs(projectPath: string): void {
+	cache.invalidate(projectPath);
+}
+
 // Fan out to every GitHub source at once; a failure surfaces as an error entry
 // instead of sinking the whole list.
 async function fanOut(project: Project): Promise<PrsResult> {

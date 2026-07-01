@@ -17,8 +17,9 @@ type WorktreeReq = { branch?: string; newBranch?: boolean; base?: string; fromPr
 type Worktree = { repo: string; branch: string; createdBranch: boolean; base?: string };
 
 // owner/repo, the only shape the PR sync/actions pass to `gh -R`; validated here
-// so a crafted body can't reach that sink.
-const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+// so a crafted body can't reach that sink. Neither part may start with `-`, so
+// the value can't be read as a flag.
+const REPO_RE = /^[\w.][\w.-]*\/[\w.][\w.-]*$/;
 
 const asStr = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
