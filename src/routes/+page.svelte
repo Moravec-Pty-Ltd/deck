@@ -4,7 +4,8 @@
 	import { groupSessions } from '$lib/groups';
 	import { createCollapseState } from '$lib/collapse.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
-	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, ChevronRight, ChevronDown } from '@lucide/svelte';
+	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, ChevronRight, ChevronDown, X } from '@lucide/svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	let sessions = $state<DeckSession[]>([]);
 	let projects = $state<Project[]>([]);
@@ -56,12 +57,15 @@
 	let delTarget = $state<DeckSession | null>(null);
 	let delWorktree = $state(true);
 	let delBranch = $state(true);
-	let deletingId = $state<string | null>(null);
+	// Deletes run in the background, so several can be in flight at once; track the
+	// set of ids currently cleaning up rather than a single global lock (issue #59).
+	const deletingIds = new SvelteSet<string>();
+	let deleteError = $state<string | null>(null);
 
 	function remove(session: DeckSession, e: Event) {
 		e.preventDefault();
 		e.stopPropagation();
-		if (deletingId) return;
+		if (deletingIds.has(session.id)) return;
 		if (session.worktree) {
 			delWorktree = true;
 			delBranch = session.worktree.createdBranch;
@@ -76,18 +80,22 @@
 		session: DeckSession,
 		opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
 	) {
-		if (deletingId) return;
-		deletingId = session.id;
+		if (deletingIds.has(session.id)) return;
+		delTarget = null; // close the confirm modal immediately; cleanup runs in the background
+		deleteError = null;
+		deletingIds.add(session.id);
 		try {
-			await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
 				method: 'DELETE',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(opts)
 			});
-			delTarget = null;
+			if (!res.ok) throw new Error(`delete failed: ${res.status}`);
 			await refresh();
+		} catch {
+			deleteError = `Couldn't remove "${session.title}".`;
 		} finally {
-			deletingId = null;
+			deletingIds.delete(session.id);
 		}
 	}
 
@@ -174,10 +182,10 @@
 		<button
 			class="btn btn-ghost btn-xs"
 			onclick={(e) => remove(s, e)}
-			disabled={deletingId === s.id}
+			disabled={deletingIds.has(s.id)}
 			aria-label="Remove session"
 		>
-			{#if deletingId === s.id}
+			{#if deletingIds.has(s.id)}
 				<span class="loading loading-spinner loading-xs"></span>
 			{:else}
 				<Trash2 size={14} />
@@ -185,6 +193,19 @@
 		</button>
 	</a>
 {/snippet}
+
+{#if deleteError}
+	<div class="alert alert-error mb-3 py-2 text-sm" role="alert">
+		<span class="flex-1 break-words">{deleteError}</span>
+		<button
+			class="btn btn-ghost btn-xs"
+			onclick={() => (deleteError = null)}
+			aria-label="Dismiss error"
+		>
+			<X size={14} />
+		</button>
+	</div>
+{/if}
 
 {#if !loaded}
 	<p class="p-8 text-center opacity-60">Loading sessions...</p>
@@ -279,26 +300,17 @@
 				</label>
 			</div>
 			<div class="modal-action">
-				<button class="btn" onclick={() => (delTarget = null)} disabled={!!deletingId}>Cancel</button>
+				<button class="btn" onclick={() => (delTarget = null)}>Cancel</button>
 				<button
 					class="btn btn-error"
-					disabled={!!deletingId}
 					onclick={() =>
 						delTarget &&
 						doDelete(delTarget, { deleteWorktree: delWorktree, deleteBranch: delBranch })}
 				>
-					{#if deletingId}
-						<span class="loading loading-spinner loading-xs"></span> Removing...
-					{:else}
-						Remove
-					{/if}
+					Remove
 				</button>
 			</div>
 		</div>
-		<button
-			class="modal-backdrop"
-			onclick={() => !deletingId && (delTarget = null)}
-			aria-label="close"
-		></button>
+		<button class="modal-backdrop" onclick={() => (delTarget = null)} aria-label="close"></button>
 	</div>
 {/if}

@@ -13,12 +13,12 @@
 		sessions: DeckSession[];
 		serverStates?: Record<string, ServerState[]>;
 		currentId?: string;
-		deletingId?: string | null;
+		deletingIds?: Set<string>;
 		onQuickAdd: (path: string) => void;
 		onShellHere: (session: DeckSession) => void;
 		onDelete: (session: DeckSession) => void;
 	}
-	let { projects, sessions, serverStates, currentId, deletingId, onQuickAdd, onShellHere, onDelete }: Props =
+	let { projects, sessions, serverStates, currentId, deletingIds, onQuickAdd, onShellHere, onDelete }: Props =
 		$props();
 
 	// Aggregate dev-server state for a session, or null when it runs none (issue #32).
@@ -128,11 +128,11 @@
 			<button
 				class="btn btn-ghost btn-xs"
 				onclick={() => onDelete(s)}
-				disabled={deletingId === s.id}
+				disabled={deletingIds?.has(s.id)}
 				aria-label={`Remove ${s.title}`}
 				title="Remove session"
 			>
-				{#if deletingId === s.id}
+				{#if deletingIds?.has(s.id)}
 					<span class="loading loading-spinner loading-xs"></span>
 				{:else}
 					<Trash2 size={12} />

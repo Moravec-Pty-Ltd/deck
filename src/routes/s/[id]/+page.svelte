@@ -14,6 +14,7 @@
 	import { aggregateState } from '$lib/servers';
 	import { ArrowLeft, Bot, Terminal, Menu, X, Ticket, TriangleAlert } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		clampSidebarWidth,
 		parseSidebarWidth,
@@ -134,10 +135,13 @@
 	let delTarget = $state<DeckSession | null>(null);
 	let delWorktree = $state(true);
 	let delBranch = $state(true);
-	let deletingId = $state<string | null>(null);
+	// Deletes run in the background, so several can be in flight at once; track the
+	// set of ids currently cleaning up rather than a single global lock (issue #59).
+	const deletingIds = new SvelteSet<string>();
+	let deleteError = $state<string | null>(null);
 
 	function requestDelete(s: DeckSession) {
-		if (deletingId) return;
+		if (deletingIds.has(s.id)) return;
 		if (s.id === session.id) return; // never delete the active session
 		if (s.worktree) {
 			delWorktree = true;
@@ -153,18 +157,22 @@
 		s: DeckSession,
 		opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
 	) {
-		if (deletingId) return;
-		deletingId = s.id;
+		if (deletingIds.has(s.id)) return;
+		delTarget = null; // close the confirm modal immediately; cleanup runs in the background
+		deleteError = null;
+		deletingIds.add(s.id);
 		try {
-			await fetch(`/api/sessions/${encodeURIComponent(s.id)}`, {
+			const res = await fetch(`/api/sessions/${encodeURIComponent(s.id)}`, {
 				method: 'DELETE',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(opts)
 			});
-			delTarget = null;
+			if (!res.ok) throw new Error(`delete failed: ${res.status}`);
 			await refresh();
+		} catch {
+			deleteError = `Couldn't remove "${s.title}".`;
 		} finally {
-			deletingId = null;
+			deletingIds.delete(s.id);
 		}
 	}
 
@@ -254,7 +262,7 @@
 		{sessions}
 		{serverStates}
 		currentId={session.id}
-		{deletingId}
+		{deletingIds}
 		onQuickAdd={quickAdd}
 		onShellHere={shellHere}
 		onDelete={requestDelete}
@@ -296,6 +304,18 @@
 	</div>
 
 	<div class="flex h-full min-w-0 flex-1 flex-col">
+		{#if deleteError}
+			<div class="alert alert-error mb-2 py-2 text-sm" role="alert">
+				<span class="flex-1 break-words">{deleteError}</span>
+				<button
+					class="btn btn-ghost btn-xs"
+					onclick={() => (deleteError = null)}
+					aria-label="Dismiss error"
+				>
+					<X size={14} />
+				</button>
+			</div>
+		{/if}
 		<div class="mb-2 flex items-center gap-2">
 			<a href="/" class="btn btn-ghost btn-sm shrink-0" aria-label="Back">
 				<ArrowLeft size={16} />
@@ -469,26 +489,17 @@
 				</label>
 			</div>
 			<div class="modal-action">
-				<button class="btn" onclick={() => (delTarget = null)} disabled={!!deletingId}>Cancel</button>
+				<button class="btn" onclick={() => (delTarget = null)}>Cancel</button>
 				<button
 					class="btn btn-error"
-					disabled={!!deletingId}
 					onclick={() =>
 						delTarget &&
 						doDelete(delTarget, { deleteWorktree: delWorktree, deleteBranch: delBranch })}
 				>
-					{#if deletingId}
-						<span class="loading loading-spinner loading-xs"></span> Removing...
-					{:else}
-						Remove
-					{/if}
+					Remove
 				</button>
 			</div>
 		</div>
-		<button
-			class="modal-backdrop"
-			onclick={() => !deletingId && (delTarget = null)}
-			aria-label="close"
-		></button>
+		<button class="modal-backdrop" onclick={() => (delTarget = null)} aria-label="close"></button>
 	</div>
 {/if}
