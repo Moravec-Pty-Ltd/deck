@@ -143,10 +143,12 @@ export async function fetchPullRef(repo: string, prNumber: number): Promise<stri
 	return branch;
 }
 
-// owner/repo parsed from a GitHub remote URL, or null if it doesn't look like
-// one. Handles https, scp-style ssh (git@host:owner/repo), ssh:// URLs, host
-// aliases, and an optional .git suffix / trailing slash. Case is preserved;
-// compare case-insensitively (GitHub owners/repos are case-insensitive).
+// owner/repo parsed from a git remote URL, or null for a local origin (bare
+// path, file://, Windows drive path) that can't serve pull/* refs. The host
+// isn't validated — any http(s)/ssh/git or scp-style remote with an owner/repo
+// tail resolves. Handles host aliases and an optional .git suffix / trailing
+// slash. Case is preserved; compare case-insensitively (GitHub owners/repos are
+// case-insensitive).
 export function parseOriginRepo(remoteUrl: string): string | null {
 	const url = remoteUrl.trim();
 	// Only real fetchable remotes resolve: a network `scheme://host/…` with a

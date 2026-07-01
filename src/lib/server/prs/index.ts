@@ -41,7 +41,7 @@ export function invalidatePrs(projectPath: string): void {
 // single-source project never blanks.
 export function scopeToOrigin(sources: GithubSource[], origin: string | null): GithubSource[] {
 	if (!origin) return sources;
-	const want = origin.toLowerCase();
+	const want = origin.trim().toLowerCase();
 	return sources.filter((s) => `${s.owner}/${s.repo}`.toLowerCase() === want);
 }
 
