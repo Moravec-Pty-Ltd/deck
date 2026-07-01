@@ -11,6 +11,10 @@ export interface PlaceholderContext {
 	issueId?: string;
 	issueUrl?: string;
 	prUrl?: string;
+	prNumber?: string;
+	prTitle?: string;
+	prBranch?: string;
+	prBase?: string;
 }
 
 // Substitute the supported [tokens] in `text`, then trim. [branch] is a
@@ -27,11 +31,17 @@ export function expandPlaceholders(text: string, ctx: PlaceholderContext): strin
 		.replaceAll('[issue_id]', ctx.issueId ?? '')
 		.replaceAll('[issue_url]', ctx.issueUrl ?? '')
 		.replaceAll('[pr_url]', ctx.prUrl ?? '')
+		.replaceAll('[pr_number]', ctx.prNumber ?? '')
+		.replaceAll('[pr_title]', ctx.prTitle ?? '')
+		.replaceAll('[pr_branch]', ctx.prBranch ?? '')
+		.replaceAll('[pr_base]', ctx.prBase ?? '')
 		.trim();
 }
 
 // Build the expansion context from a live session: title, worktree branch/base,
-// cwd, the issue it was launched from, and the most recently captured PR url.
+// cwd, the issue it was launched from, and the captured PR. For a Review-mode
+// session the worktree branch is the checked-out `pr/<n>` head and its base is
+// the PR's base ref, so [pr_branch]/[pr_base] resolve to the diff's two ends.
 export function contextFromSession(session: DeckSession): PlaceholderContext {
 	return {
 		title: session.title,
@@ -40,6 +50,10 @@ export function contextFromSession(session: DeckSession): PlaceholderContext {
 		cwd: session.cwd,
 		issueId: session.issue?.id,
 		issueUrl: session.issue?.url,
-		prUrl: session.pr?.url
+		prUrl: session.pr?.url,
+		prNumber: session.pr ? String(session.pr.number) : undefined,
+		prTitle: session.pr?.title,
+		prBranch: session.worktree?.branch,
+		prBase: session.worktree?.base
 	};
 }

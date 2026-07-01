@@ -10,7 +10,11 @@ describe('expandPlaceholders', () => {
 		cwd: '/path/to/project',
 		issueId: 'acme#12',
 		issueUrl: 'https://example.com/issues/12',
-		prUrl: 'https://example.com/pull/34'
+		prUrl: 'https://example.com/pull/34',
+		prNumber: '34',
+		prTitle: 'Add widget',
+		prBranch: 'pr/34',
+		prBase: 'main'
 	};
 
 	it('substitutes every token', () => {
@@ -18,6 +22,11 @@ describe('expandPlaceholders', () => {
 		expect(expandPlaceholders(text, ctx)).toBe(
 			'Fix login jin/fix-login main jin/fix-login /path/to/project acme#12 https://example.com/issues/12 https://example.com/pull/34'
 		);
+	});
+
+	it('substitutes the PR tokens', () => {
+		const text = '[pr_number] [pr_title] [pr_branch] [pr_base]';
+		expect(expandPlaceholders(text, ctx)).toBe('34 Add widget pr/34 main');
 	});
 
 	it('treats [branch] as an alias for [branch-name]', () => {
@@ -41,7 +50,7 @@ describe('contextFromSession', () => {
 			cwd: '/path/to/project',
 			worktree: { repo: '/repo', branch: 'jin/fix-login', createdBranch: true, base: 'main' },
 			issue: { source: 'github', id: 'acme#12', url: 'https://example.com/issues/12' },
-			pr: { url: 'https://example.com/pull/34', repo: 'acme', number: 34, seenAt: 0 }
+			pr: { url: 'https://example.com/pull/34', repo: 'acme', number: 34, title: 'Add widget', seenAt: 0 }
 		} as DeckSession;
 		expect(contextFromSession(session)).toEqual({
 			title: 'Fix login',
@@ -50,7 +59,11 @@ describe('contextFromSession', () => {
 			cwd: '/path/to/project',
 			issueId: 'acme#12',
 			issueUrl: 'https://example.com/issues/12',
-			prUrl: 'https://example.com/pull/34'
+			prUrl: 'https://example.com/pull/34',
+			prNumber: '34',
+			prTitle: 'Add widget',
+			prBranch: 'jin/fix-login',
+			prBase: 'main'
 		});
 	});
 
@@ -63,7 +76,11 @@ describe('contextFromSession', () => {
 			cwd: '/x',
 			issueId: undefined,
 			issueUrl: undefined,
-			prUrl: undefined
+			prUrl: undefined,
+			prNumber: undefined,
+			prTitle: undefined,
+			prBranch: undefined,
+			prBase: undefined
 		});
 	});
 });

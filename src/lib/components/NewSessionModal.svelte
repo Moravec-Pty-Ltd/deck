@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { isAgentKind } from '$lib/types';
-	import type { Issue, NewSessionPreset, Project, SessionKind } from '$lib/types';
+	import type { Issue, NewSessionPreset, Project, PullRequest, SessionKind } from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
 	import { Bot, Terminal, Sparkles, Braces, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
 	import IssuePicker from './IssuePicker.svelte';
+	import PrPicker from './PrPicker.svelte';
 
 	const KIND_OPTIONS = [
 		{ id: 'claude', label: 'Claude', icon: Bot },
@@ -20,6 +21,10 @@
 	type Worktree = { path: string; branch: string; isMain: boolean };
 	type WorktreeMode = 'none' | 'existing' | 'new';
 
+	// 'new' starts a fresh branch/worktree; 'review' seeds the session from an open
+	// PR awaiting your review (worktree checked out to the PR head).
+	type SessionMode = 'new' | 'review';
+	let mode = $state<SessionMode>('new');
 	let kind = $state<SessionKind>('claude');
 	let projects = $state<Project[]>([]);
 	let cwd = $state('');
@@ -48,6 +53,7 @@
 	let errorMsg = $state('');
 	let showPicker = $state(false);
 	let pickedIssue = $state<Issue | null>(null);
+	let pickedPr = $state<PullRequest | null>(null);
 
 	let wasOpen = false;
 	$effect(() => {
@@ -61,7 +67,9 @@
 		baseDirty = false;
 		errorMsg = '';
 		showPicker = false;
+		mode = 'new';
 		pickedIssue = null;
+		pickedPr = null;
 		const p = preset;
 		worktreeModeDirty = !!(p?.kind || p?.cwd);
 		fetch('/api/projects')
@@ -86,6 +94,18 @@
 	const finalCwd = $derived(worktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
 	const titleRequired = $derived(isAgentKind(kind));
 	const projectHasSources = $derived(!!selectedProject?.sources?.length);
+	const reviewMode = $derived(mode === 'review');
+
+	function setSessionMode(m: SessionMode) {
+		mode = m;
+		// Keep the two flows from leaking picks into each other.
+		if (m === 'review') {
+			pickedIssue = null;
+			showPicker = false;
+		} else {
+			pickedPr = null;
+		}
+	}
 
 	// Picking an issue drops its bare ref into the title (which the branch then
 	// follows) and remembers the issue so the session links back to it.
@@ -96,11 +116,19 @@
 		showPicker = false;
 	}
 
-	// Drop any picked issue when the project changes — an issue from one project
+	// Picking a PR names the session after it and remembers it so the worktree is
+	// checked out to the PR head and the header chip lights up at creation.
+	function pickPr(pr: PullRequest) {
+		pickedPr = pr;
+		title = pr.title;
+	}
+
+	// Drop any picked issue/PR when the project changes — a pick from one project
 	// must not ride along into a session created under another.
 	$effect(() => {
 		cwd;
 		pickedIssue = null;
+		pickedPr = null;
 	});
 
 	// Worktree mode defaults to "new" for agents (branch off and work in isolation)
@@ -114,9 +142,11 @@
 		worktreeModeDirty = true;
 	}
 
-	// Prefill the first prompt from the project's template until the user edits it.
+	// Prefill the first prompt until the user edits it: the review prompt in Review
+	// mode, the project template otherwise. Empty means an empty field, same as today.
 	$effect(() => {
-		const template = selectedProject?.template ?? '';
+		const template =
+			(mode === 'review' ? selectedProject?.reviewPrompt : selectedProject?.template) ?? '';
 		if (!promptDirty) prompt = template;
 	});
 
@@ -176,15 +206,22 @@
 
 	async function create() {
 		errorMsg = '';
+		if (reviewMode && !pickedPr) {
+			errorMsg = 'pick a PR to review';
+			return;
+		}
 		if (titleRequired && !title.trim()) {
 			errorMsg = 'title is required';
 			return;
 		}
-		if (worktreeMode === 'existing' && !existingWorktreeDir) {
+		if (!reviewMode && worktreeMode === 'existing' && !existingWorktreeDir) {
 			errorMsg = 'pick an existing worktree';
 			return;
 		}
-		if (!finalCwd) {
+		// Review mode always makes its own worktree from the project repo, so it
+		// starts from the project path, not a picked existing-worktree dir.
+		const startCwd = reviewMode ? effectiveCwd : finalCwd;
+		if (!startCwd) {
 			errorMsg = 'pick a project or path';
 			return;
 		}
@@ -195,7 +232,7 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
 					kind,
-					cwd: finalCwd,
+					cwd: startCwd,
 					title: title.trim() || undefined,
 					model: model.trim() || undefined,
 					provider: kind === 'pi' && provider.trim() ? provider.trim() : undefined,
@@ -204,12 +241,24 @@
 					command: kind === 'shell' && command.trim() ? command.trim() : undefined,
 					prompt: kind !== 'shell' && prompt.trim() ? prompt.trim() : undefined,
 					worktree:
-						worktreeMode === 'new' && branch.trim()
-							? { branch: branch.trim(), newBranch, base: base || undefined }
+						reviewMode && pickedPr
+							? { fromPr: pickedPr.number, base: pickedPr.baseRefName }
+							: worktreeMode === 'new' && branch.trim()
+								? { branch: branch.trim(), newBranch, base: base || undefined }
+								: undefined,
+					issue:
+						!reviewMode && pickedIssue
+							? { source: pickedIssue.sourceType, id: pickedIssue.id, url: pickedIssue.url }
 							: undefined,
-					issue: pickedIssue
-						? { source: pickedIssue.sourceType, id: pickedIssue.id, url: pickedIssue.url }
-						: undefined
+					pr:
+						reviewMode && pickedPr
+							? {
+									repo: pickedPr.repo,
+									number: pickedPr.number,
+									url: pickedPr.url,
+									title: pickedPr.title
+								}
+							: undefined
 				})
 			});
 			const data = await res.json();
@@ -222,6 +271,7 @@
 			title = '';
 			branch = '';
 			pickedIssue = null;
+			pickedPr = null;
 			goto(`/s/${encodeURIComponent(data.id)}`);
 		} finally {
 			busy = false;
@@ -233,6 +283,17 @@
 	<div class="modal modal-open" role="dialog">
 		<div class="modal-box max-w-lg">
 			<h3 class="mb-4 text-lg font-semibold">New session</h3>
+
+			<div class="join mb-4 w-full">
+				<button
+					class="btn join-item flex-1 {mode === 'new' ? 'btn-primary' : ''}"
+					onclick={() => setSessionMode('new')}>New</button
+				>
+				<button
+					class="btn join-item flex-1 {mode === 'review' ? 'btn-primary' : ''}"
+					onclick={() => setSessionMode('review')}>Review</button
+				>
+			</div>
 
 			<div class="join mb-4 w-full">
 				{#each KIND_OPTIONS as k (k.id)}
@@ -301,7 +362,7 @@
 						placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
 						bind:value={title}
 					/>
-					{#if projectHasSources}
+					{#if projectHasSources && !reviewMode}
 						<button
 							class="btn {showPicker ? 'btn-active' : ''}"
 							onclick={() => (showPicker = !showPicker)}
@@ -337,56 +398,79 @@
 				{/if}
 			</fieldset>
 
-			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Worktree</legend>
-				<div class="join w-full">
-					<button
-						class="btn join-item btn-sm flex-1 {worktreeMode === 'none' ? 'btn-active' : ''}"
-						onclick={() => setMode('none')}>None</button
-					>
-					<button
-						class="btn join-item btn-sm flex-1 {worktreeMode === 'existing' ? 'btn-active' : ''}"
-						onclick={() => setMode('existing')}>Existing</button
-					>
-					<button
-						class="btn join-item btn-sm flex-1 {worktreeMode === 'new' ? 'btn-active' : ''}"
-						onclick={() => setMode('new')}>New</button
-					>
-				</div>
-				{#if worktreeMode === 'existing'}
-					{#if existingWorktrees.length}
-						<select class="select w-full" bind:value={existingWorktreeDir}>
-							{#each existingWorktrees as w (w.path)}
-								<option value={w.path}>{w.branch} — {w.path}</option>
-							{/each}
-						</select>
+			{#if reviewMode}
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Pull request</legend>
+					{#if pickedPr}
+						<div class="mt-1 flex items-center gap-2 text-xs">
+							<span class="opacity-60">reviewing:</span>
+							<span class="shrink-0 font-mono">#{pickedPr.number}</span>
+							<span class="min-w-0 flex-1 truncate">{pickedPr.title}</span>
+							<button class="btn btn-ghost btn-xs shrink-0 gap-1" onclick={() => (pickedPr = null)}>
+								<X size={12} /> clear
+							</button>
+						</div>
+					{/if}
+					{#if selectedProject}
+						<div class="mt-1">
+							<PrPicker project={selectedProject} picked={pickedPr} onpick={pickPr} />
+						</div>
 					{:else}
-						<p class="text-xs opacity-60">no existing worktrees for this repo</p>
+						<p class="text-xs opacity-60">pick a project first</p>
 					{/if}
-				{:else if worktreeMode === 'new'}
-					<input
-						class="input w-full"
-						placeholder="branch name (defaults to title)"
-						bind:value={branch}
-						oninput={() => (branchDirty = true)}
-					/>
-					<label class="label cursor-pointer justify-start gap-2">
-						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={newBranch} />
-						<span>New branch</span>
-					</label>
-					{#if newBranch}
-						<select class="select w-full" bind:value={base} onchange={() => (baseDirty = true)}>
-							<option value="">base: default branch</option>
-							{#if base && !branches.includes(base)}
-								<option value={base}>base: {base}</option>
-							{/if}
-							{#each branches as b (b)}
-								<option value={b}>base: {b}</option>
-							{/each}
-						</select>
+				</fieldset>
+			{:else}
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Worktree</legend>
+					<div class="join w-full">
+						<button
+							class="btn join-item btn-sm flex-1 {worktreeMode === 'none' ? 'btn-active' : ''}"
+							onclick={() => setMode('none')}>None</button
+						>
+						<button
+							class="btn join-item btn-sm flex-1 {worktreeMode === 'existing' ? 'btn-active' : ''}"
+							onclick={() => setMode('existing')}>Existing</button
+						>
+						<button
+							class="btn join-item btn-sm flex-1 {worktreeMode === 'new' ? 'btn-active' : ''}"
+							onclick={() => setMode('new')}>New</button
+						>
+					</div>
+					{#if worktreeMode === 'existing'}
+						{#if existingWorktrees.length}
+							<select class="select w-full" bind:value={existingWorktreeDir}>
+								{#each existingWorktrees as w (w.path)}
+									<option value={w.path}>{w.branch} — {w.path}</option>
+								{/each}
+							</select>
+						{:else}
+							<p class="text-xs opacity-60">no existing worktrees for this repo</p>
+						{/if}
+					{:else if worktreeMode === 'new'}
+						<input
+							class="input w-full"
+							placeholder="branch name (defaults to title)"
+							bind:value={branch}
+							oninput={() => (branchDirty = true)}
+						/>
+						<label class="label cursor-pointer justify-start gap-2">
+							<input type="checkbox" class="checkbox checkbox-sm" bind:checked={newBranch} />
+							<span>New branch</span>
+						</label>
+						{#if newBranch}
+							<select class="select w-full" bind:value={base} onchange={() => (baseDirty = true)}>
+								<option value="">base: default branch</option>
+								{#if base && !branches.includes(base)}
+									<option value={base}>base: {base}</option>
+								{/if}
+								{#each branches as b (b)}
+									<option value={b}>base: {b}</option>
+								{/each}
+							</select>
+						{/if}
 					{/if}
-				{/if}
-			</fieldset>
+				</fieldset>
+			{/if}
 
 			{#if kind === 'shell'}
 				<fieldset class="fieldset">
@@ -436,8 +520,12 @@
 						bind:value={prompt}
 						oninput={() => (promptDirty = true)}
 					></textarea>
-					{#if selectedProject?.template && !promptDirty}
+					{#if reviewMode && selectedProject?.reviewPrompt && !promptDirty}
+						<p class="text-xs opacity-50">prefilled from {selectedProject.name} review prompt</p>
+					{:else if !reviewMode && selectedProject?.template && !promptDirty}
 						<p class="text-xs opacity-50">prefilled from {selectedProject.name} template</p>
+					{:else if reviewMode}
+						<p class="text-xs opacity-50">placeholders: [pr_number] [pr_title] [pr_branch] [pr_base] [pr_url] [cwd]</p>
 					{:else}
 						<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</p>
 					{/if}
@@ -453,7 +541,7 @@
 				<button
 					class="btn btn-primary"
 					onclick={create}
-					disabled={busy || (titleRequired && !title.trim())}
+					disabled={busy || (titleRequired && !title.trim()) || (reviewMode && !pickedPr)}
 				>
 					{busy ? 'Creating...' : 'Create'}
 				</button>

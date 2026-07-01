@@ -3,7 +3,14 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createWorktree, worktreeAddArgs, worktreeDiff, parseNumstat, capPatch } from './git';
+import {
+	createWorktree,
+	worktreeAddArgs,
+	worktreeDiff,
+	parseNumstat,
+	capPatch,
+	fetchPullRef
+} from './git';
 
 // Lock the argv ordering: every positional arg must sit after `--`, so the test
 // fails if the separator is dropped or reordered (the S4 regression guard).
@@ -100,6 +107,43 @@ describe('createWorktree against a real repo', () => {
 		const first = await createWorktree(repo, 'feature-x', { newBranch: true });
 		const second = await createWorktree(repo, 'feature-x', { newBranch: true });
 		expect(second).toBe(first);
+	});
+});
+
+// The number guard runs before any git work, so a bad PR number rejects without
+// touching the repo (and the derived pr/<n> ref is asserted isFlagSafe too).
+describe('fetchPullRef input guards', () => {
+	it('rejects a non-positive or non-integer PR number', async () => {
+		await expect(fetchPullRef('/repo', 0)).rejects.toThrow(/invalid PR number/);
+		await expect(fetchPullRef('/repo', -3)).rejects.toThrow(/invalid PR number/);
+		await expect(fetchPullRef('/repo', 1.5)).rejects.toThrow(/invalid PR number/);
+		await expect(fetchPullRef('/repo', Number.NaN)).rejects.toThrow(/invalid PR number/);
+	});
+});
+
+describe('fetchPullRef against a real repo', () => {
+	const env = {
+		...process.env,
+		GIT_AUTHOR_NAME: 't',
+		GIT_AUTHOR_EMAIL: 't@t',
+		GIT_COMMITTER_NAME: 't',
+		GIT_COMMITTER_EMAIL: 't@t'
+	};
+	const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-pr-repo-')));
+	execFileSync('git', ['init', '-q', repo], { env });
+	execFileSync('git', ['-C', repo, 'commit', '--allow-empty', '-q', '-m', 'init'], { env });
+
+	afterAll(() => {
+		fs.rmSync(repo, { recursive: true, force: true });
+	});
+
+	it('reuses an existing pr/<n> branch without fetching', async () => {
+		execFileSync('git', ['-C', repo, 'branch', 'pr/7'], { env });
+		await expect(fetchPullRef(repo, 7)).resolves.toBe('pr/7');
+	});
+
+	it('wraps a fetch failure (no GitHub origin) in a clear error', async () => {
+		await expect(fetchPullRef(repo, 4242)).rejects.toThrow(/failed to fetch PR #4242/);
 	});
 });
 

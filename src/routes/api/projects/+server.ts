@@ -29,6 +29,15 @@ function resolveGroup(body: { group?: unknown }, existing: string | undefined): 
 	return body.group.trim() || undefined;
 }
 
+// Carry the existing review prompt across a save that omits it (e.g. the
+// dev-config or sources forms), mirroring how group/sources/dev are preserved; a
+// provided blank clears it.
+function resolveReviewPrompt(body: { reviewPrompt?: unknown }, existing: string | undefined): string | undefined {
+	if (body.reviewPrompt === undefined) return existing;
+	if (typeof body.reviewPrompt !== 'string') error(400, 'reviewPrompt must be a string');
+	return body.reviewPrompt.trim() || undefined;
+}
+
 export const GET: RequestHandler = async () => {
 	return json(listProjects());
 };
@@ -47,6 +56,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		path: dir,
 		group: resolveGroup(body, existing?.group),
 		template: String(body.template ?? '').trim() || undefined,
+		reviewPrompt: resolveReviewPrompt(body, existing?.reviewPrompt),
 		lastBase: typeof body.lastBase === 'string' ? body.lastBase.trim() || undefined : undefined,
 		sources: existing?.sources,
 		dev: resolveDev(body, existing?.dev)

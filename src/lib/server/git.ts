@@ -118,6 +118,29 @@ export async function createWorktree(
 	return dir;
 }
 
+// Fetch a PR's head into a local branch `pr/<n>` so a worktree can be checked
+// out on it. Works for same-repo and fork PRs alike, since GitHub exposes fork
+// heads under the base repo's pull/* refs. Idempotent: if `pr/<n>` already exists
+// (a re-open, or another worktree already holds it — git refuses to update a
+// checked-out branch) the existing ref is reused. Assumes `origin` is the GitHub
+// repo, which holds for registered projects; anything else fails with a clear
+// error. Returns the local branch name.
+export async function fetchPullRef(repo: string, prNumber: number): Promise<string> {
+	if (!Number.isInteger(prNumber) || prNumber <= 0) throw new Error(`invalid PR number: ${prNumber}`);
+	const branch = `pr/${prNumber}`;
+	// branch reaches git as a ref arg; pr/<n> is isFlagSafe, but assert at the sink.
+	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);
+	if (await refExists(repo, branch)) return branch;
+	try {
+		await git(repo, 'fetch', 'origin', `pull/${prNumber}/head:${branch}`);
+	} catch (e) {
+		throw new Error(
+			`failed to fetch PR #${prNumber} from origin (is origin the GitHub repo?): ${e instanceof Error ? e.message : e}`
+		);
+	}
+	return branch;
+}
+
 // --- worktree diff (the Changes tab) -------------------------------------
 
 const PATCH_CAP = 5 * 1024 * 1024; // ~5 MB of patch before we trim whole files
