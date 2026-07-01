@@ -24,8 +24,13 @@
 
 	function load(refresh = false) {
 		if (!hasGithub) {
+			// Bump the guard so an in-flight fetch for a previous (GitHub) project
+			// can't land and repopulate the list after switching to a non-GitHub one.
+			seq.n++;
 			prs = [];
 			errors = [];
+			loadError = '';
+			loading = false;
 			return;
 		}
 		return runLoad<{ prs?: PullRequest[]; errors?: SourceError[] }>(
