@@ -178,6 +178,15 @@ h3,
 	background-color: color-mix(in oklch, var(--color-primary) 28%, transparent);
 }
 
+/* daisyUI's .fieldset is a `grid-template-columns: 1fr` grid, and a bare 1fr
+   track has an implicit min-content floor: a wide child (a long issue/PR row)
+   expands the track past its container and gets clipped under an
+   overflow-x-hidden ancestor. minmax(0, 1fr) keeps the shrink-to-fit behaviour
+   without changing layout for normal content. */
+.fieldset {
+	grid-template-columns: minmax(0, 1fr);
+}
+
 /* Quiet, themed scrollbars that read as part of the surface, not chrome. */
 * {
 	scrollbar-width: thin;
