@@ -2,9 +2,17 @@
 	import type { Issue, IssueSourceType, Project } from '$lib/types';
 	import { ISSUE_BADGE } from '$lib/issues';
 	import { runLoad } from '$lib/picker';
-	import { RefreshCw, TriangleAlert, ChevronRight } from '@lucide/svelte';
+	import { RefreshCw, TriangleAlert, ChevronRight, Check } from '@lucide/svelte';
 
-	let { project, onpick }: { project: Project; onpick: (issue: Issue) => void } = $props();
+	let {
+		project,
+		selected = [],
+		onpick
+	}: { project: Project; selected?: Issue[]; onpick: (issue: Issue) => void } = $props();
+
+	// Multi-select: `onpick` toggles, and the picker stays open. Selected rows show
+	// a check; the modal owns the set and renders removable chips.
+	const selectedKeys = $derived(new Set(selected.map((i) => `${i.sourceId}:${i.id}`)));
 
 	type SourceError = { sourceId: string; message: string };
 
@@ -87,6 +95,9 @@
 				<div class="border-b border-base-300 last:border-0">
 					<div class="flex items-center gap-2 py-1.5">
 						<button class="flex min-w-0 flex-1 items-center gap-2 text-left" onclick={() => onpick(issue)}>
+							<span class="flex w-4 shrink-0 justify-center">
+								{#if selectedKeys.has(key(issue))}<Check size={14} class="text-primary" />{/if}
+							</span>
 							<span class="badge badge-sm {ISSUE_BADGE[issue.sourceType].cls} shrink-0">
 								{ISSUE_BADGE[issue.sourceType].label}
 							</span>

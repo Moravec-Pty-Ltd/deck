@@ -7,7 +7,7 @@ const LINEAR_API = 'https://api.linear.app/graphql';
 // Cap each call so a stalled upstream can't wedge the request.
 const LINEAR_TIMEOUT_MS = 15_000;
 
-async function graphql<T>(
+export async function graphql<T>(
 	apiKey: string,
 	query: string,
 	variables: Record<string, unknown> = {}

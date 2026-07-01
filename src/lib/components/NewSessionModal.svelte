@@ -52,8 +52,10 @@
 	let busy = $state(false);
 	let errorMsg = $state('');
 	let showPicker = $state(false);
-	let pickedIssue = $state<Issue | null>(null);
+	let pickedIssues = $state<Issue[]>([]);
 	let pickedPr = $state<PullRequest | null>(null);
+
+	const issueKey = (i: Issue) => `${i.sourceId}:${i.id}`;
 
 	let wasOpen = false;
 	$effect(() => {
@@ -68,7 +70,7 @@
 		errorMsg = '';
 		showPicker = false;
 		mode = 'new';
-		pickedIssue = null;
+		pickedIssues = [];
 		pickedPr = null;
 		const p = preset;
 		worktreeModeDirty = !!(p?.kind || p?.cwd);
@@ -100,20 +102,24 @@
 		mode = m;
 		// Keep the two flows from leaking picks into each other.
 		if (m === 'review') {
-			pickedIssue = null;
+			pickedIssues = [];
 			showPicker = false;
 		} else {
 			pickedPr = null;
 		}
 	}
 
-	// Picking an issue drops its bare ref into the title (which the branch then
-	// follows) and remembers the issue so the session links back to it.
+	// Toggle an issue in/out of the selection. The title becomes the picked refs
+	// concatenated (branch-name-safe — no spaces, so it drives the branch as a
+	// single ref does today) and the branch follows it. The picker stays open for
+	// multi-select; the modal renders removable chips for what's picked.
 	function pickIssue(issue: Issue) {
-		pickedIssue = issue;
-		title = issue.id;
+		const k = issueKey(issue);
+		pickedIssues = pickedIssues.some((i) => issueKey(i) === k)
+			? pickedIssues.filter((i) => issueKey(i) !== k)
+			: [...pickedIssues, issue];
+		title = pickedIssues.map((i) => i.id).join('+');
 		branchDirty = false;
-		showPicker = false;
 	}
 
 	// Picking a PR names the session after it and remembers it so the worktree is
@@ -127,7 +133,7 @@
 	// must not ride along into a session created under another.
 	$effect(() => {
 		cwd;
-		pickedIssue = null;
+		pickedIssues = [];
 		pickedPr = null;
 	});
 
@@ -246,9 +252,14 @@
 							: worktreeMode === 'new' && branch.trim()
 								? { branch: branch.trim(), newBranch, base: base || undefined }
 								: undefined,
-					issue:
-						!reviewMode && pickedIssue
-							? { source: pickedIssue.sourceType, id: pickedIssue.id, url: pickedIssue.url }
+					issues:
+						!reviewMode && pickedIssues.length
+							? pickedIssues.map((i) => ({
+									source: i.sourceType,
+									sourceId: i.sourceId,
+									id: i.id,
+									url: i.url
+								}))
 							: undefined,
 					pr:
 						reviewMode && pickedPr
@@ -270,7 +281,7 @@
 			prompt = '';
 			title = '';
 			branch = '';
-			pickedIssue = null;
+			pickedIssues = [];
 			pickedPr = null;
 			goto(`/s/${encodeURIComponent(data.id)}`);
 		} finally {
@@ -350,7 +361,7 @@
 						placeholder="template first prompt for this project (optional)"
 						bind:value={newProjectTemplate}
 					></textarea>
-					<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</p>
+					<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body]</p>
 				{/if}
 			</fieldset>
 
@@ -373,30 +384,40 @@
 						</button>
 					{/if}
 				</div>
-				{#if pickedIssue}
-					<div class="mt-1 flex items-center gap-2 text-xs">
-						<span class="opacity-60">issue:</span>
-						<span class="font-mono">{pickedIssue.id}</span>
-						<button class="btn btn-ghost btn-xs gap-1" onclick={() => (pickedIssue = null)}>
-							<X size={12} /> clear
-						</button>
+				{#if pickedIssues.length}
+					<div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
+						<span class="opacity-60">issue{pickedIssues.length > 1 ? 's' : ''}:</span>
+						{#each pickedIssues as i (issueKey(i))}
+							<button
+								class="btn btn-ghost btn-xs gap-1 font-mono"
+								onclick={() => pickIssue(i)}
+								title="remove"
+							>
+								{i.id} <X size={12} />
+							</button>
+						{/each}
 					</div>
 				{/if}
-				{#if pickedIssue?.blockers.length}
-					<div class="alert alert-warning mt-1 items-start py-1 text-xs">
-						<TriangleAlert size={14} class="mt-0.5 shrink-0" />
-						<div class="min-w-0">
-							<div class="font-medium">
-								{pickedIssue.blockers.length} incomplete blocker(s) — you can still start.
+				{#each pickedIssues as i (issueKey(i))}
+					{#if i.blockers.length}
+						<div class="alert alert-warning mt-1 items-start py-1 text-xs">
+							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+							<div class="min-w-0">
+								<div class="font-medium">
+									<span class="font-mono">{i.id}</span>: {i.blockers.length} incomplete blocker(s) — you
+									can still start.
+								</div>
+								{#each i.blockers as b (b.id)}
+									<div class="truncate"><span class="font-mono">{b.id}</span> {b.title}</div>
+								{/each}
 							</div>
-							{#each pickedIssue.blockers as b (b.id)}
-								<div class="truncate"><span class="font-mono">{b.id}</span> {b.title}</div>
-							{/each}
 						</div>
-					</div>
-				{/if}
+					{/if}
+				{/each}
 				{#if showPicker && selectedProject}
-					<div class="mt-1"><IssuePicker project={selectedProject} onpick={pickIssue} /></div>
+					<div class="mt-1">
+						<IssuePicker project={selectedProject} selected={pickedIssues} onpick={pickIssue} />
+					</div>
 				{/if}
 			</fieldset>
 
@@ -529,7 +550,7 @@
 					{:else if reviewMode}
 						<p class="text-xs opacity-50">placeholders: [pr_number] [pr_title] [pr_branch] [pr_base] [pr_url] [cwd]</p>
 					{:else}
-						<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url]</p>
+						<p class="text-xs opacity-50">placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body]</p>
 					{/if}
 				</fieldset>
 			{/if}

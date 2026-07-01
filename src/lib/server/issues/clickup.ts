@@ -8,7 +8,7 @@ const CU_API = 'https://api.clickup.com/api/v2';
 // concurrent blocker lookups fanning out.
 const CU_TIMEOUT_MS = 15_000;
 
-async function cu<T>(apiKey: string, path: string): Promise<T> {
+export async function cu<T>(apiKey: string, path: string): Promise<T> {
 	const res = await fetch(`${CU_API}${path}`, {
 		headers: { authorization: apiKey },
 		signal: AbortSignal.timeout(CU_TIMEOUT_MS)
@@ -20,7 +20,7 @@ async function cu<T>(apiKey: string, path: string): Promise<T> {
 
 // Encode an id before it's interpolated into a request path, so a value
 // containing `/`, `?`, `#`, or `..` can't reshape the URL against the fixed host.
-const seg = (id: string): string => encodeURIComponent(id);
+export const seg = (id: string): string => encodeURIComponent(id);
 
 export interface ClickupMe {
 	id: number;

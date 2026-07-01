@@ -160,7 +160,7 @@ export async function createSession(input: {
 	permissionMode?: DeckSession['permissionMode'];
 	command?: string;
 	worktree?: { repo: string; branch: string; createdBranch: boolean; base?: string };
-	issue?: SessionIssue;
+	issues?: SessionIssue[];
 	pr?: SessionPR;
 }): Promise<DeckSession> {
 	const id = newId(input.kind);
@@ -183,7 +183,7 @@ export async function createSession(input: {
 		status: 'idle',
 		managed: true,
 		worktree: input.worktree,
-		issue: input.issue,
+		issues: input.issues?.length ? input.issues : undefined,
 		// Seeded in Review mode so the header PR chip lights up immediately; the
 		// background sync (server/pr.ts) hydrates its live status on the next tick.
 		pr: input.pr

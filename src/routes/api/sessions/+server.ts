@@ -6,10 +6,11 @@ import { listSessions, createSession } from '$lib/server/sessions';
 import { createWorktree, fetchPullRef, isGitRepo } from '$lib/server/git';
 import { isFlagSafe } from '$lib/server/agents/args';
 import { agentSend } from '$lib/server/agents/dispatch';
-import { listProjects, updateProject } from '$lib/server/store';
+import { listProjects, updateProject, readSecret } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
 import { resolveWithinProjects } from '$lib/server/confine';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
+import { buildIssuePrompt, type IssueForFetch, type IssuePromptContext } from '$lib/server/issues/detail';
 
 const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'shell'];
 const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
@@ -35,13 +36,34 @@ function safeHttpUrl(url: unknown): string {
 	}
 }
 
-// Issue metadata the picker attaches; stored on the session for the header link.
-function parseIssue(raw: unknown): SessionIssue | undefined {
+// Cap on issues attached to one session — the picker is a shortlist, and this
+// bounds the create-time detail fan-out.
+const ISSUE_CAP = 10;
+
+// One issue as the picker attaches it: the persisted `SessionIssue` plus the
+// transient `sourceId`, kept only to look up the API key for the detail fetch.
+interface PickedIssue {
+	issue: SessionIssue;
+	sourceId: string;
+}
+
+function parseIssue(raw: unknown): PickedIssue | undefined {
 	const o = (raw ?? {}) as Record<string, unknown>;
 	const source = o.source as IssueSourceType;
 	const id = asStr(o.id);
 	if (!id || !ISSUE_SOURCES.includes(source)) return undefined;
-	return { source, id, url: safeHttpUrl(o.url) };
+	return { issue: { source, id, url: safeHttpUrl(o.url) }, sourceId: asStr(o.sourceId) };
+}
+
+// Issue metadata the picker attaches; stored on the session for the header
+// links. Accepts the multi-issue `issues` array, falling back to a legacy single
+// `issue`, and caps the count.
+function parseIssues(body: { issues?: unknown; issue?: unknown }): PickedIssue[] {
+	const raw = Array.isArray(body.issues) ? body.issues : body.issue != null ? [body.issue] : [];
+	return raw
+		.map(parseIssue)
+		.filter((x): x is PickedIssue => !!x)
+		.slice(0, ISSUE_CAP);
 }
 
 // A PR number coerced from untyped JSON: a safe positive integer, so
@@ -173,16 +195,47 @@ async function resolveWorktree(
 	return { cwd: made.cwd, worktree: made.worktree, branch: made.worktree.branch };
 }
 
+// Which API key (if any) the detail fetch needs: GitHub rides on `gh`; Linear /
+// ClickUp read the source's stored key. Trusted single-user endpoint, so a key
+// that isn't found just yields a best-effort empty detail.
+function issuesForFetch(picked: PickedIssue[]): IssueForFetch[] {
+	return picked.map((p) => ({
+		issue: p.issue,
+		apiKey: p.issue.source === 'github' ? undefined : readSecret(p.sourceId)
+	}));
+}
+
+// The fetched [issue_title]/[issue_body]/[issue_comments] block for the first
+// prompt, or empty when no issues are attached / the fetch fails (best-effort;
+// the guard is belt-and-braces since buildIssuePrompt already swallows).
+async function issueContext(cwd: string, picked: PickedIssue[]): Promise<Partial<IssuePromptContext>> {
+	if (!picked.length) return {};
+	// buildIssuePrompt writes assets + touches git under the cwd; confine that sink
+	// to the registered project set (worktree or project), never an arbitrary
+	// custom cwd, and write to the canonical (symlink-free) path it returns.
+	const root = resolveWithinProjects(cwd);
+	if (!root) return {};
+	try {
+		return await buildIssuePrompt(root, issuesForFetch(picked));
+	} catch {
+		return {};
+	}
+}
+
 // Kick off the agent's first turn if a non-empty prompt was supplied, expanding
-// its [tokens] against the freshly-created session.
-function maybeDispatch(
+// its [tokens] against the freshly-created session. When issues are attached,
+// their body/title/images are fetched server-side first (best-effort) so the
+// prompt starts grounded. Fire-and-forget: the fetch must not delay the 201.
+async function maybeDispatch(
 	session: Awaited<ReturnType<typeof createSession>>,
 	kind: SessionKind,
-	prompt: unknown
-): void {
+	prompt: unknown,
+	picked: PickedIssue[]
+): Promise<void> {
 	if (!isAgentKind(kind)) return;
 	if (typeof prompt !== 'string' || !prompt.trim()) return;
-	agentSend(session, expandPlaceholders(prompt, contextFromSession(session)));
+	const ctx = { ...contextFromSession(session), ...(await issueContext(session.cwd, picked)) };
+	await agentSend(session, expandPlaceholders(prompt, ctx));
 }
 
 export const GET: RequestHandler = async () => {
@@ -195,7 +248,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
 
 	const { cwd, worktree, branch } = await resolveWorktree(resolveCwd(body.cwd), body);
-	const issue = parseIssue(body.issue);
+	const picked = parseIssues(body);
 	const pr = parsePr(body.pr);
 
 	const session = await createSession({
@@ -207,10 +260,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		permissionMode,
 		command,
 		worktree,
-		issue,
+		issues: picked.map((p) => p.issue),
 		pr
 	});
 
-	maybeDispatch(session, kind, prompt);
+	void maybeDispatch(session, kind, prompt, picked).catch(() => {});
 	return json(session, { status: 201 });
 };

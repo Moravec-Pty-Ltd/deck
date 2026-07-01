@@ -33,8 +33,12 @@ export interface DeckSession {
 	// the worktree was branched from, kept so the diff viewer can resolve "changes
 	// since base" without guessing.
 	worktree?: { repo: string; branch: string; createdBranch: boolean; base?: string };
-	// set when the session was started from an issue picked in the new-session modal
+	// set when the session was started from an issue picked in the new-session modal.
+	// `issue` is the legacy single-issue field, still read for sessions stored
+	// before multi-issue; new sessions write `issues` (one chip per entry in the
+	// header). Read them together: `issues ?? (issue ? [issue] : [])`.
 	issue?: SessionIssue;
+	issues?: SessionIssue[];
 	// the most recent GitHub PR link seen in the transcript (last-wins), captured
 	// server-side in appendEvent and surfaced as a header chip. Like `issue`, this
 	// is metadata, not a live handle: deck doesn't track PR state.

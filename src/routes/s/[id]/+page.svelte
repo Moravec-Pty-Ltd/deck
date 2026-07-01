@@ -54,6 +54,10 @@
 		return live ? live.pr : session.pr;
 	});
 
+	// One chip per attached issue. New sessions store `issues`; older ones only
+	// the single `issue`, so read them together.
+	const issueChips = $derived(session.issues ?? (session.issue ? [session.issue] : []));
+
 	// Dev-server states per session, from the monitor's cached poll (cheap), for
 	// the header chip and the sidebar dots (issue #32). The Servers tab fetches
 	// live per-server detail itself; its onStates keeps this fresh while open.
@@ -344,32 +348,28 @@
 			{/if}
 			<div class="flex min-w-0 flex-1 items-baseline gap-2">
 				<span class="truncate font-medium">{session.title}</span>
-				{#if session.issue}
-					{#if session.issue.url}
+				{#each issueChips as issue (issue.source + ':' + issue.id)}
+					{#if issue.url}
 						<a
-							href={session.issue.url}
+							href={issue.url}
 							target="_blank"
 							rel="noopener noreferrer"
 							class="badge badge-outline badge-sm link link-hover shrink-0 gap-1"
-							title="{ISSUE_BADGE[session.issue.source].label} {session.issue.id}"
+							title="{ISSUE_BADGE[issue.source].label} {issue.id}"
 						>
 							<Ticket size={12} />
-							<span class="hidden sm:inline"
-								>{ISSUE_BADGE[session.issue.source].label} {session.issue.id}</span
-							>
+							<span class="hidden sm:inline">{ISSUE_BADGE[issue.source].label} {issue.id}</span>
 						</a>
 					{:else}
 						<span
 							class="badge badge-outline badge-sm shrink-0 gap-1"
-							title="{ISSUE_BADGE[session.issue.source].label} {session.issue.id}"
+							title="{ISSUE_BADGE[issue.source].label} {issue.id}"
 						>
 							<Ticket size={12} />
-							<span class="hidden sm:inline"
-								>{ISSUE_BADGE[session.issue.source].label} {session.issue.id}</span
-							>
+							<span class="hidden sm:inline">{ISSUE_BADGE[issue.source].label} {issue.id}</span>
 						</span>
 					{/if}
-				{/if}
+				{/each}
 				{#if livePr}
 					<PrMenu id={session.id} pr={livePr} onChange={refresh} />
 				{/if}

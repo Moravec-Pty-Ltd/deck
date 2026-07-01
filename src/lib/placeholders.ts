@@ -10,6 +10,11 @@ export interface PlaceholderContext {
 	cwd?: string;
 	issueId?: string;
 	issueUrl?: string;
+	// Fetched at session-create time (server/issues/detail.ts) and injected into
+	// the first prompt; blank elsewhere since deck doesn't persist issue bodies.
+	issueTitle?: string;
+	issueBody?: string;
+	issueComments?: string;
 	prUrl?: string;
 	prNumber?: string;
 	prTitle?: string;
@@ -30,6 +35,9 @@ export function expandPlaceholders(text: string, ctx: PlaceholderContext): strin
 		.replaceAll('[cwd]', ctx.cwd ?? '')
 		.replaceAll('[issue_id]', ctx.issueId ?? '')
 		.replaceAll('[issue_url]', ctx.issueUrl ?? '')
+		.replaceAll('[issue_title]', ctx.issueTitle ?? '')
+		.replaceAll('[issue_body]', ctx.issueBody ?? '')
+		.replaceAll('[issue_comments]', ctx.issueComments ?? '')
 		.replaceAll('[pr_url]', ctx.prUrl ?? '')
 		.replaceAll('[pr_number]', ctx.prNumber ?? '')
 		.replaceAll('[pr_title]', ctx.prTitle ?? '')
@@ -43,13 +51,18 @@ export function expandPlaceholders(text: string, ctx: PlaceholderContext): strin
 // session the worktree branch is the checked-out `pr/<n>` head and its base is
 // the PR's base ref, so [pr_branch]/[pr_base] resolve to the diff's two ends.
 export function contextFromSession(session: DeckSession): PlaceholderContext {
+	// Multi-issue sessions store `issues`; older ones only `issue`. [issue_id] /
+	// [issue_url] join across every attached issue (one issue => the value as
+	// before). The richer [issue_title]/[issue_body]/[issue_comments] are only
+	// filled by the create-time fetch, so they stay blank here.
+	const issues = session.issues ?? (session.issue ? [session.issue] : []);
 	return {
 		title: session.title,
 		branch: session.worktree?.branch,
 		base: session.worktree?.base,
 		cwd: session.cwd,
-		issueId: session.issue?.id,
-		issueUrl: session.issue?.url,
+		issueId: issues.map((i) => i.id).join(' + ') || undefined,
+		issueUrl: issues.map((i) => i.url).filter(Boolean).join(' ') || undefined,
 		prUrl: session.pr?.url,
 		prNumber: session.pr ? String(session.pr.number) : undefined,
 		prTitle: session.pr?.title,
