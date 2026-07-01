@@ -38,10 +38,12 @@
 	}
 
 	// The same dot vocabulary keyed by status bucket, for the "By status" headers;
-	// Needs attention takes the error colour so it stands out (issue #48).
+	// Needs attention takes the error colour so it stands out (issue #48), and
+	// Just finished takes success green to read as "done its turn" next to Idle grey.
 	function bucketDot(key: StatusBucketKey) {
 		if (key === 'needs-attention') return 'bg-error';
 		if (key === 'active') return 'bg-primary';
+		if (key === 'just-finished') return 'bg-success';
 		if (key === 'dead') return 'border border-base-content/40';
 		return 'bg-base-content/35';
 	}

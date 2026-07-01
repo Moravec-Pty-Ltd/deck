@@ -11,18 +11,55 @@ function session(
 	return { id, kind: 'claude', title: id, cwd: '/x', createdAt: 0, lastActiveAt, status, awaitingInput };
 }
 
+const JUST_FINISHED_MS = 15 * 60 * 1000;
+// A fixed "now" well past the epoch so `now - lastActiveAt` windows are easy to reason about.
+const NOW = 100 * 60 * 1000;
+
 describe('bucketSessions', () => {
-	it('orders buckets needs-attention -> active -> idle -> dead', () => {
+	it('orders buckets needs-attention -> active -> just-finished -> idle -> dead', () => {
 		const sessions = [
 			session('dead', 'dead', 1),
-			session('idle', 'idle', 2),
-			session('run', 'running', 3),
-			session('err', 'error', 4)
+			session('idle', 'idle', NOW - 30 * 60 * 1000),
+			session('just', 'idle', NOW - 5 * 60 * 1000),
+			session('run', 'running', NOW),
+			session('err', 'error', NOW)
 		];
-		expect(bucketSessions(sessions).map((b) => b.key)).toEqual([
+		expect(bucketSessions(sessions, NOW).map((b) => b.key)).toEqual([
 			'needs-attention',
 			'active',
+			'just-finished',
 			'idle',
+			'dead'
+		]);
+	});
+
+	it('buckets a recently-idle session as just-finished', () => {
+		const buckets = bucketSessions([session('s', 'idle', NOW - 5 * 60 * 1000)], NOW);
+		expect(buckets.map((b) => b.key)).toEqual(['just-finished']);
+	});
+
+	it('leaves a long-idle session in idle', () => {
+		const buckets = bucketSessions([session('s', 'idle', NOW - 20 * 60 * 1000)], NOW);
+		expect(buckets.map((b) => b.key)).toEqual(['idle']);
+	});
+
+	it('treats exactly the threshold as just-finished and one ms past as idle', () => {
+		const onEdge = bucketSessions([session('s', 'idle', NOW - JUST_FINISHED_MS)], NOW);
+		expect(onEdge.map((b) => b.key)).toEqual(['just-finished']);
+		const past = bucketSessions([session('s', 'idle', NOW - JUST_FINISHED_MS - 1)], NOW);
+		expect(past.map((b) => b.key)).toEqual(['idle']);
+	});
+
+	it('does not pull recent running/dead/error/asking sessions into just-finished', () => {
+		const sessions = [
+			session('run', 'running', NOW),
+			session('dead', 'dead', NOW),
+			session('err', 'error', NOW),
+			session('asking', 'idle', NOW, true)
+		];
+		expect(bucketSessions(sessions, NOW).map((b) => b.key)).toEqual([
+			'needs-attention',
+			'active',
 			'dead'
 		]);
 	});
