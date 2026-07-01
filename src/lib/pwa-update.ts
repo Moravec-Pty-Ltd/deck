@@ -27,15 +27,25 @@ export function watchForUpdate(onReady: () => void): () => void {
 	// first install doesn't read as an update.
 	const hadController = !!sw.controller;
 
-	const track = (worker: ServiceWorker | null) => {
-		if (!worker) return;
-		worker.addEventListener('statechange', () => {
-			if (isUpdateReady(worker.state, !!sw.controller)) onReady();
-		});
-	};
-
 	let registration: ServiceWorkerRegistration | null = null;
 	let lastCheck = 0;
+	const tracked = new WeakSet<ServiceWorker>();
+
+	// Follow one installing worker to readiness. Guarded so a worker is tracked once,
+	// and the listener removes itself once it has reported (or gone redundant).
+	const track = (worker: ServiceWorker | null) => {
+		if (!worker || tracked.has(worker)) return;
+		tracked.add(worker);
+		const onStateChange = () => {
+			if (isUpdateReady(worker.state, !!sw.controller)) {
+				worker.removeEventListener('statechange', onStateChange);
+				onReady();
+			} else if (worker.state === 'redundant') {
+				worker.removeEventListener('statechange', onStateChange);
+			}
+		};
+		worker.addEventListener('statechange', onStateChange);
+	};
 
 	// Reopening/refocusing the PWA should actually ask the server for a new worker.
 	const check = () => {
@@ -46,10 +56,12 @@ export function watchForUpdate(onReady: () => void): () => void {
 		registration.update().catch(() => {});
 	};
 
+	const onUpdateFound = () => track(registration?.installing ?? null);
+
 	sw.ready.then((reg) => {
 		registration = reg;
+		reg.addEventListener('updatefound', onUpdateFound);
 		track(reg.installing);
-		reg.addEventListener('updatefound', () => track(reg.installing));
 		// A resume's focus/visibility event can land before `sw.ready` resolves, so
 		// run one check now that the registration exists; the first one isn't lost.
 		check();
@@ -66,6 +78,7 @@ export function watchForUpdate(onReady: () => void): () => void {
 	window.addEventListener('focus', check);
 
 	return () => {
+		registration?.removeEventListener('updatefound', onUpdateFound);
 		sw.removeEventListener('controllerchange', onControllerChange);
 		document.removeEventListener('visibilitychange', check);
 		window.removeEventListener('focus', check);
