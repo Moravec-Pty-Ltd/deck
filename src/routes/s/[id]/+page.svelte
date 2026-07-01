@@ -13,6 +13,14 @@
 	import { ISSUE_BADGE } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
 	import { ArrowLeft, Bot, Terminal, Menu, X, Ticket, TriangleAlert } from '@lucide/svelte';
+	import { onMount } from 'svelte';
+	import {
+		clampSidebarWidth,
+		parseSidebarWidth,
+		SIDEBAR_DEFAULT,
+		SIDEBAR_MIN,
+		SIDEBAR_MAX
+	} from '$lib/sidebar-width';
 
 	let { data }: PageProps = $props();
 	const session = $derived(data.session);
@@ -159,6 +167,70 @@
 			deletingId = null;
 		}
 	}
+
+	// Resizable desktop sidebar (issue #52). SSR renders the default so it matches
+	// the old lg:w-56; onMount hydrates the persisted width. The drag/keyboard math
+	// lives in the node-free sidebar-width helper; persistence is best-effort.
+	const SIDEBAR_WIDTH_KEY = 'deck:sidebar:width';
+	let sidebarWidth = $state(SIDEBAR_DEFAULT);
+	let resizing = $state(false);
+	let sidebarEl: HTMLElement;
+	let dragLeft = 0; // sidebar's left viewport x, captured at drag start
+
+	onMount(() => {
+		sidebarWidth = parseSidebarWidth(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+	});
+
+	function persistWidth() {
+		try {
+			localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+		} catch {
+			// non-critical: keep the in-memory width if the write fails
+		}
+	}
+
+	function onHandleDown(e: PointerEvent) {
+		if (e.button !== 0) return; // left button only
+		resizing = true;
+		dragLeft = sidebarEl.getBoundingClientRect().left;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+
+	function onHandleMove(e: PointerEvent) {
+		if (!resizing) return;
+		sidebarWidth = clampSidebarWidth(e.clientX - dragLeft);
+	}
+
+	// End a drag exactly once and persist. Reached via pointerup, pointercancel,
+	// and lostpointercapture so a dropped capture can't strand `resizing` or lose
+	// the final width; the `resizing` guard makes the extra calls no-ops.
+	function endDrag() {
+		if (!resizing) return;
+		resizing = false;
+		persistWidth();
+	}
+
+	function onHandleUp(e: PointerEvent) {
+		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+		endDrag();
+	}
+
+	function resetWidth() {
+		sidebarWidth = SIDEBAR_DEFAULT;
+		persistWidth();
+	}
+
+	function onHandleKey(e: KeyboardEvent) {
+		const step = e.shiftKey ? 32 : 16;
+		if (e.key === 'ArrowLeft') sidebarWidth = clampSidebarWidth(sidebarWidth - step);
+		else if (e.key === 'ArrowRight') sidebarWidth = clampSidebarWidth(sidebarWidth + step);
+		else if (e.key === 'Home') sidebarWidth = SIDEBAR_MIN;
+		else if (e.key === 'End') sidebarWidth = SIDEBAR_MAX;
+		else return;
+		e.preventDefault();
+		persistWidth();
+	}
 </script>
 
 <svelte:head>
@@ -178,10 +250,40 @@
 	/>
 {/snippet}
 
-<div class="flex h-full lg:gap-5">
-	<aside class="hidden h-full overflow-y-auto lg:block lg:w-56 lg:shrink-0">
-		{@render sidebar()}
-	</aside>
+<div class="flex h-full lg:gap-5" class:select-none={resizing} class:cursor-col-resize={resizing}>
+	<div
+		bind:this={sidebarEl}
+		class="relative hidden h-full lg:block lg:shrink-0"
+		style="width: {sidebarWidth}px"
+	>
+		<aside class="h-full overflow-y-auto">
+			{@render sidebar()}
+		</aside>
+		<div
+			role="slider"
+			aria-label="Resize sidebar"
+			aria-valuenow={sidebarWidth}
+			aria-valuemin={SIDEBAR_MIN}
+			aria-valuemax={SIDEBAR_MAX}
+			aria-valuetext="{sidebarWidth} pixels"
+			tabindex="0"
+			class="group absolute inset-y-0 -right-3 w-3 cursor-col-resize touch-none"
+			title="Drag to resize · double-click to reset"
+			onpointerdown={onHandleDown}
+			onpointermove={onHandleMove}
+			onpointerup={onHandleUp}
+			onpointercancel={endDrag}
+			onlostpointercapture={endDrag}
+			ondblclick={resetWidth}
+			onkeydown={onHandleKey}
+		>
+			<div
+				class="mx-auto h-full w-px transition-colors {resizing
+					? 'bg-primary'
+					: 'bg-base-300 group-hover:bg-primary group-focus-visible:bg-primary'}"
+			></div>
+		</div>
+	</div>
 
 	<div class="flex h-full min-w-0 flex-1 flex-col">
 		<div class="mb-2 flex items-center gap-2">
