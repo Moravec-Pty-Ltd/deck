@@ -46,7 +46,7 @@ interface State {
 }
 
 function fresh(): State {
-	return { bold: false, dim: false, italic: false, underline: false, inverse: false };
+	return { fg: undefined, bg: undefined, bold: false, dim: false, italic: false, underline: false, inverse: false };
 }
 
 function applySgr(state: State, codes: number[]) {

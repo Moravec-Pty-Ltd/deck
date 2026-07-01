@@ -18,6 +18,15 @@ describe('parseAnsi', () => {
 		expect(segs[1].fg).toBeUndefined();
 	});
 
+	it('clears fg/bg on a full reset (SGR 0), not just boolean attributes', () => {
+		const segs = parseAnsi(`${ESC}[31;44mred${ESC}[0m plain`);
+		expect(segs.map((s) => s.text)).toEqual(['red', ' plain']);
+		expect(segs[0].fg).toBe('#cc0000');
+		expect(segs[0].bg).toBe('#3465a4');
+		expect(segs[1].fg).toBeUndefined();
+		expect(segs[1].bg).toBeUndefined();
+	});
+
 	it('treats an empty SGR (ESC[m) as a reset of attributes', () => {
 		const segs = parseAnsi(`${ESC}[1mbold${ESC}[mafter`);
 		expect(segs[0].bold).toBe(true);
