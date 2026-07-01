@@ -281,7 +281,7 @@
 
 {#if open}
 	<div class="modal modal-open" role="dialog">
-		<div class="modal-box max-w-lg">
+		<div class="modal-box max-w-lg overflow-x-hidden">
 			<h3 class="mb-4 text-lg font-semibold">New session</h3>
 
 			<div class="join mb-4 w-full">
@@ -327,12 +327,14 @@
 					{/each}
 				</datalist>
 				<div class="mt-1 flex w-full gap-1">
-					<PathInput
-						class="input input-sm flex-1"
-						placeholder="register a project path"
-						bind:value={newProjectPath}
-						onenter={addProject}
-					/>
+					<div class="min-w-0 flex-1">
+						<PathInput
+							class="input input-sm w-full"
+							placeholder="register a project path"
+							bind:value={newProjectPath}
+							onenter={addProject}
+						/>
+					</div>
 					<button class="btn btn-sm" onclick={addProject}>Add</button>
 				</div>
 				{#if newProjectPath.trim()}
@@ -358,7 +360,7 @@
 				</legend>
 				<div class="flex w-full gap-1">
 					<input
-						class="input flex-1 {titleRequired && !title.trim() ? 'input-error' : ''}"
+						class="input min-w-0 flex-1 {titleRequired && !title.trim() ? 'input-error' : ''}"
 						placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
 						bind:value={title}
 					/>
