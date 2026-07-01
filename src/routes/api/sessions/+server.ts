@@ -107,12 +107,12 @@ function worktreeRequested(wt?: WorktreeReq): boolean {
 // git sink the /api/git/* endpoints confine. The picker feeding cwd is confined
 // to $HOME + projects, but a direct POST is not, so gate the worktree cwd to the
 // registered project set here too (custom-cwd sessions without a worktree are
-// unaffected: they reach no git sink). Returns the canonical repo path, which the
-// git/fs operations below must use so a symlink whose realpath is in bounds can't
-// redirect the derived <repo>-worktrees dir out of bounds.
+// unaffected: they reach no git sink). Returns the canonical (symlink-free) path,
+// which the git/fs operations below must use so a symlink whose realpath is in
+// bounds can't redirect the derived <repo>-worktrees dir out of bounds.
 async function assertWorktreeCwd(cwd: string): Promise<string> {
 	const repo = resolveWithinProjects(cwd);
-	if (repo === null) error(403, 'worktree cwd must be a registered project');
+	if (repo === null) error(403, 'worktree cwd must be within the registered project set');
 	if (!(await isGitRepo(repo))) error(400, 'worktree requested but cwd is not a git repo');
 	return repo;
 }

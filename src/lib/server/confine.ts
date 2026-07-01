@@ -46,8 +46,8 @@ function projectRoots(): string[] {
 	return roots;
 }
 
-// Canonical (symlink-free) form of `dir` if it is a registered project or one of
-// its worktrees, else null. Callers that go on to run git/fs against the path
+// Canonical (symlink-free) form of `dir` if it falls within a registered project
+// (or its `*-worktrees` sibling), else null. Callers that go on to run git/fs
 // must use the returned canonical form: a symlink whose realpath is in bounds
 // passes the check, but operating on the original path would let the symlink
 // redirect a derived sink (e.g. createWorktree's <repo>-worktrees dir) out of
