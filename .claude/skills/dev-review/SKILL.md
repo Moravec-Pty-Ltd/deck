@@ -1,6 +1,6 @@
 ---
 name: dev-review
-description: Standalone pre-PR review of the current branch's changes - committed commits vs the auto-detected base plus staged and unstaged working-tree edits. Two passes - correctness/quality (real bugs, security, error handling, broken contracts, missing tests, severity-tagged) and over-engineering (what to delete). Lists findings for the caller to fix; it does not apply changes or open a PR. Use standalone when the user says "dev review", "review my changes", or "what can we delete", or as the review step inside dev-workflow.
+description: Standalone pre-PR review of the current branch's changes - committed changes vs the auto-detected base plus staged and unstaged working-tree edits. Two passes - correctness/quality (real bugs, security, error handling, broken contracts, missing tests, severity-tagged) and over-engineering (what to delete). Lists findings for the caller to fix; it does not apply changes or open a PR. Use standalone when the user says "dev review", "review my changes", or "what can we delete", or as the review step inside dev-workflow.
 ---
 
 # Dev review
