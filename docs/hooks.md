@@ -52,8 +52,8 @@ export NTFY_TOPIC="your-ntfy-topic"
 PORT=4818 node build/index.js
 ```
 
-> Future enhancement: [#77](https://github.com/Moravec-Pty-Ltd/deck/issues/77)
-> shipped the `DECK_SESSION_ID` half this relies on; stamping `DECK_BASE_URL` into
+> Future enhancement: issue #77 shipped the `DECK_SESSION_ID` half this relies
+> on; stamping `DECK_BASE_URL` into
 > `agentEnv` too was raised there as an optional follow-up and has not been done.
 > If it were, the hook would be host-agnostic and you would not export
 > `DECK_BASE_URL`. That is a code change, out of scope here.
