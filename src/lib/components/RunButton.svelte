@@ -142,13 +142,13 @@
 
 <span class="flex shrink-0 items-center gap-1">
 	{#if isInFlight(current)}
-		<button class="btn btn-sm gap-1" disabled aria-label={SERVER_LABEL[current]}>
+		<button class="btn btn-xs gap-1" disabled aria-label={SERVER_LABEL[current]}>
 			<Loader2 size={14} class="animate-spin" /> {SERVER_LABEL[current]}
 		</button>
 	{:else}
 		<div class="join">
 			<button
-				class="btn join-item btn-sm gap-1 {mainTint}"
+				class="btn join-item btn-xs gap-1 {mainTint}"
 				onclick={primaryClick}
 				disabled={busy || !primary}
 				title={runningLike ? `Stop ${primary?.name ?? ''}` : `Run ${primary?.name ?? ''}`}
@@ -165,7 +165,7 @@
 			{#if showCaret}
 				<details bind:open={menuOpen} bind:this={menuEl} class="dropdown dropdown-end">
 					<summary
-						class="btn join-item btn-sm list-none px-1 [&::-webkit-details-marker]:hidden"
+						class="btn join-item btn-xs list-none px-1 [&::-webkit-details-marker]:hidden"
 						aria-label="More server actions"
 					>
 						<ChevronDown size={14} />

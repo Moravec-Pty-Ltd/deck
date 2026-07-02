@@ -286,7 +286,7 @@
 		class="relative hidden h-full lg:block lg:shrink-0"
 		style="width: {sidebarWidth}px"
 	>
-		<aside class="h-full overflow-y-auto">
+		<aside class="h-full overflow-y-auto pt-1">
 			{@render sidebar()}
 		</aside>
 		<div
@@ -315,7 +315,7 @@
 		</div>
 	</div>
 
-	<div class="flex h-full min-w-0 flex-1 flex-col">
+	<div class="flex h-full min-w-0 flex-1 flex-col pt-1">
 		{#if deleteError}
 			<div class="alert alert-error mb-2 py-2 text-sm" role="alert">
 				<span class="flex-1 break-words">{deleteError}</span>
@@ -381,7 +381,7 @@
 				<ServerChip state={serverChip} count={myServers.length} />
 			{/if}
 			{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}
-				<span class="badge badge-outline badge-sm shrink-0 gap-1" title="yolo (bypassPermissions)">
+				<span class="badge badge-outline badge-sm mr-1 shrink-0 gap-1" title="yolo (bypassPermissions)">
 					<TriangleAlert size={12} class="sm:hidden" />
 					<span class="hidden sm:inline">yolo</span>
 				</span>

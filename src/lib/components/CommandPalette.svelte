@@ -249,7 +249,7 @@
 					<li>
 						<button
 							type="button"
-							class="flex items-center gap-2 {i === active_index ? 'active' : ''}"
+							class="flex w-full min-w-0 items-center gap-2 {i === active_index ? 'active' : ''}"
 							onclick={() => {
 								selected = i;
 								choose(cmd);
