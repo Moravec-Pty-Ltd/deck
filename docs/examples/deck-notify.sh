@@ -31,6 +31,9 @@ if [ -z "$base_url" ] || [ -z "$ntfy_url" ]; then
 	exit 0
 fi
 
+# Missing curl is a local setup issue, not a reason to fail the turn.
+command -v curl >/dev/null 2>&1 || { echo "deck-notify: curl not found on PATH" >&2; exit 0; }
+
 # Trim a trailing slash so a base URL copied with one does not build "//s/...".
 session_url="${base_url%/}/s/$DECK_SESSION_ID"
 

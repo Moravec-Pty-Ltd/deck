@@ -32,7 +32,8 @@ It reads its configuration from the environment:
 |---|---|
 | `DECK_SESSION_ID` | Set by deck; identifies the session. Do not set this yourself. |
 | `DECK_BASE_URL` | Your deck origin, e.g. `https://your-deck-host:4818`. Required. |
-| `NTFY_TOPIC` | ntfy topic to publish to (or set `NTFY_URL` for a full URL). Required. |
+| `NTFY_TOPIC` | ntfy topic to publish to, via `https://ntfy.sh/<topic>`. Required unless `NTFY_URL` is set. |
+| `NTFY_URL` | Full ntfy publish URL (e.g. a self-hosted server). Overrides `NTFY_TOPIC`. |
 | `NTFY_TOKEN` | Optional bearer token for a protected ntfy topic. |
 
 ### Base URL

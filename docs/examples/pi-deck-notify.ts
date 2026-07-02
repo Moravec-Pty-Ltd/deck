@@ -12,7 +12,7 @@ import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
-	pi.on("agent_end", async () => {
+	pi.on("agent_end", () => {
 		// deck did not launch this session, or the script path is unset: skip.
 		if (!process.env.DECK_SESSION_ID) return;
 		const script = process.env.DECK_NOTIFY_SCRIPT;
