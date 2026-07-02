@@ -2,7 +2,7 @@
 	// docs/examples/* are copy-paste snippets for other repos (e.g. a pi
 	// extension importing a package deck doesn't depend on), not deck source.
 	// Keep them out of dead-code, dependency, and complexity analysis.
-	"ignorePatterns": ["docs/**"],
+	"ignorePatterns": ["docs/examples/**"],
 	"health": {
 		"ignore": [
 			// Agent CLI adapters are flat, defensive JSON parsers; their cyclomatic
