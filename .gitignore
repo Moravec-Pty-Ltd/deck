@@ -21,3 +21,10 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# This repo ships example Claude Code skills under .claude/skills/, but a common
+# global ignore hides .claude/. Re-include just the skills; keep everything else
+# under .claude/ (local settings, etc.) ignored.
+!.claude/
+.claude/*
+!.claude/skills/
