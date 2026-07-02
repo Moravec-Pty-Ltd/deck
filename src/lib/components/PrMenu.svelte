@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PrReviewDecision, SessionPR } from '$lib/types';
 	import { PR_STATE_COLOR, REVIEW_COLOR } from '$lib/pr';
+	import { dismissOnOutside } from '$lib/dismiss';
 	import { GitPullRequest, Check, X, ExternalLink, GitMerge, ChevronLeft } from '@lucide/svelte';
 
 	// GitHub's overall review decision, shown as a verdict line in the menu header.
@@ -17,7 +18,6 @@
 	// re-syncs server-side) and we just refetch via onChange.
 	let { id, pr, onChange }: { id: string; pr: SessionPR; onChange: () => void } = $props();
 
-	let menuEl = $state<HTMLDetailsElement>();
 	let open = $state(false);
 	let panel = $state<'menu' | 'review' | 'merge'>('menu');
 	let busy = $state(false);
@@ -36,18 +36,12 @@
 	const canMerge = $derived(pr.state === 'open' && pr.mergeable === 'MERGEABLE');
 	const tallyTitle = $derived(`${approvals} approval${approvals === 1 ? '' : 's'}, ${changes} change request${changes === 1 ? '' : 's'}`);
 
-	// Close on outside pointerdown; reset the panel/error whenever it closes.
+	// Reset the panel/error whenever the menu closes.
 	$effect(() => {
 		if (!open) {
 			panel = 'menu';
 			err = '';
-			return;
 		}
-		function onDown(e: PointerEvent) {
-			if (menuEl && !menuEl.contains(e.target as Node)) open = false;
-		}
-		window.addEventListener('pointerdown', onDown, true);
-		return () => window.removeEventListener('pointerdown', onDown, true);
 	});
 
 	async function post(payload: Record<string, unknown>): Promise<boolean> {
@@ -111,7 +105,7 @@
 {/snippet}
 
 <span class="inline-flex shrink-0 items-center gap-1">
-	<details class="dropdown dropdown-end" bind:open bind:this={menuEl}>
+	<details class="dropdown dropdown-end" bind:open use:dismissOnOutside={() => (open = false)}>
 		<summary
 			class="badge badge-outline badge-sm cursor-pointer list-none gap-1 [&::-webkit-details-marker]:hidden"
 			style={prColor ? `color:${prColor};border-color:${prColor}` : undefined}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { QuickMessage } from '$lib/types';
+	import { dismissOnOutside } from '$lib/dismiss';
 	import { MessageSquareText, Plus, Trash2, ArrowUp, ArrowDown, Settings2 } from '@lucide/svelte';
 
 	// The composer's quick-message popover (issue #45): a button next to send that
@@ -14,7 +15,6 @@
 
 	let messages = $state<QuickMessage[]>([]);
 	let open = $state(false);
-	let menuEl = $state<HTMLDetailsElement>();
 	let managing = $state(false);
 	let draft = $state<Draft[]>([]);
 	let saving = $state(false);
@@ -95,18 +95,9 @@
 		}
 	}
 
-	// Close the popover on an outside pointerdown (same pattern as PrMenu).
-	$effect(() => {
-		if (!open) return;
-		function onDown(e: PointerEvent) {
-			if (menuEl && !menuEl.contains(e.target as Node)) open = false;
-		}
-		window.addEventListener('pointerdown', onDown, true);
-		return () => window.removeEventListener('pointerdown', onDown, true);
-	});
 </script>
 
-<details class="dropdown dropdown-top dropdown-end" bind:open bind:this={menuEl}>
+<details class="dropdown dropdown-top dropdown-end" bind:open use:dismissOnOutside={() => (open = false)}>
 	<summary
 		class="btn btn-ghost btn-square list-none [&::-webkit-details-marker]:hidden"
 		aria-label="Quick messages"

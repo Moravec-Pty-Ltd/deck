@@ -3,6 +3,7 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { DeckSession } from '$lib/types';
 	import { indexForward, indexOlderBatch, type Answer } from '$lib/transcript-index';
+	import { modelLabel } from '$lib/models';
 	import Linked from './Linked.svelte';
 	import ToolCall from './ToolCall.svelte';
 	import AskQuestion from './AskQuestion.svelte';
@@ -445,6 +446,8 @@
 				</div>
 			{:else if event.type === 'deck.error'}
 				<div class="alert alert-error py-2 text-sm break-words whitespace-pre-wrap">{event.text}</div>
+			{:else if event.type === 'deck.model'}
+				<div class="px-2 text-center text-xs opacity-50">model → {modelLabel(event.model)}</div>
 			{:else if event.type === 'assistant'}
 				{#each contentBlocks(event) as block, j (j)}
 					{#if block.type === 'text' && block.text?.trim()}

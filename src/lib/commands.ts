@@ -2,8 +2,9 @@
 // buildCommands(ctx) assembles the session-aware list, filterCommands(list, q)
 // scores it. Every side effect goes through a CommandContext method the palette
 // supplies, so the registry stays unit-testable in isolation.
-import type { DeckSession, ServerRuntime } from './types';
+import { isAgentKind, type DeckSession, type ServerRuntime } from './types';
 import { canStart, canStop, isInFlight, type ServerAction } from './servers-client';
+import { CLAUDE_MODELS, modelLabel } from './models';
 
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 export type ReviewDecision = 'approve' | 'request-changes' | 'comment';
@@ -35,17 +36,21 @@ export interface CommandContext {
 	dismissPr: () => Promise<void>;
 	// Run a lifecycle action on one of the current session's servers.
 	serverAction: (name: string, action: ServerAction) => Promise<void>;
+	// Switch the current session's model (POST /api/sessions/[id]/model).
+	setModel: (model: string) => Promise<void>;
 }
 
 // A command awaiting a second step before it runs: 'text' collects a message,
-// 'merge' collects method + delete-branch. Absent means run immediately.
-export type CommandStep = 'text' | 'merge';
+// 'merge' collects method + delete-branch, 'model' picks/types a model.
+// Absent means run immediately.
+export type CommandStep = 'text' | 'merge' | 'model';
 
 // Values the palette collects in the second step and hands back to run().
 export interface CommandInput {
 	text?: string;
 	method?: MergeMethod;
 	deleteBranch?: boolean;
+	model?: string;
 }
 
 export interface Command {
@@ -188,6 +193,23 @@ function serverCommands(ctx: CommandContext): Command[] {
 	return cmds;
 }
 
+// Switch the current agent session's model (issue #88). Idle-only: the switch
+// applies on the next turn, so the command is simply absent while one runs (the
+// endpoint 409s on the race). Shell sessions have no model.
+function modelCommands(ctx: CommandContext, s: DeckSession): Command[] {
+	if (!isAgentKind(s.kind) || s.status === 'running') return [];
+	return [
+		{
+			id: 'change-model',
+			title: 'Change model…',
+			keywords: ['model', 'switch', ...(s.kind === 'claude' ? CLAUDE_MODELS : [])],
+			hint: modelLabel(s.model),
+			step: 'model',
+			run: (i) => ctx.setModel((i?.model ?? '').trim())
+		}
+	];
+}
+
 // Always-available actions, independent of any session.
 function globalCommands(ctx: CommandContext): Command[] {
 	const cmds: Command[] = [
@@ -237,6 +259,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
 		...(s?.pr ? prCommands(ctx, s.pr) : []),
 		...(s ? issueCommands(ctx, s) : []),
 		...(s ? serverCommands(ctx) : []),
+		...(s ? modelCommands(ctx, s) : []),
 		...globalCommands(ctx),
 		...jumpCommands(ctx)
 	];

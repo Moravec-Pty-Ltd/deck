@@ -2,6 +2,7 @@
 	import { isAgentKind } from '$lib/types';
 	import type { Issue, NewSessionPreset, Project, PullRequest, SessionKind } from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
+	import { CLAUDE_MODELS } from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { Bot, Terminal, Sparkles, Braces, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
@@ -518,10 +519,9 @@
 					{#if kind === 'claude'}
 						<select class="select w-full" bind:value={model}>
 							<option value="">default model</option>
-							<option value="fable">fable</option>
-							<option value="opus">opus</option>
-							<option value="sonnet">sonnet</option>
-							<option value="haiku">haiku</option>
+							{#each CLAUDE_MODELS as m (m)}
+								<option value={m}>{m}</option>
+							{/each}
 						</select>
 						<label class="label cursor-pointer justify-start gap-2">
 							<input type="checkbox" class="checkbox checkbox-sm" bind:checked={yolo} />

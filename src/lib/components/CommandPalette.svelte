@@ -11,6 +11,7 @@
 	} from '$lib/commands';
 	import type { DeckSession, ServerRuntime } from '$lib/types';
 	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
+	import { CLAUDE_MODELS, modelLabel, switchModel } from '$lib/models';
 	import { Search, CornerDownLeft, ChevronLeft } from '@lucide/svelte';
 
 	// Global Cmd+K palette. Rendered once in the layout; `open` is toggled by the
@@ -34,6 +35,8 @@
 	let inputEl = $state<HTMLInputElement>();
 	let messageEl = $state<HTMLInputElement>();
 	let mergeBtnEl = $state<HTMLButtonElement>();
+	let modelEl = $state<HTMLInputElement>();
+	let modelListEl = $state<HTMLUListElement>();
 
 	let query = $state('');
 	let selected = $state(0);
@@ -45,6 +48,7 @@
 	let message = $state('');
 	let method = $state<MergeMethod>('squash');
 	let deleteBranch = $state(false);
+	let model = $state('');
 	let busy = $state(false);
 	let err = $state('');
 
@@ -92,6 +96,11 @@
 			toggleNotifications,
 			prAction: prPost,
 			dismissPr: prDismiss,
+			setModel: async (next) => {
+				if (!currentSession) throw new Error('no session');
+				await switchModel(currentSession.id, next);
+				await loadData();
+			},
 			serverAction: async (name, action) => {
 				if (!currentSession) return;
 				await postServerAction(currentSession.id, name, action);
@@ -151,6 +160,7 @@
 			message = '';
 			method = 'squash';
 			deleteBranch = false;
+			model = currentSession?.model ?? '';
 		} else {
 			void execute(cmd);
 		}
@@ -158,10 +168,13 @@
 
 	// Focus a step's primary control once it has rendered (effects run after the DOM
 	// updates, so the binding is live). The merge step parks focus on the submit
-	// button so Enter merges; the text step focuses the message field.
+	// button so Enter merges; the text step focuses the message field; the model
+	// step focuses the free-text field (pi/codex) or the first row (claude).
 	$effect(() => {
 		if (active?.step === 'text') messageEl?.focus();
 		else if (active?.step === 'merge') mergeBtnEl?.focus();
+		else if (active?.step === 'model')
+			(modelEl ?? modelListEl?.querySelector('button'))?.focus();
 	});
 
 	const METHODS: MergeMethod[] = ['squash', 'merge', 'rebase'];
@@ -182,6 +195,7 @@
 	}
 
 	async function execute(cmd: Command, input?: Parameters<Command['run']>[0]) {
+		if (busy) return;
 		busy = true;
 		err = '';
 		try {
@@ -301,6 +315,46 @@
 							{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if} Submit
 						</button>
 					</div>
+				{:else if active.step === 'model'}
+					{#if currentSession?.kind === 'claude'}
+						<ul bind:this={modelListEl} class="menu menu-sm w-full p-0">
+							{#each ['', ...CLAUDE_MODELS] as m (m)}
+								<li>
+									<button onclick={() => execute(active!, { model: m })} disabled={busy}>
+										<span class="flex-1">{modelLabel(m)}</span>
+										{#if (currentSession?.model ?? '') === m}
+											<span class="text-xs opacity-50">current</span>
+										{/if}
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<input
+							bind:this={modelEl}
+							bind:value={model}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									execute(active!, { model });
+								}
+							}}
+							class="input input-bordered input-sm w-full"
+							placeholder="model id (empty for default)"
+							autocomplete="off"
+							spellcheck="false"
+						/>
+						<div class="flex justify-end">
+							<button
+								class="btn btn-primary btn-sm"
+								onclick={() => execute(active!, { model })}
+								disabled={busy}
+							>
+								{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if} Apply
+							</button>
+						</div>
+					{/if}
+					{#if err}<p class="text-xs text-error">{err}</p>{/if}
 				{:else}
 					<div class="join w-full">
 						{#each [['squash', 'Squash'], ['merge', 'Merge'], ['rebase', 'Rebase']] as [value, label] (value)}

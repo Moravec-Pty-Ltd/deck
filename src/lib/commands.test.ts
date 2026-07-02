@@ -37,6 +37,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
 		prAction: vi.fn().mockResolvedValue(undefined),
 		dismissPr: vi.fn().mockResolvedValue(undefined),
 		serverAction: vi.fn().mockResolvedValue(undefined),
+		setModel: vi.fn().mockResolvedValue(undefined),
 		...over
 	};
 }
@@ -123,6 +124,14 @@ describe('buildCommands', () => {
 		expect(ids(ctx({ session: session(), servers: [] })).some((id) => id.startsWith('server-'))).toBe(false);
 	});
 
+	it('offers Change model for an idle agent session only', () => {
+		expect(ids(ctx({ session: session() }))).toContain('change-model');
+		expect(ids(ctx({ session: session({ kind: 'pi' }) }))).toContain('change-model');
+		expect(ids(ctx({ session: session({ kind: 'shell' }) }))).not.toContain('change-model');
+		expect(ids(ctx({ session: session({ status: 'running' }) }))).not.toContain('change-model');
+		expect(ids(ctx())).not.toContain('change-model');
+	});
+
 	it('offers a jump command for every other session, not the current one', () => {
 		const c = ctx({
 			session: session({ id: 's1' }),
@@ -155,6 +164,17 @@ describe('command dispatch', () => {
 		const run = buildCommands(c).find((cmd) => cmd.id === 'server-run')!;
 		await run.run();
 		expect(c.serverAction).toHaveBeenCalledWith('web', 'start');
+	});
+
+	it('Change model trims the picked model into setModel', async () => {
+		const c = ctx({ session: session({ model: 'opus' }) });
+		const cmd = buildCommands(c).find((x) => x.id === 'change-model')!;
+		expect(cmd.step).toBe('model');
+		expect(cmd.hint).toBe('opus');
+		await cmd.run({ model: ' sonnet ' });
+		expect(c.setModel).toHaveBeenCalledWith('sonnet');
+		await cmd.run();
+		expect(c.setModel).toHaveBeenCalledWith('');
 	});
 
 	it('Request changes trims the message into a request-changes review', async () => {

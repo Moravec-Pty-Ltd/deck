@@ -11,6 +11,7 @@ import { rejectAsk } from './ask';
 import { notify } from './push';
 import { transcriptPath } from './transcript';
 import { agentEnv } from './agents/env';
+import { isFlagSafe } from './agents/args';
 import { lastPrLink } from '../pr';
 
 // Reading the stored transcript (snapshot tail + lazy back-scroll ranges) lives
@@ -121,6 +122,20 @@ function notifyTurnEnd(id: string, event: Record<string, unknown>) {
 	});
 }
 
+// A non-zero exit mid-turn: error footer on the transcript, error status, and a
+// push so an unattended session isn't silently dead.
+function reportCrash(id: string, proc: Proc, code: number | null) {
+	const text = proc.stderrTail.trim() || `claude exited with code ${code}`;
+	appendEvent(id, { type: 'deck.error', text, ts: Date.now() });
+	setStatus(id, 'error');
+	notify({
+		title: `Session crashed · ${getStoredSession(id)?.title ?? id}`,
+		body: text.split('\n').pop() || 'claude exited unexpectedly',
+		tag: id,
+		url: `/s/${id}`
+	});
+}
+
 function startProcess(id: string): Proc {
 	const session = getStoredSession(id);
 	if (!session || session.kind !== 'claude') throw new Error('not a claude session');
@@ -134,7 +149,8 @@ function startProcess(id: string): Proc {
 		'-p'
 	];
 	if (session.claudeSessionId) args.push('--resume', session.claudeSessionId);
-	if (session.model) args.push('--model', session.model);
+	// Same flag-injection guard as the pi/codex spawns (see agents/args.ts).
+	if (isFlagSafe(session.model)) args.push('--model', session.model!);
 	if (session.permissionMode === 'bypassPermissions') {
 		args.push('--dangerously-skip-permissions');
 	} else {
@@ -176,22 +192,17 @@ function startProcess(id: string): Proc {
 		proc.stderrTail = (proc.stderrTail + chunk.toString()).slice(-4000);
 	});
 	child.on('exit', (code) => {
-		if (proc.idleTimer) clearTimeout(proc.idleTimer);
-		procs.delete(id);
-		rejectAsk(id, 'process exited');
-		if (proc.running && code !== 0) {
-			const text = proc.stderrTail.trim() || `claude exited with code ${code}`;
-			appendEvent(id, { type: 'deck.error', text, ts: Date.now() });
-			setStatus(id, 'error');
-			notify({
-				title: `Session crashed · ${getStoredSession(id)?.title ?? id}`,
-				body: text.split('\n').pop() || 'claude exited unexpectedly',
-				tag: id,
-				url: `/s/${id}`
-			});
-		} else if (proc.running) {
-			setStatus(id, 'idle');
+		clearTimeout(proc.idleTimer);
+		// A stop-then-respawn (model switch, idle teardown) can register a new proc
+		// before the old child's exit fires; only clean up if we're still current,
+		// or we'd deregister the live proc and reject its pending asks.
+		if (procs.get(id) === proc) {
+			procs.delete(id);
+			rejectAsk(id, 'process exited');
 		}
+		if (!proc.running) return;
+		if (code === 0) setStatus(id, 'idle');
+		else reportCrash(id, proc, code);
 	});
 
 	return proc;

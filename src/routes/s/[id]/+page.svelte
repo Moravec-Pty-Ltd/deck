@@ -10,6 +10,7 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import PrMenu from '$lib/components/PrMenu.svelte';
+	import ModelMenu from '$lib/components/ModelMenu.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
@@ -58,6 +59,14 @@
 	// One chip per attached issue. New sessions store `issues`; older ones only
 	// the single `issue`, so read them together.
 	const issueChips = $derived(session.issues ?? (session.issue ? [session.issue] : []));
+
+	// Current model for the header switcher. Like livePr, trust the polled session
+	// once loaded (a switch persists server-side); the model can legitimately be
+	// undefined, so don't ??-coalesce back to the page-load value.
+	const liveModel = $derived.by(() => {
+		const live = sessions.find((s) => s.id === session.id);
+		return live ? live.model : session.model;
+	});
 
 	// Dev-server states per session, from the monitor's cached poll (cheap), for
 	// the header chip and the sidebar dots (issue #32). The Servers tab fetches
@@ -379,6 +388,15 @@
 			{#if serverChip}
 				<RunButton {session} serverState={serverChip} onRefresh={refresh} />
 				<ServerChip state={serverChip} count={myServers.length} />
+			{/if}
+			{#if session.kind !== 'shell'}
+				<ModelMenu
+					id={session.id}
+					kind={session.kind}
+					model={liveModel}
+					disabled={liveStatus === 'running'}
+					onChange={refresh}
+				/>
 			{/if}
 			{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}
 				<span class="badge badge-outline badge-sm mr-1 shrink-0 gap-1" title="yolo (bypassPermissions)">
