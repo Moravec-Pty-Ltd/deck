@@ -127,6 +127,8 @@ deck can push notifications to the installed PWA so you don't have to babysit a 
 
 VAPID keys are generated on first run and stored in `~/.deck/vapid.json`; subscriptions live in `~/.deck/push-subscriptions.json`. Override the VAPID contact with `DECK_PUSH_SUBJECT`.
 
+Prefer your agent harness's own notifications? deck stamps `DECK_SESSION_ID` into every agent it spawns, so a claude/pi/codex stop hook can push a notification that deep-links straight back to the session. See [docs/hooks.md](docs/hooks.md).
+
 ## How it works
 
 - **Claude sessions** run headless Claude Code (`claude -p --input-format stream-json --output-format stream-json --resume`) under your normal subscription auth. Each active session is one long-lived process; events are appended to a JSONL transcript in `~/.deck/transcripts/` and streamed to the browser over SSE. A message sent mid-turn is queued and runs next; **Interrupt** ends the current turn (via a `control_request`) without ending the session. Idle processes are torn down after 20 minutes and respawned with `--resume` on the next message.
