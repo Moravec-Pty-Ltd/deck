@@ -1,6 +1,6 @@
 ---
 name: dev-workflow
-description: End-to-end workflow for a GitHub issue in the current repo - fetch the issue, branch off the latest default branch, implement the change, run the project's checks, self-review with the dev-review skill, then open a PR that closes the issue. Use when taking a GitHub issue from ticket to open PR, e.g. the user says "dev workflow", "work this issue", or gives a GitHub issue ref (owner/repo#N or an issue URL). For reviewer feedback after the PR is up, use address-feedback.
+description: End-to-end workflow for a GitHub issue in the current repo - fetch the issue, branch off the latest default branch, implement the change, run the project's checks, self-review with the dev-review skill, then open a PR that closes the issue. Use when taking a GitHub issue from ticket to open PR, e.g. the user says "dev workflow", "work this issue", or gives a GitHub issue ref (owner/repo#N or an issue URL). The skill stops once the PR is open; addressing reviewer feedback afterward is a separate follow-up.
 ---
 
 # Dev workflow
@@ -79,7 +79,9 @@ pairs with the sibling [dev-review](../dev-review/SKILL.md) skill.
    work.
 
 Do not merge; opening the PR is the end of this skill. When reviewers respond
-later, use the `address-feedback` skill.
+later, address the feedback as a separate follow-up: check the branch back out,
+make the fixes, rerun the checks and the [dev-review](../dev-review/SKILL.md)
+skill, push, then reply on the review threads (resolving each once addressed).
 
 ## Conventions
 
