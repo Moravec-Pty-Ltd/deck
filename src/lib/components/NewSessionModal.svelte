@@ -10,7 +10,7 @@
 		SessionKind
 	} from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
-	import { CLAUDE_MODELS, resolveModelChoice } from '$lib/models';
+	import { CLAUDE_MODELS, resolveModelChoice, shouldReseedModel } from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { Bot, Terminal, Sparkles, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
@@ -48,9 +48,11 @@
 	// Detected model lists per agent kind, fetched once per session and reused
 	// (issue #51). Missing key = not fetched yet; empty array = CLI reported none.
 	let modelCache = $state<Record<string, ModelChoice[]>>({});
-	// The kind the model/provider fields were last seeded for; a change means the
-	// prior text belongs to a different agent and must be re-seeded.
+	// The kind and project the model/provider fields were last seeded for; a
+	// change to either means the prior pick belongs to a different agent or
+	// project and must be re-seeded.
 	let seededKind: SessionKind | null = null;
+	let seededProjectPath: string | undefined = undefined;
 	let yolo = $state(true);
 	let worktreeMode = $state<WorktreeMode>('new');
 	let worktreeModeDirty = $state(false);
@@ -91,6 +93,7 @@
 		baseDirty = false;
 		modelDirty = false;
 		seededKind = null;
+		seededProjectPath = undefined;
 		errorMsg = '';
 		showPicker = false;
 		mode = 'new';
@@ -215,14 +218,15 @@
 
 	// Model/provider default to the project's last pick for this kind, then the
 	// global last-used, then the built-in default (claude -> opus, others blank).
-	// Reset on a kind change (the prior text belongs to a different agent) and
-	// re-run when the async projects/settings loads land, but never clobber a
-	// hand-edited value.
+	// Re-seed on a kind change (prior text belongs to a different agent) or a
+	// genuine project switch (the pick is project-scoped, like issue/PR/base),
+	// but never clobber a hand-edited value within the same kind+project.
 	$effect(() => {
-		if (seededKind !== kind) {
-			seededKind = kind;
+		const projectPath = selectedProject?.path;
+		if (shouldReseedModel({ kind: seededKind, projectPath: seededProjectPath }, { kind, projectPath }))
 			modelDirty = false;
-		}
+		seededKind = kind;
+		seededProjectPath = projectPath;
 		if (modelDirty) return;
 		const choice = isAgentKind(kind)
 			? resolveModelChoice(kind, selectedProject, settings)

@@ -1,4 +1,4 @@
-import type { AgentKind, DeckSettings, ModelChoice, Project } from '$lib/types';
+import type { AgentKind, DeckSettings, ModelChoice, Project, SessionKind } from '$lib/types';
 
 // Claude model shortnames the CLI accepts, offered in the New Session modal and
 // the mid-session model switcher (issue #88). pi/codex take free-text ids.
@@ -22,6 +22,24 @@ export function resolveModelChoice(
 	const remembered = project?.lastModels?.[kind] ?? settings.lastModels?.[kind];
 	if (remembered) return remembered;
 	return { model: kind === 'claude' ? DEFAULT_CLAUDE_MODEL : '' };
+}
+
+// Whether the new-session modal should re-seed the model/provider fields from
+// the resolved default. A kind change always re-seeds (the prior text belongs to
+// a different agent); a project change re-seeds only between two *defined*
+// projects, so the initial `undefined -> project` hydration (the projects list
+// still loading) never wipes a model typed before it lands. Keeps the model pick
+// project-scoped like the modal's issue/PR/base picks.
+export function shouldReseedModel(
+	prev: { kind: SessionKind | null; projectPath: string | undefined },
+	next: { kind: SessionKind; projectPath: string | undefined }
+): boolean {
+	if (prev.kind !== next.kind) return true;
+	return (
+		prev.projectPath !== undefined &&
+		next.projectPath !== undefined &&
+		prev.projectPath !== next.projectPath
+	);
 }
 
 // Display name for a session's model wherever it surfaces (header chip, palette
