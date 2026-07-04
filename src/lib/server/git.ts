@@ -194,7 +194,10 @@ export async function cloneRepo(url: string, dest: string): Promise<void> {
 	try {
 		await exec('git', ['clone', '--', url, dest], {
 			timeout: CLONE_TIMEOUT,
-			maxBuffer: CLONE_MAX_BUFFER
+			maxBuffer: CLONE_MAX_BUFFER,
+			// Never block on an interactive prompt in a background endpoint — fail fast
+			// instead. Stored credential helpers and ssh-agent/keys still work.
+			env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -oBatchMode=yes' }
 		});
 	} catch (e) {
 		const stderr = (e as { stderr?: string }).stderr?.trim();

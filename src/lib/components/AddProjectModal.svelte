@@ -122,7 +122,7 @@
 				{#if cloning}
 					<p class="fieldset-label text-xs">
 						{#if repoName && newPath.trim()}
-							→ clones into <span class="font-mono">{newPath.trim().replace(/\/+$/, '')}/{repoName}</span>
+							→ clones into <span class="font-mono">{newPath.trim().replace(/[/\\]+$/, '')}/{repoName}</span>
 						{:else if !repoName}
 							enter a valid repo url to derive the folder name
 						{:else}
