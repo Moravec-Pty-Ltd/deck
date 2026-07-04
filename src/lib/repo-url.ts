@@ -22,15 +22,23 @@ export function repoNameFromUrl(url: string): string | null {
 // transport trick, `file://`, and bare/local paths.
 export function isCloneUrlSafe(url: string): boolean {
 	const u = url.trim();
-	// Empty, option-like, or backslash-bearing (a Windows local path or a `..\`
-	// traversal, never part of a real clone url) is out.
-	if (!u || u.startsWith('-') || u.includes('\\')) return false;
-	// scheme://host/… — https/ssh/git only, non-empty host (so every file:// is out).
-	if (/^(?:https|ssh|git):\/\/[^/]/i.test(u)) return true;
-	// scp-style host:path — a single-letter host is a Windows drive (C:repo), not a
-	// host, so exclude it; url-scheme forms are handled above.
-	if (u.includes('://') || /^[A-Za-z]:/.test(u)) return false;
-	// host has no slash/colon, and the char after the single colon is a path char
-	// (not `:`, which rules out `ext::…`, nor `/`, a drive path).
-	return /^[^/:]+:[^/:]/.test(u);
+	// Out: empty, whitespace/backslash-bearing (a Windows local path / `..\`
+	// traversal), option-like (leading `-`), or a Windows drive (C:repo).
+	if (!u || /[\s\\]/.test(u) || u.startsWith('-') || /^[A-Za-z]:/.test(u)) return false;
+	// scheme://authority/… — https/ssh/git only, with a safe host.
+	const scheme = u.match(/^(?:https|ssh|git):\/\/([^/]+)/i);
+	if (scheme) return isSafeHost(scheme[1]);
+	// scp-style host:path — host before the single colon, path char after (not `:`,
+	// ruling out `ext::…`, nor `/`). Any other `scheme://` fell through above and
+	// fails here (its `//` after the colon isn't a path char).
+	const scp = u.match(/^([^/:]+):[^/:]/);
+	return scp ? isSafeHost(scp[1]) : false;
+}
+
+// The host of an authority (the last `@`-separated segment) must be non-empty and
+// not start with `-`, or ssh reads it as an option — the ProxyCommand injection
+// vector behind `ssh://-oProxyCommand=…` and `git@-evil:path`.
+function isSafeHost(authority: string): boolean {
+	const host = authority.slice(authority.lastIndexOf('@') + 1);
+	return host.length > 0 && !host.startsWith('-');
 }

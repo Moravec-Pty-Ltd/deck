@@ -53,4 +53,12 @@ describe('isCloneUrlSafe', () => {
 		expect(isCloneUrlSafe('..\\..\\evil')).toBe(false);
 		expect(isCloneUrlSafe('git@host:acme\\..\\evil')).toBe(false);
 	});
+
+	it('rejects a `-`-leading host (ssh option injection) and whitespace', () => {
+		expect(isCloneUrlSafe('ssh://-oProxyCommand=touch pwned/owner/repo')).toBe(false);
+		expect(isCloneUrlSafe('ssh://-oProxyCommand=x/owner/repo')).toBe(false);
+		expect(isCloneUrlSafe('ssh://git@-oProxyCommand=x/owner/repo')).toBe(false);
+		expect(isCloneUrlSafe('git@-oProxyCommand=x:owner/repo')).toBe(false);
+		expect(isCloneUrlSafe('https://exa mple.com/owner/repo')).toBe(false);
+	});
 });

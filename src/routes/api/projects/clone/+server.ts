@@ -24,9 +24,12 @@ function isUsableName(name: string | null): name is string {
 }
 
 // A dest is clonable into when it doesn't exist yet; an existing path blocks
-// unless it's an empty directory.
+// unless it's an empty directory. A symlink final component is always blocked:
+// git clone would write through it, escaping the boundary the parent was checked
+// against.
 function destBlocked(dest: string): boolean {
 	if (!fs.existsSync(dest)) return false;
+	if (fs.lstatSync(dest).isSymbolicLink()) return true;
 	return !fs.statSync(dest).isDirectory() || fs.readdirSync(dest).length > 0;
 }
 
@@ -46,17 +49,19 @@ function readBody(raw: unknown) {
 // The repo name to clone into, or a 4xx: url present, scheme allowed, name usable.
 function requireRepoName(url: string): string {
 	if (!url) error(400, 'repo url required');
-	if (!isCloneUrlSafe(url)) error(400, 'unsupported repo url (use an https, ssh, git, or scp-style url)');
+	if (!isCloneUrlSafe(url)) error(400, 'unsupported repo url (use https, ssh, git, or scp-style)');
 	const name = repoNameFromUrl(url);
 	if (!isUsableName(name)) error(400, 'could not derive a valid repo name from the url');
 	return name;
 }
 
 // The parent must be an existing dir inside the picker boundary ($HOME or a
-// project root); the derived <parent>/<repoName> dest sits under it.
-function requireParent(parent: string): void {
+// project root). Returns its canonical (symlink-free) path so the derived dest is
+// built under the real, in-bounds location rather than a symlink to it.
+function requireParent(parent: string): string {
 	if (!parent || !isDir(parent)) error(400, 'parent is not a directory');
 	if (!isPickerAllowed(parent)) error(403, 'parent is outside the allowed directories');
+	return fs.realpathSync(parent);
 }
 
 // Defensive backstop: dest must be a direct child of parent, in case a repoName
@@ -79,10 +84,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const raw = await request.json().catch(() => error(400, 'invalid JSON body'));
 	const { url, parent, name, group } = readBody(raw);
 	const repoName = requireRepoName(url);
-	requireParent(parent);
+	const realParent = requireParent(parent);
 
-	const dest = path.join(parent, repoName);
-	requireChildOfParent(parent, dest);
+	const dest = path.join(realParent, repoName);
+	requireChildOfParent(realParent, dest);
 	requireFreeDest(dest);
 
 	try {

@@ -25,6 +25,15 @@
 	// The folder git clone would create; the route re-derives it authoritatively.
 	const repoName = $derived(cloning ? repoNameFromUrl(newRepoUrl) : null);
 
+	// Preview of the clone destination, matching the parent's separator style so a
+	// Windows-style parent renders C:\code\repo, not a mixed C:\code/repo.
+	const clonePreview = $derived.by(() => {
+		const p = newPath.trim().replace(/[/\\]+$/, '');
+		if (!p || !repoName) return '';
+		const sep = p.includes('\\') && !p.includes('/') ? '\\' : '/';
+		return `${p}${sep}${repoName}`;
+	});
+
 	// Track the derived repo name into the name field until the user edits it,
 	// clearing back to empty when the url (and so the derivation) goes away.
 	$effect(() => {
@@ -121,8 +130,8 @@
 				/>
 				{#if cloning}
 					<p class="fieldset-label text-xs">
-						{#if repoName && newPath.trim()}
-							→ clones into <span class="font-mono">{newPath.trim().replace(/[/\\]+$/, '')}/{repoName}</span>
+						{#if clonePreview}
+							→ clones into <span class="font-mono">{clonePreview}</span>
 						{:else if !repoName}
 							enter a valid repo url to derive the folder name
 						{:else}
