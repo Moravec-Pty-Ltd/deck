@@ -12,7 +12,7 @@ import { resolveWithinProjects } from '$lib/server/confine';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 import { buildIssuePrompt, type IssueForFetch, type IssuePromptContext } from '$lib/server/issues/detail';
 
-const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'shell'];
+const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'opencode', 'shell'];
 const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
 
 type WorktreeReq = { branch?: string; newBranch?: boolean; base?: string; fromPr?: unknown };

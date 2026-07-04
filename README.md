@@ -10,7 +10,7 @@ A structured chat view for Claude sessions, with inline diffs and collapsible to
 
 ![Claude chat view](docs/screenshots/claude-chat.png)
 
-One flat, recency-sorted list of every session across claude, pi, codex, and shells:
+One flat, recency-sorted list of every session across claude, pi, codex, opencode, and shells:
 
 ![Session list](docs/screenshots/sessions-list.png)
 
@@ -62,7 +62,7 @@ winget install Git.Git
 
 Then install the [`claude` CLI](https://docs.claude.com/en/docs/claude-code) and log in. Caveats on native Windows:
 
-- deck resolves agent CLIs installed as `.cmd`/`.bat` shims (via `cross-spawn`), but an agent launched through such a shim runs under a `cmd.exe` wrapper that an interrupt may not fully tear down. Prefer native `.exe` installs of `claude`/`pi`/`codex` so teardown stays clean.
+- deck resolves agent CLIs installed as `.cmd`/`.bat` shims (via `cross-spawn`), but an agent launched through such a shim runs under a `cmd.exe` wrapper that an interrupt may not fully tear down. Prefer native `.exe` installs of `claude`/`pi`/`codex`/`opencode` so teardown stays clean.
 - psmux needs **PowerShell 7+** for Claude Code integration, and deck leans on tmux's `=name` exact-target syntax and `capture-pane -e` colour output, which haven't been verified against psmux. If shell sessions misbehave, fall back to WSL2.
 
 The [`claude` CLI](https://docs.claude.com/en/docs/claude-code) is the same install everywhere (log in once). The rest of setup is identical on every platform:
@@ -127,7 +127,7 @@ deck can push notifications to the installed PWA so you don't have to babysit a 
 
 VAPID keys are generated on first run and stored in `~/.deck/vapid.json`; subscriptions live in `~/.deck/push-subscriptions.json`. Override the VAPID contact with `DECK_PUSH_SUBJECT`.
 
-Prefer your agent harness's own notifications? deck stamps `DECK_SESSION_ID` into every agent it spawns, so a claude/pi/codex stop hook can push a notification that deep-links straight back to the session. See [docs/hooks.md](docs/hooks.md).
+Prefer your agent harness's own notifications? deck stamps `DECK_SESSION_ID` into every agent it spawns, so a claude/pi/codex/opencode stop hook can push a notification that deep-links straight back to the session. See [docs/hooks.md](docs/hooks.md).
 
 ## How it works
 

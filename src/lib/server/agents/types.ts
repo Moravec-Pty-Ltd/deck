@@ -21,7 +21,7 @@ export interface AgentTurn {
 }
 
 export interface AgentDriver {
-	kind: 'pi' | 'codex';
+	kind: 'pi' | 'codex' | 'opencode';
 	// Build the command for one turn; resumeId is the stored agentSessionId.
 	buildTurn(session: DeckSession, message: string, resumeId: string | undefined): AgentTurn;
 	// Map one parsed stdout JSON line into normalised deck events via ctx.

@@ -10,11 +10,12 @@ import { deckError, resultEvent } from './events';
 import type { AgentDriver, TurnContext } from './types';
 import { piDriver } from './pi';
 import { codexDriver } from './codex';
+import { opencodeDriver } from './opencode';
 
-// Per-turn agents (pi, codex): each user message spawns a fresh CLI process that
-// streams JSONL to completion, parsed by a driver into deck's normalised events.
-// Claude keeps its own persistent-process engine in claude.ts.
-const drivers: Record<string, AgentDriver> = { pi: piDriver, codex: codexDriver };
+// Per-turn agents (pi, codex, opencode): each user message spawns a fresh CLI
+// process that streams JSONL to completion, parsed by a driver into deck's
+// normalised events. Claude keeps its own persistent-process engine in claude.ts.
+const drivers: Record<string, AgentDriver> = { pi: piDriver, codex: codexDriver, opencode: opencodeDriver };
 
 const g = globalThis as { __deckAgentProcs?: Map<string, ChildProcess> };
 const procs = (g.__deckAgentProcs ??= new Map());

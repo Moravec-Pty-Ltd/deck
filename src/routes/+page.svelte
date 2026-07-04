@@ -53,7 +53,7 @@
 
 	// Only surface filter buttons for kinds that actually have sessions.
 	const filterKinds = $derived(
-		(['claude', 'pi', 'codex', 'shell'] as SessionKind[]).filter((k) =>
+		(['claude', 'pi', 'codex', 'opencode', 'shell'] as SessionKind[]).filter((k) =>
 			sessions.some((s) => s.kind === k)
 		)
 	);
@@ -184,7 +184,7 @@
 				<div class="truncate font-medium">{s.title}</div>
 				<div class="truncate text-xs opacity-60">{shortPath(s.cwd)}</div>
 			</div>
-			{#if s.kind === 'pi' || s.kind === 'codex'}
+			{#if s.kind === 'pi' || s.kind === 'codex' || s.kind === 'opencode'}
 				<span class="badge badge-ghost badge-sm">{s.kind}</span>
 			{/if}
 			{#if s.kind === 'shell' && s.attached}

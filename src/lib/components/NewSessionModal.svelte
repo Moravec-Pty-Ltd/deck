@@ -4,7 +4,7 @@
 	import { groupProjects, existingGroupNames } from '$lib/groups';
 	import { CLAUDE_MODELS } from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
-	import { Bot, Terminal, Sparkles, Braces, Ticket, X, TriangleAlert } from '@lucide/svelte';
+	import { Bot, Terminal, Sparkles, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
 	import IssuePicker from './IssuePicker.svelte';
@@ -14,6 +14,7 @@
 		{ id: 'claude', label: 'Claude', icon: Bot },
 		{ id: 'pi', label: 'pi', icon: Sparkles },
 		{ id: 'codex', label: 'codex', icon: Braces },
+		{ id: 'opencode', label: 'opencode', icon: SquareCode },
 		{ id: 'shell', label: 'Shell', icon: Terminal }
 	] as const;
 
@@ -541,7 +542,9 @@
 					{:else}
 						<input
 							class="input w-full"
-							placeholder="model (optional, e.g. gpt-5-codex)"
+							placeholder={kind === 'opencode'
+								? 'model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)'
+								: 'model (optional, e.g. gpt-5-codex)'}
 							bind:value={model}
 						/>
 					{/if}
