@@ -59,6 +59,14 @@ function requireParent(parent: string): void {
 	if (!isPickerAllowed(parent)) error(403, 'parent is outside the allowed directories');
 }
 
+// Defensive backstop: dest must be a direct child of parent, in case a repoName
+// ever carries a path separator (e.g. a Windows `\`).
+function requireChildOfParent(parent: string, dest: string): void {
+	if (path.dirname(path.resolve(dest)) !== path.resolve(parent)) {
+		error(400, 'could not derive a valid repo name from the url');
+	}
+}
+
 // The dest must be free: not an occupied path, not already a registered project.
 function requireFreeDest(dest: string): void {
 	if (destBlocked(dest)) error(409, `destination already exists: ${dest}`);
@@ -74,6 +82,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	requireParent(parent);
 
 	const dest = path.join(parent, repoName);
+	requireChildOfParent(parent, dest);
 	requireFreeDest(dest);
 
 	try {

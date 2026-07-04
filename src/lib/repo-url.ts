@@ -22,11 +22,15 @@ export function repoNameFromUrl(url: string): string | null {
 // transport trick, `file://`, and bare/local paths.
 export function isCloneUrlSafe(url: string): boolean {
 	const u = url.trim();
-	if (!u || u.startsWith('-')) return false;
+	// Empty, option-like, or backslash-bearing (a Windows local path or a `..\`
+	// traversal, never part of a real clone url) is out.
+	if (!u || u.startsWith('-') || u.includes('\\')) return false;
 	// scheme://host/… — https/ssh/git only, non-empty host (so every file:// is out).
 	if (/^(?:https|ssh|git):\/\/[^/]/i.test(u)) return true;
-	// scp-style host:path — host has no slash/colon, and the char after the single
-	// colon is a path char (not `:`, which rules out `ext::…`, nor `/`, a drive path).
-	if (!u.includes('://') && /^[^/:]+:[^/:]/.test(u)) return true;
-	return false;
+	// scp-style host:path — a single-letter host is a Windows drive (C:repo), not a
+	// host, so exclude it; url-scheme forms are handled above.
+	if (u.includes('://') || /^[A-Za-z]:/.test(u)) return false;
+	// host has no slash/colon, and the char after the single colon is a path char
+	// (not `:`, which rules out `ext::…`, nor `/`, a drive path).
+	return /^[^/:]+:[^/:]/.test(u);
 }

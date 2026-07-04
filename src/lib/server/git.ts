@@ -183,7 +183,8 @@ export async function originRepo(repo: string): Promise<string | null> {
 const CLONE_TIMEOUT = 10 * 60 * 1000; // 10 min: a full clone can be slow on a big repo
 const CLONE_MAX_BUFFER = 16 * 1024 * 1024;
 
-// Clone `url` into `dest` (which must not exist yet). Positionals go after `--`
+// Clone `url` into `dest` (a path that doesn't exist, or an existing empty dir —
+// git clone requires the target be empty). Positionals go after `--`
 // so neither a crafted url nor dest can be read as a git option; both are also
 // asserted isFlagSafe at the sink. Synchronous by design for a single-user local
 // tool. On failure the git stderr is surfaced so the caller can show it verbatim.

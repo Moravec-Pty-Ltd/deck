@@ -46,4 +46,11 @@ describe('isCloneUrlSafe', () => {
 		expect(isCloneUrlSafe('../acme/web')).toBe(false);
 		expect(isCloneUrlSafe('')).toBe(false);
 	});
+
+	it('rejects Windows drive paths and backslash urls', () => {
+		expect(isCloneUrlSafe('C:\\Users\\me\\repo')).toBe(false);
+		expect(isCloneUrlSafe('C:repo')).toBe(false);
+		expect(isCloneUrlSafe('..\\..\\evil')).toBe(false);
+		expect(isCloneUrlSafe('git@host:acme\\..\\evil')).toBe(false);
+	});
 });
