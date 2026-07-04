@@ -144,6 +144,12 @@ describe('opencodeDriver.handleLine', () => {
 		expect(appended[0]).toMatchObject({ type: 'result', subtype: 'error' });
 	});
 
+	it('passes a zero cost through as a real value', () => {
+		const { c, appended } = ctx();
+		opencodeDriver.handleLine({ ...FINISH_STOP, part: { ...FINISH_STOP.part, cost: 0 } }, c);
+		expect((appended[0] as any).total_cost_usd).toBe(0);
+	});
+
 	it('flags failed tool results as errors', () => {
 		const { c, appended } = ctx();
 		const failed = {

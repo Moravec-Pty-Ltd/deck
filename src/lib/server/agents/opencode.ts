@@ -9,6 +9,8 @@ type AnyObj = Record<string, any>;
 // is { type, timestamp, sessionID, part }; observed types: step_start / tool_use
 // / text / step_finish. `text` parts arrive complete (no streaming deltas).
 // step_finish reason 'tool-calls' means the turn continues; anything else ends it.
+// reasoning and error events are also handled, mapped by analogy with the
+// observed shape rather than captured live.
 export const opencodeDriver: AgentDriver = {
 	kind: 'opencode',
 
@@ -59,7 +61,7 @@ export const opencodeDriver: AgentDriver = {
 					ctx.append(
 						resultEvent({
 							subtype: part?.reason === 'stop' ? undefined : 'error',
-							cost: typeof part?.cost === 'number' && part.cost > 0 ? part.cost : undefined
+							cost: typeof part?.cost === 'number' ? part.cost : undefined
 						})
 					);
 				}
