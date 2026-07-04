@@ -139,7 +139,9 @@ export function readSettings(): DeckSettings {
 }
 
 function writeSettings(settings: DeckSettings) {
-	writeJson(SETTINGS_FILE, settings);
+	// 0o600 — model ids can carry private-infra identifiers (a local LLM host),
+	// so keep this off group/world-readable like secrets.json.
+	writeJson(SETTINGS_FILE, settings, 0o600);
 }
 
 // Remember the model picked for a session so the new-session modal re-selects it.

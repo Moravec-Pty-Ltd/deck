@@ -8,7 +8,7 @@ import { isFlagSafe } from '$lib/server/agents/args';
 import { agentSend } from '$lib/server/agents/dispatch';
 import { listProjects, updateProject, rememberModel, readSecret } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
-import { resolveWithinProjects } from '$lib/server/confine';
+import { resolveWithinProjects, projectForPath } from '$lib/server/confine';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 import { buildIssuePrompt, type IssueForFetch, type IssuePromptContext } from '$lib/server/issues/detail';
 
@@ -99,13 +99,14 @@ function rememberBase(repo: string, newBranch: boolean, base: string | undefined
 }
 
 // Persist the chosen model so the next new-session in this project defaults to
-// it (and, as a fresh-project fallback, the last one used anywhere). pi carries
-// a separate provider; the other kinds put the whole id in `model`.
-function rememberPickedModel(projectPath: string, kind: AgentKind, model: unknown, provider: unknown): void {
-	const m = asStr(model);
-	if (!m) return;
-	const p = kind === 'pi' ? asStr(provider) : '';
-	rememberModel(projectPath, kind, { model: m, provider: p || undefined });
+// it (and, as a fresh-project fallback, the last one used anywhere). `cwd` may
+// be a worktree dir (existing-worktree mode), so map it back to its project
+// before keying the per-project write. pi carries a separate provider; the
+// other kinds put the whole id in `model`. rememberModel no-ops on a blank
+// model, so no guard is needed here.
+function rememberPickedModel(cwd: string, kind: AgentKind, model: unknown, provider: unknown): void {
+	const provider_ = kind === 'pi' ? asStr(provider) || undefined : undefined;
+	rememberModel(projectForPath(cwd) ?? cwd, kind, { model: asStr(model), provider: provider_ });
 }
 
 // A worktree ref is safe only if it is a string git won't read as a flag. The
