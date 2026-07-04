@@ -76,6 +76,10 @@
 		if (busy) return;
 		errorMsg = '';
 		if (!newPath.trim()) return;
+		if (cloning && !repoName) {
+			errorMsg = 'enter a valid repo url (https, ssh, git, or scp-style)';
+			return;
+		}
 		busy = true;
 		try {
 			const res = cloning
@@ -177,7 +181,11 @@
 
 			<div class="modal-action">
 				<button class="btn" onclick={() => (open = false)}>Cancel</button>
-				<button class="btn btn-primary" onclick={add} disabled={busy || !newPath.trim()}>
+				<button
+					class="btn btn-primary"
+					onclick={add}
+					disabled={busy || !newPath.trim() || (cloning && !repoName)}
+				>
 					{busy ? (cloning ? 'Cloning...' : 'Adding...') : 'Add'}
 				</button>
 			</div>
