@@ -1,4 +1,5 @@
 import { isFlagSafe } from './args';
+import { AGENT_BINARIES } from './binaries';
 import type { AgentDriver, TurnContext } from './types';
 import { assistantBlocks, assistantText, deckError, resultEvent, toolResultEvent, toolUseBlock } from './events';
 
@@ -23,7 +24,7 @@ export const opencodeDriver: AgentDriver = {
 		if (isFlagSafe(resumeId)) args.push('--session', resumeId!);
 		// `--` stops opencode parsing the prompt as a flag.
 		args.push('--', message);
-		return { cmd: 'opencode', args };
+		return { cmd: AGENT_BINARIES.opencode, args };
 	},
 
 	handleLine(line: AnyObj, ctx: TurnContext) {

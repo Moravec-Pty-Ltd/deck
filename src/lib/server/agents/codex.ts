@@ -1,4 +1,5 @@
 import { isFlagSafe } from './args';
+import { AGENT_BINARIES } from './binaries';
 import type { AgentDriver, TurnContext } from './types';
 import { assistantBlocks, assistantText, deckError, resultEvent, toolResultEvent, toolUseBlock } from './events';
 
@@ -19,7 +20,7 @@ export const codexDriver: AgentDriver = {
 		const args = resumeId
 			? ['exec', 'resume', resumeId, ...flags, '--', message]
 			: ['exec', ...flags, '--', message];
-		return { cmd: 'codex', args };
+		return { cmd: AGENT_BINARIES.codex, args };
 	},
 
 	handleLine(line: AnyObj, ctx: TurnContext) {

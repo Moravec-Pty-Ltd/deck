@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { agentSessionsDir } from '../config';
 import { isFlagSafe } from './args';
+import { AGENT_BINARIES } from './binaries';
 import type { AgentDriver, TurnContext } from './types';
 import {
 	assistantBlocks,
@@ -28,7 +29,7 @@ export const piDriver: AgentDriver = {
 		if (isFlagSafe(session.provider)) args.push('--provider', session.provider!);
 		if (isFlagSafe(session.model)) args.push('--model', session.model!);
 		// The prompt goes via stdin so it can never be parsed as a pi flag.
-		return { cmd: 'pi', args, stdin: message };
+		return { cmd: AGENT_BINARIES.pi, args, stdin: message };
 	},
 
 	handleLine(line: AnyObj, ctx: TurnContext) {

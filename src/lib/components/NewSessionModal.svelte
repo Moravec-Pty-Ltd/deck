@@ -54,6 +54,13 @@
 	// project and must be re-seeded.
 	let seededKind: SessionKind | null = null;
 	let seededProjectPath: string | undefined = undefined;
+	// Which agent CLIs are installed (GET /api/agents/available). null until the
+	// fetch lands or if it failed — both mean "show every kind" (fail-soft), so a
+	// harness is only hidden once we positively know it's absent.
+	let availability = $state<Partial<Record<SessionKind, boolean>> | null>(null);
+	// Bumped on each init() so a slow availability response from a prior open can't
+	// land after a reopen and clobber the current one with stale data.
+	let availabilitySeq = 0;
 	let yolo = $state(true);
 	let worktreeMode = $state<WorktreeMode>('new');
 	let worktreeModeDirty = $state(false);
@@ -100,6 +107,17 @@
 		mode = 'new';
 		pickedIssues = [];
 		pickedPr = null;
+		availability = null;
+		const seq = ++availabilitySeq;
+		fetch('/api/agents/available')
+			.then((r) => r.json())
+			.then((a: Partial<Record<SessionKind, boolean>>) => {
+				if (seq !== availabilitySeq) return;
+				availability = a && typeof a === 'object' && !Array.isArray(a) ? a : null;
+			})
+			.catch(() => {
+				if (seq === availabilitySeq) availability = null;
+			});
 		const p = preset;
 		worktreeModeDirty = !!(p?.kind || p?.cwd);
 		fetch('/api/settings')
@@ -129,6 +147,22 @@
 	const titleRequired = $derived(isAgentKind(kind));
 	const projectHasSources = $derived(!!selectedProject?.sources?.length);
 	const reviewMode = $derived(mode === 'review');
+
+	// shell always shows; an agent kind shows unless availability positively says
+	// it's absent. availability === null (pre-fetch or failed) reveals everything,
+	// so a transient error never hides the whole agent set.
+	const shownKinds = $derived(
+		KIND_OPTIONS.filter((k) => k.id === 'shell' || !availability || availability[k.id] !== false)
+	);
+
+	// If detection hides the currently selected kind (the 'claude' default, a
+	// preset's kind, or the prior pick), re-point to the first shown option so the
+	// selection is never an invisible kind.
+	$effect(() => {
+		if (availability && !shownKinds.some((k) => k.id === kind)) {
+			kind = shownKinds[0]?.id ?? 'shell';
+		}
+	});
 
 	function setSessionMode(m: SessionMode) {
 		mode = m;
@@ -390,7 +424,7 @@
 			</div>
 
 			<div class="join mb-4 w-full">
-				{#each KIND_OPTIONS as k (k.id)}
+				{#each shownKinds as k (k.id)}
 					<button
 						class="btn join-item flex-1 px-2 {kind === k.id ? 'btn-primary' : ''}"
 						onclick={() => (kind = k.id)}

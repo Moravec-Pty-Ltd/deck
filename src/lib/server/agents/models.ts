@@ -6,6 +6,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { AgentKind, ModelChoice } from '$lib/types';
+import { AGENT_BINARIES } from './binaries';
 import { parseOpencodeModels, parsePiModels } from './models-core';
 
 const exec = promisify(execFile);
@@ -15,8 +16,8 @@ const exec = promisify(execFile);
 const LIST_TIMEOUT_MS = 15_000;
 
 const LISTERS: Partial<Record<AgentKind, { cmd: string; args: string[]; parse: (out: string) => ModelChoice[] }>> = {
-	pi: { cmd: 'pi', args: ['--list-models'], parse: parsePiModels },
-	opencode: { cmd: 'opencode', args: ['models'], parse: parseOpencodeModels }
+	pi: { cmd: AGENT_BINARIES.pi, args: ['--list-models'], parse: parsePiModels },
+	opencode: { cmd: AGENT_BINARIES.opencode, args: ['models'], parse: parseOpencodeModels }
 };
 
 export async function listAgentModels(kind: AgentKind): Promise<ModelChoice[]> {
