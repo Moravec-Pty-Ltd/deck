@@ -1,4 +1,4 @@
-import type { DeckSession, IssueSource, Project } from '$lib/types';
+import type { AgentKind, DeckSession, DeckSettings, IssueSource, ModelChoice, Project } from '$lib/types';
 import { readJson, writeJson } from './config';
 import { invalidateIssues } from './issues/cache';
 import { invalidatePrs } from './prs';
@@ -7,6 +7,7 @@ import { DEMO, demoProjects } from './demo';
 const SESSIONS_FILE = 'sessions.json';
 const PROJECTS_FILE = 'projects.json';
 const SECRETS_FILE = 'secrets.json';
+const SETTINGS_FILE = 'settings.json';
 
 // In-memory cache of the sessions store. This module is the sole writer of
 // sessions.json, so every mutation here invalidates the cache and reads
@@ -129,6 +130,29 @@ export function removeProject(path: string) {
 	);
 	for (const s of project?.sources ?? []) deleteSecret(s.id);
 	invalidateProjectCaches(path);
+}
+
+// --- Settings (~/.deck/settings.json) + remembered model choices ---
+
+export function readSettings(): DeckSettings {
+	return readJson<DeckSettings>(SETTINGS_FILE, {});
+}
+
+function writeSettings(settings: DeckSettings) {
+	writeJson(SETTINGS_FILE, settings);
+}
+
+// Remember the model picked for a session so the new-session modal re-selects it.
+// Recorded at two scopes: on the project (per kind), so that project defaults to
+// it next time, and globally in settings (the fresh-project fallback). A blank
+// model never overwrites a remembered one — that's "use the CLI default", not a
+// deliberate pick.
+export function rememberModel(projectPath: string, kind: AgentKind, choice: ModelChoice): void {
+	if (!choice.model) return;
+	const project = listProjects().find((p) => p.path === projectPath);
+	if (project) updateProject(projectPath, { lastModels: { ...project.lastModels, [kind]: choice } });
+	const settings = readSettings();
+	writeSettings({ ...settings, lastModels: { ...settings.lastModels, [kind]: choice } });
 }
 
 // --- Issue sources (stored on the project, secrets kept separately) ---
