@@ -54,7 +54,10 @@
 	// Which agent CLIs are installed (GET /api/agents/available). null until the
 	// fetch lands or if it failed — both mean "show every kind" (fail-soft), so a
 	// harness is only hidden once we positively know it's absent.
-	let availability = $state<Record<string, boolean> | null>(null);
+	let availability = $state<Partial<Record<SessionKind, boolean>> | null>(null);
+	// Bumped on each init() so a slow availability response from a prior open can't
+	// land after a reopen and clobber the current one with stale data.
+	let availabilitySeq = 0;
 	let yolo = $state(true);
 	let worktreeMode = $state<WorktreeMode>('new');
 	let worktreeModeDirty = $state(false);
@@ -101,12 +104,16 @@
 		pickedIssues = [];
 		pickedPr = null;
 		availability = null;
+		const seq = ++availabilitySeq;
 		fetch('/api/agents/available')
 			.then((r) => r.json())
-			.then((a: Record<string, boolean>) => {
+			.then((a: Partial<Record<SessionKind, boolean>>) => {
+				if (seq !== availabilitySeq) return;
 				availability = a && typeof a === 'object' && !Array.isArray(a) ? a : null;
 			})
-			.catch(() => (availability = null));
+			.catch(() => {
+				if (seq === availabilitySeq) availability = null;
+			});
 		const p = preset;
 		worktreeModeDirty = !!(p?.kind || p?.cwd);
 		fetch('/api/settings')
