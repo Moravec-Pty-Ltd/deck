@@ -17,6 +17,7 @@
 	import PathInput from './PathInput.svelte';
 	import IssuePicker from './IssuePicker.svelte';
 	import PrPicker from './PrPicker.svelte';
+	import ComboInput from './ComboInput.svelte';
 
 	const KIND_OPTIONS = [
 		{ id: 'claude', label: 'Claude', icon: Bot },
@@ -596,47 +597,32 @@
 							<span>YOLO mode (bypass permissions)</span>
 						</label>
 					{:else if kind === 'pi'}
-						<input
-							class="input w-full"
-							list="new-session-pi-providers"
-							placeholder="provider (optional, e.g. anthropic, google)"
+						<ComboInput
 							bind:value={provider}
+							options={piProviders}
+							placeholder="provider (optional, e.g. anthropic, google)"
 							oninput={() => (modelDirty = true)}
 						/>
-						<datalist id="new-session-pi-providers">
-							{#each piProviders as p (p)}
-								<option value={p}></option>
-							{/each}
-						</datalist>
-						<input
-							class="input w-full"
-							list="new-session-pi-models"
-							placeholder="model (optional, pi pattern or id)"
+						<ComboInput
 							bind:value={model}
+							options={piModels}
+							placeholder="model (optional, pi pattern or id)"
 							oninput={() => (modelDirty = true)}
 						/>
-						<datalist id="new-session-pi-models">
-							{#each piModels as m (m)}
-								<option value={m}></option>
-							{/each}
-						</datalist>
+					{:else if kind === 'opencode'}
+						<ComboInput
+							bind:value={model}
+							options={opencodeModels}
+							placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
+							oninput={() => (modelDirty = true)}
+						/>
 					{:else}
 						<input
 							class="input w-full"
-							list={kind === 'opencode' ? 'new-session-opencode-models' : undefined}
-							placeholder={kind === 'opencode'
-								? 'model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)'
-								: 'model (optional, e.g. gpt-5-codex)'}
+							placeholder="model (optional, e.g. gpt-5-codex)"
 							bind:value={model}
 							oninput={() => (modelDirty = true)}
 						/>
-						{#if kind === 'opencode'}
-							<datalist id="new-session-opencode-models">
-								{#each opencodeModels as m (m)}
-									<option value={m}></option>
-								{/each}
-							</datalist>
-						{/if}
 					{/if}
 					<textarea
 						class="textarea w-full"
