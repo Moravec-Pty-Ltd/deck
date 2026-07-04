@@ -178,6 +178,29 @@ export async function originRepo(repo: string): Promise<string | null> {
 	}
 }
 
+// --- clone a repo into a new project dir ---------------------------------
+
+const CLONE_TIMEOUT = 10 * 60 * 1000; // 10 min: a full clone can be slow on a big repo
+const CLONE_MAX_BUFFER = 16 * 1024 * 1024;
+
+// Clone `url` into `dest` (which must not exist yet). Positionals go after `--`
+// so neither a crafted url nor dest can be read as a git option; both are also
+// asserted isFlagSafe at the sink. Synchronous by design for a single-user local
+// tool. On failure the git stderr is surfaced so the caller can show it verbatim.
+export async function cloneRepo(url: string, dest: string): Promise<void> {
+	if (!isFlagSafe(url)) throw new Error(`unsafe repo url: ${url}`);
+	if (!isFlagSafe(dest)) throw new Error(`unsafe clone destination: ${dest}`);
+	try {
+		await exec('git', ['clone', '--', url, dest], {
+			timeout: CLONE_TIMEOUT,
+			maxBuffer: CLONE_MAX_BUFFER
+		});
+	} catch (e) {
+		const stderr = (e as { stderr?: string }).stderr?.trim();
+		throw new Error(stderr || (e instanceof Error ? e.message : 'git clone failed'));
+	}
+}
+
 // --- worktree diff (the Changes tab) -------------------------------------
 
 const PATCH_CAP = 5 * 1024 * 1024; // ~5 MB of patch before we trim whole files

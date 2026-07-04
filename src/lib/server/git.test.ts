@@ -10,7 +10,8 @@ import {
 	parseNumstat,
 	capPatch,
 	fetchPullRef,
-	parseOriginRepo
+	parseOriginRepo,
+	cloneRepo
 } from './git';
 
 // Lock the argv ordering: every positional arg must sit after `--`, so the test
@@ -175,6 +176,44 @@ describe('parseOriginRepo', () => {
 		expect(parseOriginRepo('file:///Users/me/acme/web')).toBeNull();
 		expect(parseOriginRepo('file://localhost/acme/web')).toBeNull();
 		expect(parseOriginRepo('C:/Users/me/acme/web')).toBeNull();
+	});
+});
+
+// Clone against a real local repo so the `git clone -- <url> <dest>` argv and the
+// stderr-on-failure surfacing are verified end-to-end (a dropped `--` or missing
+// source would fail).
+describe('cloneRepo against a real repo', () => {
+	const env = {
+		...process.env,
+		GIT_AUTHOR_NAME: 't',
+		GIT_AUTHOR_EMAIL: 't@t',
+		GIT_COMMITTER_NAME: 't',
+		GIT_COMMITTER_EMAIL: 't@t'
+	};
+	const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-clone-')));
+	const src = path.join(tmp, 'src');
+	execFileSync('git', ['init', '-q', src], { env });
+	execFileSync('git', ['-C', src, 'commit', '--allow-empty', '-q', '-m', 'init'], { env });
+
+	afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+	it('clones a local repo into a fresh dest', async () => {
+		const dest = path.join(tmp, 'out');
+		await cloneRepo(src, dest);
+		expect(fs.existsSync(path.join(dest, '.git'))).toBe(true);
+	});
+
+	it('surfaces the git stderr when the source is missing', async () => {
+		await expect(cloneRepo(path.join(tmp, 'nope'), path.join(tmp, 'out2'))).rejects.toThrow(
+			/does not exist|not a git repository|repository/i
+		);
+	});
+
+	it('rejects a flag-like url or dest before spawning git', async () => {
+		await expect(cloneRepo('--upload-pack=evil', path.join(tmp, 'out3'))).rejects.toThrow(
+			/unsafe repo url/
+		);
+		await expect(cloneRepo(src, '--foo')).rejects.toThrow(/unsafe clone destination/);
 	});
 });
 
