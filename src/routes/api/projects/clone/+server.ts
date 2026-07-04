@@ -91,6 +91,14 @@ function requireFreeDest(dest: string): void {
 	if (listProjects().some((p) => p.path === dest)) error(409, 'destination is already a registered project');
 }
 
+// Turn a clone failure into a response: git's "already exists" (a dest that filled
+// in after requireFreeDest, e.g. a race) is the 409 conflict case, everything else
+// a 400 carrying the git stderr.
+function cloneFailed(e: unknown): never {
+	const msg = e instanceof Error ? e.message : 'git clone failed';
+	error(/already exists/i.test(msg) ? 409 : 400, msg);
+}
+
 // Clone a remote repo into a subfolder of an existing parent dir, then register
 // it. The plain POST /api/projects route still registers an already-present dir.
 export const POST: RequestHandler = async ({ request }) => {
@@ -106,8 +114,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		await cloneRepo(url, dest);
 	} catch (e) {
-		// Surface the git stderr; nothing is registered on a failed clone.
-		error(400, e instanceof Error ? e.message : 'git clone failed');
+		// Nothing is registered on a failed clone; surface the git stderr.
+		cloneFailed(e);
 	}
 
 	const project = { name: name || repoName, path: dest, group };

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Project } from '$lib/types';
-	import { repoNameFromUrl } from '$lib/repo-url';
+	import { repoNameFromUrl, isCloneUrlSafe } from '$lib/repo-url';
 	import PathInput from './PathInput.svelte';
 
 	let {
@@ -23,7 +23,11 @@
 	const cloning = $derived(newRepoUrl.trim().length > 0);
 
 	// The folder git clone would create; the route re-derives it authoritatively.
-	const repoName = $derived(cloning ? repoNameFromUrl(newRepoUrl) : null);
+	// Gated on isCloneUrlSafe so the preview/name only activate for urls the server
+	// would actually accept, rather than teasing a name for an http:// or file:// url.
+	const repoName = $derived(
+		cloning && isCloneUrlSafe(newRepoUrl) ? repoNameFromUrl(newRepoUrl) : null
+	);
 
 	// Preview of the clone destination, matching the parent's separator style so a
 	// Windows-style parent renders C:\code\repo, not a mixed C:\code/repo.
