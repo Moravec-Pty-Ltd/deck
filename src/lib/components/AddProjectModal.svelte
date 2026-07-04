@@ -69,6 +69,7 @@
 	});
 
 	async function add() {
+		if (busy) return;
 		errorMsg = '';
 		if (!newPath.trim()) return;
 		busy = true;
@@ -114,7 +115,7 @@
 				<legend class="fieldset-legend">Repo URL <span class="opacity-50">(optional)</span></legend>
 				<input
 					class="input w-full"
-					placeholder="https://github.com/acme/web.git — clone into the path below"
+					placeholder="https://github.com/acme/web.git (cloned into the path below)"
 					bind:value={newRepoUrl}
 					onkeydown={(e) => e.key === 'Enter' && add()}
 				/>

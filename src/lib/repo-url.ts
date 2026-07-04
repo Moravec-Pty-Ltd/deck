@@ -25,10 +25,10 @@ export function isCloneUrlSafe(url: string): boolean {
 	// Out: empty, whitespace/backslash-bearing (a Windows local path / `..\`
 	// traversal), option-like (leading `-`), or a Windows drive (C:repo).
 	if (!u || /[\s\\]/.test(u) || u.startsWith('-') || /^[A-Za-z]:/.test(u)) return false;
-	// scheme://authority/… — https/ssh/git only, with a safe host.
+	// scheme://authority path, https/ssh/git only, with a safe host.
 	const scheme = u.match(/^(?:https|ssh|git):\/\/([^/]+)/i);
 	if (scheme) return isSafeHost(scheme[1]);
-	// scp-style host:path — host before the single colon, path char after (not `:`,
+	// scp-style host:path, host before the single colon, path char after (not `:`,
 	// ruling out `ext::…`, nor `/`). Any other `scheme://` fell through above and
 	// fails here (its `//` after the colon isn't a path char).
 	const scp = u.match(/^([^/:]+):[^/:]/);
@@ -36,8 +36,8 @@ export function isCloneUrlSafe(url: string): boolean {
 }
 
 // The host of an authority (the last `@`-separated segment) must be non-empty and
-// not start with `-`, or ssh reads it as an option — the ProxyCommand injection
-// vector behind `ssh://-oProxyCommand=…` and `git@-evil:path`.
+// not start with `-`, or ssh reads it as an option (the ProxyCommand injection
+// vector behind `ssh://-oProxyCommand=…` and `git@-evil:path`).
 function isSafeHost(authority: string): boolean {
 	const host = authority.slice(authority.lastIndexOf('@') + 1);
 	return host.length > 0 && !host.startsWith('-');
