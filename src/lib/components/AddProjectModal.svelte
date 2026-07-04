@@ -103,11 +103,14 @@
 						})
 					});
 			if (!res.ok) {
-				errorMsg = (await res.json()).message ?? 'failed to add project';
+				errorMsg = (await res.json().catch(() => null))?.message ?? 'failed to add project';
 				return;
 			}
 			open = false;
 			onadded?.();
+		} catch {
+			// A network failure (fetch rejection) still needs a visible message.
+			errorMsg = 'failed to add project';
 		} finally {
 			busy = false;
 		}

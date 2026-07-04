@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -190,10 +190,15 @@ describe('cloneRepo against a real repo', () => {
 		GIT_COMMITTER_NAME: 't',
 		GIT_COMMITTER_EMAIL: 't@t'
 	};
-	const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-clone-')));
-	const src = path.join(tmp, 'src');
-	execFileSync('git', ['init', '-q', src], { env });
-	execFileSync('git', ['-C', src, 'commit', '--allow-empty', '-q', '-m', 'init'], { env });
+	let tmp: string;
+	let src: string;
+	// Build the temp source repo when the suite runs, not at collection time.
+	beforeAll(() => {
+		tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-clone-')));
+		src = path.join(tmp, 'src');
+		execFileSync('git', ['init', '-q', src], { env });
+		execFileSync('git', ['-C', src, 'commit', '--allow-empty', '-q', '-m', 'init'], { env });
+	});
 
 	afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
