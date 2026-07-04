@@ -132,7 +132,12 @@
 					role="button"
 					tabindex={0}
 					onclick={() => toggleSection(section.name)}
-					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(section.name); } }}
+					onkeydown={(e) => {
+						if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+							e.preventDefault();
+							toggleSection(section.name);
+						}
+					}}
 					aria-label="Toggle {section.name} section"
 				>
 					{#if collapsed[section.name]}
@@ -212,4 +217,4 @@
 	</div>
 {/if}
 
-<AddProjectModal open={addModalOpen} initialGroup={addInitialGroup} onadded={load} />
+<AddProjectModal bind:open={addModalOpen} initialGroup={addInitialGroup} onadded={load} />

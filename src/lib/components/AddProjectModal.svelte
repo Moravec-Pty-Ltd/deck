@@ -1,8 +1,6 @@
 <script lang="ts">
 	import type { Project } from '$lib/types';
-	import { UNGROUPED } from '$lib/groups';
 	import PathInput from './PathInput.svelte';
-	import { X, Plus } from '@lucide/svelte';
 
 	let {
 		open = $bindable(false),
@@ -25,7 +23,10 @@
 			newName = '';
 			newGroup = initialGroup;
 			fetch('/api/projects')
-				.then((r) => r.json())
+				.then((r) => {
+					if (!r.ok) return [];
+					return r.json();
+				})
 				.then((list: Project[]) => {
 					const names = new Set<string>();
 					for (const p of list) {
@@ -33,6 +34,9 @@
 						if (g) names.add(g);
 					}
 					groupSuggestions = [...names].sort();
+				})
+				.catch(() => {
+					groupSuggestions = [];
 				});
 		}
 	});
