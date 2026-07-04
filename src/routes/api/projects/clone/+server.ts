@@ -21,12 +21,6 @@ function isDir(p: string): boolean {
 	}
 }
 
-// A repo name that resolves dest to a real child of the parent: non-empty, and
-// not `.`/`..` (a slash is already excluded by repoNameFromUrl's tail match).
-function isUsableName(name: string | null): name is string {
-	return !!name && name !== '.' && name !== '..';
-}
-
 // A dest is clonable into when it doesn't exist yet; an existing path blocks
 // unless it's an empty directory. A stat error (permissions, a race) is treated
 // as blocked rather than risking a clone into an uninspectable path.
@@ -64,7 +58,7 @@ function requireRepoName(url: string): string {
 	if (!url) error(400, 'repo url required');
 	if (!isCloneUrlSafe(url)) error(400, 'unsupported repo url (use https, ssh, git, or scp-style)');
 	const name = repoNameFromUrl(url);
-	if (!isUsableName(name)) error(400, 'could not derive a valid repo name from the url');
+	if (!name) error(400, 'could not derive a valid repo name from the url');
 	return name;
 }
 

@@ -5,15 +5,17 @@
 
 // The directory name a `git clone` of `url` would produce: the last `/`- or
 // `:`-delimited segment, with a trailing slash and a `.git` suffix stripped
-// (mirrors parseOriginRepo's tail match). null when nothing can be derived (an
-// empty url).
+// (mirrors parseOriginRepo's tail match). null when no usable name can be derived:
+// an empty url, or a `.`/`..` tail that isn't a real folder name (so the client
+// preview and the server agree it's uncloneable).
 export function repoNameFromUrl(url: string): string | null {
 	const m = url
 		.trim()
 		.replace(/\/+$/, '')
 		.replace(/\.git$/i, '')
 		.match(/[^/:]+$/);
-	return m ? m[0] : null;
+	if (!m || m[0] === '.' || m[0] === '..') return null;
+	return m[0];
 }
 
 // Is `url` a clone url deck is willing to hand to `git clone`? Allows the network

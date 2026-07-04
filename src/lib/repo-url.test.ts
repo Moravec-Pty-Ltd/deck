@@ -19,9 +19,12 @@ describe('repoNameFromUrl', () => {
 		expect(repoNameFromUrl('git@github.com:acme/dot.name')).toBe('dot.name');
 	});
 
-	it('returns null when no name can be derived', () => {
+	it('returns null when no usable name can be derived', () => {
 		expect(repoNameFromUrl('')).toBeNull();
 		expect(repoNameFromUrl('   ')).toBeNull();
+		expect(repoNameFromUrl('https://github.com/acme/.')).toBeNull();
+		expect(repoNameFromUrl('https://github.com/acme/foo/..')).toBeNull();
+		expect(repoNameFromUrl('git@github.com:..')).toBeNull();
 	});
 });
 
