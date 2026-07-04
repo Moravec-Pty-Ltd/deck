@@ -2,8 +2,17 @@ export type SessionKind = 'claude' | 'pi' | 'codex' | 'opencode' | 'shell';
 export type SessionStatus = 'running' | 'idle' | 'error' | 'dead';
 
 // Agent kinds drive an LLM coding agent (chat view); 'shell' is a tmux terminal.
-export function isAgentKind(kind: SessionKind): kind is Exclude<SessionKind, 'shell'> {
+export type AgentKind = Exclude<SessionKind, 'shell'>;
+export function isAgentKind(kind: SessionKind): kind is AgentKind {
 	return kind !== 'shell';
+}
+
+// A picked model for an agent session. `provider` is only meaningful for pi
+// (its separate --provider arg); claude/codex/opencode carry the whole id in
+// `model` (opencode's is a combined `provider/model`).
+export interface ModelChoice {
+	provider?: string;
+	model: string;
 }
 
 export interface DeckSession {
@@ -114,6 +123,9 @@ export interface Project {
 	// review). Empty means an empty prompt field, exactly like `template`.
 	reviewPrompt?: string;
 	lastBase?: string;
+	// Last model picked per agent kind for this project, so the new-session modal
+	// re-selects it next time (issue #51). Stored in ~/.deck, never committed.
+	lastModels?: Partial<Record<AgentKind, ModelChoice>>;
 	// Issue sources are per-project and additive. API keys never live here; they
 	// sit in ~/.deck/secrets.json keyed by source id (see server/store.ts).
 	sources?: IssueSource[];
@@ -281,4 +293,13 @@ export interface NewSessionPreset {
 	projectPath?: string;
 	cwd?: string;
 	title?: string;
+}
+
+// User-local, app-wide preferences (~/.deck/settings.json, never committed).
+// `lastModels` is the global fallback for the new-session modal: a fresh project
+// with no per-project pick defaults to the model you last used for that kind
+// anywhere. This is where a private-infra default (e.g. a local LLM id) lives,
+// off the public repo.
+export interface DeckSettings {
+	lastModels?: Partial<Record<AgentKind, ModelChoice>>;
 }

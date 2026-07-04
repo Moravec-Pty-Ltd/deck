@@ -1,8 +1,16 @@
 <script lang="ts">
 	import { isAgentKind } from '$lib/types';
-	import type { Issue, NewSessionPreset, Project, PullRequest, SessionKind } from '$lib/types';
+	import type {
+		DeckSettings,
+		Issue,
+		ModelChoice,
+		NewSessionPreset,
+		Project,
+		PullRequest,
+		SessionKind
+	} from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
-	import { CLAUDE_MODELS } from '$lib/models';
+	import { CLAUDE_MODELS, resolveModelChoice } from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { Bot, Terminal, Sparkles, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
@@ -35,6 +43,14 @@
 	let title = $state('');
 	let model = $state('');
 	let provider = $state('');
+	let modelDirty = $state(false);
+	let settings = $state<DeckSettings>({});
+	// Detected model lists per agent kind, fetched once per session and reused
+	// (issue #51). Missing key = not fetched yet; empty array = CLI reported none.
+	let modelCache = $state<Record<string, ModelChoice[]>>({});
+	// The kind the model/provider fields were last seeded for; a change means the
+	// prior text belongs to a different agent and must be re-seeded.
+	let seededKind: SessionKind | null = null;
 	let yolo = $state(true);
 	let worktreeMode = $state<WorktreeMode>('new');
 	let worktreeModeDirty = $state(false);
@@ -73,6 +89,8 @@
 		promptDirty = false;
 		branchDirty = false;
 		baseDirty = false;
+		modelDirty = false;
+		seededKind = null;
 		errorMsg = '';
 		showPicker = false;
 		mode = 'new';
@@ -80,6 +98,10 @@
 		pickedPr = null;
 		const p = preset;
 		worktreeModeDirty = !!(p?.kind || p?.cwd);
+		fetch('/api/settings')
+			.then((r) => r.json())
+			.then((s: DeckSettings) => (settings = s ?? {}))
+			.catch(() => {});
 		fetch('/api/projects')
 			.then((r) => r.json())
 			.then((list: Project[]) => {
@@ -174,6 +196,52 @@
 	// Base branch defaults to the project's remembered last base.
 	$effect(() => {
 		if (!baseDirty) base = selectedProject?.lastBase ?? '';
+	});
+
+	// Models the CLI reports for the active agent kind (empty until fetched or if
+	// detection failed — the fields then stay plain free-text).
+	const detectedModels = $derived<ModelChoice[]>(modelCache[kind] ?? []);
+	const piProviders = $derived([
+		...new Set(detectedModels.map((m) => m.provider).filter((p): p is string => !!p))
+	]);
+	// pi's model list, narrowed to the typed provider when one is set so the
+	// suggestions stay relevant.
+	const piModels = $derived(
+		(provider ? detectedModels.filter((m) => m.provider === provider) : detectedModels).map(
+			(m) => m.model
+		)
+	);
+	const opencodeModels = $derived(detectedModels.map((m) => m.model));
+
+	// Model/provider default to the project's last pick for this kind, then the
+	// global last-used, then the built-in default (claude -> opus, others blank).
+	// Reset on a kind change (the prior text belongs to a different agent) and
+	// re-run when the async projects/settings loads land, but never clobber a
+	// hand-edited value.
+	$effect(() => {
+		if (seededKind !== kind) {
+			seededKind = kind;
+			modelDirty = false;
+		}
+		if (modelDirty) return;
+		const choice = isAgentKind(kind)
+			? resolveModelChoice(kind, selectedProject, settings)
+			: { model: '', provider: undefined };
+		model = choice.model;
+		provider = choice.provider ?? '';
+	});
+
+	// Fetch the detected model list once per agent kind while the modal is open;
+	// fail-soft to an empty list so the picker degrades to free-text.
+	$effect(() => {
+		if (!open || (kind !== 'pi' && kind !== 'opencode') || modelCache[kind]) return;
+		const k = kind;
+		fetch(`/api/agents/${k}/models`)
+			.then((r) => r.json())
+			.then((list: ModelChoice[]) => {
+				modelCache = { ...modelCache, [k]: Array.isArray(list) ? list : [] };
+			})
+			.catch(() => (modelCache = { ...modelCache, [k]: [] }));
 	});
 
 	$effect(() => {
@@ -518,8 +586,7 @@
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">{kind}</legend>
 					{#if kind === 'claude'}
-						<select class="select w-full" bind:value={model}>
-							<option value="">default model</option>
+						<select class="select w-full" bind:value={model} onchange={() => (modelDirty = true)}>
 							{#each CLAUDE_MODELS as m (m)}
 								<option value={m}>{m}</option>
 							{/each}
@@ -531,22 +598,45 @@
 					{:else if kind === 'pi'}
 						<input
 							class="input w-full"
+							list="new-session-pi-providers"
 							placeholder="provider (optional, e.g. anthropic, google)"
 							bind:value={provider}
+							oninput={() => (modelDirty = true)}
 						/>
+						<datalist id="new-session-pi-providers">
+							{#each piProviders as p (p)}
+								<option value={p}></option>
+							{/each}
+						</datalist>
 						<input
 							class="input w-full"
+							list="new-session-pi-models"
 							placeholder="model (optional, pi pattern or id)"
 							bind:value={model}
+							oninput={() => (modelDirty = true)}
 						/>
+						<datalist id="new-session-pi-models">
+							{#each piModels as m (m)}
+								<option value={m}></option>
+							{/each}
+						</datalist>
 					{:else}
 						<input
 							class="input w-full"
+							list={kind === 'opencode' ? 'new-session-opencode-models' : undefined}
 							placeholder={kind === 'opencode'
 								? 'model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)'
 								: 'model (optional, e.g. gpt-5-codex)'}
 							bind:value={model}
+							oninput={() => (modelDirty = true)}
 						/>
+						{#if kind === 'opencode'}
+							<datalist id="new-session-opencode-models">
+								{#each opencodeModels as m (m)}
+									<option value={m}></option>
+								{/each}
+							</datalist>
+						{/if}
 					{/if}
 					<textarea
 						class="textarea w-full"

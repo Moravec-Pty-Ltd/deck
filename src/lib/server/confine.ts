@@ -64,6 +64,21 @@ export function isWithinProjects(dir: string): boolean {
 	return resolveWithinProjects(dir) !== null;
 }
 
+// The registered project a path belongs to — the project itself or one of its
+// worktrees — or null. Returns the stored (un-canonicalized) project path so it
+// matches the store's by-string project lookup, letting a worktree cwd map back
+// to its project for per-project state (see rememberModel).
+export function projectForPath(dir: string): string | null {
+	const real = canonical(dir);
+	if (real === null) return null;
+	for (const p of listProjects()) {
+		const proj = canonical(p.path);
+		if (proj === null) continue;
+		if (within(real, proj) || within(real, `${proj}-worktrees`)) return p.path;
+	}
+	return null;
+}
+
 // Is `dir` somewhere the path picker may enumerate? The picker also needs $HOME,
 // since a new project's directory is chosen before it is registered.
 export function isPickerAllowed(dir: string): boolean {
