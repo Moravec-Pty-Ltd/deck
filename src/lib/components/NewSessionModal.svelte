@@ -10,13 +10,14 @@
 		SessionKind
 	} from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
-	import { CLAUDE_MODELS, resolveModelChoice } from '$lib/models';
+	import { CLAUDE_MODELS, resolveModelChoice, shouldReseedModel } from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { Bot, Terminal, Sparkles, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
 	import IssuePicker from './IssuePicker.svelte';
 	import PrPicker from './PrPicker.svelte';
+	import ComboInput from './ComboInput.svelte';
 
 	const KIND_OPTIONS = [
 		{ id: 'claude', label: 'Claude', icon: Bot },
@@ -48,9 +49,11 @@
 	// Detected model lists per agent kind, fetched once per session and reused
 	// (issue #51). Missing key = not fetched yet; empty array = CLI reported none.
 	let modelCache = $state<Record<string, ModelChoice[]>>({});
-	// The kind the model/provider fields were last seeded for; a change means the
-	// prior text belongs to a different agent and must be re-seeded.
+	// The kind and project the model/provider fields were last seeded for; a
+	// change to either means the prior pick belongs to a different agent or
+	// project and must be re-seeded.
 	let seededKind: SessionKind | null = null;
+	let seededProjectPath: string | undefined = undefined;
 	// Which agent CLIs are installed (GET /api/agents/available). null until the
 	// fetch lands or if it failed — both mean "show every kind" (fail-soft), so a
 	// harness is only hidden once we positively know it's absent.
@@ -98,6 +101,7 @@
 		baseDirty = false;
 		modelDirty = false;
 		seededKind = null;
+		seededProjectPath = undefined;
 		errorMsg = '';
 		showPicker = false;
 		mode = 'new';
@@ -249,14 +253,15 @@
 
 	// Model/provider default to the project's last pick for this kind, then the
 	// global last-used, then the built-in default (claude -> opus, others blank).
-	// Reset on a kind change (the prior text belongs to a different agent) and
-	// re-run when the async projects/settings loads land, but never clobber a
-	// hand-edited value.
+	// Re-seed on a kind change (prior text belongs to a different agent) or a
+	// genuine project switch (the pick is project-scoped, like issue/PR/base),
+	// but never clobber a hand-edited value within the same kind+project.
 	$effect(() => {
-		if (seededKind !== kind) {
-			seededKind = kind;
+		const projectPath = selectedProject?.path;
+		if (shouldReseedModel({ kind: seededKind, projectPath: seededProjectPath }, { kind, projectPath }))
 			modelDirty = false;
-		}
+		seededKind = kind;
+		seededProjectPath = projectPath;
 		if (modelDirty) return;
 		const choice = isAgentKind(kind)
 			? resolveModelChoice(kind, selectedProject, settings)
@@ -630,47 +635,32 @@
 							<span>YOLO mode (bypass permissions)</span>
 						</label>
 					{:else if kind === 'pi'}
-						<input
-							class="input w-full"
-							list="new-session-pi-providers"
-							placeholder="provider (optional, e.g. anthropic, google)"
+						<ComboInput
 							bind:value={provider}
+							options={piProviders}
+							placeholder="provider (optional, e.g. anthropic, google)"
 							oninput={() => (modelDirty = true)}
 						/>
-						<datalist id="new-session-pi-providers">
-							{#each piProviders as p (p)}
-								<option value={p}></option>
-							{/each}
-						</datalist>
-						<input
-							class="input w-full"
-							list="new-session-pi-models"
-							placeholder="model (optional, pi pattern or id)"
+						<ComboInput
 							bind:value={model}
+							options={piModels}
+							placeholder="model (optional, pi pattern or id)"
 							oninput={() => (modelDirty = true)}
 						/>
-						<datalist id="new-session-pi-models">
-							{#each piModels as m (m)}
-								<option value={m}></option>
-							{/each}
-						</datalist>
+					{:else if kind === 'opencode'}
+						<ComboInput
+							bind:value={model}
+							options={opencodeModels}
+							placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
+							oninput={() => (modelDirty = true)}
+						/>
 					{:else}
 						<input
 							class="input w-full"
-							list={kind === 'opencode' ? 'new-session-opencode-models' : undefined}
-							placeholder={kind === 'opencode'
-								? 'model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)'
-								: 'model (optional, e.g. gpt-5-codex)'}
+							placeholder="model (optional, e.g. gpt-5-codex)"
 							bind:value={model}
 							oninput={() => (modelDirty = true)}
 						/>
-						{#if kind === 'opencode'}
-							<datalist id="new-session-opencode-models">
-								{#each opencodeModels as m (m)}
-									<option value={m}></option>
-								{/each}
-							</datalist>
-						{/if}
 					{/if}
 					<textarea
 						class="textarea w-full"
