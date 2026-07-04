@@ -12,6 +12,7 @@ import { notify } from './push';
 import { transcriptPath } from './transcript';
 import { agentEnv } from './agents/env';
 import { isFlagSafe } from './agents/args';
+import { AGENT_BINARIES } from './agents/binaries';
 import { lastPrLink } from '../pr';
 
 // Reading the stored transcript (snapshot tail + lazy back-scroll ranges) lives
@@ -166,7 +167,7 @@ function startProcess(id: string): Proc {
 		'--mcp-config', JSON.stringify({ mcpServers: { deck: { type: 'http', url: mcpUrl(id) } } })
 	);
 
-	const child = spawn('claude', args, {
+	const child = spawn(AGENT_BINARIES.claude, args, {
 		cwd: session.cwd,
 		env: agentEnv(id),
 		stdio: ['pipe', 'pipe', 'pipe']
