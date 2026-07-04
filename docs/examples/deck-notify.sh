@@ -2,7 +2,7 @@
 # deck-notify.sh - harness stop-hook helper. On turn-finish it sends an ntfy
 # push whose click-through opens the deck session that launched the agent.
 #
-# deck stamps DECK_SESSION_ID into every agent it spawns (claude / pi / codex),
+# deck stamps DECK_SESSION_ID into every agent it spawns (claude / pi / codex / opencode),
 # and passes its own environment through, so anything you export where you start
 # deck reaches this script. It builds <DECK_BASE_URL>/s/<id> and hands ntfy a
 # Click header for the deep-link. Wire it up per harness in docs/hooks.md.

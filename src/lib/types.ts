@@ -1,4 +1,4 @@
-export type SessionKind = 'claude' | 'pi' | 'codex' | 'shell';
+export type SessionKind = 'claude' | 'pi' | 'codex' | 'opencode' | 'shell';
 export type SessionStatus = 'running' | 'idle' | 'error' | 'dead';
 
 // Agent kinds drive an LLM coding agent (chat view); 'shell' is a tmux terminal.
@@ -18,9 +18,10 @@ export interface DeckSession {
 	// map, see server/ask.ts). Derived per /api/sessions poll so the sidebar's
 	// status view can bucket it under "Needs attention" (issue #48).
 	awaitingInput?: boolean;
-	// agents (claude/pi/codex)
+	// agents (claude/pi/codex/opencode)
 	claudeSessionId?: string;
-	// resume handle for pi/codex (pi session-file path, codex thread id)
+	// resume handle for pi/codex/opencode (pi session-file path, codex thread id,
+	// opencode session id)
 	agentSessionId?: string;
 	model?: string;
 	provider?: string;

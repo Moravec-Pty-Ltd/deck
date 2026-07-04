@@ -28,7 +28,7 @@ import { DEMO, demoSessions, demoSession } from './demo';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-const ID_PREFIX: Record<SessionKind, string> = { claude: 'c', pi: 'p', codex: 'x', shell: 's' };
+const ID_PREFIX: Record<SessionKind, string> = { claude: 'c', pi: 'p', codex: 'x', opencode: 'o', shell: 's' };
 function newId(kind: SessionKind) {
 	return `${ID_PREFIX[kind]}_${nanoid()}`;
 }
