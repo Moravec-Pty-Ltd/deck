@@ -14,7 +14,11 @@ const asObject = (v: unknown): Record<string, unknown> =>
 	v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 
 function isDir(p: string): boolean {
-	return fs.existsSync(p) && fs.statSync(p).isDirectory();
+	try {
+		return fs.statSync(p).isDirectory();
+	} catch {
+		return false;
+	}
 }
 
 // A repo name that resolves dest to a real child of the parent: non-empty, and
@@ -24,11 +28,20 @@ function isUsableName(name: string | null): name is string {
 }
 
 // A dest is clonable into when it doesn't exist yet; an existing path blocks
-// unless it's an empty directory. A symlink final component is always blocked:
-// git clone would write through it, escaping the boundary the parent was checked
-// against.
+// unless it's an empty directory. A stat error (permissions, a race) is treated
+// as blocked rather than risking a clone into an uninspectable path.
 function destBlocked(dest: string): boolean {
-	if (!fs.existsSync(dest)) return false;
+	try {
+		return fs.existsSync(dest) && occupied(dest);
+	} catch {
+		return true;
+	}
+}
+
+// An existing path we must not clone over: a symlink final component (git clone
+// would write through it, escaping the boundary the parent was checked against),
+// or a non-directory / non-empty directory.
+function occupied(dest: string): boolean {
 	if (fs.lstatSync(dest).isSymbolicLink()) return true;
 	return !fs.statSync(dest).isDirectory() || fs.readdirSync(dest).length > 0;
 }
@@ -56,12 +69,12 @@ function requireRepoName(url: string): string {
 }
 
 // The parent must be an existing dir inside the picker boundary ($HOME or a
-// project root). Returns its canonical (symlink-free) path so the derived dest is
-// built under the real, in-bounds location rather than a symlink to it.
-function requireParent(parent: string): string {
+// project root); the derived <parent>/<repoName> dest sits under it. The path is
+// kept as the user gave it (not canonicalised), matching how POST /api/projects
+// stores a registered path; confine.ts canonicalises project roots at check time.
+function requireParent(parent: string): void {
 	if (!parent || !isDir(parent)) error(400, 'parent is not a directory');
 	if (!isPickerAllowed(parent)) error(403, 'parent is outside the allowed directories');
-	return fs.realpathSync(parent);
 }
 
 // Defensive backstop: dest must be a direct child of parent, in case a repoName
@@ -84,10 +97,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const raw = await request.json().catch(() => error(400, 'invalid JSON body'));
 	const { url, parent, name, group } = readBody(raw);
 	const repoName = requireRepoName(url);
-	const realParent = requireParent(parent);
+	requireParent(parent);
 
-	const dest = path.join(realParent, repoName);
-	requireChildOfParent(realParent, dest);
+	const dest = path.join(parent, repoName);
+	requireChildOfParent(parent, dest);
 	requireFreeDest(dest);
 
 	try {
