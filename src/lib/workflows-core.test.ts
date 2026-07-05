@@ -3,6 +3,7 @@ import type { Project, Workflow, WorkflowRun, WorkflowStep } from '$lib/types';
 import {
 	capOutput,
 	expandStepTokens,
+	shellQuote,
 	firstAgentPrompt,
 	isLegacyWorkflowId,
 	LEGACY_NEW_ID,
@@ -106,6 +107,17 @@ describe('expandStepTokens', () => {
 	it('does not re-expand tokens inside an inserted output', () => {
 		const out = expandStepTokens('[step:a]', { a: 'literal [step:b]', b: 'X' });
 		expect(out).toBe('literal [step:b]');
+	});
+});
+
+describe('shellQuote', () => {
+	it('renders shell syntax inert inside single quotes', () => {
+		expect(shellQuote('plain')).toBe("'plain'");
+		expect(shellQuote('a; rm -rf $HOME `x` "y"')).toBe('\'a; rm -rf $HOME `x` "y"\'');
+	});
+
+	it('escapes embedded single quotes', () => {
+		expect(shellQuote("it's")).toBe("'it'\\''s'");
 	});
 });
 

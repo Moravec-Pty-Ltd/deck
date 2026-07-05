@@ -11,8 +11,8 @@ import { expandTilde } from '$lib/server/fsutil';
 import { resolveWithinProjects, projectForPath } from '$lib/server/confine';
 import { expandPlaceholders, contextFromSession, type PlaceholderContext } from '$lib/placeholders';
 import { buildIssuePrompt, type IssueForFetch, type IssuePromptContext } from '$lib/server/issues/detail';
-import { isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
-import { startRun } from '$lib/server/workflows';
+import { isLegacyWorkflowId } from '$lib/workflows-core';
+import { startRun, workflowForPath } from '$lib/server/workflows';
 
 const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'opencode', 'shell'];
 const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
@@ -246,8 +246,7 @@ function wantsRun(workflowId: unknown): workflowId is string {
 // bare session.
 function pickWorkflow(startCwd: string, workflowId: unknown) {
 	if (!wantsRun(workflowId)) return undefined;
-	const project = listProjects().find((p) => p.path === projectForPath(startCwd));
-	const workflow = resolveWorkflows(project).find((w) => w.id === workflowId);
+	const workflow = workflowForPath(startCwd, workflowId);
 	if (!workflow) error(400, 'unknown workflow');
 	return workflow;
 }

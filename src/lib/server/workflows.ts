@@ -6,13 +6,15 @@ import {
 	capOutput,
 	expandStepTokens,
 	nextAfter,
+	resolveWorkflows,
 	retryPrompt,
-	runStepsSnapshot
+	runStepsSnapshot,
+	shellQuote
 } from '$lib/workflows-core';
 import { appendEvent, bus, stopProcess } from './claude';
 import { agentInterrupt, agentSend } from './agents/dispatch';
-import { getStoredSession, updateSession } from './store';
-import { resolveWithinProjects } from './confine';
+import { getStoredSession, listProjects, updateSession } from './store';
+import { projectForPath, resolveWithinProjects } from './confine';
 import { notify } from './push';
 
 // The workflow runner (issue #111): drives one run per session through its
@@ -28,6 +30,10 @@ interface ActiveRun {
 	child?: ChildProcess;
 	// resolves the pending ask step, so cancel (or /answer) can settle it
 	ask?: { resolve: (text: string) => void; reject: (err: Error) => void };
+	// set by noteInterrupt when the user interrupts the in-flight agent turn,
+	// so the step reads as failed (pausing the run) instead of advancing on
+	// half-done work.
+	interrupted?: boolean;
 }
 
 const g = globalThis as { __deckWorkflowRuns?: Map<string, ActiveRun> };
@@ -36,6 +42,24 @@ const runs = (g.__deckWorkflowRuns ??= new Map());
 export function runActive(id: string): boolean {
 	return runs.has(id);
 }
+
+// The user interrupted this session's turn (the composer's Interrupt button);
+// a workflow agent step in flight must not advance past it.
+export function noteInterrupt(id: string): void {
+	const inst = runs.get(id);
+	if (inst) inst.interrupted = true;
+}
+
+// Resolve `workflowId` against the project owning `cwd` (a worktree maps back
+// to its registered project). Shared by the create-session and run-here routes.
+export function workflowForPath(cwd: string, workflowId: string): Workflow | undefined {
+	const project = listProjects().find((p) => p.path === projectForPath(cwd));
+	return resolveWorkflows(project).find((w) => w.id === workflowId);
+}
+
+// Ask-step ids carry this prefix so the /answer route can tell an answer
+// aimed at a workflow checkpoint from a click on a stale MCP ask card.
+export const WORKFLOW_ASK_PREFIX = 'wfask-';
 
 // Whether the session is blocked on a workflow ask step. Kept apart from
 // ask.ts's map: that one is tied to the claude process lifecycle (interrupt /
@@ -67,16 +91,19 @@ function persistRun(id: string, run: WorkflowRun) {
 // Wait for the turn agentSend just started to settle: the next idle/error on
 // the session's status channel. agentSend flips the status to running
 // synchronously (both engines), so anything that lands after it is this
-// turn's terminal state.
-function waitForTurnEnd(id: string): Promise<'idle' | 'error'> {
-	return new Promise((resolve) => {
-		const onStatus = (status: unknown) => {
+// turn's terminal state. `cancel` detaches the listener when the send itself
+// fails and the promise will never settle.
+function waitForTurnEnd(id: string): { promise: Promise<'idle' | 'error'>; cancel: () => void } {
+	let onStatus!: (status: unknown) => void;
+	const promise = new Promise<'idle' | 'error'>((resolve) => {
+		onStatus = (status: unknown) => {
 			if (status !== 'idle' && status !== 'error') return;
 			bus.off(`status:${id}`, onStatus);
 			resolve(status);
 		};
 		bus.on(`status:${id}`, onStatus);
 	});
+	return { promise, cancel: () => bus.off(`status:${id}`, onStatus) };
 }
 
 // Run a shell command in the session cwd, capturing interleaved stdout+stderr.
@@ -166,6 +193,13 @@ function isTextBlock(block: { type?: string; text?: unknown }): boolean {
 	return block?.type === 'text' && typeof block.text === 'string' && !!block.text.trim();
 }
 
+// The result footer's subtype, when the event is one ('success' for a clean
+// turn; interrupts and max-turns endings carry other subtypes).
+function resultSubtypeIn(event: unknown): string | null {
+	const ev = event as { type?: string; subtype?: unknown };
+	return ev?.type === 'result' && typeof ev.subtype === 'string' ? ev.subtype : null;
+}
+
 // The last non-empty assistant text block an event carries, or null. Feeds the
 // agent step's captured output so later steps can reference [step:<name>].
 function lastAssistantText(event: unknown): string | null {
@@ -194,6 +228,17 @@ function expand(rc: RunCtx, text: string): string {
 	return expandStepTokens(expandPlaceholders(text, rc.ctx), rc.outputs);
 }
 
+// Expand tokens into a run/gate command with every value single-quoted:
+// issue bodies, PR titles, and captured step outputs are remote- or
+// model-authored, so they must never be able to smuggle shell syntax. Write
+// `--title [issue_title]`, not `--title "[issue_title]"`.
+function expandCommand(rc: RunCtx, text: string): string {
+	const quote = ([k, v]: [string, string | undefined]) => [k, v === undefined ? v : shellQuote(v)];
+	const ctx = Object.fromEntries(Object.entries(rc.ctx).map(quote)) as typeof rc.ctx;
+	const outputs = Object.fromEntries(Object.entries(rc.outputs).map(quote)) as typeof rc.outputs;
+	return expandStepTokens(expandPlaceholders(text, ctx), outputs);
+}
+
 // Execute the step at rc.run.step. Returns ok + captured output; agent output
 // is the turn's last assistant text so later steps can reference it.
 async function execCurrent(rc: RunCtx): Promise<{ ok: boolean; output: string }> {
@@ -202,12 +247,33 @@ async function execCurrent(rc: RunCtx): Promise<{ ok: boolean; output: string }>
 	switch (step.type) {
 		case 'run':
 		case 'gate':
-			return execStep(rc.inst, expand(rc, step.command), rc.cwd);
+			return execStep(rc.inst, expandCommand(rc, step.command), rc.cwd);
 		case 'ask':
-			return askStep(rc.inst, id, expand(rc, step.question), `wfask-${rc.run.startedAt}-${rc.run.step}`, rc.run.name);
+			return askStep(
+				rc.inst,
+				id,
+				expand(rc, step.question),
+				`${WORKFLOW_ASK_PREFIX}${rc.run.startedAt}-${rc.run.step}`,
+				rc.run.name
+			);
 		case 'agent':
 			return agentStep(rc, step);
 	}
+}
+
+// A turn advances the run only when it ended cleanly: no user interrupt, an
+// idle terminal status, and a successful result footer. Anything else pauses
+// the run rather than letting later steps ship half-done work.
+function turnOutcome(
+	inst: ActiveRun,
+	status: 'idle' | 'error',
+	subtype: string,
+	lastText: string
+): { ok: boolean; output: string } {
+	if (inst.interrupted) return { ok: false, output: 'turn interrupted by the user' };
+	if (status !== 'idle') return { ok: false, output: lastText || 'agent turn errored' };
+	if (subtype !== 'success') return { ok: false, output: `turn ended (${subtype})` };
+	return { ok: true, output: lastText };
 }
 
 // One agent turn. The prompt is, in priority order: the gate-failure feedback
@@ -231,16 +297,20 @@ async function agentStep(
 	if (!session) return { ok: false, output: 'session removed' };
 
 	let lastText = '';
+	let subtype = 'success';
 	const onEvent = (event: unknown) => {
 		lastText = lastAssistantText(event) ?? lastText;
+		subtype = resultSubtypeIn(event) ?? subtype;
 	};
+	rc.inst.interrupted = false;
 	bus.on(`event:${id}`, onEvent);
 	const ended = waitForTurnEnd(id);
 	try {
 		await agentSend(session, prompt);
-		const status = await ended;
-		return { ok: status === 'idle', output: lastText };
+		const status = await ended.promise;
+		return turnOutcome(rc.inst, status, subtype, lastText);
 	} catch (e) {
+		ended.cancel();
 		return { ok: false, output: e instanceof Error ? e.message : 'agent send failed' };
 	} finally {
 		bus.off(`event:${id}`, onEvent);

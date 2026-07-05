@@ -125,6 +125,13 @@ export function expandStepTokens(text: string, outputs: Record<string, string>):
 	return text.replace(/\[step:([^\]]+)\]/g, (_, name: string) => outputs[name] ?? '');
 }
 
+// POSIX single-quote a value for interpolation into a run/gate command.
+// Command tokens carry remote-authored text (issue bodies, agent output), so
+// they must land as inert shell words, never as syntax.
+export function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
 // A gate with no explicit retry budget feeds back to the agent once before
 // pausing; 0 opts a gate out of the retry loop entirely.
 const DEFAULT_GATE_RETRIES = 1;
@@ -164,6 +171,8 @@ function afterGateFailure(
 // that just settled, whether it succeeded, and the per-gate retry counters,
 // decide what happens next. `attempts[gateIndex]` counts retries already
 // consumed by that gate (the caller increments it when acting on `retry`).
+// Budgets are deliberately cumulative for the whole run, never reset by a
+// later pass: they bound total looping, not per-visit patience.
 export function nextAfter(
 	steps: WorkflowStep[],
 	index: number,

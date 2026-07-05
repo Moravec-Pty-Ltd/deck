@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { isAgentKind } from '$lib/types';
 import { getSession } from '$lib/server/sessions';
 import { agentSend, agentInterrupt } from '$lib/server/agents/dispatch';
+import { noteInterrupt } from '$lib/server/workflows';
 import type { ImageInput } from '$lib/server/claude';
 import { sendKeys, sendRawKey } from '$lib/server/tmux';
 import { updateSession } from '$lib/server/store';
@@ -41,7 +42,12 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const body = await request.json();
 
 	if (body.action === 'interrupt' || body.action === 'stop') {
-		if (isAgentKind(session.kind)) agentInterrupt(session.id);
+		if (isAgentKind(session.kind)) {
+			// A workflow agent step must read a user interrupt as failure, not as
+			// a cleanly finished turn (see workflows.ts turnOutcome).
+			noteInterrupt(session.id);
+			agentInterrupt(session.id);
+		}
 		return json({ ok: true });
 	}
 

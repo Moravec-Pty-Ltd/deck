@@ -2,10 +2,8 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { DeckSession, Workflow } from '$lib/types';
 import { agentSessionOr404, objectBody } from '$lib/server/http';
-import { listProjects } from '$lib/server/store';
-import { projectForPath } from '$lib/server/confine';
-import { resolveWorkflows } from '$lib/workflows-core';
-import { cancelRun, runActive, startRun } from '$lib/server/workflows';
+import { agentTurnRunning } from '$lib/server/agents/dispatch';
+import { cancelRun, runActive, startRun, workflowForPath } from '$lib/server/workflows';
 import { contextFromSession } from '$lib/placeholders';
 
 // Start or cancel a workflow run on an existing session (issue #111). The
@@ -13,13 +11,11 @@ import { contextFromSession } from '$lib/placeholders';
 // here" (e.g. finishing an existing worktree) and the progress strip's
 // cancel/dismiss button.
 
-// The requested workflow, resolved against the session's project (its
-// worktree maps back to the registered path). A custom-cwd session has no
-// project, so only the synthesized pair resolves — harmless single-step runs.
+// The requested workflow, resolved against the session's project. A
+// custom-cwd session has no project, so only the synthesized pair resolves.
 function workflowFor(session: DeckSession, workflowId: unknown): Workflow {
 	if (typeof workflowId !== 'string' || !workflowId) error(400, 'workflowId required');
-	const project = listProjects().find((p) => p.path === projectForPath(session.cwd));
-	const workflow = resolveWorkflows(project).find((w) => w.id === workflowId);
+	const workflow = workflowForPath(session.cwd, workflowId);
 	if (!workflow) error(400, 'unknown workflow');
 	return workflow;
 }
@@ -43,6 +39,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	}
 
 	if (runActive(session.id)) error(409, 'a workflow run is already active');
+	// An in-flight turn would cross wires with the runner's turn tracking (its
+	// idle would read as the first agent step finishing); require a quiet session.
+	if (agentTurnRunning(session.id)) error(409, 'a turn is running; wait for it to finish');
 	start(session, workflowFor(session, body.workflowId));
 	return json({ ok: true, status: 'running' });
 };
