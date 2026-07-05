@@ -24,12 +24,14 @@
 		if (active && !confirm(`Cancel the "${run.name}" run?`)) return;
 		busy = true;
 		try {
-			await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/workflow`, {
+			const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/workflow`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ action: 'cancel' })
 			});
-			onChange();
+			// A rejected cancel must not repaint as if it worked; the poll (and a
+			// retry) reconcile the strip.
+			if (res.ok) onChange();
 		} finally {
 			busy = false;
 		}

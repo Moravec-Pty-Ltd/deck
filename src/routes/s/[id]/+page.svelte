@@ -86,15 +86,18 @@
 
 	// The registered project this session belongs to (directly, or via the
 	// worktree it was created from), for the run-workflow menu. Only configured
-	// workflows are offered; the legacy synthesized pair isn't a run.
+	// workflows are offered; the legacy synthesized pair isn't a run. Longest
+	// matching path wins so a nested project isn't shadowed by its parent.
 	const sessionProject = $derived(
 		projects.find((p) => p.path === session.worktree?.repo) ??
-			projects.find(
-				(p) =>
-					session.cwd === p.path ||
-					session.cwd.startsWith(`${p.path}/`) ||
-					session.cwd.startsWith(`${p.path}-worktrees/`)
-			)
+			projects
+				.filter(
+					(p) =>
+						session.cwd === p.path ||
+						session.cwd.startsWith(`${p.path}/`) ||
+						session.cwd.startsWith(`${p.path}-worktrees/`)
+				)
+				.sort((a, b) => b.path.length - a.path.length)[0]
 	);
 	const sessionWorkflows = $derived(sessionProject?.workflows ?? []);
 
