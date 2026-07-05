@@ -9,8 +9,10 @@ import { agentSend } from '$lib/server/agents/dispatch';
 import { listProjects, updateProject, rememberModel, readSecret } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
 import { resolveWithinProjects, projectForPath } from '$lib/server/confine';
-import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
+import { expandPlaceholders, contextFromSession, type PlaceholderContext } from '$lib/placeholders';
 import { buildIssuePrompt, type IssueForFetch, type IssuePromptContext } from '$lib/server/issues/detail';
+import { isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
+import { startRun } from '$lib/server/workflows';
 
 const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'opencode', 'shell'];
 const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
@@ -233,20 +235,51 @@ async function issueContext(cwd: string, picked: PickedIssue[]): Promise<Partial
 	}
 }
 
+// A workflow id that should start a run: a real configured id, not the legacy
+// synthesized pair (those are today's plain new/review paths).
+function wantsRun(workflowId: unknown): workflowId is string {
+	return typeof workflowId === 'string' && !!workflowId && !isLegacyWorkflowId(workflowId);
+}
+
+// Resolve a requested workflow id against the project the session starts in.
+// An unknown id is a 400 so a stale modal doesn't silently fall back to a
+// bare session.
+function pickWorkflow(startCwd: string, workflowId: unknown) {
+	if (!wantsRun(workflowId)) return undefined;
+	const project = listProjects().find((p) => p.path === projectForPath(startCwd));
+	const workflow = resolveWorkflows(project).find((w) => w.id === workflowId);
+	if (!workflow) error(400, 'unknown workflow');
+	return workflow;
+}
+
+// Start the requested run, or send the plain first prompt (today's path).
+async function dispatch(
+	session: Awaited<ReturnType<typeof createSession>>,
+	workflow: ReturnType<typeof pickWorkflow>,
+	promptText: string,
+	ctx: PlaceholderContext
+): Promise<void> {
+	if (workflow) startRun(session, workflow, ctx, promptText);
+	else await agentSend(session, expandPlaceholders(promptText, ctx));
+}
+
 // Kick off the agent's first turn if a non-empty prompt was supplied, expanding
 // its [tokens] against the freshly-created session. When issues are attached,
 // their body/title/images are fetched server-side first (best-effort) so the
 // prompt starts grounded. Fire-and-forget: the fetch must not delay the 201.
+// With a workflow attached this generalises into "start the run": the prompt
+// (the modal's possibly-edited first agent step) rides along as the override.
 async function maybeDispatch(
 	session: Awaited<ReturnType<typeof createSession>>,
 	kind: SessionKind,
-	prompt: unknown,
-	picked: PickedIssue[]
+	promptText: string,
+	picked: PickedIssue[],
+	workflow: ReturnType<typeof pickWorkflow>
 ): Promise<void> {
 	if (!isAgentKind(kind)) return;
-	if (typeof prompt !== 'string' || !prompt.trim()) return;
+	if (!workflow && !promptText) return;
 	const ctx = { ...contextFromSession(session), ...(await issueContext(session.cwd, picked)) };
-	await agentSend(session, expandPlaceholders(prompt, ctx));
+	await dispatch(session, workflow, promptText, ctx);
 }
 
 export const GET: RequestHandler = async () => {
@@ -259,6 +292,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
 
 	const startCwd = resolveCwd(body.cwd);
+	// Resolve the workflow before any worktree work so a stale id fails fast.
+	const workflow = pickWorkflow(startCwd, body.workflowId);
 	const { cwd, worktree, branch } = await resolveWorktree(startCwd, body);
 	const picked = parseIssues(body);
 	const pr = parsePr(body.pr);
@@ -278,6 +313,6 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (isAgentKind(kind)) rememberPickedModel(startCwd, kind, model, provider);
 
-	void maybeDispatch(session, kind, prompt, picked).catch(() => {});
+	void maybeDispatch(session, kind, asStr(prompt), picked, workflow).catch(() => {});
 	return json(session, { status: 201 });
 };
