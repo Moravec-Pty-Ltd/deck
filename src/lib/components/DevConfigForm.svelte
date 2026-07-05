@@ -102,13 +102,8 @@
 	}
 
 	function save() {
-		saver.save({
-			path: project.path,
-			name: project.name,
-			template: project.template,
-			lastBase: project.lastBase,
-			dev: buildDev()
-		});
+		// Only the fields this form owns: the API carries everything omitted.
+		saver.save({ path: project.path, name: project.name, dev: buildDev() });
 	}
 </script>
 
