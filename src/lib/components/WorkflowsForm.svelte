@@ -11,7 +11,10 @@
 
 	// One editable shape for every step type: switching the type keeps whatever
 	// was typed, and clean() keeps only the fields the type actually has.
+	// `key` exists only for the each-block: the list is reorderable, so an
+	// index key would make edits stick to positions instead of steps.
 	interface EditStep {
+		key: number;
 		type: WorkflowStep['type'];
 		name: string;
 		command: string;
@@ -40,8 +43,9 @@
 	let localError = $state('');
 	const saver = createProjectSaver(() => onchanged());
 
+	let stepSeq = 0;
 	function blankStep(type: WorkflowStep['type'] = 'agent'): EditStep {
-		return { type, name: '', command: '', prompt: '', model: '', retries: '', question: '' };
+		return { key: ++stepSeq, type, name: '', command: '', prompt: '', model: '', retries: '', question: '' };
 	}
 
 	function cloneStep(s: WorkflowStep): EditStep {
@@ -186,7 +190,7 @@
 						</div>
 
 						<div class="mt-2 space-y-1">
-							{#each w.steps as s, si (si)}
+							{#each w.steps as s, si (s.key)}
 								<div class="rounded border border-base-300 p-1.5">
 									<div class="flex items-center gap-2">
 										<select
