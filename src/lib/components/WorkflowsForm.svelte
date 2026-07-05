@@ -92,9 +92,13 @@
 			case 'gate': {
 				const command = s.command.trim();
 				if (!command) return null;
-				const retries = Number(s.retries);
-				const hasRetries = s.retries.trim() !== '' && Number.isInteger(retries) && retries >= 0;
-				return { type: 'gate', name, command, retries: hasRetries ? retries : undefined };
+				const raw = String(s.retries).trim();
+				if (!raw) return { type: 'gate', name, command };
+				// An invalid retries value blocks the save (see validationError)
+				// instead of silently saving as the default budget.
+				const retries = Number(raw);
+				if (!Number.isInteger(retries) || retries < 0 || retries > 10) return null;
+				return { type: 'gate', name, command, retries };
 			}
 			case 'agent': {
 				const prompt = s.prompt.trim();
