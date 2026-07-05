@@ -13,11 +13,13 @@
 		block,
 		answered = false,
 		answer = null,
+		title = 'Claude is asking',
 		onanswer
 	}: {
 		block: Record<string, any>;
 		answered?: boolean;
 		answer?: { header: string; labels: string[] }[] | null;
+		title?: string;
 		onanswer?: (text: string, answers: { header: string; labels: string[] }[]) => void;
 	} = $props();
 
@@ -58,7 +60,7 @@
 <div class="mx-1 overflow-hidden rounded-box border border-primary/40 bg-primary/5 text-sm">
 	<div class="flex items-center gap-2 border-b border-primary/20 px-3 py-1.5">
 		<CircleHelp size={14} class="shrink-0 text-primary" />
-		<span class="font-medium">Claude is asking</span>
+		<span class="font-medium">{title}</span>
 		{#if answered}<span class="badge badge-success badge-xs ml-auto shrink-0">answered</span>{/if}
 	</div>
 

@@ -3,9 +3,10 @@
 	import { relativeTime, shortPath } from '$lib/time';
 	import { groupSessions } from '$lib/groups';
 	import { createCollapseState } from '$lib/collapse.svelte';
+	import { createDeleteFlow } from '$lib/delete-flow.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
+	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, ChevronRight, ChevronDown, X } from '@lucide/svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
@@ -65,55 +66,7 @@
 	// independently from the sidebar's (no auto-expand).
 	const collapse = createCollapseState('deck:home:expandedGroups');
 
-	let delTarget = $state<DeckSession | null>(null);
-	let delWorktree = $state(true);
-	let delBranch = $state(true);
-	// Deletes run in the background, so several can be in flight at once; track the
-	// set of ids currently cleaning up rather than a single global lock (issue #59).
-	const deletingIds = new SvelteSet<string>();
-	let deleteError = $state<string | null>(null);
-
-	function remove(session: DeckSession) {
-		if (deletingIds.has(session.id)) return;
-		if (session.worktree) {
-			delWorktree = true;
-			delBranch = session.worktree.createdBranch;
-			delTarget = session;
-			return;
-		}
-		if (!confirm(`Kill and remove "${session.title}"?`)) return;
-		doDelete(session, {});
-	}
-
-	async function doDelete(
-		session: DeckSession,
-		opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
-	) {
-		if (deletingIds.has(session.id)) return;
-		delTarget = null; // close the confirm modal immediately; cleanup runs in the background
-		deletingIds.add(session.id);
-		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
-				method: 'DELETE',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(opts)
-			});
-			if (!res.ok) throw new Error(`delete failed: ${res.status}`);
-			// Delete succeeded: clear any prior failure, then reconcile the list. A
-			// refresh failure is transient (the 5s poll catches up) and must not be
-			// reported as a delete failure.
-			deleteError = null;
-			try {
-				await refresh();
-			} catch {
-				// ignore; the poll will drop the row
-			}
-		} catch {
-			deleteError = `Couldn't remove "${session.title}".`;
-		} finally {
-			deletingIds.delete(session.id);
-		}
-	}
+	const del = createDeleteFlow(refresh);
 
 	// Status as a quiet dot + label. Saturated colour is reserved for the states
 	// that want attention (running = brand orange, error = red); idle and dead stay
@@ -201,11 +154,11 @@
 		</a>
 		<button
 			class="btn btn-ghost btn-xs"
-			onclick={() => remove(s)}
-			disabled={deletingIds.has(s.id)}
+			onclick={() => del.request(s)}
+			disabled={del.deletingIds.has(s.id)}
 			aria-label={`Remove ${s.title}`}
 		>
-			{#if deletingIds.has(s.id)}
+			{#if del.deletingIds.has(s.id)}
 				<span class="loading loading-spinner loading-xs"></span>
 			{:else}
 				<Trash2 size={14} />
@@ -214,12 +167,12 @@
 	</div>
 {/snippet}
 
-{#if deleteError}
+{#if del.error}
 	<div class="alert alert-error mb-3 py-2 text-sm" role="alert">
-		<span class="flex-1 break-words">{deleteError}</span>
+		<span class="flex-1 break-words">{del.error}</span>
 		<button
 			class="btn btn-ghost btn-xs"
-			onclick={() => (deleteError = null)}
+			onclick={() => (del.error = null)}
 			aria-label="Dismiss error"
 		>
 			<X size={14} />
@@ -291,46 +244,4 @@
 
 <NewSessionModal bind:open={modalOpen} {preset} />
 
-{#if delTarget}
-	<div class="modal modal-open" role="dialog">
-		<div class="modal-box max-w-sm">
-			<h3 class="mb-2 text-lg font-semibold">Remove "{delTarget.title}"</h3>
-			<p class="mb-3 text-sm opacity-70">
-				Kills the session. This session lives in a git worktree on branch
-				<span class="font-mono">{delTarget.worktree?.branch}</span>.
-			</p>
-			<div class="space-y-2">
-				<label class="label cursor-pointer justify-start gap-2">
-					<input type="checkbox" class="checkbox checkbox-sm" bind:checked={delWorktree} />
-					<span>Delete the worktree</span>
-				</label>
-				<label class="label cursor-pointer justify-start gap-2">
-					<input
-						type="checkbox"
-						class="checkbox checkbox-sm"
-						bind:checked={delBranch}
-						disabled={!delWorktree || !delTarget.worktree?.createdBranch}
-					/>
-					<span>
-						Delete the branch
-						{#if !delTarget.worktree?.createdBranch}
-							<span class="opacity-50">(existing branch, kept)</span>
-						{/if}
-					</span>
-				</label>
-			</div>
-			<div class="modal-action">
-				<button class="btn" onclick={() => (delTarget = null)}>Cancel</button>
-				<button
-					class="btn btn-error"
-					onclick={() =>
-						delTarget &&
-						doDelete(delTarget, { deleteWorktree: delWorktree, deleteBranch: delBranch })}
-				>
-					Remove
-				</button>
-			</div>
-		</div>
-		<button class="modal-backdrop" onclick={() => (delTarget = null)} aria-label="close"></button>
-	</div>
-{/if}
+<DeleteSessionModal flow={del} />

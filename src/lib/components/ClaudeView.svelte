@@ -382,6 +382,27 @@
 		return Array.isArray(content) ? content : [];
 	}
 
+	// One-line transcript marker for a workflow run transition (see
+	// server/workflows.ts marker()). Steps are 0-indexed on the wire.
+	function fmtWorkflow(ev: AnyEvent): string {
+		switch (ev.state) {
+			case 'start':
+				return `workflow "${ev.name}" started (${ev.steps?.length ?? '?'} steps)`;
+			case 'step':
+				return `workflow: ${ev.stepType} "${ev.name}"`;
+			case 'retry':
+				return `workflow: gate failed, retrying the agent (attempt ${ev.attempt}/${ev.max})`;
+			case 'done':
+				return 'workflow finished';
+			case 'paused':
+				return `workflow paused${ev.reason ? `: ${ev.reason}` : ''}`;
+			case 'cancelled':
+				return 'workflow cancelled';
+			default:
+				return `workflow: ${ev.state}`;
+		}
+	}
+
 	function fmtCost(event: AnyEvent): string {
 		const parts: string[] = [];
 		if (typeof event.duration_ms === 'number') parts.push(`${(event.duration_ms / 1000).toFixed(1)}s`);
@@ -448,6 +469,18 @@
 				<div class="alert alert-error py-2 text-sm break-words whitespace-pre-wrap">{event.text}</div>
 			{:else if event.type === 'deck.model'}
 				<div class="px-2 text-center text-xs opacity-50">model → {modelLabel(event.model)}</div>
+			{:else if event.type === 'deck.workflow'}
+				<div class="px-2 text-center text-xs opacity-50">{fmtWorkflow(event)}</div>
+			{:else if event.type === 'deck.ask'}
+				<!-- A workflow ask step: same card as the MCP ask, driven by a synthetic
+				     block keyed on askId (the /answer post resolves the run's checkpoint). -->
+				<AskQuestion
+					block={{ id: event.askId, input: { questions: event.questions } }}
+					answered={answeredQuestions.has(event.askId)}
+					answer={answeredQuestions.get(event.askId)}
+					title="Workflow checkpoint"
+					onanswer={(text, answers) => answerQuestion(event.askId, text, answers)}
+				/>
 			{:else if event.type === 'assistant'}
 				{#each contentBlocks(event) as block, j (j)}
 					{#if block.type === 'text' && block.text?.trim()}

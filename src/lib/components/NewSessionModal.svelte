@@ -12,6 +12,7 @@
 	import { groupProjects, existingGroupNames } from '$lib/groups';
 	import { CLAUDE_MODELS, resolveModelChoice, shouldReseedModel } from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
+	import { firstAgentPrompt, isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
 	import { Bot, Terminal, Sparkles, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
@@ -33,10 +34,11 @@
 	type Worktree = { path: string; branch: string; isMain: boolean };
 	type WorktreeMode = 'none' | 'existing' | 'new';
 
-	// 'new' starts a fresh branch/worktree; 'review' seeds the session from an open
-	// PR awaiting your review (worktree checked out to the PR head).
-	type SessionMode = 'new' | 'review';
-	let mode = $state<SessionMode>('new');
+	// The selected workflow replaces the old New/Review toggle (issue #111): its
+	// `context` drives the picker, token hints, and worktree behaviour. Projects
+	// without configured workflows get the synthesized legacy pair, which
+	// behaves exactly like the old two modes.
+	let workflowId = $state<string>('');
 	let kind = $state<SessionKind>('claude');
 	let projects = $state<Project[]>([]);
 	let cwd = $state('');
@@ -104,7 +106,7 @@
 		seededProjectPath = undefined;
 		errorMsg = '';
 		showPicker = false;
-		mode = 'new';
+		workflowId = '';
 		pickedIssues = [];
 		pickedPr = null;
 		availability = null;
@@ -143,10 +145,22 @@
 	const selectedProject = $derived(projects.find((p) => p.path === cwd));
 	const projectGroups = $derived(groupProjects(projects));
 	const groupSuggestions = $derived(existingGroupNames(projects));
-	const finalCwd = $derived(worktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
 	const titleRequired = $derived(isAgentKind(kind));
 	const projectHasSources = $derived(!!selectedProject?.sources?.length);
-	const reviewMode = $derived(mode === 'review');
+
+	// The project's workflows (configured, or the synthesized legacy pair). The
+	// selection falls back to the first entry whenever the stored id doesn't
+	// exist under the (possibly just switched) project.
+	const workflows = $derived(resolveWorkflows(selectedProject));
+	const workflow = $derived(workflows.find((w) => w.id === workflowId) ?? workflows[0]);
+	const context = $derived(workflow.context);
+	const reviewMode = $derived(context === 'pr');
+	// 'worktree' context pins the existing-worktree picker; 'none' pins no
+	// worktree; 'issue' keeps the free choice (defaulted per kind below).
+	const effectiveWorktreeMode = $derived<WorktreeMode>(
+		context === 'worktree' ? 'existing' : context === 'none' ? 'none' : worktreeMode
+	);
+	const finalCwd = $derived(effectiveWorktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
 
 	// shell always shows; an agent kind shows unless availability positively says
 	// it's absent. availability === null (pre-fetch or failed) reveals everything,
@@ -164,15 +178,16 @@
 		}
 	});
 
-	function setSessionMode(m: SessionMode) {
-		mode = m;
-		// Keep the two flows from leaking picks into each other.
-		if (m === 'review') {
+	function pickWorkflow(id: string) {
+		workflowId = id;
+		// Keep the flows from leaking picks into each other: an issue pick
+		// belongs to issue-context workflows, a PR pick to pr-context ones.
+		const ctx = workflows.find((w) => w.id === id)?.context;
+		if (ctx !== 'issue') {
 			pickedIssues = [];
 			showPicker = false;
-		} else {
-			pickedPr = null;
 		}
+		if (ctx !== 'pr') pickedPr = null;
 	}
 
 	// Toggle an issue in/out of the selection. The title becomes the picked refs
@@ -218,17 +233,17 @@
 		worktreeModeDirty = true;
 	}
 
-	// Prefill the first prompt until the user edits it: the review prompt in Review
-	// mode, the project template otherwise. Empty means an empty field, same as today.
+	// Prefill the first prompt until the user edits it: the selected workflow's
+	// first agent-step prompt (for the legacy pair that's exactly the old
+	// template/reviewPrompt). Empty means an empty field, same as today.
 	$effect(() => {
-		const template =
-			(mode === 'review' ? selectedProject?.reviewPrompt : selectedProject?.template) ?? '';
+		const template = firstAgentPrompt(workflow);
 		if (!promptDirty) prompt = template;
 	});
 
 	// Branch defaults to the title until the user edits it.
 	$effect(() => {
-		if (worktreeMode === 'new' && !branchDirty) branch = title.trim();
+		if (effectiveWorktreeMode === 'new' && !branchDirty) branch = title.trim();
 	});
 
 	// Base branch defaults to the project's remembered last base.
@@ -284,7 +299,7 @@
 	});
 
 	$effect(() => {
-		if (worktreeMode === 'new' && effectiveCwd) {
+		if (effectiveWorktreeMode === 'new' && effectiveCwd) {
 			fetch(`/api/git/branches?repo=${encodeURIComponent(effectiveCwd)}`)
 				.then((r) => r.json())
 				.then((b: string[]) => (branches = Array.isArray(b) ? b : []));
@@ -292,7 +307,7 @@
 	});
 
 	$effect(() => {
-		if (worktreeMode === 'existing' && effectiveCwd) {
+		if (effectiveWorktreeMode === 'existing' && effectiveCwd) {
 			fetch(`/api/git/worktrees?repo=${encodeURIComponent(effectiveCwd)}`)
 				.then((r) => r.json())
 				.then((w: Worktree[]) => {
@@ -337,7 +352,7 @@
 			errorMsg = 'title is required';
 			return;
 		}
-		if (!reviewMode && worktreeMode === 'existing' && !existingWorktreeDir) {
+		if (!reviewMode && effectiveWorktreeMode === 'existing' && !existingWorktreeDir) {
 			errorMsg = 'pick an existing worktree';
 			return;
 		}
@@ -363,10 +378,14 @@
 						kind === 'claude' ? (yolo ? 'bypassPermissions' : 'acceptEdits') : undefined,
 					command: kind === 'shell' && command.trim() ? command.trim() : undefined,
 					prompt: kind !== 'shell' && prompt.trim() ? prompt.trim() : undefined,
+					// A configured workflow starts a run on the session; the legacy
+					// synthesized pair keeps the plain first-prompt dispatch.
+					workflowId:
+						kind !== 'shell' && !isLegacyWorkflowId(workflow.id) ? workflow.id : undefined,
 					worktree:
 						reviewMode && pickedPr
 							? { fromPr: pickedPr.number, base: pickedPr.baseRefName }
-							: worktreeMode === 'new' && branch.trim()
+							: effectiveWorktreeMode === 'new' && branch.trim()
 								? { branch: branch.trim(), newBranch, base: base || undefined }
 								: undefined,
 					issues:
@@ -412,16 +431,26 @@
 		<div class="modal-box max-w-lg overflow-x-hidden">
 			<h3 class="mb-4 text-lg font-semibold">New session</h3>
 
-			<div class="join mb-4 w-full">
-				<button
-					class="btn join-item flex-1 {mode === 'new' ? 'btn-primary' : ''}"
-					onclick={() => setSessionMode('new')}>New</button
+			{#if workflows.length <= 3}
+				<div class="join mb-4 w-full">
+					{#each workflows as w (w.id)}
+						<button
+							class="btn join-item flex-1 {workflow.id === w.id ? 'btn-primary' : ''}"
+							onclick={() => pickWorkflow(w.id)}>{w.name}</button
+						>
+					{/each}
+				</div>
+			{:else}
+				<select
+					class="select mb-4 w-full"
+					value={workflow.id}
+					onchange={(e) => pickWorkflow(e.currentTarget.value)}
 				>
-				<button
-					class="btn join-item flex-1 {mode === 'review' ? 'btn-primary' : ''}"
-					onclick={() => setSessionMode('review')}>Review</button
-				>
-			</div>
+					{#each workflows as w (w.id)}
+						<option value={w.id}>{w.name}</option>
+					{/each}
+				</select>
+			{/if}
 
 			<div class="join mb-4 w-full">
 				{#each shownKinds as k (k.id)}
@@ -492,7 +521,7 @@
 						placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
 						bind:value={title}
 					/>
-					{#if projectHasSources && !reviewMode}
+					{#if projectHasSources && context === 'issue'}
 						<button
 							class="btn {showPicker ? 'btn-active' : ''}"
 							onclick={() => (showPicker = !showPicker)}
@@ -559,7 +588,20 @@
 						<p class="text-xs opacity-60">pick a project first</p>
 					{/if}
 				</fieldset>
-			{:else}
+			{:else if context === 'worktree'}
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Worktree</legend>
+					{#if existingWorktrees.length}
+						<select class="select w-full" bind:value={existingWorktreeDir}>
+							{#each existingWorktrees as w (w.path)}
+								<option value={w.path}>{w.branch} — {w.path}</option>
+							{/each}
+						</select>
+					{:else}
+						<p class="text-xs opacity-60">no existing worktrees for this repo</p>
+					{/if}
+				</fieldset>
+			{:else if context === 'issue'}
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">Worktree</legend>
 					<div class="join w-full">
@@ -669,10 +711,18 @@
 						bind:value={prompt}
 						oninput={() => (promptDirty = true)}
 					></textarea>
-					{#if reviewMode && selectedProject?.reviewPrompt && !promptDirty}
-						<p class="text-xs opacity-50">prefilled from {selectedProject.name} review prompt</p>
-					{:else if !reviewMode && selectedProject?.template && !promptDirty}
-						<p class="text-xs opacity-50">prefilled from {selectedProject.name} template</p>
+					{#if !isLegacyWorkflowId(workflow.id)}
+						<p class="text-xs opacity-50">
+							runs the "{workflow.name}" workflow ({workflow.steps.length} step{workflow.steps
+								.length === 1
+								? ''
+								: 's'}); this prompt is its first agent step
+						</p>
+					{:else if !promptDirty && firstAgentPrompt(workflow)}
+						<p class="text-xs opacity-50">
+							prefilled from {selectedProject?.name}
+							{reviewMode ? 'review prompt' : 'template'}
+						</p>
 					{:else if reviewMode}
 						<p class="text-xs opacity-50">placeholders: {REVIEW_PLACEHOLDERS} [cwd]</p>
 					{:else}

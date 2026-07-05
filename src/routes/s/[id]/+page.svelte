@@ -12,12 +12,15 @@
 	import PrMenu from '$lib/components/PrMenu.svelte';
 	import IssueMenu from '$lib/components/IssueMenu.svelte';
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
+	import WorkflowMenu from '$lib/components/WorkflowMenu.svelte';
+	import WorkflowProgress from '$lib/components/WorkflowProgress.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
+	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
+	import { createDeleteFlow } from '$lib/delete-flow.svelte';
 	import { ArrowLeft, Bot, Terminal, Menu, X, Ticket, TriangleAlert } from '@lucide/svelte';
 	import { onMount } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		clampSidebarWidth,
 		parseSidebarWidth,
@@ -68,6 +71,32 @@
 		const live = sessions.find((s) => s.id === session.id);
 		return live ? live.model : session.model;
 	});
+
+	// Workflow run state for the progress strip. Same trust order as livePr:
+	// the polled session once loaded (it reflects cancel/step transitions), the
+	// page-load session until then. `workflowRun` can legitimately be undefined
+	// after a dismiss, so don't ??-coalesce back to the page-load value.
+	const liveRun = $derived.by(() => {
+		const live = sessions.find((s) => s.id === session.id);
+		return live ? live.workflowRun : session.workflowRun;
+	});
+	const runActive = $derived(
+		liveRun?.status === 'running' || liveRun?.status === 'awaiting-input'
+	);
+
+	// The registered project this session belongs to (directly, or via the
+	// worktree it was created from), for the run-workflow menu. Only configured
+	// workflows are offered; the legacy synthesized pair isn't a run.
+	const sessionProject = $derived(
+		projects.find((p) => p.path === session.worktree?.repo) ??
+			projects.find(
+				(p) =>
+					session.cwd === p.path ||
+					session.cwd.startsWith(`${p.path}/`) ||
+					session.cwd.startsWith(`${p.path}-worktrees/`)
+			)
+	);
+	const sessionWorkflows = $derived(sessionProject?.workflows ?? []);
 
 	// Dev-server states per session, from the monitor's cached poll (cheap), for
 	// the header chip and the sidebar dots (issue #32). The Servers tab fetches
@@ -147,56 +176,8 @@
 		sidebarOpen = false;
 	}
 
-	let delTarget = $state<DeckSession | null>(null);
-	let delWorktree = $state(true);
-	let delBranch = $state(true);
-	// Deletes run in the background, so several can be in flight at once; track the
-	// set of ids currently cleaning up rather than a single global lock (issue #59).
-	const deletingIds = new SvelteSet<string>();
-	let deleteError = $state<string | null>(null);
-
-	function requestDelete(s: DeckSession) {
-		if (deletingIds.has(s.id)) return;
-		if (s.id === session.id) return; // never delete the active session
-		if (s.worktree) {
-			delWorktree = true;
-			delBranch = s.worktree.createdBranch;
-			delTarget = s;
-			return;
-		}
-		if (!confirm(`Kill and remove "${s.title}"?`)) return;
-		doDelete(s, {});
-	}
-
-	async function doDelete(
-		s: DeckSession,
-		opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
-	) {
-		if (deletingIds.has(s.id)) return;
-		delTarget = null; // close the confirm modal immediately; cleanup runs in the background
-		deletingIds.add(s.id);
-		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(s.id)}`, {
-				method: 'DELETE',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(opts)
-			});
-			if (!res.ok) throw new Error(`delete failed: ${res.status}`);
-			// Delete succeeded: clear any prior failure, then reconcile the list. A
-			// refresh failure is transient (the 5s poll catches up) and must not be
-			// reported as a delete failure.
-			deleteError = null;
-			try {
-				await refresh();
-			} catch {
-				// ignore; the poll will drop the row
-			}
-		} catch {
-			deleteError = `Couldn't remove "${s.title}".`;
-		} finally {
-			deletingIds.delete(s.id);
-		}
-	}
+	// Never delete the active session.
+	const del = createDeleteFlow(refresh, (s) => s.id !== session.id);
 
 	// Resizable desktop sidebar (issue #52). SSR renders the default so it matches
 	// the old lg:w-56; onMount hydrates the persisted width. The drag/keyboard math
@@ -284,10 +265,10 @@
 		{sessions}
 		{serverStates}
 		currentId={session.id}
-		{deletingIds}
+		deletingIds={del.deletingIds}
 		onQuickAdd={quickAdd}
 		onShellHere={shellHere}
-		onDelete={requestDelete}
+		onDelete={del.request}
 	/>
 {/snippet}
 
@@ -326,12 +307,12 @@
 	</div>
 
 	<div class="flex h-full min-w-0 flex-1 flex-col pt-1">
-		{#if deleteError}
+		{#if del.error}
 			<div class="alert alert-error mb-2 py-2 text-sm" role="alert">
-				<span class="flex-1 break-words">{deleteError}</span>
+				<span class="flex-1 break-words">{del.error}</span>
 				<button
 					class="btn btn-ghost btn-xs"
-					onclick={() => (deleteError = null)}
+					onclick={() => (del.error = null)}
 					aria-label="Dismiss error"
 				>
 					<X size={14} />
@@ -393,6 +374,9 @@
 				<RunButton {session} serverState={serverChip} onRefresh={refresh} />
 				<ServerChip state={serverChip} count={myServers.length} />
 			{/if}
+			{#if session.kind !== 'shell' && sessionWorkflows.length && !runActive}
+				<WorkflowMenu sessionId={session.id} workflows={sessionWorkflows} onChange={refresh} />
+			{/if}
 			{#if session.kind !== 'shell'}
 				<ModelMenu
 					id={session.id}
@@ -409,6 +393,10 @@
 				</span>
 			{/if}
 		</div>
+
+		{#if liveRun}
+			<WorkflowProgress run={liveRun} sessionId={session.id} onChange={refresh} />
+		{/if}
 
 		{#if gitRepo || hasServers}
 			<div class="join mb-2 shrink-0 self-start">
@@ -491,46 +479,4 @@
 
 <NewSessionModal bind:open={modalOpen} {preset} />
 
-{#if delTarget}
-	<div class="modal modal-open" role="dialog">
-		<div class="modal-box max-w-sm">
-			<h3 class="mb-2 text-lg font-semibold">Remove "{delTarget.title}"</h3>
-			<p class="mb-3 text-sm opacity-70">
-				Kills the session. This session lives in a git worktree on branch
-				<span class="font-mono">{delTarget.worktree?.branch}</span>.
-			</p>
-			<div class="space-y-2">
-				<label class="label cursor-pointer justify-start gap-2">
-					<input type="checkbox" class="checkbox checkbox-sm" bind:checked={delWorktree} />
-					<span>Delete the worktree</span>
-				</label>
-				<label class="label cursor-pointer justify-start gap-2">
-					<input
-						type="checkbox"
-						class="checkbox checkbox-sm"
-						bind:checked={delBranch}
-						disabled={!delWorktree || !delTarget.worktree?.createdBranch}
-					/>
-					<span>
-						Delete the branch
-						{#if !delTarget.worktree?.createdBranch}
-							<span class="opacity-50">(existing branch, kept)</span>
-						{/if}
-					</span>
-				</label>
-			</div>
-			<div class="modal-action">
-				<button class="btn" onclick={() => (delTarget = null)}>Cancel</button>
-				<button
-					class="btn btn-error"
-					onclick={() =>
-						delTarget &&
-						doDelete(delTarget, { deleteWorktree: delWorktree, deleteBranch: delBranch })}
-				>
-					Remove
-				</button>
-			</div>
-		</div>
-		<button class="modal-backdrop" onclick={() => (delTarget = null)} aria-label="close"></button>
-	</div>
-{/if}
+<DeleteSessionModal flow={del} />

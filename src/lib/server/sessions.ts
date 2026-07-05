@@ -20,6 +20,8 @@ import {
 } from './tmux';
 import { agentTurnRunning, agentStop } from './agents/dispatch';
 import { hasPendingAsk } from './ask';
+import { cancelRun, runActive, workflowAskPending } from './workflows';
+import { viewRun } from '$lib/workflows-core';
 import { stopSessionServers } from './devservers';
 import { SERVER_TMUX_PREFIX } from './devservers-core';
 import { removeWorktree } from './git';
@@ -83,7 +85,14 @@ function shellView(s: DeckSession, tmuxSessions: TmuxSession[]): DeckSession {
 
 function storedView(s: DeckSession, tmuxSessions: TmuxSession[]): DeckSession {
 	return isAgentKind(s.kind)
-		? { ...s, status: agentStatus(s), awaitingInput: hasPendingAsk(s.id) }
+		? {
+				...s,
+				status: agentStatus(s),
+				// blocked on the MCP ask or on a workflow ask step — both bucket
+				// under "Needs attention" and both resolve through /answer.
+				awaitingInput: hasPendingAsk(s.id) || workflowAskPending(s.id),
+				workflowRun: viewRun(s.workflowRun, runActive(s.id))
+			}
 		: shellView(s, tmuxSessions);
 }
 
@@ -136,7 +145,13 @@ function backfillPr(id: string, alreadyBackfilled?: boolean): SessionPR | undefi
 // one-time PR backfill so the header chip lights up on open.
 function agentSessionView(id: string, stored: DeckSession): DeckSession {
 	const pr = stored.pr ?? backfillPr(id, stored.prBackfilled);
-	return { ...stored, status: agentStatus(stored), pr };
+	return {
+		...stored,
+		status: agentStatus(stored),
+		pr,
+		awaitingInput: hasPendingAsk(id) || workflowAskPending(id),
+		workflowRun: viewRun(stored.workflowRun, runActive(id))
+	};
 }
 
 export async function getSession(id: string): Promise<DeckSession | undefined> {
@@ -202,6 +217,33 @@ export async function createSession(input: {
 	return session;
 }
 
+// Kill whatever the stored session is running: the workflow run, agent turn,
+// and dev servers (issue #32) for agent kinds; the tmux session for shells.
+async function teardownSession(stored: DeckSession): Promise<void> {
+	if (isAgentKind(stored.kind)) {
+		if (runActive(stored.id)) cancelRun(stored.id);
+		agentStop(stored.id);
+		await stopSessionServers(stored.id).catch(() => {});
+	} else if (stored.tmuxName && (await hasTmuxSession(stored.tmuxName))) {
+		await killTmuxSession(stored.tmuxName);
+	}
+}
+
+async function removeSessionWorktree(
+	stored: DeckSession,
+	opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
+): Promise<void> {
+	if (!opts.deleteWorktree || !stored.worktree) return;
+	try {
+		await removeWorktree(stored.worktree.repo, stored.cwd, {
+			deleteBranch: opts.deleteBranch && stored.worktree.createdBranch,
+			branch: stored.worktree.branch
+		});
+	} catch {
+		// leave the stored session removed even if worktree cleanup fails
+	}
+}
+
 export async function deleteSession(
 	id: string,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean } = {}
@@ -213,24 +255,9 @@ export async function deleteSession(
 		return;
 	}
 	const stored = getStoredSession(id);
-	if (stored && isAgentKind(stored.kind)) {
-		agentStop(id);
-		// Tear down any dev servers running on this session's worktree (issue #32).
-		await stopSessionServers(id).catch(() => {});
-	} else if (stored?.tmuxName && (await hasTmuxSession(stored.tmuxName))) {
-		await killTmuxSession(stored.tmuxName);
+	if (stored) {
+		await teardownSession(stored);
+		await removeSessionWorktree(stored, opts);
 	}
-
-	if (opts.deleteWorktree && stored?.worktree) {
-		try {
-			await removeWorktree(stored.worktree.repo, stored.cwd, {
-				deleteBranch: opts.deleteBranch && stored.worktree.createdBranch,
-				branch: stored.worktree.branch
-			});
-		} catch {
-			// leave the stored session removed even if worktree cleanup fails
-		}
-	}
-
 	removeSession(id);
 }

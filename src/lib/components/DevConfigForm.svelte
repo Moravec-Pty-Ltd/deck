@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Project, DevConfig, ServerSpec, SetupStep, PortSpec } from '$lib/types';
+	import { createProjectSaver, move } from './project-form.svelte';
 	import { Plus, Trash2, ChevronUp, ChevronDown, Check, Server } from '@lucide/svelte';
 
 	let { project, onchanged }: { project: Project; onchanged: () => void } = $props();
@@ -10,9 +11,7 @@
 	let servers = $state<ServerSpec[]>(cloneServers(project.dev?.servers));
 
 	let open = $state(false);
-	let busy = $state(false);
-	let saved = $state(false);
-	let errorMsg = $state('');
+	const saver = createProjectSaver(() => onchanged());
 
 	function cloneSteps(steps: SetupStep[] | undefined): SetupStep[] {
 		return (steps ?? []).map((s) => ({ label: s.label, run: s.run, cwd: s.cwd ?? '' }));
@@ -42,14 +41,6 @@
 	}
 
 	// --- ordered step lists (shared setup, or a server's own setup) ---
-	function move<T>(list: T[], i: number, delta: number): T[] {
-		const j = i + delta;
-		if (j < 0 || j >= list.length) return list;
-		const next = [...list];
-		[next[i], next[j]] = [next[j], next[i]];
-		return next;
-	}
-
 	function addStep(list: SetupStep[]): SetupStep[] {
 		return [...list, { label: '', run: '', cwd: '' }];
 	}
@@ -110,32 +101,14 @@
 		};
 	}
 
-	async function save() {
-		busy = true;
-		errorMsg = '';
-		saved = false;
-		try {
-			const res = await fetch('/api/projects', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					path: project.path,
-					name: project.name,
-					template: project.template,
-					lastBase: project.lastBase,
-					dev: buildDev()
-				})
-			});
-			if (!res.ok) {
-				errorMsg = (await res.json().catch(() => ({})))?.message ?? 'failed to save';
-				return;
-			}
-			saved = true;
-			setTimeout(() => (saved = false), 1500);
-			onchanged();
-		} finally {
-			busy = false;
-		}
+	function save() {
+		saver.save({
+			path: project.path,
+			name: project.name,
+			template: project.template,
+			lastBase: project.lastBase,
+			dev: buildDev()
+		});
 	}
 </script>
 
@@ -148,8 +121,8 @@
 
 	{#if open}
 		<div class="mt-2 space-y-4 rounded-box border border-dashed border-base-300 p-3">
-			{#if errorMsg}
-				<div class="alert alert-error py-1 text-xs">{errorMsg}</div>
+			{#if saver.errorMsg}
+				<div class="alert alert-error py-1 text-xs">{saver.errorMsg}</div>
 			{/if}
 
 			<p class="text-[11px] opacity-50">
@@ -255,8 +228,8 @@
 			</div>
 
 			<div class="flex items-center justify-end gap-2">
-				{#if saved}<span class="flex items-center gap-1 text-xs text-success"><Check size={13} /> saved</span>{/if}
-				<button class="btn btn-sm btn-primary" disabled={busy} onclick={save}>Save dev config</button>
+				{#if saver.saved}<span class="flex items-center gap-1 text-xs text-success"><Check size={13} /> saved</span>{/if}
+				<button class="btn btn-sm btn-primary" disabled={saver.busy} onclick={save}>Save dev config</button>
 			</div>
 		</div>
 	{/if}
