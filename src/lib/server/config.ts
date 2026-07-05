@@ -66,6 +66,18 @@ export function readJson<T>(file: string, fallback: T): T {
 	}
 }
 
+// A cheap freshness token for a data file: its last-modified time in ms, or null
+// when the file doesn't exist yet. A cached reader compares this against the mtime
+// it last read at to notice that another process (e.g. a second deck server
+// sharing ~/.deck) rewrote the file, without re-parsing it on every access.
+export function fileMtimeMs(file: string): number | null {
+	try {
+		return fs.statSync(path.join(dataDir, file)).mtimeMs;
+	} catch {
+		return null;
+	}
+}
+
 // `mode` (e.g. 0o600 for secrets) is applied to the temp file and survives the
 // rename. Open with the mode up front so the file never exists world-readable,
 // then chmod as well in case the temp path pre-existed with a looser mode
