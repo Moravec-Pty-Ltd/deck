@@ -67,9 +67,10 @@ export function readJson<T>(file: string, fallback: T): T {
 }
 
 // A cheap freshness token for a data file: its last-modified time in ms, or null
-// when the file doesn't exist yet. A cached reader compares this against the mtime
-// it last read at to notice that another process (e.g. a second deck server
-// sharing ~/.deck) rewrote the file, without re-parsing it on every access.
+// if it can't be stat'd (the file doesn't exist yet, or a transient IO error). A
+// cached reader compares this against the mtime it last read at to notice that
+// another process (e.g. a second deck server sharing ~/.deck) rewrote the file,
+// without re-parsing it on every access.
 export function fileMtimeMs(file: string): number | null {
 	try {
 		return fs.statSync(path.join(dataDir, file)).mtimeMs;

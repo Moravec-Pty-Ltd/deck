@@ -139,6 +139,27 @@ describe('store session cache', () => {
 		}
 	});
 
+	it('keeps a warm cache when the sessions file can not be stat-ed', () => {
+		saveSession(shell('warm'));
+		listStoredSessions(); // warm the cache
+		// Simulate an IO blip on ~/.deck: both the stat and the re-read fail. The
+		// warm cache must survive rather than collapse to an empty list that a later
+		// mutation would persist.
+		const statSpy = vi.spyOn(fs, 'statSync').mockImplementation(() => {
+			throw new Error('EIO');
+		});
+		const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+			throw new Error('EIO');
+		});
+		try {
+			expect(getStoredSession('warm')).toMatchObject({ id: 'warm' });
+		} finally {
+			statSpy.mockRestore();
+			readSpy.mockRestore();
+			removeSession('warm');
+		}
+	});
+
 	it('busts the list memo on a running flip without writing', () => {
 		saveSession(shell('m1'));
 		const hook = vi.fn();
