@@ -18,7 +18,7 @@
 	import { ISSUE_BADGE } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
-	import { createDeleteFlow } from '$lib/delete-flow.svelte';
+	import { DeleteFlow } from '$lib/delete-flow.svelte';
 	import { ArrowLeft, Bot, Terminal, Menu, X, Ticket, TriangleAlert } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import {
@@ -180,7 +180,7 @@
 	}
 
 	// Never delete the active session.
-	const del = createDeleteFlow(refresh, (s) => s.id !== session.id);
+	const del = new DeleteFlow(refresh, (s) => s.id !== session.id);
 
 	// Resizable desktop sidebar (issue #52). SSR renders the default so it matches
 	// the old lg:w-56; onMount hydrates the persisted width. The drag/keyboard math

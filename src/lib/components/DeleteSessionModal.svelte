@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { createDeleteFlow } from '$lib/delete-flow.svelte';
+	import type { DeleteFlow } from '$lib/delete-flow.svelte';
 
 	// Confirm modal for deleting a worktree session, shared by the home list and
 	// the session view. All state lives on the delete flow (see delete-flow.svelte.ts).
-	let { flow }: { flow: ReturnType<typeof createDeleteFlow> } = $props();
+	let { flow }: { flow: DeleteFlow } = $props();
 </script>
 
 {#if flow.target}
