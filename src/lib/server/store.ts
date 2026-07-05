@@ -1,5 +1,5 @@
 import type { AgentKind, DeckSession, DeckSettings, IssueSource, ModelChoice, Project } from '$lib/types';
-import { readJson, writeJson } from './config';
+import { fileMtimeMs, readJson, writeJson } from './config';
 import { invalidateIssues } from './issues/cache';
 import { invalidatePrs } from './prs';
 import { DEMO, demoProjects } from './demo';
@@ -15,6 +15,13 @@ const SETTINGS_FILE = 'settings.json';
 // which the session list and monitor hit constantly (see #9).
 let sessionsCache: DeckSession[] | null = null;
 let sessionsById: Map<string, DeckSession> | null = null;
+// The mtime of sessions.json when the cache above was populated. deck assumes a
+// single instance, but a second server sharing ~/.deck (most often a stray dev
+// server left running in an old worktree) rewrites the whole file. If the mtime
+// moved on, our cache is stale, so we re-read before serving it. Otherwise the
+// next mutation would write our stale array back and drop the sessions the other
+// server added (the lost-update race in #109).
+let sessionsMtime: number | null = null;
 
 // sessions.ts hooks its own list memo here so any store write also drops it,
 // without store.ts importing sessions.ts (that would be an import cycle).
@@ -24,9 +31,11 @@ export function setSessionsMutatedHook(cb: () => void) {
 }
 
 function loadSessions(): DeckSession[] {
-	if (!sessionsCache) {
+	const mtime = fileMtimeMs(SESSIONS_FILE);
+	if (!sessionsCache || mtime !== sessionsMtime) {
 		sessionsCache = readJson<DeckSession[]>(SESSIONS_FILE, []);
 		sessionsById = new Map(sessionsCache.map((s) => [s.id, s]));
+		sessionsMtime = mtime;
 	}
 	return sessionsCache;
 }
@@ -35,6 +44,7 @@ function writeSessions(sessions: DeckSession[]) {
 	writeJson(SESSIONS_FILE, sessions);
 	sessionsCache = null;
 	sessionsById = null;
+	sessionsMtime = null;
 	onSessionsMutated?.();
 }
 
