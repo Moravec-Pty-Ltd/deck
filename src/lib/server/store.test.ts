@@ -114,27 +114,29 @@ describe('store session cache', () => {
 	it('re-reads before a mutation so a concurrent server write is not clobbered', () => {
 		// Prime this process's cache with one session.
 		saveSession(shell('own'));
-		listStoredSessions();
+		try {
+			listStoredSessions();
 
-		// A second deck server sharing ~/.deck adds a session by rewriting the file
-		// out from under us. utimes forces a newer mtime so the store detects it even
-		// if both writes land in the same millisecond.
-		const merged = [...readFile(), shell('external')];
-		fs.writeFileSync(sessionsFile, JSON.stringify(merged));
-		const later = new Date(Date.now() + 1000);
-		fs.utimesSync(sessionsFile, later, later);
+			// A second deck server sharing ~/.deck adds a session by rewriting the file
+			// out from under us. utimes forces a newer mtime so the store detects it
+			// even if both writes land in the same millisecond.
+			const merged = [...readFile(), shell('external')];
+			fs.writeFileSync(sessionsFile, JSON.stringify(merged));
+			const later = new Date(Date.now() + 1000);
+			fs.utimesSync(sessionsFile, later, later);
 
-		// Our next mutation must merge onto the current file, not our stale cache.
-		updateSession('own', { title: 'renamed' });
+			// Our next mutation must merge onto the current file, not our stale cache.
+			updateSession('own', { title: 'renamed' });
 
-		const after = readFile();
-		const ids = after.map((s) => s.id);
-		expect(ids).toContain('external'); // the concurrent server's session survived
-		expect(ids).toContain('own');
-		expect(after.find((s) => s.id === 'own')?.title).toBe('renamed');
-
-		removeSession('own');
-		removeSession('external');
+			const after = readFile();
+			const ids = after.map((s) => s.id);
+			expect(ids).toContain('external'); // the concurrent server's session survived
+			expect(ids).toContain('own');
+			expect(after.find((s) => s.id === 'own')?.title).toBe('renamed');
+		} finally {
+			removeSession('own');
+			removeSession('external');
+		}
 	});
 
 	it('busts the list memo on a running flip without writing', () => {
