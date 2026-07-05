@@ -6,6 +6,7 @@ import { listSessions, createSession } from '$lib/server/sessions';
 import { createWorktree, fetchPullRef, isGitRepo } from '$lib/server/git';
 import { isFlagSafe } from '$lib/server/agents/args';
 import { agentSend } from '$lib/server/agents/dispatch';
+import { appendEvent } from '$lib/server/claude';
 import { listProjects, updateProject, rememberModel, readSecret } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
 import { resolveWithinProjects, projectForPath } from '$lib/server/confine';
@@ -312,6 +313,16 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (isAgentKind(kind)) rememberPickedModel(startCwd, kind, model, provider);
 
-	void maybeDispatch(session, kind, asStr(prompt), picked, workflow).catch(() => {});
+	// Fire-and-forget, but not silent: a failed dispatch (e.g. the workflow
+	// refusing to start) lands on the transcript so the fresh session says why
+	// nothing is happening.
+	void maybeDispatch(session, kind, asStr(prompt), picked, workflow).catch((e) => {
+		console.error(`[deck] first-turn dispatch failed for ${session.id}:`, e);
+		appendEvent(session.id, {
+			type: 'deck.error',
+			text: e instanceof Error ? e.message : 'failed to start the first turn',
+			ts: Date.now()
+		});
+	});
 	return json(session, { status: 201 });
 };

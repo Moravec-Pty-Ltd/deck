@@ -11,8 +11,9 @@ import { contextFromSession } from '$lib/placeholders';
 // here" (e.g. finishing an existing worktree) and the progress strip's
 // cancel/dismiss button.
 
-// The requested workflow, resolved against the session's project. A
-// custom-cwd session has no project, so only the synthesized pair resolves.
+// The requested workflow, resolved against the session's project. The legacy
+// synthesized pair never resolves (see workflowForPath), so a crafted request
+// can't attach run state to the plain new-session path.
 function workflowFor(session: DeckSession, workflowId: unknown): Workflow {
 	if (typeof workflowId !== 'string' || !workflowId) error(400, 'workflowId required');
 	const workflow = workflowForPath(session.cwd, workflowId);
