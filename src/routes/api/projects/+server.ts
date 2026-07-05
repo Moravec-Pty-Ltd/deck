@@ -20,14 +20,13 @@ function resolveDev(body: { dev?: unknown }, existing: DevConfig | undefined): D
 	}
 }
 
-// Resolve the optional group: trim a provided value (blank clears it), or carry
-// the existing project's group across a save that omits it (e.g. the dev-config
-// form), mirroring how sources/dev are preserved.
-function resolveGroup(body: { group?: unknown }, existing: string | undefined): string | undefined {
-	if (body.group === undefined) return existing;
-	// Reject a malformed group rather than silently clearing the stored one.
-	if (typeof body.group !== 'string') error(400, 'group must be a string');
-	return body.group.trim() || undefined;
+// Carry an optional string field across a save that omits it, so a form that
+// doesn't own the field can't clear it; a provided blank clears, and a
+// malformed value is a 400 rather than a silent wipe.
+function carryStr(v: unknown, existing: string | undefined, label: string): string | undefined {
+	if (v === undefined) return existing;
+	if (typeof v !== 'string') error(400, `${label} must be a string`);
+	return v.trim() || undefined;
 }
 
 // An empty workflows list is stored as absent, falling back to the legacy
@@ -48,15 +47,6 @@ function resolveWorkflowsField(
 	} catch (e) {
 		error(400, e instanceof Error ? e.message : 'invalid workflows');
 	}
-}
-
-// Carry the existing review prompt across a save that omits it (e.g. the
-// dev-config or sources forms), mirroring how group/sources/dev are preserved; a
-// provided blank clears it.
-function resolveReviewPrompt(body: { reviewPrompt?: unknown }, existing: string | undefined): string | undefined {
-	if (body.reviewPrompt === undefined) return existing;
-	if (typeof body.reviewPrompt !== 'string') error(400, 'reviewPrompt must be a string');
-	return body.reviewPrompt.trim() || undefined;
 }
 
 export const GET: RequestHandler = async () => {
@@ -80,17 +70,17 @@ function isDirectory(dir: string): boolean {
 
 // Build the stored project from the request. Sources are managed through
 // /api/projects/sources, never sent in this body, so carry the existing
-// project's sources across a name/template/base edit (group, reviewPrompt,
-// dev, and workflows likewise carry when omitted; see their resolvers).
+// project's sources across an edit; every optional field likewise carries
+// when omitted, so a form only overwrites what it actually sends.
 function buildProject(body: Record<string, unknown>, dir: string): Project {
 	const existing: Partial<Project> = listProjects().find((p) => p.path === dir) ?? {};
 	return {
 		name: optStr(body.name) || path.basename(dir),
 		path: dir,
-		group: resolveGroup(body, existing.group),
-		template: optStr(body.template),
-		reviewPrompt: resolveReviewPrompt(body, existing.reviewPrompt),
-		lastBase: optStr(body.lastBase),
+		group: carryStr(body.group, existing.group, 'group'),
+		template: carryStr(body.template, existing.template, 'template'),
+		reviewPrompt: carryStr(body.reviewPrompt, existing.reviewPrompt, 'reviewPrompt'),
+		lastBase: carryStr(body.lastBase, existing.lastBase, 'lastBase'),
 		sources: existing.sources,
 		dev: resolveDev(body, existing.dev),
 		workflows: resolveWorkflowsField(body, existing.workflows)

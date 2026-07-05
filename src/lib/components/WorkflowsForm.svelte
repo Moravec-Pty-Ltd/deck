@@ -137,16 +137,8 @@
 	function save() {
 		localError = validationError();
 		if (localError) return;
-		// template/lastBase resolve from the body on this endpoint, so send the
-		// current values or the save would clear them (sources/group/reviewPrompt
-		// carry server-side).
-		saver.save({
-			path: project.path,
-			name: project.name,
-			template: project.template,
-			lastBase: project.lastBase,
-			workflows: buildWorkflows()
-		});
+		// Only the fields this form owns: the API carries everything omitted.
+		saver.save({ path: project.path, name: project.name, workflows: buildWorkflows() });
 	}
 </script>
 
