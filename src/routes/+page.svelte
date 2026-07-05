@@ -3,7 +3,7 @@
 	import { relativeTime, shortPath } from '$lib/time';
 	import { groupSessions } from '$lib/groups';
 	import { createCollapseState } from '$lib/collapse.svelte';
-	import { createDeleteFlow } from '$lib/delete-flow.svelte';
+	import { DeleteFlow } from '$lib/delete-flow.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, ChevronRight, ChevronDown, X } from '@lucide/svelte';
@@ -66,7 +66,7 @@
 	// independently from the sidebar's (no auto-expand).
 	const collapse = createCollapseState('deck:home:expandedGroups');
 
-	const del = createDeleteFlow(refresh);
+	const del = new DeleteFlow(refresh);
 
 	// Status as a quiet dot + label. Saturated colour is reserved for the states
 	// that want attention (running = brand orange, error = red); idle and dead stay

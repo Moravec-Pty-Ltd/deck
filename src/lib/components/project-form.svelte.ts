@@ -11,6 +11,10 @@ export function move<T>(list: T[], i: number, delta: number): T[] {
 	return next;
 }
 
+async function saveError(res: Response): Promise<string> {
+	return (await res.json().catch(() => ({})))?.message ?? 'failed to save';
+}
+
 // Save-state for a config form: `save(body)` POSTs the project patch, tracks
 // busy/saved/errorMsg, and reports success back through `onsaved`.
 export function createProjectSaver(onsaved: () => void) {
@@ -29,12 +33,16 @@ export function createProjectSaver(onsaved: () => void) {
 				body: JSON.stringify(body)
 			});
 			if (!res.ok) {
-				errorMsg = (await res.json().catch(() => ({})))?.message ?? 'failed to save';
+				errorMsg = await saveError(res);
 				return;
 			}
 			saved = true;
 			setTimeout(() => (saved = false), 1500);
 			onsaved();
+		} catch {
+			// a rejected fetch (offline, network drop) must surface, not become an
+			// unhandled rejection with no feedback
+			errorMsg = 'failed to save';
 		} finally {
 			busy = false;
 		}
