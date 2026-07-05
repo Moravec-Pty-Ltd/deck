@@ -6,10 +6,13 @@ import type { Project, Workflow, WorkflowRun, WorkflowRunStep, WorkflowStep } fr
 // and importable from the browser (the new-session modal resolves workflows
 // client-side); the IO-heavy runner lives in server/workflows.ts.
 
-// Step names become [step:<name>] tokens, so keep them bracket-free; ids ride
-// in API bodies and DOM keys, so keep them to a safe slug charset.
-const NAME_RE = /^[^[\]]+$/;
+// Step names become [step:<name>] tokens and object keys, so keep them
+// bracket- and newline-free, and reject the prototype-polluting reserved
+// names (see assertUnique); ids ride in API bodies and DOM keys, so keep
+// them to a safe slug charset.
+const NAME_RE = /^[^[\]\n\r]+$/;
 const ID_RE = /^[\w-]+$/;
+const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 
 const runStepSchema = z.object({
 	type: z.literal('run'),
@@ -62,6 +65,7 @@ function assertUnique(workflows: Workflow[]) {
 		ids.add(w.id);
 		const names = new Set<string>();
 		for (const s of w.steps) {
+			if (RESERVED_NAMES.has(s.name)) throw new Error(`reserved step name: ${s.name}`);
 			if (names.has(s.name)) throw new Error(`duplicate step name in "${w.name}": ${s.name}`);
 			names.add(s.name);
 		}
@@ -120,9 +124,12 @@ export function firstAgentPrompt(workflow: Workflow): string {
 // Substitute [step:<name>] tokens with captured step outputs. Runs *after*
 // expandPlaceholders so text inside an inserted output is never re-expanded
 // (mirroring that function's single-pass guarantee). A step that hasn't run
-// resolves to '' like any other empty token.
+// resolves to '' like any other empty token; own-property lookup keeps
+// prototype members ([step:constructor]) from leaking in.
 export function expandStepTokens(text: string, outputs: Record<string, string>): string {
-	return text.replace(/\[step:([^\]]+)\]/g, (_, name: string) => outputs[name] ?? '');
+	return text.replace(/\[step:([^\]]+)\]/g, (_, name: string) =>
+		Object.hasOwn(outputs, name) ? outputs[name] : ''
+	);
 }
 
 // POSIX single-quote a value for interpolation into a run/gate command.

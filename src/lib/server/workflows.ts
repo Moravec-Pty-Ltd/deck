@@ -410,7 +410,9 @@ export function startRun(
 		epoch: inst.epoch,
 		cwd,
 		ctx,
-		outputs: {},
+		// null-prototype: step names key this map, so a name that slips past
+		// validation must not reach Object.prototype (defense in depth)
+		outputs: Object.create(null),
 		attempts: {},
 		promptOverride: promptOverride?.trim() || undefined
 	};

@@ -55,6 +55,13 @@ describe('parseWorkflows', () => {
 		expect(() => parseWorkflows([{ ...devWorkflow, steps }])).toThrow();
 	});
 
+	it('rejects reserved and multi-line step names', () => {
+		for (const name of ['__proto__', 'constructor', 'prototype', 'a\nb']) {
+			const steps: WorkflowStep[] = [{ type: 'run', name, command: 'true' }];
+			expect(() => parseWorkflows([{ ...devWorkflow, steps }])).toThrow();
+		}
+	});
+
 	it('rejects an unknown step type and bad retries', () => {
 		expect(() =>
 			parseWorkflows([{ ...devWorkflow, steps: [{ type: 'loop', name: 'x' }] }])
@@ -107,6 +114,10 @@ describe('expandStepTokens', () => {
 	it('does not re-expand tokens inside an inserted output', () => {
 		const out = expandStepTokens('[step:a]', { a: 'literal [step:b]', b: 'X' });
 		expect(out).toBe('literal [step:b]');
+	});
+
+	it('never leaks prototype members through a step token', () => {
+		expect(expandStepTokens('[step:constructor][step:__proto__]', {})).toBe('');
 	});
 });
 
