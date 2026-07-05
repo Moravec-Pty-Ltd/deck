@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { agentSessionOr404, objectBody } from '$lib/server/http';
 import { resolveAsk } from '$lib/server/ask';
-import { resolveWorkflowAsk, WORKFLOW_ASK_PREFIX } from '$lib/server/workflows';
+import { resolveWorkflowAsk } from '$lib/server/workflows';
 import { recordAnswer } from '$lib/server/claude';
 
 // Persist the picked options against the ask they answer, when the client sent
@@ -13,13 +13,12 @@ function recordIfAnswers(id: string, body: Record<string, unknown>) {
 	}
 }
 
-// Resolve whichever pending ask the answer targets. Only an answer aimed at a
-// workflow checkpoint (wfask-prefixed id) may resolve one, so a click on a
-// stale MCP ask card can't unblock a run with unrelated text.
+// Resolve whichever pending ask the answer targets. The workflow path matches
+// on the exact checkpoint id, so a click on a stale ask card (MCP or an old
+// checkpoint) can't unblock the current run with unrelated text.
 function resolveAnswer(id: string, body: Record<string, unknown>, text: string): boolean {
 	if (resolveAsk(id, text)) return true;
-	const target = String(body.toolUseId ?? '');
-	return target.startsWith(WORKFLOW_ASK_PREFIX) && resolveWorkflowAsk(id, text);
+	return resolveWorkflowAsk(id, String(body.toolUseId ?? ''), text);
 }
 
 // Answer a blocking ask: the MCP `ask` tool (claude only) or a workflow ask

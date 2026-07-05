@@ -5,6 +5,7 @@ import { expandPlaceholders, type PlaceholderContext } from '$lib/placeholders';
 import {
 	capOutput,
 	expandStepTokens,
+	isLegacyWorkflowId,
 	nextAfter,
 	resolveWorkflows,
 	retryPrompt,
@@ -28,8 +29,9 @@ interface ActiveRun {
 	epoch: number;
 	// the run/gate child currently executing, so cancel can kill it
 	child?: ChildProcess;
-	// resolves the pending ask step, so cancel (or /answer) can settle it
-	ask?: { resolve: (text: string) => void; reject: (err: Error) => void };
+	// resolves the pending ask step, so cancel (or /answer) can settle it;
+	// askId pins /answer to this exact checkpoint, not a stale card's
+	ask?: { askId: string; resolve: (text: string) => void; reject: (err: Error) => void };
 	// set by noteInterrupt when the user interrupts the in-flight agent turn,
 	// so the step reads as failed (pausing the run) instead of advancing on
 	// half-done work.
@@ -51,15 +53,18 @@ export function noteInterrupt(id: string): void {
 }
 
 // Resolve `workflowId` against the project owning `cwd` (a worktree maps back
-// to its registered project). Shared by the create-session and run-here routes.
+// to its registered project). Shared by the create-session and run-here
+// routes. The legacy synthesized pair is the plain new-session path, never a
+// startable run, so those ids resolve to nothing here.
 export function workflowForPath(cwd: string, workflowId: string): Workflow | undefined {
+	if (isLegacyWorkflowId(workflowId)) return undefined;
 	const project = listProjects().find((p) => p.path === projectForPath(cwd));
 	return resolveWorkflows(project).find((w) => w.id === workflowId);
 }
 
-// Ask-step ids carry this prefix so the /answer route can tell an answer
-// aimed at a workflow checkpoint from a click on a stale MCP ask card.
-export const WORKFLOW_ASK_PREFIX = 'wfask-';
+// Ask-step ids carry this prefix; /answer resolves a checkpoint only on an
+// exact askId match (see resolveWorkflowAsk).
+const WORKFLOW_ASK_PREFIX = 'wfask-';
 
 // Whether the session is blocked on a workflow ask step. Kept apart from
 // ask.ts's map: that one is tied to the claude process lifecycle (interrupt /
@@ -69,11 +74,13 @@ export function workflowAskPending(id: string): boolean {
 	return !!runs.get(id)?.ask;
 }
 
-// Resolve a pending workflow ask with the user's answer text. Returns false if
-// nothing was waiting (the /answer route then reports a stale click).
-export function resolveWorkflowAsk(id: string, text: string): boolean {
+// Resolve the pending workflow ask with the user's answer text, but only when
+// the answer targets that exact checkpoint (a click on a stale ask card, MCP
+// or workflow, must not unblock the run with unrelated text). Returns false
+// when nothing matching was waiting.
+export function resolveWorkflowAsk(id: string, askId: string, text: string): boolean {
 	const ask = runs.get(id)?.ask;
-	if (!ask) return false;
+	if (!ask || ask.askId !== askId) return false;
 	ask.resolve(text);
 	return true;
 }
@@ -164,6 +171,7 @@ function askStep(
 	});
 	return new Promise((resolve) => {
 		inst.ask = {
+			askId,
 			resolve: (text) => {
 				inst.ask = undefined;
 				resolve({ ok: true, output: text });
