@@ -32,7 +32,11 @@ export function setSessionsMutatedHook(cb: () => void) {
 
 function loadSessions(): DeckSession[] {
 	const mtime = fileMtimeMs(SESSIONS_FILE);
-	if (!sessionsCache || mtime !== sessionsMtime) {
+	// A null mtime means the file couldn't be stat'd (an IO blip on ~/.deck). Only
+	// a real, changed mtime is a staleness signal: don't let a failed stat evict a
+	// warm cache, or a follow-up readJson failure could replace it with an empty
+	// list that the next mutation writes back.
+	if (!sessionsCache || (mtime !== null && mtime !== sessionsMtime)) {
 		sessionsCache = readJson<DeckSession[]>(SESSIONS_FILE, []);
 		sessionsById = new Map(sessionsCache.map((s) => [s.id, s]));
 		sessionsMtime = mtime;
