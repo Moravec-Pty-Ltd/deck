@@ -37,6 +37,7 @@
 
 	let workflows = $state<EditWorkflow[]>(clone(project.workflows));
 	let open = $state(false);
+	let localError = $state('');
 	const saver = createProjectSaver(() => onchanged());
 
 	function blankStep(type: WorkflowStep['type'] = 'agent'): EditStep {
@@ -104,18 +105,40 @@
 	}
 
 	function buildWorkflows(): Workflow[] {
-		return workflows
-			.map((w) => ({
-				id: w.id,
-				name: w.name.trim(),
-				context: w.context,
-				steps: w.steps.map(cleanStep).filter((s): s is WorkflowStep => s !== null)
-			}))
-			.filter((w) => w.name && w.steps.length);
+		return workflows.map((w) => ({
+			id: w.id,
+			name: w.name.trim(),
+			context: w.context,
+			steps: w.steps.map(cleanStep).filter((s): s is WorkflowStep => s !== null)
+		}));
+	}
+
+	// Reject a save that would silently drop what's on screen: a half-filled
+	// step must be completed or removed, never quietly deleted by the filter.
+	function validationError(): string {
+		for (const w of workflows) {
+			if (!w.name.trim()) return 'every workflow needs a name';
+			for (const s of w.steps) {
+				if (!cleanStep(s)) return `incomplete ${s.type} step in "${w.name.trim()}"`;
+			}
+			if (!w.steps.length) return `"${w.name.trim()}" needs at least one step`;
+		}
+		return '';
 	}
 
 	function save() {
-		saver.save({ path: project.path, name: project.name, workflows: buildWorkflows() });
+		localError = validationError();
+		if (localError) return;
+		// template/lastBase resolve from the body on this endpoint, so send the
+		// current values or the save would clear them (sources/group/reviewPrompt
+		// carry server-side).
+		saver.save({
+			path: project.path,
+			name: project.name,
+			template: project.template,
+			lastBase: project.lastBase,
+			workflows: buildWorkflows()
+		});
 	}
 </script>
 
@@ -128,14 +151,16 @@
 
 	{#if open}
 		<div class="mt-2 space-y-4 rounded-box border border-dashed border-base-300 p-3">
-			{#if saver.errorMsg}
-				<div class="alert alert-error py-1 text-xs">{saver.errorMsg}</div>
+			{#if localError || saver.errorMsg}
+				<div class="alert alert-error py-1 text-xs">{localError || saver.errorMsg}</div>
 			{/if}
 
 			<p class="text-[11px] opacity-50">
 				Steps run in order in the session cwd. Prompts, commands, and questions take
 				{SESSION_PLACEHOLDERS} (pr context adds {REVIEW_PLACEHOLDERS}) plus
-				<code class="font-mono">[step:&lt;name&gt;]</code> for a previous step's output. A failed
+				<code class="font-mono">[step:&lt;name&gt;]</code> for a previous step's output. In
+				commands, token values are inserted single-quoted, so write
+				<code class="font-mono">--title [issue_title]</code> without extra quotes. A failed
 				gate re-runs the nearest agent step above it with the failure output (default 1 retry).
 				With no workflows configured, the default first prompt and review prompt above act as the
 				two built-in workflows.
