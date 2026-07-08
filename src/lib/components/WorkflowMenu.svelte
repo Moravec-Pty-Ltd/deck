@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Workflow } from '$lib/types';
-	import { dismissOnOutside } from '$lib/dismiss';
+	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { Play, Workflow as WorkflowIcon } from '@lucide/svelte';
 
 	// "Run workflow here" (issue #111): start one of the project's configured
@@ -44,12 +44,13 @@
 </script>
 
 <details class="dropdown dropdown-end" bind:open use:dismissOnOutside={() => (open = false)}>
-	<summary class="btn btn-ghost btn-sm shrink-0 gap-1" title="Run a workflow on this session">
+	<summary class="btn btn-ghost btn-xs shrink-0 gap-1" title="Run a workflow on this session">
 		<WorkflowIcon size={14} />
 		<span class="hidden sm:inline">Workflow</span>
 	</summary>
 	<div
 		class="dropdown-content z-20 mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1 text-sm shadow-lg"
+		use:keepInView
 	>
 		{#each workflows as w (w.id)}
 			<button

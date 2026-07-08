@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { SessionIssue } from '$lib/types';
 	import { ISSUE_BADGE } from '$lib/issues';
-	import { dismissOnOutside } from '$lib/dismiss';
+	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { Ticket } from '@lucide/svelte';
 
 	// Collapsed ticket chip for sessions with 2+ attached issues (issue #90): a
@@ -28,6 +28,7 @@
 
 	<ul
 		class="menu dropdown-content menu-sm z-20 mt-1 w-max rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg"
+		use:keepInView
 	>
 		{#each issues as issue (issue.source + ':' + issue.id)}
 			<li class={issue.url ? '' : 'menu-disabled'}>

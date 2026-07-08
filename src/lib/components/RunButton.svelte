@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { DeckSession, ServerRuntime, ServerState } from '$lib/types';
-	import { SERVER_LABEL } from '$lib/servers';
+	import { SERVER_BADGE, SERVER_LABEL } from '$lib/servers';
 	import {
 		fetchServers,
 		serverAction,
@@ -10,13 +10,19 @@
 		isInFlight,
 		type ServerAction
 	} from '$lib/servers-client';
-	import { Play, Square, RotateCw, ListRestart, ChevronDown, Loader2 } from '@lucide/svelte';
+	import { dismissOnOutside, keepInView } from '$lib/dismiss';
+	import { Play, Square, RotateCw, ListRestart, ChevronDown, Loader2, Server } from '@lucide/svelte';
 
 	// One-click dev-server control in the session header (issue #80, workstream 3).
 	// The button's look is driven by the aggregate `state` the page already polls,
 	// so this adds no interval; it fetches the server list only for the names/menu
 	// (on mount, when the menu opens, and after an action), and nudges the page to
 	// re-poll via onRefresh so the state reflects the action without a reload.
+	//
+	// Layout (issue #123): at sm+ it's the inline split control [Run|Stop][▾] and
+	// the ServerChip beside it shows status. On mobile the two collapse into a
+	// single dropdown — a compact server-status chip trigger whose menu carries
+	// Run/Stop plus the same secondary actions — to save header width.
 	let {
 		session,
 		serverState,
@@ -33,8 +39,8 @@
 	// A load failure while we still have nothing to show, kept apart from `err`
 	// (action failures) so an action error isn't wiped by a background refetch.
 	let loadErr = $state<string | null>(null);
-	let menuOpen = $state(false);
-	let menuEl = $state<HTMLDetailsElement>();
+	let menuOpen = $state(false); // sm+ caret menu
+	let mobileMenuOpen = $state(false); // mobile collapsed dropdown
 	let loadToken = 0;
 
 	const primary = $derived<ServerRuntime | undefined>(servers[0]);
@@ -89,6 +95,7 @@
 		err = null;
 		loadErr = null;
 		menuOpen = false;
+		mobileMenuOpen = false;
 		void refreshServers();
 	});
 
@@ -105,6 +112,7 @@
 		busy = true;
 		err = null;
 		menuOpen = false;
+		mobileMenuOpen = false;
 		try {
 			await serverAction(session.id, name, action);
 		} catch (e) {
@@ -122,31 +130,64 @@
 	}
 
 	// If the caret is no longer rendered (config change, the list briefly empties),
-	// drop the open flag so no dangling outside-click listener or stuck-open state
-	// survives the <details> unmounting.
+	// drop the open flag so no dangling <details> stays flagged open.
 	$effect(() => {
 		if (!showCaret) menuOpen = false;
 	});
 
-	// Close the menu on an outside click, and refresh its server states on open.
+	// Refresh the menu's server states whenever either dropdown opens; outside-click
+	// dismissal is handled by dismissOnOutside on each <details>.
 	$effect(() => {
-		if (!menuOpen) return;
-		void refreshServers();
-		function onDown(e: PointerEvent) {
-			if (menuEl && !menuEl.contains(e.target as Node)) menuOpen = false;
-		}
-		window.addEventListener('pointerdown', onDown, true);
-		return () => window.removeEventListener('pointerdown', onDown, true);
+		if (menuOpen || mobileMenuOpen) void refreshServers();
 	});
 </script>
 
+<!-- Secondary server actions, shared by the sm+ caret menu and the mobile menu. -->
+{#snippet secondaryActions()}
+	{#if primary && canStop(primary.state) && !isInFlight(primary.state)}
+		<li>
+			<button onclick={() => run(primary.name, 'restart')} disabled={busy}>
+				<RotateCw size={14} /> Restart
+			</button>
+		</li>
+	{/if}
+	{#if primary && !isInFlight(primary.state)}
+		<li>
+			<button onclick={() => run(primary.name, 'resetup')} disabled={busy}>
+				<ListRestart size={14} /> Re-run setup
+			</button>
+		</li>
+	{/if}
+	{#if others.length}
+		<li class="menu-title px-2 pt-1 text-xs opacity-60">Other servers</li>
+		{#each others as o (o.name)}
+			<li>
+				<button onclick={() => run(o.name, canStart(o.state) ? 'start' : 'stop')} disabled={busy}>
+					{#if canStart(o.state)}<Play size={14} />{:else}<Square size={14} />{/if}
+					<span class="min-w-0 flex-1 truncate">{o.name}</span>
+					<span class="shrink-0 text-xs opacity-60">{SERVER_LABEL[o.state]}</span>
+				</button>
+			</li>
+		{/each}
+	{/if}
+{/snippet}
+
 <span class="flex shrink-0 items-center gap-1">
 	{#if isInFlight(current)}
-		<button class="btn btn-xs gap-1" disabled aria-label={SERVER_LABEL[current]}>
+		<!-- sm+: disabled labelled button; mobile: a plain spinner status chip -->
+		<button class="btn btn-xs hidden gap-1 sm:inline-flex" disabled aria-label={SERVER_LABEL[current]}>
 			<Loader2 size={14} class="animate-spin" /> {SERVER_LABEL[current]}
 		</button>
+		<span
+			class="badge badge-sm gap-1 sm:hidden {SERVER_BADGE[current]}"
+			title="dev servers: {SERVER_LABEL[current]}"
+			aria-label={SERVER_LABEL[current]}
+		>
+			<Loader2 size={11} class="animate-spin" />
+		</span>
 	{:else}
-		<div class="join">
+		<!-- sm+: inline split control [Run|Stop][▾] -->
+		<div class="join hidden sm:inline-flex">
 			<button
 				class="btn join-item btn-xs gap-1 {mainTint}"
 				onclick={primaryClick}
@@ -163,7 +204,7 @@
 				{runningLike ? 'Stop' : 'Run'}
 			</button>
 			{#if showCaret}
-				<details bind:open={menuOpen} bind:this={menuEl} class="dropdown dropdown-end">
+				<details bind:open={menuOpen} class="dropdown dropdown-end" use:dismissOnOutside={() => (menuOpen = false)}>
 					<summary
 						class="btn join-item btn-xs list-none px-1 [&::-webkit-details-marker]:hidden"
 						aria-label="More server actions"
@@ -172,40 +213,43 @@
 					</summary>
 					<ul
 						class="dropdown-content menu menu-sm z-20 mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
+						use:keepInView
 					>
-						{#if primary && canStop(primary.state) && !isInFlight(primary.state)}
-							<li>
-								<button onclick={() => run(primary.name, 'restart')} disabled={busy}>
-									<RotateCw size={14} /> Restart
-								</button>
-							</li>
-						{/if}
-						{#if primary && !isInFlight(primary.state)}
-							<li>
-								<button onclick={() => run(primary.name, 'resetup')} disabled={busy}>
-									<ListRestart size={14} /> Re-run setup
-								</button>
-							</li>
-						{/if}
-						{#if others.length}
-							<li class="menu-title px-2 pt-1 text-xs opacity-60">Other servers</li>
-							{#each others as o (o.name)}
-								<li>
-									<button
-										onclick={() => run(o.name, canStart(o.state) ? 'start' : 'stop')}
-										disabled={busy}
-									>
-										{#if canStart(o.state)}<Play size={14} />{:else}<Square size={14} />{/if}
-										<span class="min-w-0 flex-1 truncate">{o.name}</span>
-										<span class="shrink-0 text-xs opacity-60">{SERVER_LABEL[o.state]}</span>
-									</button>
-								</li>
-							{/each}
-						{/if}
+						{@render secondaryActions()}
 					</ul>
 				</details>
 			{/if}
 		</div>
+
+		<!-- mobile: the Run button and ServerChip collapse into one server dropdown -->
+		<details
+			bind:open={mobileMenuOpen}
+			class="dropdown dropdown-end sm:hidden"
+			use:dismissOnOutside={() => (mobileMenuOpen = false)}
+		>
+			<summary
+				class="badge badge-sm cursor-pointer list-none gap-1 [&::-webkit-details-marker]:hidden {SERVER_BADGE[current]}"
+				title="dev servers: {SERVER_LABEL[current]}"
+				aria-label="Server: {SERVER_LABEL[current]}"
+			>
+				<Server size={11} />
+				{#if servers.length > 1}<span class="opacity-70">×{servers.length}</span>{/if}
+				<ChevronDown size={11} class="opacity-70" />
+			</summary>
+			<ul
+				class="dropdown-content menu menu-sm z-20 mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
+				use:keepInView
+			>
+				<li>
+					<button onclick={primaryClick} disabled={busy || !primary}>
+						{#if runningLike}<Square size={14} />{:else}<Play size={14} />{/if}
+						{runningLike ? 'Stop' : 'Run'}
+						{#if primary}<span class="min-w-0 flex-1 truncate opacity-60">{primary.name}</span>{/if}
+					</button>
+				</li>
+				{@render secondaryActions()}
+			</ul>
+		</details>
 	{/if}
 	{#if err || loadErr}
 		<span class="max-w-[12rem] truncate text-xs text-error" title={err || loadErr}>{err || loadErr}</span>

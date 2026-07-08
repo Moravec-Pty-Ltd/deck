@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { dismissOnOutside } from '$lib/dismiss';
+	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { ChevronDown, Check } from '@lucide/svelte';
 
 	// A free-text input paired with a visible dropdown of detected suggestions
@@ -44,6 +44,7 @@
 			</summary>
 			<ul
 				class="dropdown-content menu menu-sm z-20 mt-1 max-h-64 w-64 flex-nowrap overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
+				use:keepInView
 			>
 				{#each items as opt (opt)}
 					<li>

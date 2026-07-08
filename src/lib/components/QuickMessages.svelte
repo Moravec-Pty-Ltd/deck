@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { QuickMessage } from '$lib/types';
-	import { dismissOnOutside } from '$lib/dismiss';
+	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { MessageSquareText, Plus, Trash2, ArrowUp, ArrowDown, Settings2 } from '@lucide/svelte';
 
 	// The composer's quick-message popover (issue #45): a button next to send that
@@ -108,6 +108,7 @@
 
 	<div
 		class="dropdown-content z-20 mb-1 w-64 rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg"
+		use:keepInView
 	>
 		{#if messages.length}
 			<ul class="menu menu-sm max-h-64 w-full flex-nowrap overflow-y-auto p-0">

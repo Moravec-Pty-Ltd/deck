@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PrReviewDecision, SessionPR } from '$lib/types';
 	import { PR_STATE_COLOR, REVIEW_COLOR, canMergePr } from '$lib/pr';
-	import { dismissOnOutside } from '$lib/dismiss';
+	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { GitPullRequest, Check, X, ExternalLink, GitMerge, ChevronLeft } from '@lucide/svelte';
 
 	// GitHub's overall review decision, shown as a verdict line in the menu header.
@@ -167,6 +167,7 @@
 
 		<div
 			class="dropdown-content z-20 mt-1 w-64 rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg"
+			use:keepInView
 		>
 			{#if panel === 'menu'}
 				{#if verdict || approvals > 0 || changes > 0}

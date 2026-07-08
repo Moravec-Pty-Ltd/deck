@@ -346,7 +346,7 @@
 			{#if session.kind !== 'claude' && session.kind !== 'shell'}
 				<span class="badge badge-ghost badge-sm shrink-0">{session.kind}</span>
 			{/if}
-			<div class="flex min-w-0 flex-1 items-baseline gap-2">
+			<div class="flex min-w-0 flex-1 items-center gap-2">
 				<span class="truncate font-medium">{session.title}</span>
 				{#if issueChips.length === 1}
 					{@const issue = issueChips[0]}
@@ -389,7 +389,9 @@
 			<div class="flex items-center gap-2">
 				{#if serverChip}
 					<RunButton {session} serverState={serverChip} onRefresh={refresh} />
-					<ServerChip state={serverChip} count={myServers.length} />
+					<!-- Status lives in RunButton's collapsed dropdown on mobile (issue #123),
+					     so the standalone chip is sm+ only. -->
+					<span class="hidden sm:contents"><ServerChip state={serverChip} count={myServers.length} /></span>
 				{/if}
 				{#if session.kind !== 'shell' && sessionWorkflows.length && !runActive}
 					<WorkflowMenu sessionId={session.id} workflows={sessionWorkflows} onChange={refresh} />
