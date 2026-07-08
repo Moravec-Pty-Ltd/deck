@@ -8,5 +8,11 @@ export const load: PageLoad = async ({ params, fetch }) => {
 	const res = await fetch(`/api/sessions/${encodeURIComponent(params.id)}`);
 	if (!res.ok) error(res.status, 'session not found');
 	const session: DeckSession = await res.json();
-	return { session };
+	// The authenticated gh login, for PrMenu's own-PR merge gate. Best-effort: a
+	// failed resolve leaves `me` null and the gate falls back to allowing merge.
+	const me = await fetch('/api/user')
+		.then((r) => (r.ok ? r.json() : null))
+		.then((d: { login: string | null } | null) => d?.login ?? null)
+		.catch(() => null);
+	return { session, me };
 };

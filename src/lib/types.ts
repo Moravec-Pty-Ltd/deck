@@ -72,6 +72,18 @@ export type PrState = 'open' | 'merged' | 'closed' | 'draft';
 // GraphQL PR object so the chip/menu can gate the Merge action and show a verdict.
 export type PrMergeable = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 export type PrReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
+// GitHub's mergeStateStatus: whether a mergeable PR is actually mergeable *now*.
+// `BLOCKED` means branch protection is holding it (e.g. self-review disallowed),
+// which is where the Merge button offers a force (admin) merge.
+export type PrMergeStateStatus =
+	| 'BEHIND'
+	| 'BLOCKED'
+	| 'CLEAN'
+	| 'DIRTY'
+	| 'DRAFT'
+	| 'HAS_HOOKS'
+	| 'UNKNOWN'
+	| 'UNSTABLE';
 
 // A captured GitHub PR link plus its last-synced live state. `repo` is owner/repo;
 // `number` and `url` come from the github.com/<owner>/<repo>/pull/<n> match (see
@@ -91,9 +103,15 @@ export interface SessionPR {
 	state?: PrState;
 	checkedAt?: number;
 	mergeable?: PrMergeable;
+	// Whether branch protection is currently blocking an otherwise-mergeable PR;
+	// `BLOCKED` drives the "Force merge" (admin) affordance in PrMenu.
+	mergeStateStatus?: PrMergeStateStatus;
 	reviewDecision?: PrReviewDecision | null;
 	approvals?: number;
 	changesRequested?: number;
+	// PR author login, captured by the sync. Absent on a captured-but-never-synced
+	// PR (older sessions); the own-PR merge guard treats absent as allowed.
+	author?: string;
 }
 
 // The issue a session was launched from, persisted so the header can deep-link
