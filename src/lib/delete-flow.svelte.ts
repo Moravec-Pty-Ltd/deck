@@ -1,7 +1,7 @@
 import { SvelteSet } from 'svelte/reactivity';
 import type { DeckSession } from '$lib/types';
 
-async function requestDelete(
+export async function requestDelete(
 	id: string,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
 ): Promise<void> {

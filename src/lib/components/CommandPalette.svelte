@@ -238,7 +238,7 @@
 
 <dialog
 	bind:this={dialogEl}
-	class="modal"
+	class="modal modal-bottom sm:modal-middle"
 	aria-label="Command palette"
 	oncancel={onCancel}
 	onclose={() => (open = false)}

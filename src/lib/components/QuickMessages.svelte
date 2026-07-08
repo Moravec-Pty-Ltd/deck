@@ -134,7 +134,7 @@
 </details>
 
 {#if managing}
-	<div class="modal modal-open" role="dialog">
+	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
 		<div class="modal-box max-w-lg">
 			<h3 class="mb-1 text-lg font-semibold">Quick messages</h3>
 			<p class="mb-4 text-xs opacity-70">

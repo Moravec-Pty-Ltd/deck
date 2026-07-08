@@ -7,7 +7,7 @@
 </script>
 
 {#if flow.target}
-	<div class="modal modal-open" role="dialog">
+	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
 		<div class="modal-box max-w-sm">
 			<h3 class="mb-2 text-lg font-semibold">Remove "{flow.target.title}"</h3>
 			<p class="mb-3 text-sm opacity-70">
