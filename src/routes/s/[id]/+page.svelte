@@ -185,11 +185,13 @@
 	const del = new DeleteFlow(refresh, (s) => s.id !== session.id);
 
 	// PrMenu merged the PR and asked to also tear down the local footprint (issue
-	// #116). Fire the worktree/branch/session delete in the background and leave
-	// for home so cleanup doesn't block the UI; the merge's --delete-branch already
-	// removed the remote branch.
+	// #116). Remove the worktree and session (and the local branch when deck
+	// created it) in the background, then leave for home so cleanup doesn't block
+	// the UI. The merge deleted the remote branch in that same createdBranch case
+	// via --delete-branch.
 	function mergeCleanup() {
-		requestDelete(session.id, { deleteWorktree: true, deleteBranch: true }).catch(() => {});
+		const deleteBranch = !!session.worktree?.createdBranch;
+		requestDelete(session.id, { deleteWorktree: true, deleteBranch }).catch(() => {});
 		goto('/');
 	}
 
