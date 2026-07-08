@@ -110,14 +110,20 @@
 	}
 
 	async function submitMerge() {
+		// Only your own PRs are mergeable from deck. The server enforces this too, but
+		// guard here so a non-own PR (author/identity can shift via polling while the
+		// menu is open) gets an immediate message rather than a round-trip that fails.
+		if (!ownPr) {
+			err = 'you can only merge your own PRs from deck';
+			return;
+		}
 		// The branch (local + remote) is only removed when deck created it; a
 		// pre-existing branch is kept, matching DeleteSessionModal. When it applies,
 		// --delete-branch handles the remote and the local git branch -D runs in the
-		// teardown; the worktree + session go via onMerged.
+		// teardown; the worktree + session go via onMerged. Whether to force past
+		// branch protection is decided server-side from the synced state, not sent.
 		const removeRemote = worktree ? teardown && createdBranch : deleteBranch;
-		// Force past branch protection only when it's actually blocking; an unblocked
-		// PR never gets --admin.
-		if (await post({ action: 'merge', method, deleteBranch: removeRemote, admin: blocked })) {
+		if (await post({ action: 'merge', method, deleteBranch: removeRemote })) {
 			open = false;
 			if (worktree && teardown) onMerged?.();
 		}
@@ -270,8 +276,12 @@
 						<button
 							class="btn btn-xs {blocked ? 'btn-warning' : 'btn-primary'}"
 							onclick={submitMerge}
-							disabled={busy}
-							title={blocked ? 'Bypasses branch protection (admin only)' : undefined}
+							disabled={busy || !ownPr}
+							title={!ownPr
+								? 'you can only merge your own PRs from deck'
+								: blocked
+									? 'Bypasses branch protection (admin only)'
+									: undefined}
 						>
 							{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
 							{blocked ? 'Force merge' : 'Merge'}
