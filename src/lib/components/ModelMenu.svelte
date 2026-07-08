@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import type { SessionKind } from '$lib/types';
 	import { CLAUDE_MODELS, modelLabel, switchModel } from '$lib/models';
-	import { dismissOnOutside } from '$lib/dismiss';
+	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { Cpu, Check } from '@lucide/svelte';
 
 	// Header chip showing the session's current model, opening a switcher (issue
@@ -68,6 +68,7 @@
 		</summary>
 		<div
 			class="dropdown-content z-20 mt-1 w-48 rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg"
+			use:keepInView
 		>
 			{#if kind === 'claude'}
 				<ul class="menu menu-sm w-full p-0">
