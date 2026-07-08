@@ -195,11 +195,13 @@
 					</li>
 					<li><button onclick={() => (panel = 'review')}><GitPullRequest size={14} /> Review</button></li>
 					{#if canMerge}
-						<li>
+						<!-- title sits on the (non-disabled) li: a disabled button won't show
+						     its own tooltip, and pointer-events-none lets the hover reach here. -->
+						<li title={ownPr ? undefined : 'you can only merge your own PRs from deck'}>
 							<button
 								onclick={() => (panel = 'merge')}
 								disabled={!ownPr}
-								title={ownPr ? undefined : 'you can only merge your own PRs from deck'}
+								class:pointer-events-none={!ownPr}
 							>
 								<GitMerge size={14} /> {blocked ? 'Force merge' : 'Merge'}
 							</button>
@@ -273,19 +275,21 @@
 						<button class="btn btn-ghost btn-xs gap-1" onclick={() => (panel = 'menu')}>
 							<ChevronLeft size={12} /> Back
 						</button>
-						<button
-							class="btn btn-xs {blocked ? 'btn-warning' : 'btn-primary'}"
-							onclick={submitMerge}
-							disabled={busy || !ownPr}
-							title={!ownPr
-								? 'you can only merge your own PRs from deck'
-								: blocked
-									? 'Bypasses branch protection (admin only)'
-									: undefined}
-						>
-							{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
-							{blocked ? 'Force merge' : 'Merge'} {method}
-						</button>
+						<!-- own-PR tooltip on the wrapper so it shows even when the button is
+						     disabled; the force-merge tooltip stays on the button (shown when
+						     it's enabled). -->
+						<span title={ownPr ? undefined : 'you can only merge your own PRs from deck'}>
+							<button
+								class="btn btn-xs {blocked ? 'btn-warning' : 'btn-primary'}"
+								class:pointer-events-none={!ownPr}
+								onclick={submitMerge}
+								disabled={busy || !ownPr}
+								title={blocked ? 'Bypasses branch protection (admin only)' : undefined}
+							>
+								{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
+								{blocked ? 'Force merge' : 'Merge'} {method}
+							</button>
+						</span>
 					</div>
 				</div>
 			{/if}
