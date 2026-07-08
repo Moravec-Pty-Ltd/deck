@@ -3,7 +3,6 @@
 	import { shortPath } from '$lib/time';
 	import { groupProjects, UNGROUPED } from '$lib/groups';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
-	import PathInput from '$lib/components/PathInput.svelte';
 	import IssueSources from '$lib/components/IssueSources.svelte';
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
 	import WorkflowsForm from '$lib/components/WorkflowsForm.svelte';
@@ -128,35 +127,28 @@
 	<div class="space-y-5">
 		{#each layout as section (section.name)}
 			<div>
-				<div
-					class="mb-2 flex w-full items-center gap-2 px-1 text-left cursor-pointer"
-					role="button"
-					tabindex={0}
-					onclick={() => toggleSection(section.name)}
-					onkeydown={(e) => {
-						if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
-							e.preventDefault();
-							toggleSection(section.name);
-						}
-					}}
-					aria-label="Toggle {section.name} section"
-				>
-					{#if collapsed[section.name]}
-						<ChevronRight size={14} class="opacity-50" />
-					{:else}
-						<ChevronDown size={14} class="opacity-50" />
-					{/if}
-					<h2 class="text-xs font-semibold uppercase tracking-wide opacity-50">
-						{section.name}
-					</h2>
-					<span class="badge badge-xs badge-ghost ml-1">{section.paths.length}</span>
+				<div class="mb-2 flex w-full items-center gap-2 px-1">
+					<button
+						type="button"
+						class="flex cursor-pointer items-center gap-2 text-left"
+						onclick={() => toggleSection(section.name)}
+						aria-expanded={!collapsed[section.name]}
+						aria-label="Toggle {section.name} section"
+					>
+						{#if collapsed[section.name]}
+							<ChevronRight size={14} class="opacity-50" />
+						{:else}
+							<ChevronDown size={14} class="opacity-50" />
+						{/if}
+						<span class="text-xs font-semibold uppercase tracking-wide opacity-50">
+							{section.name}
+						</span>
+					</button>
+					<span class="badge badge-xs badge-ghost">{section.paths.length}</span>
 					<div class="flex-1"></div>
 					<button
 						class="btn btn-ghost btn-xs"
-						onclick={(e) => {
-							e.stopPropagation();
-							openAddModal(section.name === UNGROUPED ? '' : section.name);
-						}}
+						onclick={() => openAddModal(section.name === UNGROUPED ? '' : section.name)}
 						aria-label="Add project to {section.name}"
 					>
 						<Plus size={13} />
