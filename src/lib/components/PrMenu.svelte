@@ -19,16 +19,20 @@
 	// `worktree` is set when the session lives in a git worktree — it swaps the
 	// remote-only "delete branch" checkbox for the combined local teardown, and
 	// `onMerged` fires after a successful merge when that teardown was opted in.
+	// `createdBranch` is whether deck made the branch: only then is it deleted
+	// (local + remote), mirroring DeleteSessionModal's "existing branch, kept".
 	let {
 		id,
 		pr,
 		worktree = false,
+		createdBranch = false,
 		onMerged,
 		onChange
 	}: {
 		id: string;
 		pr: SessionPR;
 		worktree?: boolean;
+		createdBranch?: boolean;
 		onMerged?: () => void;
 		onChange: () => void;
 	} = $props();
@@ -58,6 +62,10 @@
 		if (!open) {
 			panel = 'menu';
 			err = '';
+			// Reset the destructive merge toggles so a prior selection can't carry
+			// into a later merge unintentionally.
+			deleteBranch = false;
+			teardown = false;
 		}
 	});
 
@@ -93,9 +101,11 @@
 	}
 
 	async function submitMerge() {
-		// With the teardown option, --delete-branch still removes the remote branch;
-		// the local worktree + branch + session are then torn down via onMerged.
-		const removeRemote = worktree ? teardown : deleteBranch;
+		// The branch (local + remote) is only removed when deck created it; a
+		// pre-existing branch is kept, matching DeleteSessionModal. When it applies,
+		// --delete-branch handles the remote and the local git branch -D runs in the
+		// teardown; the worktree + session go via onMerged.
+		const removeRemote = worktree ? teardown && createdBranch : deleteBranch;
 		if (await post({ action: 'merge', method, deleteBranch: removeRemote })) {
 			open = false;
 			if (worktree && teardown) onMerged?.();
@@ -223,7 +233,9 @@
 					{#if worktree}
 						<label class="flex cursor-pointer items-center gap-2 text-xs">
 							<input type="checkbox" class="checkbox checkbox-xs" bind:checked={teardown} />
-							Delete session, worktree &amp; branch after merge
+							{createdBranch
+								? 'Delete session, worktree & branch after merge'
+								: 'Delete session & worktree after merge'}
 						</label>
 					{:else}
 						<label class="flex cursor-pointer items-center gap-2 text-xs">
