@@ -56,6 +56,24 @@ export const PR_STATE_COLOR: Record<PrState, string> = {
 // open/closed hues), reused by the header tally and the action menu.
 export const REVIEW_COLOR = { approve: PR_STATE_COLOR.open, changes: PR_STATE_COLOR.closed };
 
+// --- Merge policy (shared by PrMenu's gate and the server merge route) ---------
+// Pure so both sides agree and the safety logic is unit-testable.
+
+// Whether deck should let you merge this captured PR: only your own, since deck
+// also captures PRs you're only reviewing. An unknown author (an older captured
+// PR, not re-synced) or an unresolved viewer identity falls back to allowed, so
+// the guard applies only once both are known.
+export function canMergePr(pr: Pick<SessionPR, 'author'>, me: string | null): boolean {
+	return !pr.author || !me || pr.author === me;
+}
+
+// Whether the merge must force past branch protection (gh pr merge --admin): only
+// when the PR is actually BLOCKED (e.g. self-review disallowed). Read from synced
+// state, never trusted from the client, so an unblocked PR never gets --admin.
+export function shouldAdminMerge(pr: Pick<SessionPR, 'mergeStateStatus'>): boolean {
+	return pr.mergeStateStatus === 'BLOCKED';
+}
+
 // --- Bulk status sync (server/pr.ts) -------------------------------------
 // The pure query-build + response-parse halves of the background sync live here
 // (node-free, unit-tested); server/pr.ts runs the `gh` call and the store writes.
