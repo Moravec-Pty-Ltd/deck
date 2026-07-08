@@ -16,7 +16,22 @@
 	// to open in browser, review, merge, or dismiss. Status itself is kept fresh by
 	// the background sync, so review/merge POST through the action route (which
 	// re-syncs server-side) and we just refetch via onChange.
-	let { id, pr, onChange }: { id: string; pr: SessionPR; onChange: () => void } = $props();
+	// `worktree` is set when the session lives in a git worktree — it swaps the
+	// remote-only "delete branch" checkbox for the combined local teardown, and
+	// `onMerged` fires after a successful merge when that teardown was opted in.
+	let {
+		id,
+		pr,
+		worktree = false,
+		onMerged,
+		onChange
+	}: {
+		id: string;
+		pr: SessionPR;
+		worktree?: boolean;
+		onMerged?: () => void;
+		onChange: () => void;
+	} = $props();
 
 	let open = $state(false);
 	let panel = $state<'menu' | 'review' | 'merge'>('menu');
@@ -27,6 +42,8 @@
 	let message = $state('');
 	let method = $state<'squash' | 'merge' | 'rebase'>('squash');
 	let deleteBranch = $state(false);
+	// Combined local teardown for worktree sessions: off by default (destructive).
+	let teardown = $state(false);
 
 	const prColor = $derived(pr.state ? PR_STATE_COLOR[pr.state] : undefined);
 	const verdict = $derived(pr.reviewDecision ? VERDICT[pr.reviewDecision] : undefined);
@@ -76,7 +93,13 @@
 	}
 
 	async function submitMerge() {
-		if (await post({ action: 'merge', method, deleteBranch })) open = false;
+		// With the teardown option, --delete-branch still removes the remote branch;
+		// the local worktree + branch + session are then torn down via onMerged.
+		const removeRemote = worktree ? teardown : deleteBranch;
+		if (await post({ action: 'merge', method, deleteBranch: removeRemote })) {
+			open = false;
+			if (worktree && teardown) onMerged?.();
+		}
 	}
 
 	async function dismiss() {
@@ -197,10 +220,17 @@
 							</button>
 						{/each}
 					</div>
-					<label class="flex cursor-pointer items-center gap-2 text-xs">
-						<input type="checkbox" class="checkbox checkbox-xs" bind:checked={deleteBranch} />
-						Delete branch after merge
-					</label>
+					{#if worktree}
+						<label class="flex cursor-pointer items-center gap-2 text-xs">
+							<input type="checkbox" class="checkbox checkbox-xs" bind:checked={teardown} />
+							Delete session, worktree &amp; branch after merge
+						</label>
+					{:else}
+						<label class="flex cursor-pointer items-center gap-2 text-xs">
+							<input type="checkbox" class="checkbox checkbox-xs" bind:checked={deleteBranch} />
+							Delete branch after merge
+						</label>
+					{/if}
 					{#if err}<p class="text-xs text-error">{err}</p>{/if}
 					<div class="flex items-center justify-between">
 						<button class="btn btn-ghost btn-xs gap-1" onclick={() => (panel = 'menu')}>

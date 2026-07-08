@@ -18,8 +18,9 @@
 	import { ISSUE_BADGE } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
-	import { DeleteFlow } from '$lib/delete-flow.svelte';
-	import { ArrowLeft, Bot, Terminal, Menu, X, Ticket, TriangleAlert } from '@lucide/svelte';
+	import { DeleteFlow, requestDelete } from '$lib/delete-flow.svelte';
+	import { goto } from '$app/navigation';
+	import { Menu, X, Ticket } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import {
 		clampSidebarWidth,
@@ -182,6 +183,15 @@
 	// Never delete the active session.
 	const del = new DeleteFlow(refresh, (s) => s.id !== session.id);
 
+	// PrMenu merged the PR and asked to also tear down the local footprint (issue
+	// #116). Fire the worktree/branch/session delete in the background and leave
+	// for home so cleanup doesn't block the UI; the merge's --delete-branch already
+	// removed the remote branch.
+	function mergeCleanup() {
+		requestDelete(session.id, { deleteWorktree: true, deleteBranch: true }).catch(() => {});
+		goto('/');
+	}
+
 	// Resizable desktop sidebar (issue #52). SSR renders the default so it matches
 	// the old lg:w-56; onMount hydrates the persisted width. The drag/keyboard math
 	// lives in the node-free sidebar-width helper; persistence is best-effort.
@@ -322,10 +332,7 @@
 				</button>
 			</div>
 		{/if}
-		<div class="mb-2 flex items-center gap-2">
-			<a href="/" class="btn btn-ghost btn-sm shrink-0" aria-label="Back">
-				<ArrowLeft size={16} />
-			</a>
+		<div class="mb-2 flex flex-wrap items-center gap-2">
 			<button
 				class="btn btn-ghost btn-sm shrink-0 lg:hidden"
 				onclick={() => (sidebarOpen = true)}
@@ -333,11 +340,6 @@
 			>
 				<Menu size={16} />
 			</button>
-			{#if session.kind === 'shell'}
-				<Terminal size={16} class="shrink-0 opacity-70" />
-			{:else}
-				<Bot size={16} class="shrink-0 opacity-70" />
-			{/if}
 			{#if session.kind !== 'claude' && session.kind !== 'shell'}
 				<span class="badge badge-ghost badge-sm shrink-0">{session.kind}</span>
 			{/if}
@@ -369,32 +371,42 @@
 					<IssueMenu issues={issueChips} />
 				{/if}
 				{#if livePr}
-					<PrMenu id={session.id} pr={livePr} onChange={refresh} />
+					<PrMenu
+						id={session.id}
+						pr={livePr}
+						worktree={!!session.worktree}
+						onMerged={mergeCleanup}
+						onChange={refresh}
+					/>
 				{/if}
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
-			{#if serverChip}
-				<RunButton {session} serverState={serverChip} onRefresh={refresh} />
-				<ServerChip state={serverChip} count={myServers.length} />
-			{/if}
-			{#if session.kind !== 'shell' && sessionWorkflows.length && !runActive}
-				<WorkflowMenu sessionId={session.id} workflows={sessionWorkflows} onChange={refresh} />
-			{/if}
-			{#if session.kind !== 'shell'}
-				<ModelMenu
-					id={session.id}
-					kind={session.kind}
-					model={liveModel}
-					disabled={liveStatus === 'running'}
-					onChange={refresh}
-				/>
-			{/if}
-			{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}
-				<span class="badge badge-outline badge-sm mr-1 shrink-0 gap-1" title="yolo (bypassPermissions)">
-					<TriangleAlert size={12} class="sm:hidden" />
-					<span class="hidden sm:inline">yolo</span>
-				</span>
-			{/if}
+			<div class="flex items-center gap-2">
+				{#if serverChip}
+					<RunButton {session} serverState={serverChip} onRefresh={refresh} />
+					<ServerChip state={serverChip} count={myServers.length} />
+				{/if}
+				{#if session.kind !== 'shell' && sessionWorkflows.length && !runActive}
+					<WorkflowMenu sessionId={session.id} workflows={sessionWorkflows} onChange={refresh} />
+				{/if}
+				{#if session.kind !== 'shell'}
+					<ModelMenu
+						id={session.id}
+						kind={session.kind}
+						model={liveModel}
+						disabled={liveStatus === 'running'}
+						onChange={refresh}
+					/>
+				{/if}
+				{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}
+					<span
+						class="badge badge-outline badge-sm hidden shrink-0 sm:inline-flex"
+						title="yolo (bypassPermissions)"
+					>
+						yolo
+					</span>
+				{/if}
+			</div>
 		</div>
 
 		{#if liveRun}

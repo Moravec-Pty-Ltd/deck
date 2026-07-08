@@ -118,7 +118,7 @@
 </script>
 
 {#if open}
-	<div class="modal modal-open" role="dialog">
+	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
 		<div class="modal-box max-w-lg">
 			<h3 class="mb-4 text-lg font-semibold">Add a project</h3>
 
