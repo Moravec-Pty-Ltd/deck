@@ -42,6 +42,12 @@ describe('parseWorkflows', () => {
 		);
 	});
 
+	it('rejects a configured id that collides with a synthesized legacy id', () => {
+		for (const id of [LEGACY_NEW_ID, LEGACY_REVIEW_ID]) {
+			expect(() => parseWorkflows([{ ...devWorkflow, id }])).toThrow(/reserved workflow id/);
+		}
+	});
+
 	it('rejects duplicate step names within a workflow', () => {
 		const steps: WorkflowStep[] = [
 			{ type: 'run', name: 'x', command: 'true' },
@@ -77,8 +83,10 @@ describe('parseWorkflows', () => {
 describe('resolveWorkflows', () => {
 	const project: Project = { name: 'p', path: '/path/to/project' };
 
-	it('returns configured workflows when present', () => {
-		expect(resolveWorkflows({ ...project, workflows: [devWorkflow] })).toEqual([devWorkflow]);
+	it('always offers the legacy pair first, then configured workflows', () => {
+		const list = resolveWorkflows({ ...project, workflows: [devWorkflow] });
+		expect(list.map((w) => w.id)).toEqual([LEGACY_NEW_ID, LEGACY_REVIEW_ID, devWorkflow.id]);
+		expect(list[list.length - 1]).toEqual(devWorkflow);
 	});
 
 	it('synthesizes the legacy pair from template/reviewPrompt', () => {
