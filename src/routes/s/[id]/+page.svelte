@@ -180,7 +180,8 @@
 		sidebarOpen = false;
 	}
 
-	// Never delete the active session.
+	// The sidebar/list delete flow must never remove the session being viewed;
+	// mergeCleanup below is the one deliberate exception (right after a merge).
 	const del = new DeleteFlow(refresh, (s) => s.id !== session.id);
 
 	// PrMenu merged the PR and asked to also tear down the local footprint (issue
@@ -375,6 +376,7 @@
 						id={session.id}
 						pr={livePr}
 						worktree={!!session.worktree}
+						createdBranch={!!session.worktree?.createdBranch}
 						onMerged={mergeCleanup}
 						onChange={refresh}
 					/>
