@@ -192,21 +192,24 @@ export function mergeArgs(
 }
 
 // Merge the session's own PR with the chosen method (and optional branch delete),
-// then refresh so the chip flips to merged immediately. `admin` force-merges past
-// branch protection. Guarded to PRs you authored: a PR by someone else is rejected
-// (deck also captures PRs you're only reviewing). An unknown author (older captured
-// session, not re-synced) or unresolved identity is allowed for backward-compat.
+// then refresh so the chip flips to merged immediately. Guarded to PRs you
+// authored: a PR by someone else is rejected (deck also captures PRs you're only
+// reviewing). An unknown author (older captured session, not re-synced) or
+// unresolved identity is allowed for backward-compat.
 export async function mergePr(
 	id: string,
 	method: MergeMethod,
-	deleteBranch: boolean,
-	admin: boolean
+	deleteBranch: boolean
 ): Promise<SessionPR | undefined> {
 	const pr = requirePr(id);
 	const me = await currentUser();
 	if (pr.author && me && pr.author !== me) {
 		throw new Error('you can only merge your own PRs from deck');
 	}
+	// Force past branch protection only when the PR is actually BLOCKED, derived
+	// from the stored (synced) state rather than trusted from the client, so a
+	// mistaken or crafted flag can't --admin-bypass protection on an unblocked PR.
+	const admin = pr.mergeStateStatus === 'BLOCKED';
 	await ghAction(mergeArgs(pr, method, deleteBranch, admin));
 	return refreshPr(id);
 }

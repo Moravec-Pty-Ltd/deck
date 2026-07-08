@@ -14,7 +14,6 @@ type Body = {
 	method?: unknown;
 	body?: unknown;
 	deleteBranch?: unknown;
-	admin?: unknown;
 };
 
 // Own-property guards (REVIEW_FLAG/MERGE_FLAG as the allowlist) so an inherited
@@ -40,7 +39,7 @@ function reviewCall(id: string, b: Body) {
 
 function mergeCall(id: string, b: Body) {
 	const method = mergeMethod(b.method);
-	return () => mergePr(id, method, b.deleteBranch === true, b.admin === true);
+	return () => mergePr(id, method, b.deleteBranch === true);
 }
 
 function resolveCall(id: string, b: Body) {

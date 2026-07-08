@@ -128,22 +128,24 @@
 		{#each layout as section (section.name)}
 			<div>
 				<div class="mb-2 flex w-full items-center gap-2 px-1">
-					<button
-						type="button"
-						class="flex cursor-pointer items-center gap-2 text-left"
-						onclick={() => toggleSection(section.name)}
-						aria-expanded={!collapsed[section.name]}
-						aria-label="Toggle {section.name} section"
-					>
-						{#if collapsed[section.name]}
-							<ChevronRight size={14} class="opacity-50" />
-						{:else}
-							<ChevronDown size={14} class="opacity-50" />
-						{/if}
-						<span class="text-xs font-semibold uppercase tracking-wide opacity-50">
-							{section.name}
-						</span>
-					</button>
+					<h2 class="m-0">
+						<button
+							type="button"
+							class="flex cursor-pointer items-center gap-2 text-left"
+							onclick={() => toggleSection(section.name)}
+							aria-expanded={!collapsed[section.name]}
+							aria-label="Toggle {section.name} section"
+						>
+							{#if collapsed[section.name]}
+								<ChevronRight size={14} class="opacity-50" />
+							{:else}
+								<ChevronDown size={14} class="opacity-50" />
+							{/if}
+							<span class="text-xs font-semibold uppercase tracking-wide opacity-50">
+								{section.name}
+							</span>
+						</button>
+					</h2>
 					<span class="badge badge-xs badge-ghost">{section.paths.length}</span>
 					<div class="flex-1"></div>
 					<button
