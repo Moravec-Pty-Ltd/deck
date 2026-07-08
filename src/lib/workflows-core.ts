@@ -97,7 +97,7 @@ export function isLegacyWorkflowId(id: string): boolean {
 // The workflows a project offers: the plain New/Review pair (synthesized from
 // the legacy template/reviewPrompt fields) always first, then any configured
 // workflows. New leads so the modal's default stays a plain, no-run session,
-// and a project keeps New/Review even after adopting workflows (issue #113 —
+// and a project keeps New/Review even after adopting workflows (issue #113:
 // configuring workflows must not remove the plain-session path). An empty
 // template means an empty prompt field, exactly like today; accepts undefined
 // so a custom-path session (no registered project) still gets the pair.
