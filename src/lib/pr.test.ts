@@ -4,7 +4,9 @@ import {
 	mapPrState,
 	buildPrSyncQuery,
 	parsePrSyncResponse,
-	reviewCounts
+	reviewCounts,
+	canMergePr,
+	shouldAdminMerge
 } from './pr';
 
 describe('lastPrLink', () => {
@@ -130,6 +132,32 @@ describe('reviewCounts', () => {
 
 	it('is zero for no reviews', () => {
 		expect(reviewCounts([])).toEqual({ approvals: 0, changesRequested: 0 });
+	});
+});
+
+describe('canMergePr', () => {
+	it('allows a PR you authored', () => {
+		expect(canMergePr({ author: 'jinbe' }, 'jinbe')).toBe(true);
+	});
+
+	it("rejects someone else's PR when both identities are known", () => {
+		expect(canMergePr({ author: 'octocat' }, 'jinbe')).toBe(false);
+	});
+
+	it('allows when the author is unknown (older captured PR, not re-synced)', () => {
+		expect(canMergePr({ author: undefined }, 'jinbe')).toBe(true);
+	});
+
+	it('allows when the viewer identity is unresolved', () => {
+		expect(canMergePr({ author: 'octocat' }, null)).toBe(true);
+	});
+});
+
+describe('shouldAdminMerge', () => {
+	it('force-merges only a BLOCKED PR', () => {
+		expect(shouldAdminMerge({ mergeStateStatus: 'BLOCKED' })).toBe(true);
+		expect(shouldAdminMerge({ mergeStateStatus: 'CLEAN' })).toBe(false);
+		expect(shouldAdminMerge({ mergeStateStatus: undefined })).toBe(false);
 	});
 });
 

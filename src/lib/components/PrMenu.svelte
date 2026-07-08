@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PrReviewDecision, SessionPR } from '$lib/types';
-	import { PR_STATE_COLOR, REVIEW_COLOR } from '$lib/pr';
+	import { PR_STATE_COLOR, REVIEW_COLOR, canMergePr } from '$lib/pr';
 	import { dismissOnOutside } from '$lib/dismiss';
 	import { GitPullRequest, Check, X, ExternalLink, GitMerge, ChevronLeft } from '@lucide/svelte';
 
@@ -62,8 +62,8 @@
 	// disallowed): the merge becomes a force (admin) merge.
 	const blocked = $derived(pr.mergeStateStatus === 'BLOCKED');
 	// Only your own PRs are mergeable from deck (it also captures PRs you review).
-	// An unknown author (older captured PR) or unknown identity falls back to allow.
-	const ownPr = $derived(!pr.author || !me || pr.author === me);
+	// Shared with the server guard so both agree; unknown author/identity allows.
+	const ownPr = $derived(canMergePr(pr, me));
 	const tallyTitle = $derived(`${approvals} approval${approvals === 1 ? '' : 's'}, ${changes} change request${changes === 1 ? '' : 's'}`);
 
 	// Reset the panel/error whenever the menu closes.
@@ -284,8 +284,7 @@
 									: undefined}
 						>
 							{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
-							{blocked ? 'Force merge' : 'Merge'}
-							{method}
+							{blocked ? 'Force merge' : 'Merge'} {method}
 						</button>
 					</div>
 				</div>

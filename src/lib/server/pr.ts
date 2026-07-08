@@ -6,7 +6,14 @@
 // actions surface gh's error to the caller.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { buildPrSyncQuery, parsePrSyncResponse, type PrRef, type PrSyncPatch } from '$lib/pr';
+import {
+	buildPrSyncQuery,
+	canMergePr,
+	parsePrSyncResponse,
+	shouldAdminMerge,
+	type PrRef,
+	type PrSyncPatch
+} from '$lib/pr';
 import type { SessionPR } from '$lib/types';
 import { listStoredSessions, getStoredSession, updateSession } from './store';
 
@@ -203,13 +210,9 @@ export async function mergePr(
 ): Promise<SessionPR | undefined> {
 	const pr = requirePr(id);
 	const me = await currentUser();
-	if (pr.author && me && pr.author !== me) {
+	if (!canMergePr(pr, me)) {
 		throw new Error('you can only merge your own PRs from deck');
 	}
-	// Force past branch protection only when the PR is actually BLOCKED, derived
-	// from the stored (synced) state rather than trusted from the client, so a
-	// mistaken or crafted flag can't --admin-bypass protection on an unblocked PR.
-	const admin = pr.mergeStateStatus === 'BLOCKED';
-	await ghAction(mergeArgs(pr, method, deleteBranch, admin));
+	await ghAction(mergeArgs(pr, method, deleteBranch, shouldAdminMerge(pr)));
 	return refreshPr(id);
 }
