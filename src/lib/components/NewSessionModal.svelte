@@ -13,16 +13,17 @@
 	import { CLAUDE_MODELS, resolveModelChoice, shouldReseedModel } from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { firstAgentPrompt, isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
-	import { Bot, Terminal, Sparkles, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
+	import { Bot, Terminal, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
 	import IssuePicker from './IssuePicker.svelte';
 	import PrPicker from './PrPicker.svelte';
 	import ComboInput from './ComboInput.svelte';
+	import PiGlyph from './PiGlyph.svelte';
 
 	const KIND_OPTIONS = [
 		{ id: 'claude', label: 'Claude', icon: Bot },
-		{ id: 'pi', label: 'pi', icon: Sparkles },
+		{ id: 'pi', label: 'pi', icon: PiGlyph },
 		{ id: 'codex', label: 'codex', icon: Braces },
 		{ id: 'opencode', label: 'opencode', icon: SquareCode },
 		{ id: 'shell', label: 'Shell', icon: Terminal }
@@ -35,9 +36,10 @@
 	type WorktreeMode = 'none' | 'existing' | 'new';
 
 	// The selected workflow replaces the old New/Review toggle (issue #111): its
-	// `context` drives the picker, token hints, and worktree behaviour. Projects
-	// without configured workflows get the synthesized legacy pair, which
-	// behaves exactly like the old two modes.
+	// `context` drives the picker, token hints, and worktree behaviour. Every
+	// project offers the synthesized legacy New/Review pair (which behaves
+	// exactly like the old two modes) ahead of any configured workflows, so the
+	// plain-session path is always available (issue #113).
 	let workflowId = $state<string>('');
 	let kind = $state<SessionKind>('claude');
 	let projects = $state<Project[]>([]);

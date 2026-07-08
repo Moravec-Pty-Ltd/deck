@@ -57,10 +57,13 @@ const workflowSchema = z.object({
 const workflowsSchema = z.array(workflowSchema).max(50);
 
 // Duplicate step names would make [step:<name>] ambiguous; duplicate workflow
-// ids would make the start-run lookup ambiguous.
+// ids would make the start-run lookup ambiguous. A configured id that collides
+// with a synthesized legacy id would also duplicate an entry in resolveWorkflows
+// (which always prepends the legacy pair), so reserve those ids too.
 function assertUnique(workflows: Workflow[]) {
 	const ids = new Set<string>();
 	for (const w of workflows) {
+		if (isLegacyWorkflowId(w.id)) throw new Error(`reserved workflow id: ${w.id}`);
 		if (ids.has(w.id)) throw new Error(`duplicate workflow id: ${w.id}`);
 		ids.add(w.id);
 		const names = new Set<string>();
@@ -91,13 +94,15 @@ export function isLegacyWorkflowId(id: string): boolean {
 	return id === LEGACY_NEW_ID || id === LEGACY_REVIEW_ID;
 }
 
-// The workflows a project offers: its configured list when present, else the
-// two single-agent-step defaults synthesized from the legacy fields (an empty
-// template means an empty prompt field, exactly like today). Accepts undefined
-// so a custom-path session (no registered project) still gets the defaults.
+// The workflows a project offers: the plain New/Review pair (synthesized from
+// the legacy template/reviewPrompt fields) always first, then any configured
+// workflows. New leads so the modal's default stays a plain, no-run session,
+// and a project keeps New/Review even after adopting workflows (issue #113 —
+// configuring workflows must not remove the plain-session path). An empty
+// template means an empty prompt field, exactly like today; accepts undefined
+// so a custom-path session (no registered project) still gets the pair.
 export function resolveWorkflows(project: Project | undefined): Workflow[] {
-	if (project?.workflows?.length) return project.workflows;
-	return [
+	const legacy: Workflow[] = [
 		{
 			id: LEGACY_NEW_ID,
 			name: 'New',
@@ -111,6 +116,7 @@ export function resolveWorkflows(project: Project | undefined): Workflow[] {
 			steps: [{ type: 'agent', name: 'Prompt', prompt: project?.reviewPrompt ?? '' }]
 		}
 	];
+	return [...legacy, ...(project?.workflows ?? [])];
 }
 
 // The prompt the new-session modal prefills: the first agent step's prompt
