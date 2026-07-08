@@ -377,6 +377,7 @@
 					<PrMenu
 						id={session.id}
 						pr={livePr}
+						me={data.me}
 						worktree={!!session.worktree}
 						createdBranch={!!session.worktree?.createdBranch}
 						onMerged={mergeCleanup}

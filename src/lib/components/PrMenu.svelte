@@ -24,6 +24,7 @@
 	let {
 		id,
 		pr,
+		me = null,
 		worktree = false,
 		createdBranch = false,
 		onMerged,
@@ -31,6 +32,8 @@
 	}: {
 		id: string;
 		pr: SessionPR;
+		// Authenticated gh login, for the own-PR merge gate. Null when unknown.
+		me?: string | null;
 		worktree?: boolean;
 		createdBranch?: boolean;
 		onMerged?: () => void;
@@ -55,6 +58,12 @@
 	const changes = $derived(pr.changesRequested ?? 0);
 	// Merge is offered only for a clean, mergeable, open (non-draft) PR.
 	const canMerge = $derived(pr.state === 'open' && pr.mergeable === 'MERGEABLE');
+	// Branch protection is holding an otherwise-mergeable PR (e.g. self-review
+	// disallowed): the merge becomes a force (admin) merge.
+	const blocked = $derived(pr.mergeStateStatus === 'BLOCKED');
+	// Only your own PRs are mergeable from deck (it also captures PRs you review).
+	// An unknown author (older captured PR) or unknown identity falls back to allow.
+	const ownPr = $derived(!pr.author || !me || pr.author === me);
 	const tallyTitle = $derived(`${approvals} approval${approvals === 1 ? '' : 's'}, ${changes} change request${changes === 1 ? '' : 's'}`);
 
 	// Reset the panel/error whenever the menu closes.
@@ -106,7 +115,9 @@
 		// --delete-branch handles the remote and the local git branch -D runs in the
 		// teardown; the worktree + session go via onMerged.
 		const removeRemote = worktree ? teardown && createdBranch : deleteBranch;
-		if (await post({ action: 'merge', method, deleteBranch: removeRemote })) {
+		// Force past branch protection only when it's actually blocking; an unblocked
+		// PR never gets --admin.
+		if (await post({ action: 'merge', method, deleteBranch: removeRemote, admin: blocked })) {
 			open = false;
 			if (worktree && teardown) onMerged?.();
 		}
@@ -178,7 +189,15 @@
 					</li>
 					<li><button onclick={() => (panel = 'review')}><GitPullRequest size={14} /> Review</button></li>
 					{#if canMerge}
-						<li><button onclick={() => (panel = 'merge')}><GitMerge size={14} /> Merge</button></li>
+						<li>
+							<button
+								onclick={() => (panel = 'merge')}
+								disabled={!ownPr}
+								title={ownPr ? undefined : 'you can only merge your own PRs from deck'}
+							>
+								<GitMerge size={14} /> {blocked ? 'Force merge' : 'Merge'}
+							</button>
+						</li>
 					{/if}
 					<li>
 						<button onclick={dismiss} disabled={busy} class="text-error">
@@ -248,8 +267,15 @@
 						<button class="btn btn-ghost btn-xs gap-1" onclick={() => (panel = 'menu')}>
 							<ChevronLeft size={12} /> Back
 						</button>
-						<button class="btn btn-primary btn-xs" onclick={submitMerge} disabled={busy}>
-							{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if} Merge {method}
+						<button
+							class="btn btn-xs {blocked ? 'btn-warning' : 'btn-primary'}"
+							onclick={submitMerge}
+							disabled={busy}
+							title={blocked ? 'Bypasses branch protection (admin only)' : undefined}
+						>
+							{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
+							{blocked ? 'Force merge' : 'Merge'}
+							{method}
 						</button>
 					</div>
 				</div>

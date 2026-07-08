@@ -105,6 +105,8 @@ describe('buildPrSyncQuery', () => {
 		]);
 		expect(q).toContain('p0: repository(owner:"acme", name:"web") { pullRequest(number:34)');
 		expect(q).toContain('p1: repository(owner:"my-org.io", name:"deck-app") { pullRequest(number:7)');
+		expect(q).toContain('mergeStateStatus');
+		expect(q).toContain('author{login}');
 		expect(q).toContain('latestReviews(first:100){nodes{state}}');
 	});
 
@@ -137,18 +139,32 @@ describe('parsePrSyncResponse', () => {
 			state: 'OPEN',
 			isDraft: false,
 			mergeable: 'MERGEABLE',
+			mergeStateStatus: 'CLEAN',
 			reviewDecision: 'APPROVED',
+			author: { login: 'jinbe' },
 			latestReviews: { nodes: [{ state: 'APPROVED' }] },
 			...over
 		}
 	});
 
 	it('maps each positional alias onto a patch', () => {
-		const raw = JSON.stringify({ data: { p0: node(), p1: node({ state: 'MERGED', mergeable: 'UNKNOWN', reviewDecision: 'REVIEW_REQUIRED', latestReviews: { nodes: [] } }) } });
+		const raw = JSON.stringify({ data: { p0: node(), p1: node({ state: 'MERGED', mergeable: 'UNKNOWN', mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED', author: { login: 'octocat' }, latestReviews: { nodes: [] } }) } });
 		expect(parsePrSyncResponse(raw, 2)).toEqual([
-			{ state: 'open', mergeable: 'MERGEABLE', reviewDecision: 'APPROVED', approvals: 1, changesRequested: 0 },
-			{ state: 'merged', mergeable: 'UNKNOWN', reviewDecision: 'REVIEW_REQUIRED', approvals: 0, changesRequested: 0 }
+			{ state: 'open', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: 'APPROVED', author: 'jinbe', approvals: 1, changesRequested: 0 },
+			{ state: 'merged', mergeable: 'UNKNOWN', mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED', author: 'octocat', approvals: 0, changesRequested: 0 }
 		]);
+	});
+
+	it('captures the author login and drops an unknown mergeStateStatus', () => {
+		const raw = JSON.stringify({ data: { p0: node({ mergeStateStatus: 'WHATEVER', author: { login: 'octocat' } }) } });
+		const patch = parsePrSyncResponse(raw, 1)[0];
+		expect(patch?.author).toBe('octocat');
+		expect(patch?.mergeStateStatus).toBeUndefined();
+	});
+
+	it('leaves the author undefined when the PR has no author node', () => {
+		const raw = JSON.stringify({ data: { p0: node({ author: null }) } });
+		expect(parsePrSyncResponse(raw, 1)[0]?.author).toBeUndefined();
 	});
 
 	it('maps an open draft to the draft state', () => {

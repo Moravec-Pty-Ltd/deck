@@ -59,6 +59,27 @@ async function ghAction(args: string[]): Promise<void> {
 	}
 }
 
+// The authenticated gh login, resolved once and cached for the process (it never
+// changes mid-run). Used to gate merges to your own PRs. A failed resolve is not
+// cached, so a transient gh error can be retried, and returns null so callers
+// fall back to allow rather than block on an unknown identity.
+let mePromise: Promise<string | null> | null = null;
+export function currentUser(): Promise<string | null> {
+	if (!mePromise) {
+		mePromise = exec('gh', ['api', 'user', '--jq', '.login'], { timeout: GH_TIMEOUT_MS })
+			.then(({ stdout }) => {
+				const login = stdout.trim();
+				if (!login) mePromise = null; // don't cache an empty resolve; allow a retry
+				return login || null;
+			})
+			.catch(() => {
+				mePromise = null;
+				return null;
+			});
+	}
+	return mePromise;
+}
+
 interface SyncItem {
 	id: string;
 	pr: SessionPR;
@@ -155,20 +176,37 @@ export async function reviewPr(
 	return refreshPr(id);
 }
 
-function mergeArgs(pr: SessionPR, method: MergeMethod, deleteBranch: boolean): string[] {
+export function mergeArgs(
+	pr: SessionPR,
+	method: MergeMethod,
+	deleteBranch: boolean,
+	admin: boolean
+): string[] {
 	const args = ['pr', 'merge', String(pr.number), '-R', pr.repo, MERGE_FLAG[method]];
 	if (deleteBranch) args.push('--delete-branch');
+	// --admin bypasses branch protection (the common BLOCKED case, e.g. self-review
+	// disallowed). It only succeeds with admin rights; gh's permission error is
+	// surfaced inline via the route otherwise.
+	if (admin) args.push('--admin');
 	return args;
 }
 
 // Merge the session's own PR with the chosen method (and optional branch delete),
-// then refresh so the chip flips to merged immediately.
+// then refresh so the chip flips to merged immediately. `admin` force-merges past
+// branch protection. Guarded to PRs you authored: a PR by someone else is rejected
+// (deck also captures PRs you're only reviewing). An unknown author (older captured
+// session, not re-synced) or unresolved identity is allowed for backward-compat.
 export async function mergePr(
 	id: string,
 	method: MergeMethod,
-	deleteBranch: boolean
+	deleteBranch: boolean,
+	admin: boolean
 ): Promise<SessionPR | undefined> {
 	const pr = requirePr(id);
-	await ghAction(mergeArgs(pr, method, deleteBranch));
+	const me = await currentUser();
+	if (pr.author && me && pr.author !== me) {
+		throw new Error('you can only merge your own PRs from deck');
+	}
+	await ghAction(mergeArgs(pr, method, deleteBranch, admin));
 	return refreshPr(id);
 }

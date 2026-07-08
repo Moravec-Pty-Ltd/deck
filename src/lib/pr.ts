@@ -1,7 +1,7 @@
 // Pure GitHub PR-link detection, shared by the server-side capture hook
 // (appendEvent) and the one-time backfill scan. Node-free and unit-tested per
 // the repo convention so the regex logic stays verifiable in isolation.
-import type { PrMergeable, PrReviewDecision, PrState, SessionPR } from './types';
+import type { PrMergeable, PrMergeStateStatus, PrReviewDecision, PrState, SessionPR } from './types';
 
 export interface PrMatch {
 	url: string;
@@ -68,10 +68,11 @@ export interface PrRef {
 // The synced fields merged onto a stored SessionPR each tick.
 export type PrSyncPatch = Pick<
 	SessionPR,
-	'state' | 'mergeable' | 'reviewDecision' | 'approvals' | 'changesRequested'
+	'state' | 'mergeable' | 'mergeStateStatus' | 'reviewDecision' | 'approvals' | 'changesRequested' | 'author'
 >;
 
-const PR_FIELDS = 'state isDraft mergeable reviewDecision latestReviews(first:100){nodes{state}}';
+const PR_FIELDS =
+	'state isDraft mergeable mergeStateStatus reviewDecision author{login} latestReviews(first:100){nodes{state}}';
 
 // One aliased GraphQL selection per captured PR, so a single request covers every
 // non-terminal PR across all repos. Aliases are positional (p0, p1, ...) and the
@@ -104,15 +105,29 @@ interface GhPrNode {
 	state: string;
 	isDraft: boolean;
 	mergeable: string;
+	mergeStateStatus: string;
 	reviewDecision: string | null;
+	author: { login: string } | null;
 	latestReviews?: { nodes: { state: string }[] };
 }
 
 const MERGEABLE = new Set<string>(['MERGEABLE', 'CONFLICTING', 'UNKNOWN']);
+const MERGE_STATES = new Set<string>([
+	'BEHIND',
+	'BLOCKED',
+	'CLEAN',
+	'DIRTY',
+	'DRAFT',
+	'HAS_HOOKS',
+	'UNKNOWN',
+	'UNSTABLE'
+]);
 const DECISIONS = new Set<string>(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED']);
 
 const pickMergeable = (v: string): PrMergeable | undefined =>
 	MERGEABLE.has(v) ? (v as PrMergeable) : undefined;
+const pickMergeState = (v: string): PrMergeStateStatus | undefined =>
+	MERGE_STATES.has(v) ? (v as PrMergeStateStatus) : undefined;
 const pickDecision = (v: string | null): PrReviewDecision | null =>
 	v && DECISIONS.has(v) ? (v as PrReviewDecision) : null;
 
@@ -122,7 +137,9 @@ function prPatch(node: GhPrNode | undefined): PrSyncPatch | null {
 	return {
 		state: state ?? undefined,
 		mergeable: pickMergeable(node.mergeable),
+		mergeStateStatus: pickMergeState(node.mergeStateStatus),
 		reviewDecision: pickDecision(node.reviewDecision),
+		author: node.author?.login,
 		...reviewCounts(node.latestReviews?.nodes ?? [])
 	};
 }
