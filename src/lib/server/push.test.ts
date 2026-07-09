@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import webpush from 'web-push';
 
 // push.ts derives its data dir from the env at import time (and mints VAPID keys
 // there), so pin DECK_DATA to a throwaway dir before the module loads.
@@ -9,7 +10,7 @@ const originalDataDir = process.env.DECK_DATA;
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-push-'));
 process.env.DECK_DATA = tmpDir;
 
-const { isValidPushEndpoint, addSub } = await import('./push');
+const { isValidPushEndpoint, addSub, notify } = await import('./push');
 
 const SUBS_FILE = path.join(tmpDir, 'push-subscriptions.json');
 const sub = (endpoint: string) =>
@@ -19,6 +20,10 @@ const readSubs = (): Array<{ endpoint: string }> =>
 
 beforeEach(() => {
 	fs.rmSync(SUBS_FILE, { force: true });
+});
+
+afterEach(() => {
+	vi.restoreAllMocks();
 });
 
 afterAll(() => {
@@ -62,5 +67,38 @@ describe('addSub', () => {
 		// Oldest evicted, newest retained.
 		expect(stored[0].endpoint).toBe('https://push.example/10');
 		expect(stored.at(-1)?.endpoint).toBe('https://push.example/29');
+	});
+});
+
+describe('notify', () => {
+	const rejectWith = (statusCode: number) =>
+		vi.spyOn(webpush, 'sendNotification').mockRejectedValue(
+			Object.assign(new Error('nope'), { statusCode, body: `status ${statusCode}` })
+		);
+
+	it('prunes a subscription the push service has expired (404/410)', async () => {
+		addSub(sub('https://push.example/gone'));
+		rejectWith(410);
+		const errLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		notify({ title: 'hi' });
+
+		await vi.waitFor(() => expect(readSubs()).toHaveLength(0));
+		expect(errLog).not.toHaveBeenCalled();
+	});
+
+	it('logs other non-2xx failures once, with a redacted endpoint, without pruning', async () => {
+		addSub(sub('https://push.example/secret-token'));
+		rejectWith(403);
+		const errLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		notify({ title: 'hi' });
+
+		await vi.waitFor(() => expect(errLog).toHaveBeenCalledTimes(1));
+		const msg = String(errLog.mock.calls[0][0]);
+		// Keeps the origin/route for debugging but drops the token-like segment.
+		expect(msg).toContain('https://push.example/[redacted]');
+		expect(msg).not.toContain('secret-token');
+		expect(readSubs()).toHaveLength(1);
 	});
 });

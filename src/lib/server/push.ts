@@ -27,10 +27,12 @@ function loadVapid(): Vapid {
 const vapid = loadVapid();
 export const vapidPublicKey = vapid.publicKey;
 
-// `subject` must be a mailto: or https: URL; the push service only uses it as a
-// contact, so a local placeholder is fine.
+// `subject` is the VAPID contact (a mailto: or https: URL). Apple Web Push
+// validates the JWT `sub` claim strictly and rejects a localhost mailto with
+// 403 BadJwtToken, so the default has to be a real address; override with
+// DECK_PUSH_SUBJECT.
 webpush.setVapidDetails(
-	process.env.DECK_PUSH_SUBJECT || 'mailto:deck@localhost',
+	process.env.DECK_PUSH_SUBJECT || 'mailto:info@moravec.tech',
 	vapid.publicKey,
 	vapid.privateKey
 );
@@ -74,6 +76,18 @@ export interface NotifyPayload {
 	tag?: string;
 }
 
+// A push endpoint's trailing path segment is a secret that can act like a
+// bearer token, so redact it before logging: keep the origin and route for
+// debugging, drop the token.
+function redactEndpoint(endpoint: string): string {
+	try {
+		const url = new URL(endpoint);
+		return url.origin + url.pathname.replace(/[^/]+$/, '[redacted]');
+	} catch {
+		return '<unparseable endpoint>';
+	}
+}
+
 // Fire-and-forget push to every subscription; prune ones the push service has
 // expired (404/410).
 export function notify(payload: NotifyPayload): void {
@@ -81,8 +95,15 @@ export function notify(payload: NotifyPayload): void {
 	if (!subs.length) return;
 	const data = JSON.stringify(payload);
 	for (const sub of subs) {
-		webpush.sendNotification(sub, data).catch((e: { statusCode?: number }) => {
+		webpush.sendNotification(sub, data).catch((e: { statusCode?: number; body?: string }) => {
 			if (e?.statusCode === 404 || e?.statusCode === 410) removeSub(sub.endpoint);
+			// Anything else (e.g. a 403 from a rejected VAPID subject) would
+			// otherwise vanish; surface it so a broken subject/JWT is visible.
+			else
+				console.error(
+					`[deck] push send failed (status ${e?.statusCode ?? 'unknown'}) for ${redactEndpoint(sub.endpoint)}:`,
+					e?.body ?? e
+				);
 		});
 	}
 }
