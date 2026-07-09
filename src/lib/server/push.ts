@@ -87,7 +87,11 @@ export function notify(payload: NotifyPayload): void {
 			if (e?.statusCode === 404 || e?.statusCode === 410) removeSub(sub.endpoint);
 			// Anything else (e.g. a 403 from a rejected VAPID subject) would
 			// otherwise vanish; surface it so a broken subject/JWT is visible.
-			else console.error(`[deck] push send failed (${e?.statusCode}):`, e?.body ?? e);
+			else
+				console.error(
+					`[deck] push send failed (status ${e?.statusCode ?? 'unknown'}) for ${sub.endpoint}:`,
+					e?.body ?? e
+				);
 		});
 	}
 }
