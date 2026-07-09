@@ -76,6 +76,18 @@ export interface NotifyPayload {
 	tag?: string;
 }
 
+// A push endpoint's trailing path segment is a secret that can act like a
+// bearer token, so redact it before logging: keep the origin and route for
+// debugging, drop the token.
+function redactEndpoint(endpoint: string): string {
+	try {
+		const url = new URL(endpoint);
+		return url.origin + url.pathname.replace(/[^/]+$/, '[redacted]');
+	} catch {
+		return '<unparseable endpoint>';
+	}
+}
+
 // Fire-and-forget push to every subscription; prune ones the push service has
 // expired (404/410).
 export function notify(payload: NotifyPayload): void {
@@ -89,7 +101,7 @@ export function notify(payload: NotifyPayload): void {
 			// otherwise vanish; surface it so a broken subject/JWT is visible.
 			else
 				console.error(
-					`[deck] push send failed (status ${e?.statusCode ?? 'unknown'}) for ${sub.endpoint}:`,
+					`[deck] push send failed (status ${e?.statusCode ?? 'unknown'}) for ${redactEndpoint(sub.endpoint)}:`,
 					e?.body ?? e
 				);
 		});

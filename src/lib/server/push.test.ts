@@ -87,14 +87,18 @@ describe('notify', () => {
 		expect(errLog).not.toHaveBeenCalled();
 	});
 
-	it('logs other non-2xx failures once without pruning the subscription', async () => {
-		addSub(sub('https://push.example/bad'));
+	it('logs other non-2xx failures once, with a redacted endpoint, without pruning', async () => {
+		addSub(sub('https://push.example/secret-token'));
 		rejectWith(403);
 		const errLog = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		notify({ title: 'hi' });
 
 		await vi.waitFor(() => expect(errLog).toHaveBeenCalledTimes(1));
+		const msg = String(errLog.mock.calls[0][0]);
+		// Keeps the origin/route for debugging but drops the token-like segment.
+		expect(msg).toContain('https://push.example/[redacted]');
+		expect(msg).not.toContain('secret-token');
 		expect(readSubs()).toHaveLength(1);
 	});
 });
