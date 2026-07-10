@@ -38,6 +38,12 @@
 		else err = '';
 	});
 
+	// A turn starting flips `disabled`, swapping the dropdown for the locked badge;
+	// drop any pending expensive-model confirm so it can't switch behind the lock.
+	$effect(() => {
+		if (disabled) pendingModel = null;
+	});
+
 	async function apply(next: string) {
 		if (busy) return;
 		busy = true;

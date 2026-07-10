@@ -13,7 +13,6 @@
 	import {
 		CLAUDE_MODELS,
 		isExpensiveModel,
-		modelLabel,
 		resolveModelChoice,
 		shouldReseedModel
 	} from '$lib/models';
@@ -277,6 +276,10 @@
 		)
 	);
 	const opencodeModels = $derived(detectedModels.map((m) => m.model));
+	// The picked model as the expensive-model warning/confirm should name it: pi
+	// keeps provider and model separate (an expensive match can come from either),
+	// so show `provider/model`; the other kinds carry the whole id in `model`.
+	const pickedModelLabel = $derived([provider, model].filter(Boolean).join('/'));
 
 	// Model/provider default to the project's last pick for this kind, then the
 	// global last-used, then the built-in default (claude -> opus, others blank).
@@ -729,8 +732,8 @@
 						<div class="alert alert-warning items-start py-1 text-xs">
 							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
 							<span>
-								<span class="font-mono">{modelLabel(model || provider)}</span> is an expensive model;
-								you'll be asked to confirm before it starts.
+								<span class="font-mono">{pickedModelLabel}</span> is an expensive model; you'll be asked
+								to confirm before it starts.
 							</span>
 						</div>
 					{/if}
@@ -786,8 +789,8 @@
 					<TriangleAlert size={18} class="text-warning" /> Expensive model
 				</h3>
 				<p class="mb-3 text-sm opacity-70">
-					<span class="font-mono">{modelLabel(model || provider)}</span> is an expensive model. Start this
-					session on it anyway?
+					<span class="font-mono">{pickedModelLabel}</span> is an expensive model. Start this session on
+					it anyway?
 				</p>
 				<div class="modal-action">
 					<button class="btn" onclick={() => (confirmingExpensive = false)}>Cancel</button>
