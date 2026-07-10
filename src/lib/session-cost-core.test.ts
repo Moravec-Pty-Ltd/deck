@@ -92,4 +92,10 @@ describe('formatCostSummary', () => {
 			'$0.03 · 4 turns'
 		);
 	});
+
+	it('uses the singular for a single turn', () => {
+		expect(formatCostSummary({ costUsd: 0, turns: 1, durationMs: 5000, results: 1 })).toBe(
+			'1 turn · 5s'
+		);
+	});
 });

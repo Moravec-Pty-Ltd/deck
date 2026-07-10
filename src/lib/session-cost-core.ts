@@ -63,7 +63,7 @@ export function formatDuration(ms: number): string {
 export function formatCostSummary(sum: CostSummary): string {
 	const parts: string[] = [];
 	if (sum.costUsd > 0) parts.push(`$${sum.costUsd.toFixed(2)}`);
-	parts.push(`${sum.turns} turns`);
+	parts.push(`${sum.turns} ${sum.turns === 1 ? 'turn' : 'turns'}`);
 	if (sum.durationMs > 0) parts.push(formatDuration(sum.durationMs));
 	return parts.join(' · ');
 }
