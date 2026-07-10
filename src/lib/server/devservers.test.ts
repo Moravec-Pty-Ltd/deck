@@ -84,4 +84,9 @@ describe('probePort', () => {
 		await close(open.pop()!);
 		expect(await probePort(port, 200)).toBe(false);
 	});
+
+	it('resolves false for an out-of-range port instead of throwing or hanging', async () => {
+		// net.connect throws synchronously here; probePort must still settle.
+		expect(await probePort(999999)).toBe(false);
+	});
 });

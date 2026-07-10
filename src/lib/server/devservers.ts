@@ -415,7 +415,15 @@ async function killName(name: string) {
 
 function probeHost(host: string, port: number, timeoutMs: number): Promise<boolean> {
 	return new Promise((resolve) => {
-		const sock = net.connect({ host, port });
+		let sock: net.Socket;
+		try {
+			// net.connect throws synchronously on a bad port (out of range / NaN);
+			// treat that as "not listening" so probePort always settles to a boolean.
+			sock = net.connect({ host, port });
+		} catch {
+			resolve(false);
+			return;
+		}
 		const done = (ok: boolean) => {
 			sock.destroy();
 			resolve(ok);
