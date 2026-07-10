@@ -427,14 +427,20 @@ function probeHost(host: string, port: number, timeoutMs: number): Promise<boole
 	});
 }
 
-// Probe both loopback families in parallel: a server bound to ::1 only (common
-// when localhost resolves to IPv6 first, e.g. Node >=17 / Vite) refuses an IPv4
-// connect, and an IPv4-only server refuses ::1. Listening = either accepts.
+// Probe both loopback families: a server bound to ::1 only (common when
+// localhost resolves to IPv6 first, e.g. Node >=17 / Vite) refuses an IPv4
+// connect, and an IPv4-only server refuses ::1. Listening = either accepts;
+// resolve as soon as one connects rather than waiting on the other family.
 export function probePort(port: number, timeoutMs = 700): Promise<boolean> {
-	return Promise.all([
-		probeHost('127.0.0.1', port, timeoutMs),
-		probeHost('::1', port, timeoutMs)
-	]).then((results) => results.some(Boolean));
+	return new Promise((resolve) => {
+		let pending = 2;
+		const settle = (ok: boolean) => {
+			if (ok) resolve(true);
+			else if (--pending === 0) resolve(false);
+		};
+		void probeHost('127.0.0.1', port, timeoutMs).then(settle);
+		void probeHost('::1', port, timeoutMs).then(settle);
+	});
 }
 
 function probePorts(ports: PortSpec[]): Promise<PortStatus[]> {

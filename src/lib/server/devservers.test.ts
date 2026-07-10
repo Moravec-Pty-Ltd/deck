@@ -17,8 +17,28 @@ function listen(host: string): Promise<number> {
 	});
 }
 
+// Bind or return null on hosts with no such loopback family (e.g. IPv6 disabled
+// in some CI/containers), so those tests skip rather than fail.
+async function tryListen(host: string): Promise<number | null> {
+	try {
+		return await listen(host);
+	} catch (e) {
+		const code = (e as NodeJS.ErrnoException).code;
+		if (code === 'EADDRNOTAVAIL' || code === 'EAFNOSUPPORT' || code === 'ENOTSUP') return null;
+		throw e;
+	}
+}
+
+// Resilient to a server that never started listening (a failed tryListen still
+// pushed it), which would otherwise throw ERR_SERVER_NOT_RUNNING on close.
 function close(srv: net.Server): Promise<void> {
-	return new Promise((r) => srv.close(() => r()));
+	return new Promise((r) => {
+		try {
+			srv.close(() => r());
+		} catch {
+			r();
+		}
+	});
 }
 
 afterEach(async () => {
@@ -26,8 +46,9 @@ afterEach(async () => {
 });
 
 describe('probePort', () => {
-	it('detects an IPv6-only (::1) listener', async () => {
-		const port = await listen('::1');
+	it('detects an IPv6-only (::1) listener', async (ctx) => {
+		const port = await tryListen('::1');
+		if (port === null) return ctx.skip();
 		expect(await probePort(port)).toBe(true);
 	});
 
