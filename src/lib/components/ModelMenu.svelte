@@ -65,6 +65,7 @@
 	function switchTo(next: string) {
 		if (busy) return;
 		if (isExpensiveModel(next) && next !== (model ?? '')) {
+			err = ''; // open the confirm clean, not on a prior switch's stale error
 			pendingModel = next;
 			return;
 		}
