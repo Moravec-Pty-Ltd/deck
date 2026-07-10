@@ -413,9 +413,17 @@ async function killName(name: string) {
 	if (await hasTmuxSession(name)) await killTmuxSession(name);
 }
 
-function probePort(port: number, timeoutMs = 700): Promise<boolean> {
+function probeHost(host: string, port: number, timeoutMs: number): Promise<boolean> {
 	return new Promise((resolve) => {
-		const sock = net.connect({ host: '127.0.0.1', port });
+		let sock: net.Socket;
+		try {
+			// net.connect throws synchronously on a bad port (out of range / NaN);
+			// treat that as "not listening" so probePort always settles to a boolean.
+			sock = net.connect({ host, port });
+		} catch {
+			resolve(false);
+			return;
+		}
 		const done = (ok: boolean) => {
 			sock.destroy();
 			resolve(ok);
@@ -424,6 +432,22 @@ function probePort(port: number, timeoutMs = 700): Promise<boolean> {
 		sock.once('connect', () => done(true));
 		sock.once('timeout', () => done(false));
 		sock.once('error', () => done(false));
+	});
+}
+
+// Probe both loopback families: a server bound to ::1 only (common when
+// localhost resolves to IPv6 first, e.g. Node >=17 / Vite) refuses an IPv4
+// connect, and an IPv4-only server refuses ::1. Listening = either accepts;
+// resolve as soon as one connects rather than waiting on the other family.
+export function probePort(port: number, timeoutMs = 700): Promise<boolean> {
+	return new Promise((resolve) => {
+		let pending = 2;
+		const settle = (ok: boolean) => {
+			if (ok) resolve(true);
+			else if (--pending === 0) resolve(false);
+		};
+		void probeHost('127.0.0.1', port, timeoutMs).then(settle);
+		void probeHost('::1', port, timeoutMs).then(settle);
 	});
 }
 
