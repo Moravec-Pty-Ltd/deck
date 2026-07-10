@@ -63,7 +63,10 @@
 	// premium model is never applied by accident (issue #134). Reselecting the
 	// current model or picking any non-expensive one applies straight away.
 	function switchTo(next: string) {
-		if (busy) return;
+		// While an expensive-model confirm is pending, the modal is the only path:
+		// ignore any background switch (a focused list button or the free-text Enter
+		// behind the overlay) so nothing applies until the user confirms or cancels.
+		if (busy || pendingModel !== null) return;
 		if (isExpensiveModel(next) && next !== (model ?? '')) {
 			err = ''; // open the confirm clean, not on a prior switch's stale error
 			pendingModel = next;

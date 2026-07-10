@@ -89,9 +89,12 @@
 	let newProjectTemplate = $state('');
 	let busy = $state(false);
 	let errorMsg = $state('');
-	// Set once the create passes validation but lands on an expensive model, so the
-	// confirm dialog shows before the session is actually started (issue #134).
+	// The expensive-model confirm is showing (a fable/sol pick is awaiting a
+	// decision). `confirmedExpensive` is the explicit go-ahead, set only by the
+	// confirm's own button, so a stray re-invoke of create() (e.g. Enter on the
+	// still-focused Create button behind the modal) can't skip the gate (issue #134).
 	let confirmingExpensive = $state(false);
+	let confirmedExpensive = $state(false);
 	let showPicker = $state(false);
 	let pickedIssues = $state<Issue[]>([]);
 	let pickedPr = $state<PullRequest | null>(null);
@@ -116,6 +119,7 @@
 		seededProjectPath = undefined;
 		errorMsg = '';
 		confirmingExpensive = false;
+		confirmedExpensive = false;
 		showPicker = false;
 		workflowId = '';
 		pickedIssues = [];
@@ -378,15 +382,16 @@
 			errorMsg = 'pick a project or path';
 			return;
 		}
-		// Guard the select: starting a session on an expensive model (fable/sol) asks
-		// first so a premium model isn't kicked off by accident (issue #134). The
-		// inline warning flags it while picking; this stops the actual create until
-		// confirmed.
-		if (!confirmingExpensive && isAgentKind(kind) && isExpensiveModel(model, provider)) {
+		// Expensive-model gate: a fable/sol pick pops the confirm instead of starting;
+		// only an explicit "Start anyway" (confirmedExpensive) gets past, so pressing
+		// Enter on the background Create button can't bypass it (issue #134). The
+		// inline warning flags the pick while choosing.
+		if (isAgentKind(kind) && isExpensiveModel(model, provider) && !confirmedExpensive) {
 			confirmingExpensive = true;
 			return;
 		}
 		confirmingExpensive = false;
+		confirmedExpensive = false;
 		busy = true;
 		try {
 			const res = await fetch('/api/sessions', {
@@ -793,13 +798,29 @@
 					it anyway?
 				</p>
 				<div class="modal-action">
-					<button class="btn" onclick={() => (confirmingExpensive = false)}>Cancel</button>
-					<button class="btn btn-warning" onclick={create} disabled={busy}>Start anyway</button>
+					<button
+						class="btn"
+						onclick={() => {
+							confirmingExpensive = false;
+							confirmedExpensive = false;
+						}}>Cancel</button
+					>
+					<button
+						class="btn btn-warning"
+						disabled={busy}
+						onclick={() => {
+							confirmedExpensive = true;
+							create();
+						}}>Start anyway</button
+					>
 				</div>
 			</div>
 			<button
 				class="modal-backdrop"
-				onclick={() => (confirmingExpensive = false)}
+				onclick={() => {
+					confirmingExpensive = false;
+					confirmedExpensive = false;
+				}}
 				aria-label="close"
 			></button>
 		</div>
