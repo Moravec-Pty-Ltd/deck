@@ -283,13 +283,18 @@
 	// The picked model as the expensive-model warning/confirm should name it: pi
 	// keeps provider and model separate (an expensive match can come from either),
 	// so show `provider/model`; the other kinds carry the whole id in `model`.
-	const pickedModelLabel = $derived([provider, model].filter(Boolean).join('/'));
+	// provider is a pi-only concept (only pi sends it on create), so treat it as
+	// unset for other kinds in the expensive check and its label — a stale
+	// remembered provider must not sway the warning for claude/codex/opencode.
+	const effectiveProvider = $derived(kind === 'pi' ? provider : '');
+	const pickedModelLabel = $derived([effectiveProvider, model].filter(Boolean).join('/'));
+	const expensivePick = $derived(isAgentKind(kind) && isExpensiveModel(model, effectiveProvider));
 
 	// If the pick stops being expensive while the confirm is open (a background
 	// control stays reachable behind the div-modal), drop the stale dialog so an
 	// "Expensive model" prompt never lingers on a now-cheap selection (issue #134).
 	$effect(() => {
-		if (confirmingExpensive && !(isAgentKind(kind) && isExpensiveModel(model, provider))) {
+		if (confirmingExpensive && !expensivePick) {
 			confirmingExpensive = false;
 			confirmedExpensive = false;
 		}
@@ -396,7 +401,7 @@
 		// only an explicit "Start anyway" (confirmedExpensive) gets past, so pressing
 		// Enter on the background Create button can't bypass it (issue #134). The
 		// inline warning flags the pick while choosing.
-		if (isAgentKind(kind) && isExpensiveModel(model, provider) && !confirmedExpensive) {
+		if (expensivePick && !confirmedExpensive) {
 			confirmingExpensive = true;
 			return;
 		}
@@ -743,7 +748,7 @@
 							oninput={() => (modelDirty = true)}
 						/>
 					{/if}
-					{#if isExpensiveModel(model, provider)}
+					{#if expensivePick}
 						<div class="alert alert-warning items-start py-1 text-xs">
 							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
 							<span>
