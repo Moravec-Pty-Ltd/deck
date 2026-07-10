@@ -285,6 +285,16 @@
 	// so show `provider/model`; the other kinds carry the whole id in `model`.
 	const pickedModelLabel = $derived([provider, model].filter(Boolean).join('/'));
 
+	// If the pick stops being expensive while the confirm is open (a background
+	// control stays reachable behind the div-modal), drop the stale dialog so an
+	// "Expensive model" prompt never lingers on a now-cheap selection (issue #134).
+	$effect(() => {
+		if (confirmingExpensive && !(isAgentKind(kind) && isExpensiveModel(model, provider))) {
+			confirmingExpensive = false;
+			confirmedExpensive = false;
+		}
+	});
+
 	// Model/provider default to the project's last pick for this kind, then the
 	// global last-used, then the built-in default (claude -> opus, others blank).
 	// Re-seed on a kind change (prior text belongs to a different agent) or a
