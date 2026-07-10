@@ -8,7 +8,8 @@ import path from 'node:path';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-transcript-test-'));
 process.env.DECK_DATA = dataDir;
 
-const { transcriptPath, snapshotFrames, readTranscriptRange } = await import('./transcript');
+const { transcriptPath, snapshotFrames, readTranscriptRange, transcriptCostSummary } =
+	await import('./transcript');
 
 afterAll(() => fs.rmSync(dataDir, { recursive: true, force: true }));
 
@@ -21,10 +22,21 @@ function append(id: string, events: unknown[]) {
 }
 
 // Reassemble the snapshot payload the SSE endpoint would emit from the frames.
-function snapshot(id: string): { start: number; total: number; events: unknown[] } {
+function rawSnapshot(id: string): Record<string, unknown> {
 	const frames = snapshotFrames(id);
 	expect(frames.every((f, i) => f.seq === i && f.n === frames.length)).toBe(true);
 	return JSON.parse(frames.map((f) => f.data).join(''));
+}
+
+// The tail shape the back-scroll/window tests care about; the session cost total
+// rides along in the same payload and is asserted separately below.
+function snapshot(id: string): { start: number; total: number; events: unknown[] } {
+	const { start, total, events } = rawSnapshot(id) as {
+		start: number;
+		total: number;
+		events: unknown[];
+	};
+	return { start, total, events };
 }
 
 const ev = (i: number, extra: Record<string, unknown> = {}) => ({ type: 'x', i, ...extra });
@@ -165,5 +177,62 @@ describe('readTranscriptRange back-scroll', () => {
 		const slice = readTranscriptRange(big, 1500, 1_000_000);
 		expect(slice.start).toBe(500);
 		expect(slice.events).toEqual(many.slice(500));
+	});
+});
+
+describe('transcriptCostSummary', () => {
+	const result = (o: Record<string, unknown>) => ({ type: 'result', ...o });
+
+	it('sums every result across the whole transcript, not just the snapshot tail', () => {
+		const id = 'cost-full';
+		// Far more than the 250-event snapshot window, so a naive tail-only sum
+		// would miss most of the cost. Interleave a result every ten events.
+		const events: unknown[] = [];
+		for (let i = 0; i < 400; i++) {
+			events.push(ev(i));
+			if (i % 10 === 0) events.push(result({ total_cost_usd: 0.5, num_turns: 2, duration_ms: 1000 }));
+		}
+		seed(id, events);
+		expect(transcriptCostSummary(id)).toEqual({
+			costUsd: 20,
+			turns: 80,
+			durationMs: 40000,
+			results: 40
+		});
+		// And it rides along in the snapshot payload for the client to seed from.
+		expect((rawSnapshot(id) as { cost: unknown }).cost).toEqual({
+			costUsd: 20,
+			turns: 80,
+			durationMs: 40000,
+			results: 40
+		});
+	});
+
+	it('extends the running total as the transcript grows', () => {
+		const id = 'cost-grow';
+		seed(id, [result({ total_cost_usd: 1, num_turns: 1, duration_ms: 100 })]);
+		expect(transcriptCostSummary(id)).toMatchObject({ costUsd: 1, turns: 1, results: 1 });
+		append(id, [ev(0), result({ total_cost_usd: 2, num_turns: 3, duration_ms: 200 })]);
+		expect(transcriptCostSummary(id)).toEqual({
+			costUsd: 3,
+			turns: 4,
+			durationMs: 300,
+			results: 2
+		});
+	});
+
+	it('skips a huge non-result line without reading or parsing it', () => {
+		const id = 'cost-huge';
+		// A tool-output line larger than RESULT_LINE_MAX (64KB) can't be a result;
+		// it must not be pulled into memory or throw the aggregation off.
+		const huge = { type: 'user', message: { content: 'x'.repeat(200_000) } };
+		seed(id, [result({ total_cost_usd: 0.25, num_turns: 1 }), huge]);
+		expect(transcriptCostSummary(id)).toMatchObject({ costUsd: 0.25, turns: 1, results: 1 });
+	});
+
+	it('returns an empty summary for a transcript with no results (e.g. a shell session)', () => {
+		const id = 'cost-none';
+		seed(id, [ev(0), ev(1), ev(2)]);
+		expect(transcriptCostSummary(id)).toEqual({ costUsd: 0, turns: 0, durationMs: 0, results: 0 });
 	});
 });

@@ -3,6 +3,12 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { DeckSession } from '$lib/types';
 	import { indexForward, indexOlderBatch, type Answer } from '$lib/transcript-index';
+	import {
+		emptyCostSummary,
+		foldResult,
+		formatCostSummary,
+		type CostSummary
+	} from '$lib/session-cost-core';
 	import { modelLabel } from '$lib/models';
 	import Linked from './Linked.svelte';
 	import ToolCall from './ToolCall.svelte';
@@ -15,6 +21,10 @@
 	type AnyEvent = Record<string, any>;
 
 	let events = $state<AnyEvent[]>([]);
+	// Session-level cost/turns/duration total. Seeded from the snapshot's
+	// server-computed base (the recent-history window can't hold every result of a
+	// long session), then extended as live results stream in.
+	let cost = $state<CostSummary>(emptyCostSummary());
 	let status = $state<string>(session.status);
 	let liveText = $state('');
 	let input = $state('');
@@ -94,6 +104,7 @@
 		// Clear the previous session synchronously so its history and live stream
 		// can't bleed into this one while the new snapshot is in flight.
 		events = [];
+		cost = emptyCostSummary();
 		clearIndex();
 		baseIndex = 0;
 		limit = INITIAL_WINDOW;
@@ -127,7 +138,7 @@
 				if (frame.seq === 0) snapBuf = '';
 				snapBuf += frame.data;
 				if (frame.seq + 1 < frame.n) return; // wait for the rest
-				let snap: { start: number; events: AnyEvent[] };
+				let snap: { start: number; events: AnyEvent[]; cost?: CostSummary };
 				try {
 					snap = JSON.parse(snapBuf);
 				} catch {
@@ -135,6 +146,7 @@
 				}
 				snapBuf = '';
 				events = snap.events;
+				cost = snap.cost ?? emptyCostSummary();
 				reindex(snap.events);
 				baseIndex = snap.start;
 				limit = INITIAL_WINDOW;
@@ -151,6 +163,7 @@
 					return;
 				}
 				if (ev.type === 'assistant') liveText = '';
+				if (ev.type === 'result') cost = foldResult(cost, ev);
 				events.push(ev); // in-place: a full re-spread is O(n) on every event
 				indexForward(index, ev);
 				limit += 1; // keep the new event in view without dropping a tail row
@@ -537,6 +550,14 @@
 		>
 			<ArrowDown size={16} />
 		</button>
+	{/if}
+
+	{#if cost.results > 0}
+		<!-- Running session total, pinned above the composer so it stays in view
+		     regardless of scroll (per-turn footers still render inline above). -->
+		<div class="border-t border-base-300 px-3 py-1 text-center text-xs opacity-60">
+			{formatCostSummary(cost)}
+		</div>
 	{/if}
 
 	<div class="border-t border-base-300 bg-base-100 p-2 sm:p-3">

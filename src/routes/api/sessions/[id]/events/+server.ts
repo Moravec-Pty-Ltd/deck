@@ -5,6 +5,7 @@ import { getSession } from '$lib/server/sessions';
 import { bus, snapshotFrames } from '$lib/server/claude';
 import { agentTurnRunning } from '$lib/server/agents/dispatch';
 import { DEMO, demoTranscript } from '$lib/server/demo';
+import { sessionCostSummary } from '$lib/session-cost-core';
 
 // SSE: send the recent stored history, then stream live events for the session.
 export const GET: RequestHandler = async ({ params }) => {
@@ -23,7 +24,12 @@ export const GET: RequestHandler = async ({ params }) => {
 			start(controller) {
 				const send = (type: string, data: unknown) =>
 					controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
-				send('snapshot', { seq: 0, n: 1, data: JSON.stringify({ start: 0, events: demoTranscript(id) }) });
+				const events = demoTranscript(id);
+				send('snapshot', {
+					seq: 0,
+					n: 1,
+					data: JSON.stringify({ start: 0, cost: sessionCostSummary(events), events })
+				});
 				send('status', session.status);
 				const ping = setInterval(() => {
 					try {

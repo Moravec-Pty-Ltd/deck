@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { transcriptsDir } from './config';
+import { emptyCostSummary, foldResult, type CostSummary } from '$lib/session-cost-core';
 
 // Transcript files are append-only JSONL: one JSON event per line, written by
 // appendEvent. The live view only ever needs the tail (initial snapshot) or a
@@ -41,7 +42,7 @@ function transcriptIndex(id: string): TranscriptIndex | null {
 		indexCache.delete(id);
 		return null;
 	}
-	return cacheIndex(id, buildIndex(file, stat, indexCache.get(id)));
+	return lruSet(indexCache, id, buildIndex(file, stat, indexCache.get(id)));
 }
 
 // Reuse the cached index when the stat is unchanged; extend it in place when the
@@ -67,16 +68,17 @@ function buildIndex(
 	return { size: stat.size, mtimeMs: stat.mtimeMs, newlines };
 }
 
-// Store as most-recently-used and evict the oldest entries past the cap.
-function cacheIndex(id: string, index: TranscriptIndex): TranscriptIndex {
-	indexCache.delete(id);
-	indexCache.set(id, index);
-	while (indexCache.size > INDEX_CACHE_MAX) {
-		const oldest = indexCache.keys().next().value as string | undefined;
+// Store as most-recently-used and evict the oldest entries past the cap. Shared
+// by the newline index and the cost summary, which are cached the same way.
+function lruSet<T>(cache: Map<string, T>, id: string, entry: T): T {
+	cache.delete(id);
+	cache.set(id, entry);
+	while (cache.size > INDEX_CACHE_MAX) {
+		const oldest = cache.keys().next().value as string | undefined;
 		if (oldest === undefined) break;
-		indexCache.delete(oldest);
+		cache.delete(oldest);
 	}
-	return index;
+	return entry;
 }
 
 // Append the byte offset of every '\n' in [from, to) to `newlines`, reading in
@@ -159,9 +161,14 @@ function lineStart(newlines: number[], i: number): number {
 // Older history loads lazily via the /transcript endpoint when scrolled to.
 const SNAPSHOT_MAX = 250;
 const SNAPSHOT_BYTES = 256 * 1024;
-function readTranscriptTail(id: string): { total: number; start: number; events: unknown[] } {
+function readTranscriptTail(id: string): {
+	total: number;
+	start: number;
+	cost: CostSummary;
+	events: unknown[];
+} {
 	const index = transcriptIndex(id);
-	if (!index) return { total: 0, start: 0, events: [] };
+	if (!index) return { total: 0, start: 0, cost: emptyCostSummary(), events: [] };
 	const { newlines } = index;
 	const total = newlines.length;
 
@@ -181,7 +188,9 @@ function readTranscriptTail(id: string): { total: number; start: number; events:
 		lineStart(newlines, total),
 		total - start
 	);
-	return { total, start, events };
+	// Cost over the whole transcript, folded from the same index this tail was
+	// built on, so the two stay anchored to one line count (see costSummaryFromIndex).
+	return { total, start, cost: costSummaryFromIndex(id, index), events };
 }
 
 // The serialized tail of the transcript (newest SNAPSHOT_MAX events / bytes), as
@@ -194,13 +203,111 @@ export function readTranscriptTailText(id: string): string {
 		.join('\n');
 }
 
+// Running cost/turns/duration total over the whole transcript, kept per session
+// so the client can pin a session-level figure the snapshot's recent-history
+// window can't hold. Result events are tiny and one per turn, so we fold only
+// small result-marked lines (skipping large tool-output lines unread) using the
+// newline index's line boundaries, and extend the summary as the file grows,
+// mirroring how the index itself is cached and extended incrementally.
+interface CostIndex {
+	size: number;
+	mtimeMs: number;
+	lines: number;
+	summary: CostSummary;
+}
+const costCache = new Map<string, CostIndex>();
+// A result event is a flat object (~10KB at most in practice); anything larger
+// is a different event (tool output) and can't be a result, so skip it unread.
+const RESULT_LINE_MAX = 64 * 1024;
+
+export function transcriptCostSummary(id: string): CostSummary {
+	const index = transcriptIndex(id);
+	if (!index) {
+		costCache.delete(id);
+		return emptyCostSummary();
+	}
+	return costSummaryFromIndex(id, index);
+}
+
+// Fold the transcript's result events into a running total, cached against and
+// extended alongside the given index. Callers pass the same index they read the
+// rest of the snapshot from, so the cost and the events tail stay anchored to one
+// line count: a second, independent index read could otherwise pick up a result
+// the tail doesn't carry, and the client would fold that streamed result twice.
+function costSummaryFromIndex(id: string, index: TranscriptIndex): CostSummary {
+	const total = index.newlines.length;
+	const cached = costCache.get(id);
+	if (cached && cached.size === index.size && cached.mtimeMs === index.mtimeMs) return cached.summary;
+	// Append-only, so a size increase just extends from the last folded line
+	// (mtime has usually changed too); anything else (truncation, rewrite from a
+	// smaller/equal size) rebuilds from the start.
+	const grew = !!cached && index.size > cached.size && cached.lines <= total;
+	const summary = foldResultLines(
+		transcriptPath(id),
+		index.newlines,
+		grew ? cached!.lines : 0,
+		total,
+		grew ? cached!.summary : emptyCostSummary()
+	);
+	return lruSet(costCache, id, {
+		size: index.size,
+		mtimeMs: index.mtimeMs,
+		lines: total,
+		summary
+	}).summary;
+}
+
+// Fold the `result` events in lines [from, to) into `summary`. Reads each small
+// line individually so a huge tool-output line never pulls megabytes into
+// memory; the marker pre-filter avoids parsing lines that can't be results, and
+// foldResult re-checks the parsed type so a false-positive match is harmless.
+function foldResultLines(
+	file: string,
+	newlines: number[],
+	from: number,
+	to: number,
+	summary: CostSummary
+): CostSummary {
+	if (to <= from) return summary;
+	let fd: number;
+	try {
+		fd = fs.openSync(file, 'r');
+	} catch {
+		return summary;
+	}
+	try {
+		for (let i = from; i < to; i++) {
+			const s = lineStart(newlines, i);
+			const len = newlines[i] - s;
+			if (len <= 0 || len > RESULT_LINE_MAX) continue;
+			const buf = Buffer.allocUnsafe(len);
+			const read = readFull(fd, buf, s, len);
+			const line = buf.toString('utf8', 0, read);
+			if (!line.includes('"type":"result"')) continue;
+			try {
+				summary = foldResult(summary, JSON.parse(line));
+			} catch {
+				// Unreadable/partial line: skip it, same as the transcript reader.
+			}
+		}
+	} finally {
+		fs.closeSync(fd);
+	}
+	return summary;
+}
+
 // The recent-history snapshot split into small frames the client reassembles by
 // `seq`. One big SSE frame doesn't reliably flush through the dev server when the
 // stream opens amid the page-load request burst; ~32KB frames deliver like the
 // old per-line replay did.
 export function snapshotFrames(id: string): { seq: number; n: number; data: string }[] {
 	const tail = readTranscriptTail(id);
-	const payload = JSON.stringify({ start: tail.start, total: tail.total, events: tail.events });
+	const payload = JSON.stringify({
+		start: tail.start,
+		total: tail.total,
+		cost: tail.cost,
+		events: tail.events
+	});
 	const CHUNK = 32 * 1024;
 	const n = Math.max(1, Math.ceil(payload.length / CHUNK));
 	const frames = [];
