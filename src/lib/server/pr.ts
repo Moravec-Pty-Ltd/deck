@@ -11,6 +11,7 @@ import {
 	canMergePr,
 	parsePrSyncResponse,
 	shouldAdminMerge,
+	shouldRefreshPrOnOpen,
 	type PrRef,
 	type PrSyncPatch
 } from '$lib/pr';
@@ -155,6 +156,30 @@ async function refreshPr(id: string): Promise<SessionPR | undefined> {
 	const pr = getStoredSession(id)?.pr;
 	if (pr) await syncChunk([{ id, pr }]);
 	return getStoredSession(id)?.pr;
+}
+
+// Per-session in-flight guard for the on-open refresh: the TTL dedupe keys off
+// `checkedAt`, which is only stamped once the gh call returns, so a burst of
+// opens/reloads while the first refresh is still running (a slow or offline gh,
+// up to its 15s timeout) would otherwise each start a concurrent gh call for the
+// same PR. This caps it at one at a time; the finally clears it even on failure.
+const refreshingOnOpen = new Set<string>();
+
+// Fire-and-forget single-PR refresh when a session is opened, so the header chip
+// reflects live status on open rather than the last 75s tick. Non-blocking: the
+// caller returns the stored PR immediately and the refreshed value surfaces a
+// beat later through the 5s /api/sessions poll. Guarded so it's at most one gh
+// call per open: skipped for no-PR / terminal sessions and deduped within a short
+// TTL (shouldRefreshPrOnOpen) plus the in-flight set, so flicking between sessions
+// doesn't storm gh. Any gh/store failure is swallowed so a slow or offline gh
+// never breaks the open.
+export function refreshPrOnOpen(id: string): void {
+	if (refreshingOnOpen.has(id)) return;
+	if (!shouldRefreshPrOnOpen(getStoredSession(id)?.pr, Date.now())) return;
+	refreshingOnOpen.add(id);
+	void refreshPr(id)
+		.catch(() => {})
+		.finally(() => refreshingOnOpen.delete(id));
 }
 
 function requirePr(id: string): SessionPR {

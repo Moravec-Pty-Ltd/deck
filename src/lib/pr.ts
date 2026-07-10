@@ -74,6 +74,22 @@ export function shouldAdminMerge(pr: Pick<SessionPR, 'mergeStateStatus'>): boole
 	return pr.mergeStateStatus === 'BLOCKED';
 }
 
+// --- On-open refresh gate (server/pr.ts) ---------------------------------
+// Opening a session fires a single-PR refresh so the chip is fresh on open
+// rather than reflecting the last 75s background tick. Dedupe window off
+// `checkedAt` so flicking between sessions doesn't storm gh.
+export const PR_OPEN_REFRESH_TTL_MS = 10_000;
+
+// Whether opening a session should re-fetch its captured PR. Skips sessions with
+// no PR and terminal (`merged`) PRs (mirrors nonTerminalPrItems), and dedupes
+// within the TTL off the last sync's `checkedAt`. A captured-but-never-synced PR
+// (no checkedAt) always refreshes.
+export function shouldRefreshPrOnOpen(pr: SessionPR | undefined, now: number): boolean {
+	if (!pr || pr.state === 'merged') return false;
+	if (pr.checkedAt !== undefined && now - pr.checkedAt < PR_OPEN_REFRESH_TTL_MS) return false;
+	return true;
+}
+
 // --- Bulk status sync (server/pr.ts) -------------------------------------
 // The pure query-build + response-parse halves of the background sync live here
 // (node-free, unit-tested); server/pr.ts runs the `gh` call and the store writes.

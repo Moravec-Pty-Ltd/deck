@@ -6,8 +6,11 @@ import {
 	parsePrSyncResponse,
 	reviewCounts,
 	canMergePr,
-	shouldAdminMerge
+	shouldAdminMerge,
+	shouldRefreshPrOnOpen,
+	PR_OPEN_REFRESH_TTL_MS
 } from './pr';
+import type { SessionPR } from './types';
 
 describe('lastPrLink', () => {
 	it('detects a github PR url and parses owner/repo/number', () => {
@@ -225,5 +228,47 @@ describe('parsePrSyncResponse', () => {
 
 	it('returns all-null on unparseable output', () => {
 		expect(parsePrSyncResponse('not json', 3)).toEqual([null, null, null]);
+	});
+});
+
+describe('shouldRefreshPrOnOpen', () => {
+	const now = 1_000_000;
+	const pr = (over: Partial<SessionPR> = {}): SessionPR => ({
+		url: 'https://github.com/acme/web/pull/7',
+		repo: 'acme/web',
+		number: 7,
+		seenAt: now,
+		...over
+	});
+
+	it('skips a session with no captured PR', () => {
+		expect(shouldRefreshPrOnOpen(undefined, now)).toBe(false);
+	});
+
+	it('skips a merged (terminal) PR', () => {
+		expect(shouldRefreshPrOnOpen(pr({ state: 'merged', checkedAt: 0 }), now)).toBe(false);
+	});
+
+	it('refreshes open / draft / closed PRs (a closed PR can reopen)', () => {
+		for (const state of ['open', 'draft', 'closed'] as const) {
+			expect(shouldRefreshPrOnOpen(pr({ state, checkedAt: 0 }), now)).toBe(true);
+		}
+	});
+
+	it('refreshes a captured-but-never-synced PR (no checkedAt)', () => {
+		expect(shouldRefreshPrOnOpen(pr(), now)).toBe(true);
+	});
+
+	it('dedupes a PR checked within the TTL', () => {
+		expect(shouldRefreshPrOnOpen(pr({ state: 'open', checkedAt: now - 1 }), now)).toBe(false);
+		expect(
+			shouldRefreshPrOnOpen(pr({ state: 'open', checkedAt: now - (PR_OPEN_REFRESH_TTL_MS - 1) }), now)
+		).toBe(false);
+	});
+
+	it('refreshes once the TTL has elapsed', () => {
+		expect(
+			shouldRefreshPrOnOpen(pr({ state: 'open', checkedAt: now - PR_OPEN_REFRESH_TTL_MS }), now)
+		).toBe(true);
 	});
 });
