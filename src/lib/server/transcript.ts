@@ -207,7 +207,7 @@ export function readTranscriptTailText(id: string): string {
 // so the client can pin a session-level figure the snapshot's recent-history
 // window can't hold. Result events are tiny and one per turn, so we fold only
 // small result-marked lines (skipping large tool-output lines unread) using the
-// newline index's line boundaries, and extend the summary as the file grows —
+// newline index's line boundaries, and extend the summary as the file grows,
 // mirroring how the index itself is cached and extended incrementally.
 interface CostIndex {
 	size: number;
@@ -238,8 +238,9 @@ function costSummaryFromIndex(id: string, index: TranscriptIndex): CostSummary {
 	const total = index.newlines.length;
 	const cached = costCache.get(id);
 	if (cached && cached.size === index.size && cached.mtimeMs === index.mtimeMs) return cached.summary;
-	// Append-only, so an unchanged-mtime grow just extends from the last folded
-	// line; anything else (truncation, rewrite) rebuilds from the start.
+	// Append-only, so a size increase just extends from the last folded line
+	// (mtime has usually changed too); anything else (truncation, rewrite from a
+	// smaller/equal size) rebuilds from the start.
 	const grew = !!cached && index.size > cached.size && cached.lines <= total;
 	const summary = foldResultLines(
 		transcriptPath(id),
