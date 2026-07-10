@@ -413,9 +413,9 @@ async function killName(name: string) {
 	if (await hasTmuxSession(name)) await killTmuxSession(name);
 }
 
-function probePort(port: number, timeoutMs = 700): Promise<boolean> {
+function probeHost(host: string, port: number, timeoutMs: number): Promise<boolean> {
 	return new Promise((resolve) => {
-		const sock = net.connect({ host: '127.0.0.1', port });
+		const sock = net.connect({ host, port });
 		const done = (ok: boolean) => {
 			sock.destroy();
 			resolve(ok);
@@ -425,6 +425,16 @@ function probePort(port: number, timeoutMs = 700): Promise<boolean> {
 		sock.once('timeout', () => done(false));
 		sock.once('error', () => done(false));
 	});
+}
+
+// Probe both loopback families in parallel: a server bound to ::1 only (common
+// when localhost resolves to IPv6 first, e.g. Node >=17 / Vite) refuses an IPv4
+// connect, and an IPv4-only server refuses ::1. Listening = either accepts.
+export function probePort(port: number, timeoutMs = 700): Promise<boolean> {
+	return Promise.all([
+		probeHost('127.0.0.1', port, timeoutMs),
+		probeHost('::1', port, timeoutMs)
+	]).then((results) => results.some(Boolean));
 }
 
 function probePorts(ports: PortSpec[]): Promise<PortStatus[]> {
