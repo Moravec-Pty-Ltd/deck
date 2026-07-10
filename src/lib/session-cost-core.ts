@@ -29,8 +29,9 @@ export function foldResult(sum: CostSummary, event: unknown): CostSummary {
 	if (!e || e.type !== 'result') return sum;
 	return {
 		costUsd: sum.costUsd + num(e.total_cost_usd),
-		// num_turns is per-result; fall back to counting the result when absent.
-		turns: sum.turns + (typeof e.num_turns === 'number' ? e.num_turns : 1),
+		// num_turns is per-result; fall back to counting the result as one turn
+		// when it's absent or non-finite, so a bad value can't make turns NaN.
+		turns: sum.turns + (Number.isFinite(e.num_turns) ? (e.num_turns as number) : 1),
 		durationMs: sum.durationMs + num(e.duration_ms),
 		results: sum.results + 1
 	};

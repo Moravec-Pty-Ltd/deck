@@ -46,6 +46,11 @@ describe('sessionCostSummary', () => {
 			results: 2
 		});
 	});
+
+	it('keeps turns finite when num_turns is NaN or Infinity, counting the result once', () => {
+		const events = [result({ num_turns: NaN }), result({ num_turns: Infinity })];
+		expect(sessionCostSummary(events)).toMatchObject({ turns: 2, results: 2 });
+	});
 });
 
 describe('foldResult', () => {

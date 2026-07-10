@@ -42,7 +42,7 @@ function transcriptIndex(id: string): TranscriptIndex | null {
 		indexCache.delete(id);
 		return null;
 	}
-	return cacheIndex(id, buildIndex(file, stat, indexCache.get(id)));
+	return lruSet(indexCache, id, buildIndex(file, stat, indexCache.get(id)));
 }
 
 // Reuse the cached index when the stat is unchanged; extend it in place when the
@@ -68,16 +68,17 @@ function buildIndex(
 	return { size: stat.size, mtimeMs: stat.mtimeMs, newlines };
 }
 
-// Store as most-recently-used and evict the oldest entries past the cap.
-function cacheIndex(id: string, index: TranscriptIndex): TranscriptIndex {
-	indexCache.delete(id);
-	indexCache.set(id, index);
-	while (indexCache.size > INDEX_CACHE_MAX) {
-		const oldest = indexCache.keys().next().value as string | undefined;
+// Store as most-recently-used and evict the oldest entries past the cap. Shared
+// by the newline index and the cost summary, which are cached the same way.
+function lruSet<T>(cache: Map<string, T>, id: string, entry: T): T {
+	cache.delete(id);
+	cache.set(id, entry);
+	while (cache.size > INDEX_CACHE_MAX) {
+		const oldest = cache.keys().next().value as string | undefined;
 		if (oldest === undefined) break;
-		indexCache.delete(oldest);
+		cache.delete(oldest);
 	}
-	return index;
+	return entry;
 }
 
 // Append the byte offset of every '\n' in [from, to) to `newlines`, reading in
@@ -160,9 +161,14 @@ function lineStart(newlines: number[], i: number): number {
 // Older history loads lazily via the /transcript endpoint when scrolled to.
 const SNAPSHOT_MAX = 250;
 const SNAPSHOT_BYTES = 256 * 1024;
-function readTranscriptTail(id: string): { total: number; start: number; events: unknown[] } {
+function readTranscriptTail(id: string): {
+	total: number;
+	start: number;
+	cost: CostSummary;
+	events: unknown[];
+} {
 	const index = transcriptIndex(id);
-	if (!index) return { total: 0, start: 0, events: [] };
+	if (!index) return { total: 0, start: 0, cost: emptyCostSummary(), events: [] };
 	const { newlines } = index;
 	const total = newlines.length;
 
@@ -182,7 +188,9 @@ function readTranscriptTail(id: string): { total: number; start: number; events:
 		lineStart(newlines, total),
 		total - start
 	);
-	return { total, start, events };
+	// Cost over the whole transcript, folded from the same index this tail was
+	// built on, so the two stay anchored to one line count (see costSummaryFromIndex).
+	return { total, start, cost: costSummaryFromIndex(id, index), events };
 }
 
 // The serialized tail of the transcript (newest SNAPSHOT_MAX events / bytes), as
@@ -218,29 +226,34 @@ export function transcriptCostSummary(id: string): CostSummary {
 		costCache.delete(id);
 		return emptyCostSummary();
 	}
+	return costSummaryFromIndex(id, index);
+}
+
+// Fold the transcript's result events into a running total, cached against and
+// extended alongside the given index. Callers pass the same index they read the
+// rest of the snapshot from, so the cost and the events tail stay anchored to one
+// line count: a second, independent index read could otherwise pick up a result
+// the tail doesn't carry, and the client would fold that streamed result twice.
+function costSummaryFromIndex(id: string, index: TranscriptIndex): CostSummary {
 	const total = index.newlines.length;
 	const cached = costCache.get(id);
 	if (cached && cached.size === index.size && cached.mtimeMs === index.mtimeMs) return cached.summary;
 	// Append-only, so an unchanged-mtime grow just extends from the last folded
 	// line; anything else (truncation, rewrite) rebuilds from the start.
 	const grew = !!cached && index.size > cached.size && cached.lines <= total;
-	const from = grew ? cached!.lines : 0;
 	const summary = foldResultLines(
 		transcriptPath(id),
 		index.newlines,
-		from,
+		grew ? cached!.lines : 0,
 		total,
 		grew ? cached!.summary : emptyCostSummary()
 	);
-	const entry: CostIndex = { size: index.size, mtimeMs: index.mtimeMs, lines: total, summary };
-	costCache.delete(id);
-	costCache.set(id, entry);
-	while (costCache.size > INDEX_CACHE_MAX) {
-		const oldest = costCache.keys().next().value as string | undefined;
-		if (oldest === undefined) break;
-		costCache.delete(oldest);
-	}
-	return summary;
+	return lruSet(costCache, id, {
+		size: index.size,
+		mtimeMs: index.mtimeMs,
+		lines: total,
+		summary
+	}).summary;
 }
 
 // Fold the `result` events in lines [from, to) into `summary`. Reads each small
@@ -291,7 +304,7 @@ export function snapshotFrames(id: string): { seq: number; n: number; data: stri
 	const payload = JSON.stringify({
 		start: tail.start,
 		total: tail.total,
-		cost: transcriptCostSummary(id),
+		cost: tail.cost,
 		events: tail.events
 	});
 	const CHUNK = 32 * 1024;
