@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { transcriptsDir } from './config';
+import { emptyCostSummary, foldResult, type CostSummary } from '$lib/session-cost-core';
 
 // Transcript files are append-only JSONL: one JSON event per line, written by
 // appendEvent. The live view only ever needs the tail (initial snapshot) or a
@@ -194,13 +195,105 @@ export function readTranscriptTailText(id: string): string {
 		.join('\n');
 }
 
+// Running cost/turns/duration total over the whole transcript, kept per session
+// so the client can pin a session-level figure the snapshot's recent-history
+// window can't hold. Result events are tiny and one per turn, so we fold only
+// small result-marked lines (skipping large tool-output lines unread) using the
+// newline index's line boundaries, and extend the summary as the file grows —
+// mirroring how the index itself is cached and extended incrementally.
+interface CostIndex {
+	size: number;
+	mtimeMs: number;
+	lines: number;
+	summary: CostSummary;
+}
+const costCache = new Map<string, CostIndex>();
+// A result event is a flat object (~10KB at most in practice); anything larger
+// is a different event (tool output) and can't be a result, so skip it unread.
+const RESULT_LINE_MAX = 64 * 1024;
+
+export function transcriptCostSummary(id: string): CostSummary {
+	const index = transcriptIndex(id);
+	if (!index) {
+		costCache.delete(id);
+		return emptyCostSummary();
+	}
+	const total = index.newlines.length;
+	const cached = costCache.get(id);
+	if (cached && cached.size === index.size && cached.mtimeMs === index.mtimeMs) return cached.summary;
+	// Append-only, so an unchanged-mtime grow just extends from the last folded
+	// line; anything else (truncation, rewrite) rebuilds from the start.
+	const grew = !!cached && index.size > cached.size && cached.lines <= total;
+	const from = grew ? cached!.lines : 0;
+	const summary = foldResultLines(
+		transcriptPath(id),
+		index.newlines,
+		from,
+		total,
+		grew ? cached!.summary : emptyCostSummary()
+	);
+	const entry: CostIndex = { size: index.size, mtimeMs: index.mtimeMs, lines: total, summary };
+	costCache.delete(id);
+	costCache.set(id, entry);
+	while (costCache.size > INDEX_CACHE_MAX) {
+		const oldest = costCache.keys().next().value as string | undefined;
+		if (oldest === undefined) break;
+		costCache.delete(oldest);
+	}
+	return summary;
+}
+
+// Fold the `result` events in lines [from, to) into `summary`. Reads each small
+// line individually so a huge tool-output line never pulls megabytes into
+// memory; the marker pre-filter avoids parsing lines that can't be results, and
+// foldResult re-checks the parsed type so a false-positive match is harmless.
+function foldResultLines(
+	file: string,
+	newlines: number[],
+	from: number,
+	to: number,
+	summary: CostSummary
+): CostSummary {
+	if (to <= from) return summary;
+	let fd: number;
+	try {
+		fd = fs.openSync(file, 'r');
+	} catch {
+		return summary;
+	}
+	try {
+		for (let i = from; i < to; i++) {
+			const s = lineStart(newlines, i);
+			const len = newlines[i] - s;
+			if (len <= 0 || len > RESULT_LINE_MAX) continue;
+			const buf = Buffer.allocUnsafe(len);
+			const read = readFull(fd, buf, s, len);
+			const line = buf.toString('utf8', 0, read);
+			if (!line.includes('"type":"result"')) continue;
+			try {
+				summary = foldResult(summary, JSON.parse(line));
+			} catch {
+				// Unreadable/partial line: skip it, same as the transcript reader.
+			}
+		}
+	} finally {
+		fs.closeSync(fd);
+	}
+	return summary;
+}
+
 // The recent-history snapshot split into small frames the client reassembles by
 // `seq`. One big SSE frame doesn't reliably flush through the dev server when the
 // stream opens amid the page-load request burst; ~32KB frames deliver like the
 // old per-line replay did.
 export function snapshotFrames(id: string): { seq: number; n: number; data: string }[] {
 	const tail = readTranscriptTail(id);
-	const payload = JSON.stringify({ start: tail.start, total: tail.total, events: tail.events });
+	const payload = JSON.stringify({
+		start: tail.start,
+		total: tail.total,
+		cost: transcriptCostSummary(id),
+		events: tail.events
+	});
 	const CHUNK = 32 * 1024;
 	const n = Math.max(1, Math.ceil(payload.length / CHUNK));
 	const frames = [];
