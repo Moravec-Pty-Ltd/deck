@@ -48,6 +48,20 @@ export function modelLabel(model: string | undefined): string {
 	return model || 'default';
 }
 
+// Premium models worth a confirm before you select one, so an accidental pick
+// doesn't run costly work on a top-tier model (issue #134). Extend by editing
+// the list.
+const EXPENSIVE_MODELS = ['fable', 'sol'] as const;
+
+// Whether choosing this model should prompt a cost confirm. Case-insensitive
+// substring match against the model id (and provider, for pi's separate
+// --provider arg), so one entry covers the claude shortname (`fable`), a
+// codex/pi free-text id, and opencode's combined `provider/model`.
+export function isExpensiveModel(model: string | undefined, provider?: string): boolean {
+	const haystack = `${model ?? ''} ${provider ?? ''}`.toLowerCase();
+	return EXPENSIVE_MODELS.some((m) => haystack.includes(m));
+}
+
 // Switch a session's model (shared by the header ModelMenu and the palette's
 // model step). Empty string resets to the default. Throws with the server's
 // message on failure so callers can show it inline.

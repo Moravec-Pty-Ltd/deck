@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { SessionKind } from '$lib/types';
-	import { CLAUDE_MODELS, modelLabel, switchModel } from '$lib/models';
+	import { CLAUDE_MODELS, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
 	import { dismissOnOutside, keepInView } from '$lib/dismiss';
-	import { Cpu, Check } from '@lucide/svelte';
+	import { Cpu, Check, TriangleAlert } from '@lucide/svelte';
 
 	// Header chip showing the session's current model, opening a switcher (issue
 	// #88). claude picks from the same shortnames as the New Session modal;
@@ -28,6 +28,8 @@
 	let busy = $state(false);
 	let err = $state('');
 	let text = $state('');
+	// The model awaiting an expensive-model confirm, or null when none is pending.
+	let pendingModel = $state<string | null>(null);
 
 	// Seed the free-text field on each open (untracked, so a background poll
 	// can't clobber a half-typed id); clear a stale error on close.
@@ -36,7 +38,7 @@
 		else err = '';
 	});
 
-	async function switchTo(next: string) {
+	async function apply(next: string) {
 		if (busy) return;
 		busy = true;
 		err = '';
@@ -49,6 +51,28 @@
 		} finally {
 			busy = false;
 		}
+	}
+
+	// Guard the select: switching TO an expensive model (fable/sol) asks first so a
+	// premium model is never applied by accident (issue #134). Reselecting the
+	// current model or picking any non-expensive one applies straight away.
+	function switchTo(next: string) {
+		if (busy) return;
+		if (isExpensiveModel(next) && next !== (model ?? '')) {
+			pendingModel = next;
+			return;
+		}
+		void apply(next);
+	}
+
+	async function confirmPending() {
+		const next = pendingModel;
+		if (next === null) return;
+		await apply(next);
+		// Keep the confirm open if the switch failed: clicking it dismisses the
+		// dropdown (where the inline error lives), so the error is shown in the
+		// dialog instead. apply() clears err on entry, so a retry starts clean.
+		if (!err) pendingModel = null;
 	}
 </script>
 
@@ -99,4 +123,26 @@
 			{#if err}<p class="mt-1 px-1 text-xs text-error">{err}</p>{/if}
 		</div>
 	</details>
+{/if}
+
+{#if pendingModel !== null}
+	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
+		<div class="modal-box max-w-sm">
+			<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
+				<TriangleAlert size={18} class="text-warning" /> Expensive model
+			</h3>
+			<p class="mb-3 text-sm opacity-70">
+				<span class="font-mono">{modelLabel(pendingModel)}</span> is an expensive model. Switch this session
+				to it anyway?
+			</p>
+			{#if err}<p class="mb-3 text-xs text-error">{err}</p>{/if}
+			<div class="modal-action">
+				<button class="btn" onclick={() => (pendingModel = null)}>Cancel</button>
+				<button class="btn btn-warning" onclick={confirmPending} disabled={busy}>
+					{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if} Switch anyway
+				</button>
+			</div>
+		</div>
+		<button class="modal-backdrop" onclick={() => (pendingModel = null)} aria-label="close"></button>
+	</div>
 {/if}

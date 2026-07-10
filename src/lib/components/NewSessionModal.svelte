@@ -10,7 +10,13 @@
 		SessionKind
 	} from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
-	import { CLAUDE_MODELS, resolveModelChoice, shouldReseedModel } from '$lib/models';
+	import {
+		CLAUDE_MODELS,
+		isExpensiveModel,
+		modelLabel,
+		resolveModelChoice,
+		shouldReseedModel
+	} from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { firstAgentPrompt, isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
 	import { Bot, Terminal, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
@@ -84,6 +90,9 @@
 	let newProjectTemplate = $state('');
 	let busy = $state(false);
 	let errorMsg = $state('');
+	// Set once the create passes validation but lands on an expensive model, so the
+	// confirm dialog shows before the session is actually started (issue #134).
+	let confirmingExpensive = $state(false);
 	let showPicker = $state(false);
 	let pickedIssues = $state<Issue[]>([]);
 	let pickedPr = $state<PullRequest | null>(null);
@@ -107,6 +116,7 @@
 		seededKind = null;
 		seededProjectPath = undefined;
 		errorMsg = '';
+		confirmingExpensive = false;
 		showPicker = false;
 		workflowId = '';
 		pickedIssues = [];
@@ -365,6 +375,15 @@
 			errorMsg = 'pick a project or path';
 			return;
 		}
+		// Guard the select: starting a session on an expensive model (fable/sol) asks
+		// first so a premium model isn't kicked off by accident (issue #134). The
+		// inline warning flags it while picking; this stops the actual create until
+		// confirmed.
+		if (!confirmingExpensive && isAgentKind(kind) && isExpensiveModel(model, provider)) {
+			confirmingExpensive = true;
+			return;
+		}
+		confirmingExpensive = false;
 		busy = true;
 		try {
 			const res = await fetch('/api/sessions', {
@@ -706,6 +725,15 @@
 							oninput={() => (modelDirty = true)}
 						/>
 					{/if}
+					{#if isExpensiveModel(model, provider)}
+						<div class="alert alert-warning items-start py-1 text-xs">
+							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+							<span>
+								<span class="font-mono">{modelLabel(model || provider)}</span> is an expensive model;
+								you'll be asked to confirm before it starts.
+							</span>
+						</div>
+					{/if}
 					<textarea
 						class="textarea w-full"
 						rows="3"
@@ -750,4 +778,27 @@
 		</div>
 		<button class="modal-backdrop" onclick={() => (open = false)} aria-label="close"></button>
 	</div>
+
+	{#if confirmingExpensive}
+		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
+			<div class="modal-box max-w-sm">
+				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
+					<TriangleAlert size={18} class="text-warning" /> Expensive model
+				</h3>
+				<p class="mb-3 text-sm opacity-70">
+					<span class="font-mono">{modelLabel(model || provider)}</span> is an expensive model. Start this
+					session on it anyway?
+				</p>
+				<div class="modal-action">
+					<button class="btn" onclick={() => (confirmingExpensive = false)}>Cancel</button>
+					<button class="btn btn-warning" onclick={create} disabled={busy}>Start anyway</button>
+				</div>
+			</div>
+			<button
+				class="modal-backdrop"
+				onclick={() => (confirmingExpensive = false)}
+				aria-label="close"
+			></button>
+		</div>
+	{/if}
 {/if}
