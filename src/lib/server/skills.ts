@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { AgentKind } from '$lib/types';
+import type { AgentKind, SkillStatus } from '$lib/types';
 import { AGENT_BINARIES } from './agents/binaries';
 import { agentAvailability } from './agents/available';
-import { parseSkillVersion, skillStatus, type SkillStatus } from './skills-core';
+import { parseSkillVersion, skillStatus } from './skills-core';
 // The repo's canonical skill, bundled at build time so the running server can
 // serve its version and install it without depending on the source tree.
 import shippedSkillMd from '../../../.claude/skills/deck/SKILL.md?raw';

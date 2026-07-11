@@ -43,14 +43,15 @@ export const baseUrl = (
 
 // Shared-token credential carried in request headers by programmatic clients
 // (browsers use the deck_token cookie instead): `Authorization: Bearer <token>`
-// or `X-Deck-Token: <token>`.
+// or `X-Deck-Token: <token>`. Values are trimmed (a shell-built header easily
+// picks up a stray newline) and an empty header reads as missing.
 export function headerToken(headers: Headers): string | null {
 	const auth = headers.get('authorization');
 	if (auth) {
 		const m = /^Bearer\s+(.+)$/i.exec(auth.trim());
 		if (m) return m[1];
 	}
-	return headers.get('x-deck-token');
+	return headers.get('x-deck-token')?.trim() || null;
 }
 
 // Pre-hash the secret once so request-time comparison hits a fixed-length digest.

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SkillStatus } from '$lib/server/skills-core';
+	import type { SkillStatus } from '$lib/types';
 	import { Check, Download, RefreshCw } from '@lucide/svelte';
 
 	// App-wide panel: the shipped deck skill's install/version status per
@@ -30,7 +30,9 @@
 				body: JSON.stringify({ kind })
 			});
 			if (!res.ok) {
-				errorMsg = (await res.json()).message ?? 'failed to install';
+				// A non-JSON failure (proxy error page, crash) must still surface a message.
+				const err = await res.json().catch(() => null);
+				errorMsg = err?.message ?? 'failed to install';
 				return;
 			}
 			const updated: SkillStatus = await res.json();

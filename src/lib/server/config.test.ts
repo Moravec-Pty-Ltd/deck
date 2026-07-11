@@ -60,6 +60,11 @@ describe('headerToken', () => {
 		expect(headerToken(new Headers({ authorization: 'Basic dXNlcg==' }))).toBe(null);
 	});
 
+	it('trims X-Deck-Token and treats a blank one as missing', () => {
+		expect(headerToken(new Headers({ 'x-deck-token': ' xyz ' }))).toBe('xyz');
+		expect(headerToken(new Headers({ 'x-deck-token': '   ' }))).toBe(null);
+	});
+
 	it('returns null when no credential header is present', () => {
 		expect(headerToken(new Headers())).toBe(null);
 	});
