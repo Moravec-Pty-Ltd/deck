@@ -7,6 +7,7 @@
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
 	import WorkflowsForm from '$lib/components/WorkflowsForm.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
+	import AgentSkills from '$lib/components/AgentSkills.svelte';
 	import { ArrowLeft, Plus, Trash2, Check, ChevronRight, ChevronDown } from '@lucide/svelte';
 
 	let projects = $state<Project[]>([]);
@@ -210,6 +211,9 @@
 				{/if}
 			</div>
 		{/each}
+	</div>
+	<div class="mt-5">
+		<AgentSkills />
 	</div>
 {/if}
 

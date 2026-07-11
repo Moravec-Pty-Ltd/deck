@@ -27,6 +27,8 @@ import { SERVER_TMUX_PREFIX } from './devservers-core';
 import { removeWorktree } from './git';
 import { pickShipName } from './names';
 import { DEMO, demoSessions, demoSession } from './demo';
+import { publishAgentEvent } from './agent-feed';
+import { sessionDigest } from './agent-digest';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
@@ -214,6 +216,7 @@ export async function createSession(input: {
 	}
 
 	saveSession(session);
+	publishAgentEvent(id, 'session-created', { session: sessionDigest(session) });
 	return session;
 }
 
@@ -252,6 +255,7 @@ export async function deleteSession(
 		// Adhoc tmux session: no store write, so bust the list memo by hand.
 		await killTmuxSession(id.slice(2));
 		listCache = null;
+		publishAgentEvent(id, 'session-deleted');
 		return;
 	}
 	const stored = getStoredSession(id);
@@ -260,4 +264,5 @@ export async function deleteSession(
 		await removeSessionWorktree(stored, opts);
 	}
 	removeSession(id);
+	publishAgentEvent(id, 'session-deleted');
 }

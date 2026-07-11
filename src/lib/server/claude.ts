@@ -9,7 +9,8 @@ import { getStoredSession, setSessionStatus, updateSession } from './store';
 import { ensureMcp, mcpUrl } from './mcp';
 import { rejectAsk } from './ask';
 import { notify } from './push';
-import { transcriptPath } from './transcript';
+import { transcriptPath, transcriptCostSummary } from './transcript';
+import { publishAgentEvent } from './agent-feed';
 import { agentEnv } from './agents/env';
 import { isFlagSafe } from './agents/args';
 import { AGENT_BINARIES } from './agents/binaries';
@@ -68,7 +69,18 @@ export function appendEvent(id: string, event: Record<string, unknown>) {
 	const serialized = JSON.stringify(event);
 	appendLine(transcriptPath(id), serialized + '\n')
 		.catch((err) => console.error(`[deck] transcript append failed for ${id}:`, err))
-		.finally(() => emit(`event:${id}`, event));
+		.finally(() => {
+			emit(`event:${id}`, event);
+			// A result footer ends a turn; surface it (with the refreshed session
+			// cost total) on the global agent feed. Published after the write
+			// settles so transcriptCostSummary already folds this result in.
+			if (event.type === 'result') {
+				publishAgentEvent(id, 'turn-finished', {
+					subtype: typeof event.subtype === 'string' ? event.subtype : 'success',
+					cost: transcriptCostSummary(id)
+				});
+			}
+		});
 	capturePr(id, serialized);
 }
 
@@ -84,7 +96,9 @@ function capturePr(id: string, serialized: string) {
 	if (!match) return;
 	const session = getStoredSession(id);
 	if (!session || session.pr?.url === match.url) return;
-	updateSession(id, { pr: { ...match, seenAt: Date.now() } });
+	const pr = { ...match, seenAt: Date.now() };
+	updateSession(id, { pr });
+	publishAgentEvent(id, 'pr', { pr });
 }
 
 export function setStatus(id: string, status: 'running' | 'idle' | 'error') {
@@ -95,7 +109,10 @@ export function setStatus(id: string, status: 'running' | 'idle' | 'error') {
 	// writes: appendEvent emits its event after the write settles, so a caller
 	// doing appendEvent(x) then setStatus(y) keeps event-before-status order on
 	// the bus (e.g. the result footer lands before the spinner clears).
-	whenDrained(transcriptPath(id)).finally(() => emit(`status:${id}`, status));
+	whenDrained(transcriptPath(id)).finally(() => {
+		emit(`status:${id}`, status);
+		publishAgentEvent(id, 'status', { status });
+	});
 }
 
 // Record the user's answer to a question on the transcript so the UI can show
