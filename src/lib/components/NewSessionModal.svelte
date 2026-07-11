@@ -10,7 +10,12 @@
 		SessionKind
 	} from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
-	import { CLAUDE_MODELS, resolveModelChoice, shouldReseedModel } from '$lib/models';
+	import {
+		CLAUDE_MODELS,
+		isExpensiveModel,
+		resolveModelChoice,
+		shouldReseedModel
+	} from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { firstAgentPrompt, isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
 	import { Bot, Terminal, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
@@ -84,6 +89,12 @@
 	let newProjectTemplate = $state('');
 	let busy = $state(false);
 	let errorMsg = $state('');
+	// The expensive-model confirm is showing (a fable/sol pick is awaiting a
+	// decision). `confirmedExpensive` is the explicit go-ahead, set only by the
+	// confirm's own button, so a stray re-invoke of create() (e.g. Enter on the
+	// still-focused Create button behind the modal) can't skip the gate (issue #134).
+	let confirmingExpensive = $state(false);
+	let confirmedExpensive = $state(false);
 	let showPicker = $state(false);
 	let pickedIssues = $state<Issue[]>([]);
 	let pickedPr = $state<PullRequest | null>(null);
@@ -107,6 +118,8 @@
 		seededKind = null;
 		seededProjectPath = undefined;
 		errorMsg = '';
+		confirmingExpensive = false;
+		confirmedExpensive = false;
 		showPicker = false;
 		workflowId = '';
 		pickedIssues = [];
@@ -267,6 +280,25 @@
 		)
 	);
 	const opencodeModels = $derived(detectedModels.map((m) => m.model));
+	// The picked model as the expensive-model warning/confirm should name it: pi
+	// keeps provider and model separate (an expensive match can come from either),
+	// so show `provider/model`; the other kinds carry the whole id in `model`.
+	// provider is a pi-only concept (only pi sends it on create), so treat it as
+	// unset for other kinds in the expensive check and its label — a stale
+	// remembered provider must not sway the warning for claude/codex/opencode.
+	const effectiveProvider = $derived(kind === 'pi' ? provider : '');
+	const pickedModelLabel = $derived([effectiveProvider, model].filter(Boolean).join('/'));
+	const expensivePick = $derived(isAgentKind(kind) && isExpensiveModel(model, effectiveProvider));
+
+	// If the pick stops being expensive while the confirm is open (a background
+	// control stays reachable behind the div-modal), drop the stale dialog so an
+	// "Expensive model" prompt never lingers on a now-cheap selection (issue #134).
+	$effect(() => {
+		if (confirmingExpensive && !expensivePick) {
+			confirmingExpensive = false;
+			confirmedExpensive = false;
+		}
+	});
 
 	// Model/provider default to the project's last pick for this kind, then the
 	// global last-used, then the built-in default (claude -> opus, others blank).
@@ -365,6 +397,16 @@
 			errorMsg = 'pick a project or path';
 			return;
 		}
+		// Expensive-model gate: a fable/sol pick pops the confirm instead of starting;
+		// only an explicit "Start anyway" (confirmedExpensive) gets past, so pressing
+		// Enter on the background Create button can't bypass it (issue #134). The
+		// inline warning flags the pick while choosing.
+		if (expensivePick && !confirmedExpensive) {
+			confirmingExpensive = true;
+			return;
+		}
+		confirmingExpensive = false;
+		confirmedExpensive = false;
 		busy = true;
 		try {
 			const res = await fetch('/api/sessions', {
@@ -706,6 +748,15 @@
 							oninput={() => (modelDirty = true)}
 						/>
 					{/if}
+					{#if expensivePick}
+						<div class="alert alert-warning items-start py-1 text-xs">
+							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+							<span>
+								<span class="font-mono">{pickedModelLabel}</span> is an expensive model; you'll be asked
+								to confirm before it starts.
+							</span>
+						</div>
+					{/if}
 					<textarea
 						class="textarea w-full"
 						rows="3"
@@ -750,4 +801,43 @@
 		</div>
 		<button class="modal-backdrop" onclick={() => (open = false)} aria-label="close"></button>
 	</div>
+
+	{#if confirmingExpensive}
+		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
+			<div class="modal-box max-w-sm">
+				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
+					<TriangleAlert size={18} class="text-warning" /> Expensive model
+				</h3>
+				<p class="mb-3 text-sm opacity-70">
+					<span class="font-mono">{pickedModelLabel}</span> is an expensive model. Start this session on
+					it anyway?
+				</p>
+				<div class="modal-action">
+					<button
+						class="btn"
+						onclick={() => {
+							confirmingExpensive = false;
+							confirmedExpensive = false;
+						}}>Cancel</button
+					>
+					<button
+						class="btn btn-warning"
+						disabled={busy}
+						onclick={() => {
+							confirmedExpensive = true;
+							create();
+						}}>Start anyway</button
+					>
+				</div>
+			</div>
+			<button
+				class="modal-backdrop"
+				onclick={() => {
+					confirmingExpensive = false;
+					confirmedExpensive = false;
+				}}
+				aria-label="close"
+			></button>
+		</div>
+	{/if}
 {/if}
