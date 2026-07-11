@@ -34,6 +34,8 @@ A session is the unit of work: one agent (kind: claude|pi|codex|opencode) or
 shell in a working directory, optionally in its own git worktree, optionally
 running a multi-step workflow. Statuses: running | idle | error | dead.
 \`awaitingInput: true\` means the session is blocked on a question (see Asks).
+Shell sessions appear in digests and the event feed for monitoring, but the
+agent API cannot create or drive them (kind "shell" is rejected on create).
 
 ### GET /api/agent/sessions
 
