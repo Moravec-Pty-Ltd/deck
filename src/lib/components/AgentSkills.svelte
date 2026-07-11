@@ -11,9 +11,15 @@
 	let errorMsg = $state('');
 
 	async function load() {
-		const res = await fetch('/api/skills');
-		if (res.ok) statuses = await res.json();
-		loaded = true;
+		try {
+			const res = await fetch('/api/skills');
+			if (res.ok) statuses = await res.json();
+			else errorMsg = 'failed to load skill status';
+		} catch {
+			errorMsg = 'failed to load skill status';
+		} finally {
+			loaded = true;
+		}
 	}
 
 	$effect(() => {

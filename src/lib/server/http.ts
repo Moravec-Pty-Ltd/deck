@@ -2,13 +2,17 @@ import { error, json } from '@sveltejs/kit';
 import { isAgentKind, type DeckSession } from '$lib/types';
 import { getSession, deleteSession } from './sessions';
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+	return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
 // Parse a JSON request body, asserting it is a plain object. Replies 400 on a
 // missing, malformed, null, primitive, or array body so handlers can read
 // fields without guarding each access.
 export async function objectBody(request: Request): Promise<Record<string, unknown>> {
 	const body = await request.json().catch(() => null);
-	if (!body || typeof body !== 'object' || Array.isArray(body)) error(400, 'invalid request body');
-	return body as Record<string, unknown>;
+	if (!isPlainObject(body)) error(400, 'invalid request body');
+	return body;
 }
 
 // The agent session a per-session action route targets, or a 404. Shells (and
@@ -20,19 +24,20 @@ export async function agentSessionOr404(id: string): Promise<DeckSession> {
 }
 
 // Session-teardown flags, from the JSON body or the query-string fallback
-// (?worktree=1&branch=1).
+// (?worktree=1&branch=1). A non-object JSON body (null, array, string) falls
+// back to the query flags rather than reaching deleteSession and throwing.
 async function deleteSessionOpts(
 	request: Request,
 	url: URL
 ): Promise<{ deleteWorktree?: boolean; deleteBranch?: boolean }> {
-	try {
-		return await request.json();
-	} catch {
-		return {
-			deleteWorktree: url.searchParams.get('worktree') === '1',
-			deleteBranch: url.searchParams.get('branch') === '1'
-		};
+	const body = await request.json().catch(() => null);
+	if (isPlainObject(body)) {
+		return { deleteWorktree: body.deleteWorktree === true, deleteBranch: body.deleteBranch === true };
 	}
+	return {
+		deleteWorktree: url.searchParams.get('worktree') === '1',
+		deleteBranch: url.searchParams.get('branch') === '1'
+	};
 }
 
 // The DELETE handler shared verbatim by /api/sessions/[id] and
