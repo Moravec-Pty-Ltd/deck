@@ -419,22 +419,32 @@
 		await doSend();
 	}
 
-	function confirmSend() {
+	async function confirmSend() {
 		pendingSend = false;
-		doSend();
+		await doSend();
 	}
 
 	async function doSend() {
 		if (!canSend) return;
 		const text = input.trim();
 		const images = attachments.map((a) => ({ media_type: a.media_type, data: a.data }));
+		// Clear optimistically, but snapshot so a failed send restores the draft
+		// (the draft should only clear on a *successful* send).
+		const prev = { input, attachments, originSessionId };
 		clearDraft();
 		atBottom = true;
-		await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ text, images: images.length ? images : undefined })
-		});
+		try {
+			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ text, images: images.length ? images : undefined })
+			});
+			if (!res.ok) throw new Error(`send failed: ${res.status}`);
+		} catch {
+			input = prev.input;
+			attachments = prev.attachments;
+			originSessionId = prev.originSessionId;
+		}
 	}
 
 	// Fire a quick message immediately; `expand: true` opts it into server-side

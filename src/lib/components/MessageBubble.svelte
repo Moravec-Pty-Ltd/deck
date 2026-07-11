@@ -92,7 +92,7 @@
 				type="button"
 				class="copy-btn btn btn-ghost btn-xs absolute top-1 right-1 transition-opacity {copied
 					? 'opacity-100'
-					: 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}"
+					: 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'}"
 				onclick={doCopy}
 				aria-label="Copy message"
 				title="Copy message"
