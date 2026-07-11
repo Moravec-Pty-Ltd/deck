@@ -457,7 +457,7 @@
 				{#if session.kind === 'shell'}
 					<ShellView {session} />
 				{:else}
-					<ClaudeView {session} />
+					<ClaudeView {session} {sessions} />
 				{/if}
 			</div>
 			{#if tab === 'changes'}

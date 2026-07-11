@@ -10,13 +10,29 @@
 		type CostSummary
 	} from '$lib/session-cost-core';
 	import { modelLabel } from '$lib/models';
-	import Linked from './Linked.svelte';
+	import MessageBubble from './MessageBubble.svelte';
 	import ToolCall from './ToolCall.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
-	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X } from '@lucide/svelte';
+	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight } from '@lucide/svelte';
+	import {
+		isCrossSession,
+		isEmptyDraft,
+		nextOrigin,
+		parseDraft,
+		serializeDraft,
+		type Draft
+	} from '$lib/composer-draft-core';
+	import { haptic } from '$lib/haptics';
 
-	let { session }: { session: DeckSession } = $props();
+	let { session, sessions = [] }: { session: DeckSession; sessions?: DeckSession[] } = $props();
+
+	// A single global composer draft, persisted so a cold reload / iOS PWA relaunch
+	// restores it. Restored once at init (this component isn't remounted on session
+	// switch, so the draft carries across switches — see the session $effect below).
+	const DRAFT_KEY = 'deck:composer:draft';
+	const restored =
+		typeof localStorage !== 'undefined' ? parseDraft(localStorage.getItem(DRAFT_KEY)) : null;
 
 	type AnyEvent = Record<string, any>;
 
@@ -27,7 +43,7 @@
 	let cost = $state<CostSummary>(emptyCostSummary());
 	let status = $state<string>(session.status);
 	let liveText = $state('');
-	let input = $state('');
+	let input = $state(restored?.text ?? '');
 	let scroller: HTMLDivElement | undefined = $state();
 	let fileInput: HTMLInputElement | undefined = $state();
 	let atBottom = $state(true);
@@ -36,7 +52,11 @@
 	let loaded = $state(false);
 
 	type Attachment = { media_type: string; data: string; url: string };
-	let attachments = $state<Attachment[]>([]);
+	let attachments = $state<Attachment[]>(restored?.attachments ?? []);
+	// The session the draft was started in (null when empty); drives the "from:"
+	// chip and the confirm-on-send guard when it differs from the viewed session.
+	let originSessionId = $state<string | null>(restored?.originSessionId ?? null);
+	let pendingSend = $state(false);
 
 	// Render only the tail at first, then widen the window in the background so
 	// opening a long session paints immediately instead of mounting thousands of
@@ -341,12 +361,74 @@
 
 	const canSend = $derived(!!input.trim() || attachments.length > 0);
 
+	// The draft was started in a different session than the one being viewed.
+	const crossSession = $derived(isCrossSession(originSessionId, session.id));
+	const originTitle = $derived(
+		sessions.find((s) => s.id === originSessionId)?.title ?? 'another session'
+	);
+
+	// Persist the single draft (debounced) so a cold reload restores it; an empty
+	// draft clears the key. The attachment budget is applied in serializeDraft.
+	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	function persistDraft(draft: Draft) {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			const raw = serializeDraft(draft);
+			if (raw) localStorage.setItem(DRAFT_KEY, raw);
+			else localStorage.removeItem(DRAFT_KEY);
+		} catch {
+			// quota / private mode: keep the in-memory draft, just skip persistence
+		}
+	}
+	$effect(() => {
+		const draft: Draft = { text: input, attachments, originSessionId };
+		// The cleanup below clears the pending timer before each re-run and on
+		// destroy, so this debounces to 300ms after the last edit.
+		saveTimer = setTimeout(() => persistDraft(draft), 300);
+		return () => clearTimeout(saveTimer);
+	});
+
+	// Track the origin session: adopt the current one when the draft first becomes
+	// non-empty, hold it across switches, clear it when the draft is emptied.
+	$effect(() => {
+		const empty = isEmptyDraft({ text: input, attachments });
+		originSessionId = nextOrigin(originSessionId, empty, session.id);
+	});
+
+	function clearDraft() {
+		input = '';
+		attachments = [];
+		originSessionId = null;
+		if (typeof localStorage !== 'undefined') {
+			try {
+				localStorage.removeItem(DRAFT_KEY);
+			} catch {
+				// ignore
+			}
+		}
+	}
+
 	async function send() {
+		if (!canSend) return;
+		// Only guard the cross-session case; same-session sends are unaffected.
+		if (crossSession) {
+			haptic([15, 30, 15]);
+			pendingSend = true;
+			return;
+		}
+		await doSend();
+	}
+
+	function confirmSend() {
+		pendingSend = false;
+		doSend();
+	}
+
+	async function doSend() {
 		if (!canSend) return;
 		const text = input.trim();
 		const images = attachments.map((a) => ({ media_type: a.media_type, data: a.data }));
-		input = '';
-		attachments = [];
+		clearDraft();
 		atBottom = true;
 		await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
 			method: 'POST',
@@ -461,23 +543,20 @@
 		{/if}
 		{#each visible as event, i (baseIndex + start + i)}
 			{#if event.type === 'deck.user'}
-				<div class="chat chat-end">
-					<div class="chat-bubble max-w-[85%] break-words whitespace-pre-wrap bg-base-300 text-base-content">
-						{#if event.images?.length}
-							<div class="mb-2 flex flex-wrap gap-2">
-								{#each event.images as img, k (k)}
-									<img
-										src={img.file ? `/api/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(img.file)}` : `data:${img.media_type};base64,${img.data}`}
-										loading="lazy"
-										alt="attachment"
-										class="max-h-40 rounded-box border border-base-300"
-									/>
-								{/each}
-							</div>
-						{/if}
-						{#if event.text}<Linked text={event.text} />{/if}
-					</div>
-				</div>
+				<MessageBubble side="end" text={event.text ?? ''} bubbleClass="bg-base-300 text-base-content">
+					{#if event.images?.length}
+						<div class="mb-2 flex flex-wrap gap-2">
+							{#each event.images as img, k (k)}
+								<img
+									src={img.file ? `/api/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(img.file)}` : `data:${img.media_type};base64,${img.data}`}
+									loading="lazy"
+									alt="attachment"
+									class="max-h-40 rounded-box border border-base-300"
+								/>
+							{/each}
+						</div>
+					{/if}
+				</MessageBubble>
 			{:else if event.type === 'deck.error'}
 				<div class="alert alert-error py-2 text-sm break-words whitespace-pre-wrap">{event.text}</div>
 			{:else if event.type === 'deck.model'}
@@ -497,11 +576,7 @@
 			{:else if event.type === 'assistant'}
 				{#each contentBlocks(event) as block, j (j)}
 					{#if block.type === 'text' && block.text?.trim()}
-						<div class="chat chat-start">
-							<div class="chat-bubble max-w-[85%] break-words whitespace-pre-wrap bg-base-100 text-base-content">
-								<Linked text={block.text} />
-							</div>
-						</div>
+						<MessageBubble side="start" text={block.text} bubbleClass="bg-base-100 text-base-content" />
 					{:else if block.type === 'thinking' && block.thinking?.trim()}
 						<details class="px-2 text-xs opacity-50">
 							<summary class="cursor-pointer select-none">
@@ -526,11 +601,7 @@
 		{/each}
 
 		{#if loaded && liveText.trim()}
-			<div class="chat chat-start">
-				<div class="chat-bubble max-w-[85%] break-words whitespace-pre-wrap bg-base-100 text-base-content">
-					<Linked text={liveText} />
-				</div>
-			</div>
+			<MessageBubble side="start" text={liveText} bubbleClass="bg-base-100 text-base-content" />
 		{:else if loaded && status === 'running'}
 			<div class="px-2 text-sm opacity-60">working...</div>
 		{/if}
@@ -561,6 +632,12 @@
 	{/if}
 
 	<div class="border-t border-base-300 bg-base-100 p-2 sm:p-3">
+		{#if crossSession}
+			<div class="mb-2 flex items-center gap-1 text-xs opacity-70">
+				<ArrowLeftRight size={12} />
+				<span>from: {originTitle}</span>
+			</div>
+		{/if}
 		{#if attachments.length}
 			<div class="mb-2 flex flex-wrap gap-2">
 				{#each attachments as a, i (i)}
@@ -615,4 +692,24 @@
 			</button>
 		</div>
 	</div>
+
+	{#if pendingSend}
+		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
+			<div class="modal-box max-w-sm">
+				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
+					<ArrowLeftRight size={18} class="text-warning" /> Send to a different session?
+				</h3>
+				<p class="mb-3 text-sm opacity-70">
+					This draft was started in <span class="font-semibold">{originTitle}</span>. Send it to
+					<span class="font-semibold">{session.title}</span>?{#if attachments.length}
+						(with {attachments.length} image{attachments.length > 1 ? 's' : ''}){/if}
+				</p>
+				<div class="modal-action">
+					<button class="btn" onclick={() => (pendingSend = false)}>Cancel</button>
+					<button class="btn btn-primary" onclick={confirmSend}>Send</button>
+				</div>
+			</div>
+			<button class="modal-backdrop" onclick={() => (pendingSend = false)} aria-label="close"></button>
+		</div>
+	{/if}
 </div>
