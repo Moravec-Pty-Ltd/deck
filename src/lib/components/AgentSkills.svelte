@@ -43,6 +43,8 @@
 			}
 			const updated: SkillStatus = await res.json();
 			statuses = statuses.map((s) => (s.kind === updated.kind ? updated : s));
+		} catch {
+			errorMsg = 'failed to install';
 		} finally {
 			busy = null;
 		}

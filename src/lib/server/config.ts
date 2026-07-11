@@ -36,9 +36,10 @@ export const authToken = loadToken();
 // Where a programmatic client reaches this deck server. Stamped into spawned
 // agents' env (DECK_BASE_URL) and printed in /llms.txt; override when deck is
 // reached at something other than localhost (the fallback tracks the runtime
-// PORT so a non-default port still yields working URLs).
+// PORT so a non-default port still yields working URLs). `||` deliberately:
+// a blank env var reads as unset.
 export const baseUrl = (
-	process.env.DECK_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4818}`
+	process.env.DECK_BASE_URL?.trim() || `http://localhost:${process.env.PORT?.trim() || 4818}`
 ).replace(/\/+$/, '');
 
 // Shared-token credential carried in request headers by programmatic clients

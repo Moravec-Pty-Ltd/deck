@@ -6,9 +6,10 @@ import type { AgentKind, SkillStatus } from '$lib/types';
 // in $lib/types so the client panel can import it too.
 
 // `version: x.y.z` from the SKILL.md frontmatter block, or null when the file
-// has no frontmatter / no version line.
+// has no frontmatter / no version line. CRLF tolerated: an installed copy may
+// have been re-saved by a Windows editor.
 export function parseSkillVersion(md: string): string | null {
-	const fm = /^---\n([\s\S]*?)\n---/.exec(md);
+	const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md);
 	if (!fm) return null;
 	const line = /^version:\s*(\S+)\s*$/m.exec(fm[1]);
 	return line ? line[1] : null;

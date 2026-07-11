@@ -26,6 +26,10 @@ describe('parseSkillVersion', () => {
 		expect(parseSkillVersion('---\nname: deck\n---\nversion: 9.9.9\n')).toBe(null);
 	});
 
+	it('tolerates CRLF line endings', () => {
+		expect(parseSkillVersion(SKILL.replace(/\n/g, '\r\n'))).toBe('1.2.3');
+	});
+
 	it('parses the shipped skill (frontmatter must not drift)', () => {
 		const shipped = fs.readFileSync(
 			path.join(__dirname, '../../../.claude/skills/deck/SKILL.md'),
