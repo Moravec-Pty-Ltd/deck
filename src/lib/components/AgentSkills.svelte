@@ -56,7 +56,7 @@
 	<p class="mb-3 text-xs opacity-60">
 		Teach each installed harness to drive deck (the shipped
 		<span class="font-mono">deck</span> skill, backed by
-		<a href="/llms.txt" target="_blank" class="link">/llms.txt</a>).
+		<a href="/llms.txt" target="_blank" rel="noopener noreferrer" class="link">/llms.txt</a>).
 	</p>
 	{#if errorMsg}
 		<div class="alert alert-error mb-3 py-2 text-sm">{errorMsg}</div>

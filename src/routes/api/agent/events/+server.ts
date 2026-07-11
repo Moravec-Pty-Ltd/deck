@@ -12,10 +12,29 @@ import { sseResponse } from '$lib/server/sse';
 // `ping` heartbeat. Delta types: status, awaiting-input, turn-finished,
 // workflow, pr, session-created, session-deleted.
 export const GET: RequestHandler = async () => {
-	const sessions = (await listSessions()).map(sessionDigest);
+	// Subscribe before the snapshot read: an event landing while listSessions()
+	// awaits would otherwise be in neither the snapshot nor the deltas. Buffered
+	// events are flushed after the snapshot frame; one may duplicate state the
+	// snapshot already reflects, which a monitor applies idempotently.
+	const buffered: unknown[] = [];
+	const buffer = (event: unknown) => buffered.push(event);
+	agentFeed.on('event', buffer);
+
+	let sessions;
+	try {
+		sessions = (await listSessions()).map(sessionDigest);
+	} catch (e) {
+		agentFeed.off('event', buffer);
+		throw e;
+	}
+
+	// sseResponse runs setup synchronously on construction, so the swap from
+	// the buffer listener to the live one leaves no gap.
 	return sseResponse((send) => {
 		send('snapshot', sessions);
 		const onEvent = (event: unknown) => send('delta', event);
+		agentFeed.off('event', buffer);
+		for (const event of buffered) onEvent(event);
 		agentFeed.on('event', onEvent);
 		return () => agentFeed.off('event', onEvent);
 	});
