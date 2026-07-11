@@ -3,6 +3,7 @@
 	import type { SessionKind } from '$lib/types';
 	import { CLAUDE_MODELS, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
 	import { dismissOnOutside, keepInView } from '$lib/dismiss';
+	import { haptic } from '$lib/haptics';
 	import { Cpu, Check, TriangleAlert } from '@lucide/svelte';
 
 	// Header chip showing the session's current model, opening a switcher (issue
@@ -69,6 +70,7 @@
 		if (busy || pendingModel !== null) return;
 		if (isExpensiveModel(next) && next !== (model ?? '')) {
 			err = ''; // open the confirm clean, not on a prior switch's stale error
+			haptic([15, 30, 15]); // a warning buzz on touch as the confirm opens
 			pendingModel = next;
 			return;
 		}
