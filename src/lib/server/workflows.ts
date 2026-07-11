@@ -17,6 +17,8 @@ import { agentInterrupt, agentSend } from './agents/dispatch';
 import { getStoredSession, listProjects, updateSession } from './store';
 import { projectForPath, resolveWithinProjects } from './confine';
 import { notify } from './push';
+import { publishAgentEvent } from './agent-feed';
+import type { AskQuestion, PendingAsk } from './ask';
 
 // The workflow runner (issue #111): drives one run per session through its
 // steps. run/gate commands execute in the session cwd; agent steps are turns
@@ -30,8 +32,15 @@ interface ActiveRun {
 	// the run/gate child currently executing, so cancel can kill it
 	child?: ChildProcess;
 	// resolves the pending ask step, so cancel (or /answer) can settle it;
-	// askId pins /answer to this exact checkpoint, not a stale card's
-	ask?: { askId: string; resolve: (text: string) => void; reject: (err: Error) => void };
+	// askId pins /answer to this exact checkpoint, not a stale card's.
+	// questions/askedAt are kept for the agent API's pending-asks listing.
+	ask?: {
+		askId: string;
+		questions: AskQuestion[];
+		askedAt: number;
+		resolve: (text: string) => void;
+		reject: (err: Error) => void;
+	};
 	// set by noteInterrupt when the user interrupts the in-flight agent turn,
 	// so the step reads as failed (pausing the run) instead of advancing on
 	// half-done work.
@@ -74,6 +83,21 @@ export function workflowAskPending(id: string): boolean {
 	return !!runs.get(id)?.ask;
 }
 
+// Every session's pending workflow checkpoint, for the agent API's
+// needs-attention listing. `askId` must ride along: /answer resolves a
+// checkpoint only on an exact askId match.
+export function listWorkflowAsks(): PendingAsk[] {
+	return [...runs.entries()]
+		.filter(([, inst]) => inst.ask)
+		.map(([sessionId, inst]) => ({
+			sessionId,
+			source: 'workflow' as const,
+			askId: inst.ask!.askId,
+			questions: inst.ask!.questions,
+			askedAt: inst.ask!.askedAt
+		}));
+}
+
 // Resolve the pending workflow ask with the user's answer text, but only when
 // the answer targets that exact checkpoint (a click on a stale ask card, MCP
 // or workflow, must not unblock the run with unrelated text). Returns false
@@ -93,6 +117,9 @@ function marker(id: string, data: Record<string, unknown>) {
 
 function persistRun(id: string, run: WorkflowRun) {
 	updateSession(id, { workflowRun: run });
+	// Every run transition funnels through here (start, step advance, status
+	// flips, finish, cancel), so this one tap keeps the agent feed complete.
+	publishAgentEvent(id, 'workflow', { workflowRun: run });
 }
 
 // Wait for the turn agentSend just started to settle: the next idle/error on
@@ -157,27 +184,32 @@ function askStep(
 	// One tappable option keeps a plain "ready to proceed?" checkpoint to a
 	// single click; the free-text field still takes a custom answer, which
 	// lands in [step:<name>] for later steps.
-	appendEvent(id, {
-		type: 'deck.ask',
-		askId,
-		questions: [{ question, header: 'workflow', options: [{ label: 'Continue' }] }],
-		ts: Date.now()
-	});
+	const questions: AskQuestion[] = [
+		{ question, header: 'workflow', options: [{ label: 'Continue' }] }
+	];
+	appendEvent(id, { type: 'deck.ask', askId, questions, ts: Date.now() });
 	notify({
 		title: `Needs your answer · ${title}`,
 		body: question,
 		tag: id,
 		url: `/s/${id}`
 	});
+	publishAgentEvent(id, 'awaiting-input', { awaitingInput: true, source: 'workflow', askId, questions });
+	const settled = () => {
+		inst.ask = undefined;
+		publishAgentEvent(id, 'awaiting-input', { awaitingInput: false, source: 'workflow', askId });
+	};
 	return new Promise((resolve) => {
 		inst.ask = {
 			askId,
+			questions,
+			askedAt: Date.now(),
 			resolve: (text) => {
-				inst.ask = undefined;
+				settled();
 				resolve({ ok: true, output: text });
 			},
 			reject: () => {
-				inst.ask = undefined;
+				settled();
 				resolve({ ok: false, output: 'checkpoint cancelled' });
 			}
 		};

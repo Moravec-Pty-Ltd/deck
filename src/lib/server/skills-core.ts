@@ -1,0 +1,38 @@
+import type { AgentKind, SkillStatus } from '$lib/types';
+
+// Pure logic for the deck skill's install/version story (issue #127): parse
+// the version out of a SKILL.md and derive one harness's install status. The
+// fs/availability wiring lives in skills.ts; the SkillStatus row shape lives
+// in $lib/types so the client panel can import it too.
+
+// `version: x.y.z` from the SKILL.md frontmatter block, or null when the file
+// has no frontmatter / no version line. CRLF tolerated: an installed copy may
+// have been re-saved by a Windows editor.
+export function parseSkillVersion(md: string): string | null {
+	const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md);
+	if (!fm) return null;
+	const line = /^version:\s*(\S+)\s*$/m.exec(fm[1]);
+	return line ? line[1] : null;
+}
+
+export function skillStatus(input: {
+	kind: AgentKind;
+	available: boolean;
+	supported: boolean;
+	// contents of the installed SKILL.md, or null when not installed
+	installedMd: string | null;
+	shippedVersion: string | null;
+}): SkillStatus {
+	const installed = input.supported && input.installedMd !== null;
+	const installedVersion = installed ? parseSkillVersion(input.installedMd!) : null;
+	return {
+		kind: input.kind,
+		available: input.available,
+		supported: input.supported,
+		installed,
+		installedVersion,
+		shippedVersion: input.shippedVersion,
+		upToDate:
+			installed && installedVersion !== null && installedVersion === input.shippedVersion
+	};
+}

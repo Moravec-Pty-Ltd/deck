@@ -376,6 +376,20 @@ export interface NewSessionPreset {
 	title?: string;
 }
 
+// One harness's row in the projects page's Agent skills panel (issue #127):
+// the shipped deck skill's install/version status. `supported` is whether deck
+// knows where that harness keeps skills; unsupported rows render as such
+// rather than blocking the panel. Derived in server/skills-core.ts.
+export interface SkillStatus {
+	kind: AgentKind;
+	available: boolean;
+	supported: boolean;
+	installed: boolean;
+	installedVersion: string | null;
+	shippedVersion: string | null;
+	upToDate: boolean;
+}
+
 // User-local, app-wide preferences (~/.deck/settings.json, never committed).
 // `lastModels` is the global fallback for the new-session modal: a fresh project
 // with no per-project pick defaults to the model you last used for that kind

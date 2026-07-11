@@ -2,22 +2,17 @@ import { describe, it, expect, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pinEnv } from './test-env';
 
 // config.ts derives its data dir and auth token from the env at import time, so
 // pin both to known throwaway values before the module loads, then restore after.
-const originalDataDir = process.env.DECK_DATA;
-const originalToken = process.env.DECK_TOKEN;
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-config-'));
-process.env.DECK_DATA = tmpDir;
-process.env.DECK_TOKEN = 'correct-horse-battery-staple';
+const restoreEnv = pinEnv({ DECK_DATA: tmpDir, DECK_TOKEN: 'correct-horse-battery-staple' });
 
-const { tokenMatches } = await import('./config');
+const { tokenMatches, headerToken } = await import('./config');
 
 afterAll(() => {
-	if (originalDataDir === undefined) delete process.env.DECK_DATA;
-	else process.env.DECK_DATA = originalDataDir;
-	if (originalToken === undefined) delete process.env.DECK_TOKEN;
-	else process.env.DECK_TOKEN = originalToken;
+	restoreEnv();
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -46,14 +41,40 @@ describe('tokenMatches', () => {
 	});
 });
 
+describe('headerToken', () => {
+	it('extracts a bearer token, case-insensitive scheme', () => {
+		expect(headerToken(new Headers({ authorization: 'Bearer abc' }))).toBe('abc');
+		expect(headerToken(new Headers({ authorization: 'bearer abc' }))).toBe('abc');
+	});
+
+	it('falls back to X-Deck-Token', () => {
+		expect(headerToken(new Headers({ 'x-deck-token': 'xyz' }))).toBe('xyz');
+	});
+
+	it('prefers the Authorization header when both are present', () => {
+		const headers = new Headers({ authorization: 'Bearer abc', 'x-deck-token': 'xyz' });
+		expect(headerToken(headers)).toBe('abc');
+	});
+
+	it('ignores non-bearer Authorization schemes', () => {
+		expect(headerToken(new Headers({ authorization: 'Basic dXNlcg==' }))).toBe(null);
+	});
+
+	it('trims X-Deck-Token and treats a blank one as missing', () => {
+		expect(headerToken(new Headers({ 'x-deck-token': ' xyz ' }))).toBe('xyz');
+		expect(headerToken(new Headers({ 'x-deck-token': '   ' }))).toBe(null);
+	});
+
+	it('returns null when no credential header is present', () => {
+		expect(headerToken(new Headers())).toBe(null);
+	});
+});
+
 describe('loadToken', () => {
 	it('mints a fresh token when the token file is empty/whitespace', async () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-config-empty-'));
 		fs.writeFileSync(path.join(dir, 'token'), '   \n');
-		const prevData = process.env.DECK_DATA;
-		const prevToken = process.env.DECK_TOKEN;
-		process.env.DECK_DATA = dir;
-		delete process.env.DECK_TOKEN;
+		const restore = pinEnv({ DECK_DATA: dir, DECK_TOKEN: undefined });
 		vi.resetModules();
 		try {
 			const mod = await import('./config');
@@ -62,9 +83,7 @@ describe('loadToken', () => {
 			expect(mod.tokenMatches('')).toBe(false);
 			expect(mod.tokenMatches(mod.authToken)).toBe(true);
 		} finally {
-			process.env.DECK_DATA = prevData;
-			if (prevToken === undefined) delete process.env.DECK_TOKEN;
-			else process.env.DECK_TOKEN = prevToken;
+			restore();
 			fs.rmSync(dir, { recursive: true, force: true });
 		}
 	});

@@ -17,6 +17,7 @@ import {
 } from '$lib/pr';
 import type { SessionPR } from '$lib/types';
 import { listStoredSessions, getStoredSession, updateSession } from './store';
+import { publishAgentEvent } from './agent-feed';
 
 const exec = promisify(execFile);
 
@@ -99,7 +100,13 @@ interface SyncItem {
 function persistPatch(item: SyncItem, patch: PrSyncPatch) {
 	const current = getStoredSession(item.id)?.pr;
 	if (!current || current.url !== item.pr.url) return;
-	updateSession(item.id, { pr: { ...current, ...patch, checkedAt: Date.now() } });
+	const pr = { ...current, ...patch, checkedAt: Date.now() };
+	updateSession(item.id, { pr });
+	// Feed only material changes, not the every-tick checkedAt refresh.
+	const changed = (Object.keys(patch) as (keyof PrSyncPatch)[]).some(
+		(k) => patch[k] !== current[k]
+	);
+	if (changed) publishAgentEvent(item.id, 'pr', { pr });
 }
 
 // Fetch one chunk's PR states in a single aliased GraphQL request and write each

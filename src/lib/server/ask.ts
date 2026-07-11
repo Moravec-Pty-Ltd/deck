@@ -1,10 +1,14 @@
 import { getStoredSession } from './store';
 import { notify } from './push';
+import { publishAgentEvent } from './agent-feed';
 
 // One outstanding "ask the user" call per claude session. The MCP `ask` tool
 // handler registers a pending entry and awaits it; the UI resolves it when the
 // user answers, or it is rejected if the turn is interrupted / the process dies.
 interface Pending {
+	// kept so /api/agent/asks can list what's blocking without a transcript parse
+	questions: AskQuestion[];
+	askedAt: number;
 	resolve: (text: string) => void;
 	reject: (err: Error) => void;
 }
@@ -14,6 +18,16 @@ export interface AskQuestion {
 	header?: string;
 	multiSelect?: boolean;
 	options: { label: string; description?: string }[];
+}
+
+// A pending ask as the agent API lists it. `askId` is set for workflow
+// checkpoints (see workflows.ts), absent for MCP asks (answered by text alone).
+export interface PendingAsk {
+	sessionId: string;
+	source: 'mcp' | 'workflow';
+	askId?: string;
+	questions: AskQuestion[];
+	askedAt: number;
 }
 
 const g = globalThis as { __deckAsks?: Map<string, Pending> };
@@ -34,15 +48,24 @@ export function registerAsk(
 		tag: sessionId,
 		url: `/s/${sessionId}`
 	});
+	publishAgentEvent(sessionId, 'awaiting-input', { awaitingInput: true, source: 'mcp', questions });
 
 	return new Promise<string>((resolve, reject) => {
+		const settle = () => {
+			if (pending.get(sessionId) !== entry) return false;
+			pending.delete(sessionId);
+			publishAgentEvent(sessionId, 'awaiting-input', { awaitingInput: false, source: 'mcp' });
+			return true;
+		};
 		const entry: Pending = {
+			questions,
+			askedAt: Date.now(),
 			resolve: (text) => {
-				if (pending.get(sessionId) === entry) pending.delete(sessionId);
+				settle();
 				resolve(text);
 			},
 			reject: (err) => {
-				if (pending.get(sessionId) === entry) pending.delete(sessionId);
+				settle();
 				reject(err);
 			}
 		};
@@ -58,6 +81,16 @@ export function registerAsk(
 // `awaitingInput` so the sidebar can bucket it under "Needs attention" (issue #48).
 export function hasPendingAsk(id: string): boolean {
 	return pending.has(id);
+}
+
+// Every session's pending MCP ask, for the agent API's needs-attention listing.
+export function listPendingAsks(): PendingAsk[] {
+	return [...pending.entries()].map(([sessionId, p]) => ({
+		sessionId,
+		source: 'mcp',
+		questions: p.questions,
+		askedAt: p.askedAt
+	}));
 }
 
 // Resolve the pending ask for a session with the user's answer text. Returns

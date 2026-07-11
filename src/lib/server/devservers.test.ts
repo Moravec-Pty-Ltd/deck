@@ -3,23 +3,18 @@ import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pinEnv } from './test-env';
 
 // Importing devservers pulls in config.ts, which derives its data dir and auth
 // token from the env at import time (mkdir under ~/.deck, mint a token). Pin both
 // to throwaway values before the module loads so this stays hermetic.
-const originalDataDir = process.env.DECK_DATA;
-const originalToken = process.env.DECK_TOKEN;
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-devservers-'));
-process.env.DECK_DATA = tmpDir;
-process.env.DECK_TOKEN = 'test-token';
+const restoreEnv = pinEnv({ DECK_DATA: tmpDir, DECK_TOKEN: 'test-token' });
 
 const { probePort } = await import('./devservers');
 
 afterAll(() => {
-	if (originalDataDir === undefined) delete process.env.DECK_DATA;
-	else process.env.DECK_DATA = originalDataDir;
-	if (originalToken === undefined) delete process.env.DECK_TOKEN;
-	else process.env.DECK_TOKEN = originalToken;
+	restoreEnv();
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 

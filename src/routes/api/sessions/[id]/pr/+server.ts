@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getStoredSession, updateSession } from '$lib/server/store';
+import { prActionResponse } from '$lib/server/http';
 import { reviewPr, mergePr, REVIEW_FLAG, MERGE_FLAG, type ReviewDecision, type MergeMethod } from '$lib/server/pr';
 
 // Actions on a session's captured PR. Status itself is kept fresh by the
@@ -48,20 +49,10 @@ function resolveCall(id: string, b: Body) {
 	error(400, 'invalid action');
 }
 
-// gh surfaces a real failure (own-PR approve, dirty merge) as a thrown error; turn
-// it into a 400 carrying gh's message so the menu can show it inline.
-async function runCall(call: () => Promise<unknown>) {
-	try {
-		return json({ pr: (await call()) ?? null });
-	} catch (e) {
-		error(400, e instanceof Error ? e.message : 'failed to run PR action');
-	}
-}
-
 export const POST: RequestHandler = async ({ params, request }) => {
 	if (!getStoredSession(params.id)) error(404, 'session not found');
 	const body = (await request.json().catch(() => ({}))) as Body;
-	return runCall(resolveCall(params.id, body));
+	return prActionResponse(resolveCall(params.id, body));
 };
 
 // Dismiss the captured PR chip. Capture is forward-only, so the next GitHub PR

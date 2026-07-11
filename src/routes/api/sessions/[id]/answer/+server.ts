@@ -1,6 +1,6 @@
-import { json, error } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { agentSessionOr404, objectBody } from '$lib/server/http';
+import { agentSessionOr404, answerText, objectBody } from '$lib/server/http';
 import { resolveAsk } from '$lib/server/ask';
 import { resolveWorkflowAsk } from '$lib/server/workflows';
 import { recordAnswer } from '$lib/server/claude';
@@ -28,9 +28,7 @@ function resolveAnswer(id: string, body: Record<string, unknown>, text: string):
 export const POST: RequestHandler = async ({ params, request }) => {
 	const session = await agentSessionOr404(params.id);
 	const body = await objectBody(request);
-	const text = String(body.text ?? '').trim();
-	if (!text) error(400, 'empty answer');
-
+	const text = answerText(body);
 	recordIfAnswers(session.id, body);
 	return json({ ok: resolveAnswer(session.id, body, text) });
 };

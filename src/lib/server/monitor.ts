@@ -2,6 +2,7 @@ import { listSessions } from './sessions';
 import { pollServers } from './devservers';
 import { syncCapturedPrs } from './pr';
 import { notify } from './push';
+import { publishAgentEvent } from './agent-feed';
 
 // Claude lifecycle (turn end, crash, question) is notified inline from the event
 // stream in claude.ts. Shells have no event stream, so a lightweight poll watches
@@ -15,6 +16,18 @@ import { notify } from './push';
 const PR_SYNC_INTERVAL_MS = 75_000;
 
 const g = globalThis as { __deckMonitor?: boolean; __deckPrevStatus?: Map<string, string> };
+
+// Shells have no inline status chokepoint (agents publish their transitions
+// from claude.ts setStatus), so their agent-feed events come from this poll;
+// the dead transition additionally pushes a notification.
+function onShellTransition(s: { id: string; status: string; title: string; cwd: string }, before?: string) {
+	if (!before || before === s.status) return;
+	publishAgentEvent(s.id, 'status', { status: s.status });
+	// before !== status is guaranteed above, so this fires once per death.
+	if (s.status === 'dead') {
+		notify({ title: `Shell exited · ${s.title}`, body: s.cwd, tag: s.id, url: `/s/${s.id}` });
+	}
+}
 
 function start() {
 	if (g.__deckMonitor) return;
@@ -41,10 +54,7 @@ function start() {
 				seen.add(s.id);
 				const before = prev.get(s.id);
 				prev.set(s.id, s.status);
-				if (s.kind !== 'shell') continue;
-				if (before && before !== 'dead' && s.status === 'dead') {
-					notify({ title: `Shell exited · ${s.title}`, body: s.cwd, tag: s.id, url: `/s/${s.id}` });
-				}
+				if (s.kind === 'shell') onShellTransition(s, before);
 			}
 			for (const id of prev.keys()) if (!seen.has(id)) prev.delete(id);
 			await pollServers(sessions).catch(() => {});
