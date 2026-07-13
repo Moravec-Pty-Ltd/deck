@@ -16,9 +16,9 @@ export async function requestDelete(
 // Shared session-delete flow for the home list and the session-view sidebar:
 // the confirm-modal state, per-id in-flight tracking (deletes run in the
 // background so several can be in flight at once, issue #59), and the DELETE
-// request with worktree/branch options. `onDeleted` fires the moment a delete
-// starts (both the plain and worktree paths funnel through `run`), letting the
-// session page navigate away when the open session is the one being removed.
+// request with worktree/branch options. `onDeleted` fires once a delete
+// succeeds (both the plain and worktree paths funnel through `run`), letting the
+// session page navigate to a neighbour when the open session is the one removed.
 // Methods are arrow fields so they can be passed as bare callbacks (e.g.
 // onDelete={flow.request}).
 export class DeleteFlow {
@@ -50,16 +50,15 @@ export class DeleteFlow {
 		if (this.deletingIds.has(s.id)) return;
 		this.target = null; // close the confirm modal immediately; cleanup runs in the background
 		this.deletingIds.add(s.id);
-		// Notify optimistically, before the request lands: the open session's page
-		// navigates away here (mirrors mergeCleanup), and the background refresh
-		// below reconciles the list once the delete completes.
-		this.onDeleted(s);
 		try {
 			await requestDelete(s.id, opts);
-			// Delete succeeded: clear any prior failure, then reconcile the list. A
-			// refresh failure is transient (the 5s poll catches up) and must not be
-			// reported as a delete failure.
+			// Delete succeeded: clear any prior failure, then notify. The open
+			// session's page navigates to its neighbour here, only now the row is
+			// really gone, so a failed delete instead keeps you on the page with the
+			// error. Finally reconcile the list; a refresh failure is transient (the
+			// 5s poll catches up) and must not be reported as a delete failure.
 			this.error = null;
+			this.onDeleted(s);
 			try {
 				await this.refresh();
 			} catch {

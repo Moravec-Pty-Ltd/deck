@@ -185,10 +185,11 @@
 	// order, so it computes this at click time and hands it to onDeleteSession.
 	let pendingHref = '/';
 
-	// Deleting the open session tears down this page, so jump away the moment the
-	// delete starts (mirrors mergeCleanup); deleting any other row is unchanged.
+	// Deleting the open session tears down this page, so jump to its neighbour once
+	// the delete lands (replaceState so Back doesn't reopen the now-gone session);
+	// deleting any other row is unchanged.
 	const del = new DeleteFlow(refresh, (s) => {
-		if (s.id === session.id) goto(pendingHref);
+		if (s.id === session.id) goto(pendingHref, { replaceState: true });
 	});
 	function onDeleteSession(s: DeckSession, neighbor?: DeckSession | null) {
 		if (s.id === session.id) pendingHref = neighbor ? `/s/${encodeURIComponent(neighbor.id)}` : '/';
