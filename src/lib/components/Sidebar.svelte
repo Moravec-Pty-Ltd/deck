@@ -3,6 +3,7 @@
 	import type { DeckSession, Project, ServerState } from '$lib/types';
 	import { groupSessions } from '$lib/groups';
 	import { bucketSessions, type StatusBucketKey } from '$lib/status-groups';
+	import { flattenVisibleGroups, flattenVisibleBuckets, pickNeighbor } from '$lib/sidebar-neighbor';
 	import { createCollapseState } from '$lib/collapse.svelte';
 	import { aggregateState, SERVER_DOT, SERVER_LABEL } from '$lib/servers';
 	import { pickSessionIcon, type SessionIconKind } from '$lib/session-icon';
@@ -25,7 +26,7 @@
 		deletingIds?: Set<string>;
 		onQuickAdd: (path: string) => void;
 		onShellHere: (session: DeckSession) => void;
-		onDelete: (session: DeckSession) => void;
+		onDelete: (session: DeckSession, neighbor?: DeckSession | null) => void;
 	}
 	let { projects, sessions, serverStates, currentId, deletingIds, onQuickAdd, onShellHere, onDelete }: Props =
 		$props();
@@ -90,6 +91,21 @@
 	// Status buckets default *expanded*, so this set tracks the collapsed ones
 	// (the inverse of the project-view collapse) reusing the same #34 mechanism.
 	const statusCollapse = createCollapseState('deck:sidebar:collapsedStatusBuckets');
+
+	// The sessions actually on screen, in render order, computed on demand at
+	// delete time (only read then, so not a derived recomputed every poll).
+	function visibleOrder(): DeckSession[] {
+		return viewMode === 'status'
+			? flattenVisibleBuckets(buckets, (k) => statusCollapse.has(k))
+			: flattenVisibleGroups(groups, (name) => collapse.has(name));
+	}
+
+	// For the open session, hand the page its visible neighbour to land on once
+	// it's gone (the row below, else above, else home = null); other rows just
+	// delete in place with no navigation.
+	function onDeleteRow(s: DeckSession) {
+		onDelete(s, s.id === currentId ? pickNeighbor(visibleOrder(), s.id) : undefined);
+	}
 </script>
 
 {#snippet sessionRow(s: DeckSession)}
@@ -134,21 +150,19 @@
 				<Terminal size={12} />
 			</button>
 		{/if}
-		{#if s.id !== currentId}
-			<button
-				class="btn btn-ghost btn-xs"
-				onclick={() => onDelete(s)}
-				disabled={deletingIds?.has(s.id)}
-				aria-label={`Remove ${s.title}`}
-				title="Remove session"
-			>
-				{#if deletingIds?.has(s.id)}
-					<span class="loading loading-spinner loading-xs"></span>
-				{:else}
-					<Trash2 size={12} />
-				{/if}
-			</button>
-		{/if}
+		<button
+			class="btn btn-ghost btn-xs"
+			onclick={() => onDeleteRow(s)}
+			disabled={deletingIds?.has(s.id)}
+			aria-label={`Remove ${s.title}`}
+			title="Remove session"
+		>
+			{#if deletingIds?.has(s.id)}
+				<span class="loading loading-spinner loading-xs"></span>
+			{:else}
+				<Trash2 size={12} />
+			{/if}
+		</button>
 	</li>
 {/snippet}
 

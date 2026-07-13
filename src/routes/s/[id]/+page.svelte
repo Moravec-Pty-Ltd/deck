@@ -180,9 +180,21 @@
 		sidebarOpen = false;
 	}
 
-	// The sidebar/list delete flow must never remove the session being viewed;
-	// mergeCleanup below is the one deliberate exception (right after a merge).
-	const del = new DeleteFlow(refresh, (s) => s.id !== session.id);
+	// Where to go when the open session's own delete fires: its visible sidebar
+	// neighbour, or home if it was the only session. The Sidebar owns the on-screen
+	// order, so it computes this at click time and hands it to onDeleteSession.
+	let pendingHref = '/';
+
+	// Deleting the open session tears down this page, so jump to its neighbour once
+	// the delete lands (replaceState so Back doesn't reopen the now-gone session);
+	// deleting any other row is unchanged.
+	const del = new DeleteFlow(refresh, (s) => {
+		if (s.id === session.id) goto(pendingHref, { replaceState: true });
+	});
+	function onDeleteSession(s: DeckSession, neighbor?: DeckSession | null) {
+		if (s.id === session.id) pendingHref = neighbor ? `/s/${encodeURIComponent(neighbor.id)}` : '/';
+		del.request(s);
+	}
 
 	// PrMenu merged the PR and asked to also tear down the local footprint (issue
 	// #116). Remove the worktree and session (and the local branch when deck
@@ -284,7 +296,7 @@
 		deletingIds={del.deletingIds}
 		onQuickAdd={quickAdd}
 		onShellHere={shellHere}
-		onDelete={del.request}
+		onDelete={onDeleteSession}
 	/>
 {/snippet}
 
