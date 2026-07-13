@@ -30,6 +30,12 @@ export function runIdempotent<T>(
 	const hit = cache.get(key) as Entry<T> | undefined;
 	if (hit && now - hit.at < TTL_MS) return { replay: true, result: hit.promise };
 
+	// Drop entries past their TTL before inserting, so a caller that sends a fresh
+	// key every create (a uuid per attempt) can't grow the map without bound.
+	for (const [k, e] of cache) {
+		if (now - e.at >= TTL_MS) cache.delete(k);
+	}
+
 	const promise = fn();
 	const entry: Entry<T> = { at: now, promise };
 	cache.set(key, entry);

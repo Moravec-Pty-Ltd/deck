@@ -11,9 +11,12 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-feed-'));
 const restoreEnv = pinEnv({ DECK_DATA: tmpDir });
 
 const { agentFeed, publishAgentEvent } = await import('./agent-feed');
-const { currentLogSeq, readCursor } = await import('./event-log');
+const { currentLogSeq, readCursor, whenEventLogDrained } = await import('./event-log');
 
-afterAll(() => {
+afterAll(async () => {
+	// Let any fire-and-forget append settle before the dir goes, so a late failed
+	// write can't log during worker teardown.
+	await whenEventLogDrained();
 	restoreEnv();
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 });

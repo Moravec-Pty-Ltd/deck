@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { projectTranscript } from './agent-transcript-core';
 
 const assistant = (text: string) => ({ type: 'assistant', message: { content: [{ type: 'text', text }] } });
-const user = (text: string) => ({ type: 'user', message: { content: text } });
+// How every agent kind persists the prompt sent to it (claude.ts / runner.ts).
+const user = (text: string) => ({ type: 'deck.user', text, ts: 0 });
 
 describe('projectTranscript', () => {
 	it('extracts user/assistant prose and the last assistant reply', () => {

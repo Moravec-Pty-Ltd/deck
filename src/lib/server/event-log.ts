@@ -66,21 +66,23 @@ function initState(): LogState {
 	};
 }
 
-// Assign the next seq. Synchronous and single-threaded, so the log line and the
-// in-memory event a caller emits share the same value.
-export function nextEventSeq(): number {
-	return ++state.seq;
-}
-
-// Queue a durable append for an already-sequenced event. Never blocks the caller
-// and never throws (a failed write is logged, like the old emit): a producer
-// publishing from a .finally continuation must not see an error. Returns a
-// promise that settles when the write attempt does, so the caller can emit the
-// live event only once it is durable.
+// Queue a durable append for one event. Never blocks the caller and never throws
+// (a failed write is logged, like the old emit): a producer publishing from a
+// .finally continuation must not see an error. The `seq` is assigned inside the
+// ordered write, not at call time, and only *committed* (state.seq advanced) once
+// the line is on disk — so a failed write drops a single delta rather than
+// consuming a seq and leaving an undetectable hole in the log (readCursor only
+// spots a missing prefix, not an internal gap). On success the caller's event
+// object is stamped with the committed `seq`, so it can emit the live event
+// (once durable) carrying the same value the log line has. `seq` stays 0 on
+// failure, the signal to skip the emit.
 export function appendEventLog(event: SeqEvent): Promise<void> {
-	const line = serializeEventLine(event);
-	const len = Buffer.byteLength(line);
 	const write = state.tail.then(async () => {
+		// Tentative until the write lands: reuse this number on the next event if
+		// this one fails, keeping on-disk seqs contiguous.
+		const seq = state.seq + 1;
+		const line = serializeEventLine({ ...event, seq });
+		const len = Buffer.byteLength(line);
 		try {
 			if (shouldRotate(state.bytes, state.lines, len)) {
 				// Rename overwrites the previous generation; a live tailer following the
@@ -92,7 +94,9 @@ export function appendEventLog(event: SeqEvent): Promise<void> {
 			await fs.promises.appendFile(eventLogFile, line);
 			state.bytes += len;
 			state.lines += 1;
-			if (event.seq > state.written) state.written = event.seq;
+			state.seq = seq;
+			state.written = seq;
+			event.seq = seq;
 		} catch (err) {
 			console.error('[deck] event log append failed:', err);
 		}
@@ -108,6 +112,13 @@ export function appendEventLog(event: SeqEvent): Promise<void> {
 // fetch what follows.
 export function currentLogSeq(): number {
 	return state.written;
+}
+
+// Resolve once the queued appends have settled. Tests await this before removing
+// a throwaway data dir, so a still-pending append can't fail (and log) mid worker
+// teardown; production has no reason to call it (appends are fire-and-forget).
+export function whenEventLogDrained(): Promise<void> {
+	return Promise.resolve(state.tail).then(() => {});
 }
 
 export interface CursorRead {

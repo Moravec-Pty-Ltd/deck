@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { appendEventLog, nextEventSeq } from './event-log';
+import { appendEventLog } from './event-log';
 
 // Global lifecycle feed for the agent API (issues #127, #143): every session
 // transition is assigned a monotonic `seq`, appended to the durable event log,
@@ -36,14 +36,16 @@ export function publishAgentEvent(
 	type: AgentFeedEvent['type'],
 	payload?: Record<string, unknown>
 ): void {
-	const event: AgentFeedEvent = { seq: nextEventSeq(), sessionId, type, at: Date.now(), ...payload };
+	// seq is a placeholder until appendEventLog commits the durable write and
+	// stamps the real value (0 means the write failed and this event was dropped).
+	const event: AgentFeedEvent = { seq: 0, sessionId, type, at: Date.now(), ...payload };
 	// Append durably first, then wake the feed once the line is on disk, so a
 	// long-poll reader that wakes always finds the event via readCursor (the same
-	// event-after-write ordering appendEvent uses for the transcript). A failed
-	// write still emits, so waiters aren't starved. A throwing subscriber must not
-	// escape into the producer's frame (several publish from .finally
-	// continuations); log and carry on.
+	// event-after-write ordering appendEvent uses for the transcript). A throwing
+	// subscriber must not escape into the producer's frame (several publish from
+	// .finally continuations); log and carry on.
 	appendEventLog(event).finally(() => {
+		if (event.seq === 0) return; // write failed: nothing durable to signal
 		try {
 			agentFeed.emit('event', event);
 		} catch (err) {
