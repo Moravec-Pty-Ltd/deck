@@ -98,6 +98,12 @@ export function listWorkflowAsks(): PendingAsk[] {
 		}));
 }
 
+// The askId of the session's pending workflow checkpoint, or null. Lets /answer
+// report an askId-mismatch distinctly from "nothing waiting" (issue #144).
+export function workflowAskId(id: string): string | null {
+	return runs.get(id)?.ask?.askId ?? null;
+}
+
 // Resolve the pending workflow ask with the user's answer text, but only when
 // the answer targets that exact checkpoint (a click on a stale ask card, MCP
 // or workflow, must not unblock the run with unrelated text). Returns false

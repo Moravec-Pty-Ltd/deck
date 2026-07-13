@@ -3,10 +3,13 @@ import type { RequestHandler } from './$types';
 import { agentSessionOr404, objectBody } from '$lib/server/http';
 import { agentSend } from '$lib/server/agents/dispatch';
 import { updateSession } from '$lib/server/store';
+import { currentLogSeq } from '$lib/server/event-log';
 
 // Send a prompt / steer the session. Text only (the UI's /send carries images
 // and [token] expansion; an orchestrator sends plain instructions). A message
 // sent mid-turn is queued (claude) or restarts the turn (per-turn agents).
+// Returns `seq`, the event-log cursor at send time: poll /api/agent/events since
+// that seq and watch for this session's turn-finished to know the turn completed.
 export const POST: RequestHandler = async ({ params, request }) => {
 	const session = await agentSessionOr404(params.id);
 	const body = await objectBody(request);
@@ -19,6 +22,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	} catch (err) {
 		console.error(`[deck] failed to persist lastActiveAt for ${session.id}:`, err);
 	}
+	const seq = currentLogSeq();
 	agentSend(session, text);
-	return json({ ok: true, status: 'running' });
+	return json({ ok: true, status: 'running', seq });
 };

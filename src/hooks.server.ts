@@ -26,7 +26,9 @@ function exchangeUrlToken(event: RequestEvent): never {
 
 function deny(event: RequestEvent): Response {
 	if (event.url.pathname.startsWith('/api/')) {
-		return json({ error: 'unauthorized' }, { status: 401 });
+		// Unified error shape (issue #144): every /api error body is { message }, the
+		// same shape SvelteKit's error() produces, so a client parses one field.
+		return json({ message: 'unauthorized' }, { status: 401 });
 	}
 	redirect(302, '/login');
 }
