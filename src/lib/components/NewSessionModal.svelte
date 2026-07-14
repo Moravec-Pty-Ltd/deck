@@ -1022,7 +1022,10 @@
 			{/if}
 
 			<div class="modal-action">
-				<button class="btn" onclick={() => (open = false)}>Cancel</button>
+				<!-- Closing is disabled while a create is in flight: the request is already
+				     committing server-side, so a stray close would let a later success still
+				     navigate after the user thought they cancelled. -->
+				<button class="btn" onclick={() => (open = false)} disabled={busy}>Cancel</button>
 				<button
 					class="btn btn-primary"
 					onclick={create}
@@ -1032,7 +1035,12 @@
 				</button>
 			</div>
 		</div>
-		<button class="modal-backdrop" onclick={() => (open = false)} aria-label="close"></button>
+		<button
+			class="modal-backdrop"
+			onclick={() => (open = false)}
+			disabled={busy}
+			aria-label="close"
+		></button>
 	</div>
 
 	{#if confirmingExpensive}
