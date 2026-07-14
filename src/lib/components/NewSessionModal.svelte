@@ -193,7 +193,6 @@
 	const selectedProject = $derived(projects.find((p) => p.path === cwd));
 	const projectGroups = $derived(groupProjects(projects));
 	const groupSuggestions = $derived(existingGroupNames(projects));
-	const titleRequired = $derived(isAgentKind(kind));
 	const projectHasSources = $derived(!!selectedProject?.sources?.length);
 
 	// The project's workflows (configured, or the synthesized legacy pair). The
@@ -207,6 +206,10 @@
 	// (no multi-PR worktree); work splits only when the user opts in and there's
 	// more than one issue to split.
 	const splitIssues = $derived(context === 'issue' && split && pickedIssues.length > 1);
+	// The title field only needs a value when it will actually name the session.
+	// Review names each session after its PR, and a split names each after its
+	// issue, so the field isn't required (and reads as optional) in those flows.
+	const titleRequired = $derived(isAgentKind(kind) && !reviewMode && !splitIssues);
 	// 'worktree' context pins the existing-worktree picker; 'none' pins no
 	// worktree; 'issue' keeps the free choice (defaulted per kind below).
 	const effectiveWorktreeMode = $derived<WorktreeMode>(
@@ -238,6 +241,9 @@
 		if (ctx !== 'issue') {
 			pickedIssues = [];
 			showPicker = false;
+			// Combine/split is issue-only; drop it so work reliably defaults to
+			// combine when this context is picked again in the same modal session.
+			split = false;
 		}
 		if (ctx !== 'pr') pickedPrs = [];
 	}
