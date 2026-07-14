@@ -247,6 +247,9 @@
 	// single ref does today) and the branch follows it. The picker stays open for
 	// multi-select; the modal renders removable chips for what's picked.
 	function pickIssue(issue: Issue) {
+		// A batch create is in flight; freezing the selection keeps the submitted
+		// set and the partial-failure retry state in sync.
+		if (busy) return;
 		const k = issueKey(issue);
 		const has = pickedIssues.some((i) => issueKey(i) === k);
 		if (!has && pickedIssues.length >= MAX_ISSUES) {
@@ -263,6 +266,7 @@
 	// splits, so each picked PR becomes its own session; the title tracks the
 	// picks so a single PR still reads as its own title, as before.
 	function pickPr(pr: PullRequest) {
+		if (busy) return;
 		const k = prKey(pr);
 		const has = pickedPrs.some((p) => prKey(p) === k);
 		if (!has && pickedPrs.length >= MAX_PRS) {
@@ -569,6 +573,13 @@
 		confirmedExpensive = false;
 
 		const creates = buildCreates(startCwd);
+		// Snapshot what we submitted so the partial-failure filtering below stays
+		// correct even if a pick changes while the batch is in flight (the pickers
+		// freeze on busy, but a project/workflow switch could still clear the live
+		// arrays).
+		const wasReview = reviewMode;
+		const submittedPrs = [...pickedPrs];
+		const submittedIssues = [...pickedIssues];
 		busy = true;
 		createProgress = '';
 		try {
@@ -609,11 +620,11 @@
 			// Partial failure: surface it and drop the ones that succeeded from the
 			// selection so a retry only re-fires the ones that failed (no duplicates).
 			if (failed.length) {
-				if (reviewMode) {
-					pickedPrs = pickedPrs.filter((p) => !succeeded.has(prKey(p)));
+				if (wasReview) {
+					pickedPrs = submittedPrs.filter((p) => !succeeded.has(prKey(p)));
 					title = prTitleField(pickedPrs);
 				} else {
-					pickedIssues = pickedIssues.filter((i) => !succeeded.has(issueKey(i)));
+					pickedIssues = submittedIssues.filter((i) => !succeeded.has(issueKey(i)));
 					title = pickedIssues.map((i) => i.id).join('+');
 				}
 				errorMsg = `created ${okIds.length}, failed: ${failed.join('; ')}`;
