@@ -202,19 +202,23 @@
 	const workflow = $derived(workflows.find((w) => w.id === workflowId) ?? workflows[0]);
 	const context = $derived(workflow.context);
 	const reviewMode = $derived(context === 'pr');
-	// Whether this create fans out into one session per item. Review always splits
-	// (no multi-PR worktree); work splits only when the user opts in and there's
-	// more than one issue to split.
-	const splitIssues = $derived(context === 'issue' && split && pickedIssues.length > 1);
-	// The title field only needs a value when it will actually name the session.
-	// Review names each session after its PR, and a split names each after its
-	// issue, so the field isn't required (and reads as optional) in those flows.
-	const titleRequired = $derived(isAgentKind(kind) && !reviewMode && !splitIssues);
 	// 'worktree' context pins the existing-worktree picker; 'none' pins no
 	// worktree; 'issue' keeps the free choice (defaulted per kind below).
 	const effectiveWorktreeMode = $derived<WorktreeMode>(
 		context === 'worktree' ? 'existing' : context === 'none' ? 'none' : worktreeMode
 	);
+	// Whether this create fans out into one session per item. Review always splits
+	// (no multi-PR worktree); work splits only when the user opts in and there's
+	// more than one issue. Split needs a fresh worktree per issue to keep the
+	// sessions isolated, so it only applies in new-worktree mode (none/existing
+	// would put every split session in the same directory).
+	const splitIssues = $derived(
+		context === 'issue' && split && pickedIssues.length > 1 && effectiveWorktreeMode === 'new'
+	);
+	// The title field only needs a value when it will actually name the session.
+	// Review names each session after its PR, and a split names each after its
+	// issue, so the field isn't required (and reads as optional) in those flows.
+	const titleRequired = $derived(isAgentKind(kind) && !reviewMode && !splitIssues);
 	const finalCwd = $derived(effectiveWorktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
 
 	// shell always shows; an agent kind shows unless availability positively says
@@ -768,7 +772,7 @@
 						{/each}
 					</div>
 				{/if}
-				{#if context === 'issue' && pickedIssues.length > 1}
+				{#if context === 'issue' && pickedIssues.length > 1 && effectiveWorktreeMode === 'new'}
 					<label class="label mt-1 cursor-pointer justify-start gap-2">
 						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={split} />
 						<span class="text-xs">Split into {pickedIssues.length} sessions (one per issue)</span>
