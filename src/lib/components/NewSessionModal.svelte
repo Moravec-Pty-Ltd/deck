@@ -238,6 +238,10 @@
 	});
 
 	function pickWorkflow(id: string) {
+		// Freeze the workflow while a create is in flight: switching context would
+		// clear the picks/split the in-flight batch was built from and strand the
+		// partial-failure re-population in a mismatched context.
+		if (busy) return;
 		workflowId = id;
 		// Keep the flows from leaking picks into each other: an issue pick
 		// belongs to issue-context workflows, a PR pick to pr-context ones.
@@ -691,7 +695,7 @@
 
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend">Project</legend>
-				<select class="select w-full" bind:value={cwd}>
+				<select class="select w-full" bind:value={cwd} disabled={busy}>
 					{#each projectGroups as pg (pg.name)}
 						<optgroup label={pg.name}>
 							{#each pg.projects as p (p.path)}
