@@ -108,7 +108,13 @@
 	let confirmedExpensive = $state(false);
 	let showPicker = $state(false);
 	let pickedIssues = $state<Issue[]>([]);
-	let pickedPr = $state<PullRequest | null>(null);
+	let pickedPrs = $state<PullRequest[]>([]);
+	// Split a multi-item selection into one session per item (loop the create).
+	// Work defaults to combine (one session, all issues); review always splits
+	// (one session per PR — no multi-PR worktree). Only offered for work.
+	let split = $state(false);
+	// Per-item progress shown on the Create button while a split batch runs.
+	let createProgress = $state('');
 	// Progressive disclosure: worktree/model/permission controls fold away since
 	// their defaults are right nearly every time; the digest line keeps them
 	// legible while collapsed. Registering a project is rarer still.
@@ -116,9 +122,16 @@
 	let addingProject = $state(false);
 
 	const issueKey = (i: Issue) => `${i.sourceId}:${i.id}`;
+	const prKey = (p: PullRequest) => `${p.sourceId}:${p.number}`;
 	// Mirror the server's ISSUE_CAP (POST /api/sessions) so the selection can't
 	// grow past what actually gets persisted and fetched.
 	const MAX_ISSUES = 10;
+	// Review splits into one session per PR; cap the fan-out like issues.
+	const MAX_PRS = 10;
+	// The modal-level title for a PR selection: the PR's own title for a single
+	// pick (unchanged), else the refs joined so the field reads sensibly.
+	const prTitleField = (list: PullRequest[]) =>
+		list.length === 1 ? list[0].title : list.map((p) => `#${p.number}`).join('+');
 
 	let wasOpen = false;
 	$effect(() => {
@@ -141,7 +154,9 @@
 		addingProject = false;
 		workflowId = '';
 		pickedIssues = [];
-		pickedPr = null;
+		pickedPrs = [];
+		split = false;
+		createProgress = '';
 		availability = null;
 		const seq = ++availabilitySeq;
 		fetch('/api/agents/available')
@@ -188,6 +203,10 @@
 	const workflow = $derived(workflows.find((w) => w.id === workflowId) ?? workflows[0]);
 	const context = $derived(workflow.context);
 	const reviewMode = $derived(context === 'pr');
+	// Whether this create fans out into one session per item. Review always splits
+	// (no multi-PR worktree); work splits only when the user opts in and there's
+	// more than one issue to split.
+	const splitIssues = $derived(context === 'issue' && split && pickedIssues.length > 1);
 	// 'worktree' context pins the existing-worktree picker; 'none' pins no
 	// worktree; 'issue' keeps the free choice (defaulted per kind below).
 	const effectiveWorktreeMode = $derived<WorktreeMode>(
@@ -220,7 +239,7 @@
 			pickedIssues = [];
 			showPicker = false;
 		}
-		if (ctx !== 'pr') pickedPr = null;
+		if (ctx !== 'pr') pickedPrs = [];
 	}
 
 	// Toggle an issue in/out of the selection. The title becomes the picked refs
@@ -240,11 +259,19 @@
 		branchDirty = false;
 	}
 
-	// Picking a PR names the session after it and remembers it so the worktree is
-	// checked out to the PR head and the header chip lights up at creation.
+	// Toggle a PR in/out of the selection (mirrors pickIssue). Review always
+	// splits, so each picked PR becomes its own session; the title tracks the
+	// picks so a single PR still reads as its own title, as before.
 	function pickPr(pr: PullRequest) {
-		pickedPr = pr;
-		title = pr.title;
+		const k = prKey(pr);
+		const has = pickedPrs.some((p) => prKey(p) === k);
+		if (!has && pickedPrs.length >= MAX_PRS) {
+			errorMsg = `attach at most ${MAX_PRS} PRs`;
+			return;
+		}
+		errorMsg = '';
+		pickedPrs = has ? pickedPrs.filter((p) => prKey(p) !== k) : [...pickedPrs, pr];
+		title = prTitleField(pickedPrs);
 	}
 
 	// Drop any picked issue/PR when the project changes — a pick from one project
@@ -252,7 +279,7 @@
 	$effect(() => {
 		cwd;
 		pickedIssues = [];
-		pickedPr = null;
+		pickedPrs = [];
 	});
 
 	// Worktree mode defaults to "new" for agents (branch off and work in isolation)
@@ -417,9 +444,101 @@
 		}
 	}
 
+	type Create = { key: string; label: string; body: Record<string, unknown> };
+
+	// Build the create request(s) for this submit. Review always splits into one
+	// body per PR; work makes one combined body (all issues) unless splitting,
+	// which makes one body per issue. `key` ties a body back to its source item so
+	// a partial-failure retry only re-fires the ones that failed.
+	function buildCreates(startCwd: string): Create[] {
+		const common = {
+			kind,
+			model: model.trim() || undefined,
+			provider: kind === 'pi' && provider.trim() ? provider.trim() : undefined,
+			permissionMode: kind === 'claude' ? (yolo ? 'bypassPermissions' : 'acceptEdits') : undefined,
+			command: kind === 'shell' && command.trim() ? command.trim() : undefined,
+			prompt: kind !== 'shell' && prompt.trim() ? prompt.trim() : undefined,
+			// A configured workflow starts a run on the session; the legacy
+			// synthesized pair keeps the plain first-prompt dispatch.
+			workflowId: kind !== 'shell' && !isLegacyWorkflowId(workflow.id) ? workflow.id : undefined
+		};
+		if (reviewMode) {
+			return pickedPrs.map((pr) => ({
+				key: prKey(pr),
+				label: `#${pr.number}`,
+				body: {
+					...common,
+					cwd: startCwd,
+					title: pickedPrs.length === 1 ? title.trim() || pr.title : pr.title,
+					worktree: { fromPr: pr.number, base: pr.baseRefName },
+					pr: { repo: pr.repo, number: pr.number, url: pr.url, title: pr.title }
+				}
+			}));
+		}
+		const issueField = (i: Issue) => ({
+			source: i.sourceType,
+			sourceId: i.sourceId,
+			id: i.id,
+			url: i.url
+		});
+		const newWorktree = (b: string) =>
+			effectiveWorktreeMode === 'new' && b.trim()
+				? { branch: b.trim(), newBranch, base: base || undefined }
+				: undefined;
+		if (splitIssues) {
+			// One session per issue: each gets its own branch/title from the issue
+			// ref (matching how a single-issue selection is named today).
+			return pickedIssues.map((issue) => ({
+				key: issueKey(issue),
+				label: issue.id,
+				body: {
+					...common,
+					cwd: startCwd,
+					title: issue.id,
+					worktree: newWorktree(issue.id),
+					issues: [issueField(issue)]
+				}
+			}));
+		}
+		return [
+			{
+				key: 'combined',
+				label: 'session',
+				body: {
+					...common,
+					cwd: startCwd,
+					title: title.trim() || undefined,
+					worktree: newWorktree(branch),
+					issues: pickedIssues.length ? pickedIssues.map(issueField) : undefined
+				}
+			}
+		];
+	}
+
+	async function postCreate(body: Record<string, unknown>): Promise<string> {
+		const res = await fetch('/api/sessions', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+		const data = await res.json().catch(() => ({}));
+		if (!res.ok) throw new Error(data.message ?? 'failed to create session');
+		return data.id as string;
+	}
+
+	function finishCreate(id: string) {
+		open = false;
+		prompt = '';
+		title = '';
+		branch = '';
+		pickedIssues = [];
+		pickedPrs = [];
+		goto(`/s/${encodeURIComponent(id)}`);
+	}
+
 	async function create() {
 		errorMsg = '';
-		if (reviewMode && !pickedPr) {
+		if (reviewMode && !pickedPrs.length) {
 			errorMsg = 'pick a PR to review';
 			return;
 		}
@@ -440,73 +559,74 @@
 		}
 		// Expensive-model gate: a fable/sol pick pops the confirm instead of starting;
 		// only an explicit "Start anyway" (confirmedExpensive) gets past, so pressing
-		// Enter on the background Create button can't bypass it (issue #134). The
-		// inline warning flags the pick while choosing.
+		// Enter on the background Create button can't bypass it (issue #134). One
+		// confirm covers the whole batch, since every session in it runs the same model.
 		if (expensivePick && !confirmedExpensive) {
 			confirmingExpensive = true;
 			return;
 		}
 		confirmingExpensive = false;
 		confirmedExpensive = false;
+
+		const creates = buildCreates(startCwd);
 		busy = true;
+		createProgress = '';
 		try {
-			const res = await fetch('/api/sessions', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					kind,
-					cwd: startCwd,
-					title: title.trim() || undefined,
-					model: model.trim() || undefined,
-					provider: kind === 'pi' && provider.trim() ? provider.trim() : undefined,
-					permissionMode:
-						kind === 'claude' ? (yolo ? 'bypassPermissions' : 'acceptEdits') : undefined,
-					command: kind === 'shell' && command.trim() ? command.trim() : undefined,
-					prompt: kind !== 'shell' && prompt.trim() ? prompt.trim() : undefined,
-					// A configured workflow starts a run on the session; the legacy
-					// synthesized pair keeps the plain first-prompt dispatch.
-					workflowId:
-						kind !== 'shell' && !isLegacyWorkflowId(workflow.id) ? workflow.id : undefined,
-					worktree:
-						reviewMode && pickedPr
-							? { fromPr: pickedPr.number, base: pickedPr.baseRefName }
-							: effectiveWorktreeMode === 'new' && branch.trim()
-								? { branch: branch.trim(), newBranch, base: base || undefined }
-								: undefined,
-					issues:
-						!reviewMode && pickedIssues.length
-							? pickedIssues.map((i) => ({
-									source: i.sourceType,
-									sourceId: i.sourceId,
-									id: i.id,
-									url: i.url
-								}))
-							: undefined,
-					pr:
-						reviewMode && pickedPr
-							? {
-									repo: pickedPr.repo,
-									number: pickedPr.number,
-									url: pickedPr.url,
-									title: pickedPr.title
-								}
-							: undefined
-				})
-			});
-			const data = await res.json();
-			if (!res.ok) {
-				errorMsg = data.message ?? 'failed to create session';
+			// Single create: unchanged path — a failure keeps the modal open with the
+			// error, success navigates to the new session.
+			if (creates.length === 1) {
+				finishCreate(await postCreate(creates[0].body));
 				return;
 			}
-			open = false;
-			prompt = '';
-			title = '';
-			branch = '';
-			pickedIssues = [];
-			pickedPr = null;
-			goto(`/s/${encodeURIComponent(data.id)}`);
+			// Split batch: fire concurrently so the slowest create doesn't hold up the
+			// rest, tracking progress as each lands. Each create is a normal single-item
+			// create (distinct branch/PR ref), so the server-side worktree work doesn't
+			// contend.
+			let done = 0;
+			const results = await Promise.allSettled(
+				creates.map(async (c) => {
+					const id = await postCreate(c.body);
+					createProgress = `created ${++done}/${creates.length}`;
+					return id;
+				})
+			);
+			const okIds: string[] = [];
+			const succeeded = new Set<string>();
+			const failed: string[] = [];
+			results.forEach((r, i) => {
+				if (r.status === 'fulfilled') {
+					okIds.push(r.value);
+					succeeded.add(creates[i].key);
+				} else {
+					const reason = r.reason instanceof Error ? r.reason.message : 'failed';
+					failed.push(`${creates[i].label} (${reason})`);
+				}
+			});
+			if (!okIds.length) {
+				errorMsg = `failed to create: ${failed.join('; ')}`;
+				return;
+			}
+			// Partial failure: surface it and drop the ones that succeeded from the
+			// selection so a retry only re-fires the ones that failed (no duplicates).
+			if (failed.length) {
+				if (reviewMode) {
+					pickedPrs = pickedPrs.filter((p) => !succeeded.has(prKey(p)));
+					title = prTitleField(pickedPrs);
+				} else {
+					pickedIssues = pickedIssues.filter((i) => !succeeded.has(issueKey(i)));
+					title = pickedIssues.map((i) => i.id).join('+');
+				}
+				errorMsg = `created ${okIds.length}, failed: ${failed.join('; ')}`;
+				return;
+			}
+			finishCreate(okIds[0]);
+		} catch (e) {
+			// The single-create path throws on failure (postCreate rejects on !ok);
+			// surface it here so the modal shows why instead of wedging silently.
+			errorMsg = e instanceof Error ? e.message : 'failed to create session';
 		} finally {
 			busy = false;
+			createProgress = '';
 		}
 	}
 </script>
@@ -631,6 +751,12 @@
 						{/each}
 					</div>
 				{/if}
+				{#if context === 'issue' && pickedIssues.length > 1}
+					<label class="label mt-1 cursor-pointer justify-start gap-2">
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={split} />
+						<span class="text-xs">Split into {pickedIssues.length} sessions (one per issue)</span>
+					</label>
+				{/if}
 				{#each pickedIssues as i (issueKey(i))}
 					{#if i.blockers.length}
 						<div class="alert alert-warning mt-1 items-start py-1 text-xs">
@@ -656,20 +782,27 @@
 
 			{#if reviewMode}
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Pull request</legend>
-					{#if pickedPr}
-						<div class="mt-1 flex items-center gap-2 text-xs">
+					<legend class="fieldset-legend">Pull request{pickedPrs.length > 1 ? 's' : ''}</legend>
+					{#if pickedPrs.length}
+						<div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
 							<span class="opacity-60">reviewing:</span>
-							<span class="shrink-0 font-mono">#{pickedPr.number}</span>
-							<span class="min-w-0 flex-1 truncate">{pickedPr.title}</span>
-							<button class="btn btn-ghost btn-xs shrink-0 gap-1" onclick={() => (pickedPr = null)}>
-								<X size={12} /> clear
-							</button>
+							{#each pickedPrs as pr (prKey(pr))}
+								<button
+									class="btn btn-ghost btn-xs gap-1 font-mono"
+									onclick={() => pickPr(pr)}
+									title="remove"
+								>
+									#{pr.number} <X size={12} />
+								</button>
+							{/each}
 						</div>
+						{#if pickedPrs.length > 1}
+							<p class="mt-1 text-xs opacity-50">creates one review session per PR</p>
+						{/if}
 					{/if}
 					{#if selectedProject}
 						<div class="mt-1">
-							<PrPicker project={selectedProject} picked={pickedPr} onpick={pickPr} />
+							<PrPicker project={selectedProject} picked={pickedPrs} onpick={pickPr} />
 						</div>
 					{:else}
 						<p class="text-xs opacity-60">pick a project first</p>
@@ -872,9 +1005,9 @@
 				<button
 					class="btn btn-primary"
 					onclick={create}
-					disabled={busy || (titleRequired && !title.trim()) || (reviewMode && !pickedPr)}
+					disabled={busy || (titleRequired && !title.trim()) || (reviewMode && !pickedPrs.length)}
 				>
-					{busy ? 'Creating...' : 'Create'}
+					{busy ? createProgress || 'Creating...' : 'Create'}
 				</button>
 			</div>
 		</div>
