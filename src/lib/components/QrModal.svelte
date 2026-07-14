@@ -25,7 +25,7 @@
 			.catch((e) => (error = e.message));
 	});
 
-	const url = $derived(token ? `${location.origin}/?token=${token}` : '');
+	const url = $derived(token ? `${location.origin}/?token=${encodeURIComponent(token)}` : '');
 
 	// A single <path> built from the module matrix, drawn black on a white tile
 	// (fixed colours, not theme tokens: QR scanners want dark-on-light contrast) with

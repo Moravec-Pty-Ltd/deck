@@ -14,7 +14,9 @@ function load(): core.Pairing[] {
 }
 
 function save(list: core.Pairing[]) {
-	writeJson(FILE, list);
+	// Holds requester secrets (a claimed secret sets the session cookie), so persist
+	// 0o600 like the token file rather than at the umask default.
+	writeJson(FILE, list, 0o600);
 }
 
 // Six digits, zero-padded, from a uniform source (randomInt avoids the modulo bias
@@ -85,8 +87,10 @@ export function listPending(): PendingPairing[] {
 // whether a live request actually transitioned.
 export function decidePairing(id: string, approve: boolean): boolean {
 	const now = Date.now();
-	const { list, changed } = core.decide(load(), id, approve ? 'approved' : 'denied', now);
-	if (changed) save(list);
+	const loaded = load();
+	const pruned = core.prune(loaded, now);
+	const { list, changed } = core.decide(pruned, id, approve ? 'approved' : 'denied', now);
+	if (changed || pruned.length !== loaded.length) save(list);
 	return changed;
 }
 
