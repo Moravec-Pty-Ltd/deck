@@ -10,8 +10,8 @@
 		isInFlight,
 		type ServerAction
 	} from '$lib/servers-client';
-	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { Play, Square, RotateCw, ListRestart, ChevronDown, Loader2, Server } from '@lucide/svelte';
+	import Popover from './Popover.svelte';
 
 	// One-click dev-server control in the session header (issue #80, workstream 3).
 	// The button's look is driven by the aggregate `state` the page already polls,
@@ -204,52 +204,43 @@
 				{runningLike ? 'Stop' : 'Run'}
 			</button>
 			{#if showCaret}
-				<details bind:open={menuOpen} class="dropdown dropdown-end" use:dismissOnOutside={() => (menuOpen = false)}>
-					<summary
-						class="btn join-item btn-xs list-none px-1 [&::-webkit-details-marker]:hidden"
-						aria-label="More server actions"
-					>
+				<Popover bind:open={menuOpen} summaryClass="btn join-item btn-xs px-1" summaryLabel="More server actions" panelClass="p-1 sm:w-56">
+					{#snippet trigger()}
 						<ChevronDown size={14} />
-					</summary>
-					<ul
-						class="dropdown-content menu menu-sm z-20 mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
-						use:keepInView
-					>
+					{/snippet}
+					<ul class="menu menu-sm w-full p-0">
 						{@render secondaryActions()}
 					</ul>
-				</details>
+				</Popover>
 			{/if}
 		</div>
 
 		<!-- mobile: the Run button and ServerChip collapse into one server dropdown -->
-		<details
-			bind:open={mobileMenuOpen}
-			class="dropdown dropdown-end sm:hidden"
-			use:dismissOnOutside={() => (mobileMenuOpen = false)}
-		>
-			<summary
-				class="badge badge-sm cursor-pointer list-none gap-1 [&::-webkit-details-marker]:hidden {SERVER_BADGE[current]}"
-				title="dev servers: {SERVER_LABEL[current]}"
-				aria-label="Server: {SERVER_LABEL[current]}"
+		<span class="contents sm:hidden">
+			<Popover
+				bind:open={mobileMenuOpen}
+				summaryClass="badge badge-sm gap-1 {SERVER_BADGE[current]}"
+				summaryTitle="dev servers: {SERVER_LABEL[current]}"
+				summaryLabel="Server: {SERVER_LABEL[current]}"
+				panelClass="p-1 sm:w-56"
 			>
-				<Server size={11} />
-				{#if servers.length > 1}<span class="opacity-70">×{servers.length}</span>{/if}
-				<ChevronDown size={11} class="opacity-70" />
-			</summary>
-			<ul
-				class="dropdown-content menu menu-sm z-20 mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
-				use:keepInView
-			>
-				<li>
-					<button onclick={primaryClick} disabled={busy || !primary}>
-						{#if runningLike}<Square size={14} />{:else}<Play size={14} />{/if}
-						{runningLike ? 'Stop' : 'Run'}
-						{#if primary}<span class="min-w-0 flex-1 truncate opacity-60">{primary.name}</span>{/if}
-					</button>
-				</li>
-				{@render secondaryActions()}
-			</ul>
-		</details>
+				{#snippet trigger()}
+					<Server size={11} />
+					{#if servers.length > 1}<span class="opacity-70">×{servers.length}</span>{/if}
+					<ChevronDown size={11} class="opacity-70" />
+				{/snippet}
+				<ul class="menu menu-sm w-full p-0">
+					<li>
+						<button onclick={primaryClick} disabled={busy || !primary}>
+							{#if runningLike}<Square size={14} />{:else}<Play size={14} />{/if}
+							{runningLike ? 'Stop' : 'Run'}
+							{#if primary}<span class="min-w-0 flex-1 truncate opacity-60">{primary.name}</span>{/if}
+						</button>
+					</li>
+					{@render secondaryActions()}
+				</ul>
+			</Popover>
+		</span>
 	{/if}
 	{#if err || loadErr}
 		<span class="max-w-[12rem] truncate text-xs text-error" title={err || loadErr}>{err || loadErr}</span>

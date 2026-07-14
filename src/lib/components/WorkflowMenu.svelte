@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Workflow } from '$lib/types';
-	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { Play, Workflow as WorkflowIcon } from '@lucide/svelte';
+	import Popover from './Popover.svelte';
 
 	// "Run workflow here" (issue #111): start one of the project's configured
 	// workflows on this session — the finish-an-existing-worktree entry point.
@@ -43,26 +43,26 @@
 	}
 </script>
 
-<details class="dropdown dropdown-end" bind:open use:dismissOnOutside={() => (open = false)}>
-	<summary class="btn btn-ghost btn-xs shrink-0 gap-1" title="Run a workflow on this session">
+<Popover
+	bind:open
+	summaryClass="btn btn-ghost btn-xs gap-1"
+	summaryTitle="Run a workflow on this session"
+	panelClass="p-1 sm:w-56"
+>
+	{#snippet trigger()}
 		<WorkflowIcon size={14} />
 		<span class="hidden sm:inline">Workflow</span>
-	</summary>
-	<div
-		class="dropdown-content z-20 mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1 text-sm shadow-lg"
-		use:keepInView
-	>
-		{#each workflows as w (w.id)}
-			<button
-				class="btn btn-ghost btn-sm w-full justify-start gap-2"
-				disabled={busy}
-				onclick={() => start(w.id)}
-			>
-				<Play size={13} /> {w.name}
-			</button>
-		{/each}
-		{#if err}
-			<div class="px-2 py-1 text-xs text-error">{err}</div>
-		{/if}
-	</div>
-</details>
+	{/snippet}
+	{#each workflows as w (w.id)}
+		<button
+			class="btn btn-ghost btn-sm w-full justify-start gap-2"
+			disabled={busy}
+			onclick={() => start(w.id)}
+		>
+			<Play size={13} /> {w.name}
+		</button>
+	{/each}
+	{#if err}
+		<div class="px-2 py-1 text-xs text-error">{err}</div>
+	{/if}
+</Popover>

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { SessionIssue } from '$lib/types';
 	import { ISSUE_BADGE } from '$lib/issues';
-	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { Ticket } from '@lucide/svelte';
+	import Popover from './Popover.svelte';
 
 	// Collapsed ticket chip for sessions with 2+ attached issues (issue #90): a
 	// count badge whose dropdown lists each ticket as an open-in-browser link.
@@ -16,20 +16,18 @@
 	);
 </script>
 
-<details class="dropdown dropdown-end shrink-0" bind:open use:dismissOnOutside={() => (open = false)}>
-	<summary
-		class="badge badge-outline badge-sm cursor-pointer list-none gap-1 [&::-webkit-details-marker]:hidden"
-		title={summary}
-		aria-label="{issues.length} linked issues"
-	>
+<Popover
+	bind:open
+	summaryClass="badge badge-outline badge-sm gap-1"
+	summaryTitle={summary}
+	summaryLabel="{issues.length} linked issues"
+	panelClass="p-2 sm:w-max"
+>
+	{#snippet trigger()}
 		<Ticket size={12} />
 		{issues.length}
-	</summary>
-
-	<ul
-		class="menu dropdown-content menu-sm z-20 mt-1 w-max rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg"
-		use:keepInView
-	>
+	{/snippet}
+	<ul class="menu menu-sm w-full p-0">
 		{#each issues as issue (issue.source + ':' + issue.id)}
 			<li class={issue.url ? '' : 'menu-disabled'}>
 				{#if issue.url}
@@ -49,4 +47,4 @@
 			</li>
 		{/each}
 	</ul>
-</details>
+</Popover>

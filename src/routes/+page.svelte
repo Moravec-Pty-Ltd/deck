@@ -183,8 +183,11 @@
 {#if !loaded}
 	<p class="p-8 text-center opacity-60">Loading sessions...</p>
 {:else if visible.length === 0}
-	<div class="rounded-box border border-base-300 bg-base-100 p-10 text-center opacity-70">
-		No sessions yet. Create one to get started.
+	<div class="rounded-box border border-base-300 bg-base-100 p-10 text-center">
+		<p class="mb-3 opacity-70">No sessions yet.</p>
+		<button class="btn btn-primary btn-sm" onclick={openNew}>
+			<Plus size={16} /> New session
+		</button>
 	</div>
 {:else if grouped}
 	<div class="space-y-4">

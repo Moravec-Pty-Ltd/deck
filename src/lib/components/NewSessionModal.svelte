@@ -18,7 +18,18 @@
 	} from '$lib/models';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { firstAgentPrompt, isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
-	import { Bot, Terminal, Braces, SquareCode, Ticket, X, TriangleAlert } from '@lucide/svelte';
+	import {
+		Bot,
+		Terminal,
+		Braces,
+		SquareCode,
+		Ticket,
+		X,
+		TriangleAlert,
+		ChevronDown,
+		Plus,
+		SlidersHorizontal
+	} from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import PathInput from './PathInput.svelte';
 	import IssuePicker from './IssuePicker.svelte';
@@ -98,6 +109,11 @@
 	let showPicker = $state(false);
 	let pickedIssues = $state<Issue[]>([]);
 	let pickedPr = $state<PullRequest | null>(null);
+	// Progressive disclosure: worktree/model/permission controls fold away since
+	// their defaults are right nearly every time; the digest line keeps them
+	// legible while collapsed. Registering a project is rarer still.
+	let showOptions = $state(false);
+	let addingProject = $state(false);
 
 	const issueKey = (i: Issue) => `${i.sourceId}:${i.id}`;
 	// Mirror the server's ISSUE_CAP (POST /api/sessions) so the selection can't
@@ -121,6 +137,8 @@
 		confirmingExpensive = false;
 		confirmedExpensive = false;
 		showPicker = false;
+		showOptions = false;
+		addingProject = false;
 		workflowId = '';
 		pickedIssues = [];
 		pickedPr = null;
@@ -290,6 +308,28 @@
 	const pickedModelLabel = $derived([effectiveProvider, model].filter(Boolean).join('/'));
 	const expensivePick = $derived(isAgentKind(kind) && isExpensiveModel(model, effectiveProvider));
 
+	// The collapsed Options row and its one-line digest of what the defaults
+	// will do: worktree plan, model, and (for claude) the permission mode.
+	const hasOptions = $derived(isAgentKind(kind) || context === 'issue');
+	const worktreeLabel = $derived(
+		reviewMode
+			? 'PR worktree'
+			: effectiveWorktreeMode === 'new'
+				? `new worktree${base ? ` off ${base}` : ''}`
+				: effectiveWorktreeMode === 'existing'
+					? 'existing worktree'
+					: 'no worktree'
+	);
+	const optionsSummary = $derived(
+		[
+			worktreeLabel,
+			isAgentKind(kind) ? pickedModelLabel || 'default model' : '',
+			kind === 'claude' ? (yolo ? 'yolo' : 'ask first') : ''
+		]
+			.filter(Boolean)
+			.join(' · ')
+	);
+
 	// If the pick stops being expensive while the confirm is open (a background
 	// control stays reachable behind the div-modal), drop the stale dialog so an
 	// "Expensive model" prompt never lingers on a now-cheap selection (issue #134).
@@ -371,6 +411,7 @@
 			newProjectPath = '';
 			newProjectGroup = '';
 			newProjectTemplate = '';
+			addingProject = false;
 		} else {
 			errorMsg = (await res.json()).message ?? 'failed to add project';
 		}
@@ -475,31 +516,24 @@
 		<div class="modal-box max-w-lg overflow-x-hidden">
 			<h3 class="mb-4 text-lg font-semibold">New session</h3>
 
-			{#if workflows.length <= 3}
-				<div class="join mb-4 w-full">
-					{#each workflows as w (w.id)}
-						<button
-							class="btn join-item flex-1 {workflow.id === w.id ? 'btn-primary' : ''}"
-							onclick={() => pickWorkflow(w.id)}>{w.name}</button
-						>
-					{/each}
-				</div>
-			{:else}
-				<select
-					class="select mb-4 w-full"
-					value={workflow.id}
-					onchange={(e) => pickWorkflow(e.currentTarget.value)}
-				>
-					{#each workflows as w (w.id)}
-						<option value={w.id}>{w.name}</option>
-					{/each}
-				</select>
-			{/if}
+			<!-- One control for the what-to-do pick however many workflows a project
+			     has (no join-vs-select swap at 3+): chips that wrap. The active pick
+			     is the modal's one orange selection. -->
+			<div class="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Workflow">
+				{#each workflows as w (w.id)}
+					<button
+						class="btn btn-sm {workflow.id === w.id ? 'btn-primary' : ''}"
+						aria-pressed={workflow.id === w.id}
+						onclick={() => pickWorkflow(w.id)}>{w.name}</button
+					>
+				{/each}
+			</div>
 
-			<div class="join mb-4 w-full">
+			<div class="join mb-4 w-full" role="group" aria-label="Agent">
 				{#each shownKinds as k (k.id)}
 					<button
-						class="btn join-item flex-1 px-2 {kind === k.id ? 'btn-primary' : ''}"
+						class="btn join-item flex-1 px-2 {kind === k.id ? 'btn-active' : ''}"
+						aria-pressed={kind === k.id}
 						onclick={() => (kind = k.id)}
 					>
 						<k.icon size={16} /> <span class="hidden sm:inline">{k.label}</span>
@@ -527,31 +561,40 @@
 						<option value={g}></option>
 					{/each}
 				</datalist>
-				<div class="mt-1 flex w-full gap-1">
-					<div class="min-w-0 flex-1">
-						<PathInput
-							class="input input-sm w-full"
-							placeholder="register a project path"
-							bind:value={newProjectPath}
-							onenter={addProject}
-						/>
+				{#if addingProject}
+					<div class="mt-1 flex w-full gap-1">
+						<div class="min-w-0 flex-1">
+							<PathInput
+								class="input input-sm w-full"
+								placeholder="register a project path"
+								bind:value={newProjectPath}
+								onenter={addProject}
+							/>
+						</div>
+						<button class="btn btn-sm" onclick={addProject}>Add</button>
 					</div>
-					<button class="btn btn-sm" onclick={addProject}>Add</button>
-				</div>
-				{#if newProjectPath.trim()}
-					<input
-						class="input input-sm w-full"
-						placeholder="group (optional)"
-						list="new-session-project-groups"
-						bind:value={newProjectGroup}
-					/>
-					<textarea
-						class="textarea textarea-sm w-full"
-						rows="2"
-						placeholder="template first prompt for this project (optional)"
-						bind:value={newProjectTemplate}
-					></textarea>
-					<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
+					{#if newProjectPath.trim()}
+						<input
+							class="input input-sm w-full"
+							placeholder="group (optional)"
+							list="new-session-project-groups"
+							bind:value={newProjectGroup}
+						/>
+						<textarea
+							class="textarea textarea-sm w-full"
+							rows="2"
+							placeholder="template first prompt for this project (optional)"
+							bind:value={newProjectTemplate}
+						></textarea>
+						<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
+					{/if}
+				{:else}
+					<button
+						class="btn btn-ghost btn-xs mt-1 gap-1 self-start opacity-70"
+						onclick={() => (addingProject = true)}
+					>
+						<Plus size={13} /> Register a project
+					</button>
 				{/if}
 			</fieldset>
 
@@ -645,57 +688,6 @@
 						<p class="text-xs opacity-60">no existing worktrees for this repo</p>
 					{/if}
 				</fieldset>
-			{:else if context === 'issue'}
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Worktree</legend>
-					<div class="join w-full">
-						<button
-							class="btn join-item btn-sm flex-1 {worktreeMode === 'none' ? 'btn-active' : ''}"
-							onclick={() => setMode('none')}>None</button
-						>
-						<button
-							class="btn join-item btn-sm flex-1 {worktreeMode === 'existing' ? 'btn-active' : ''}"
-							onclick={() => setMode('existing')}>Existing</button
-						>
-						<button
-							class="btn join-item btn-sm flex-1 {worktreeMode === 'new' ? 'btn-active' : ''}"
-							onclick={() => setMode('new')}>New</button
-						>
-					</div>
-					{#if worktreeMode === 'existing'}
-						{#if existingWorktrees.length}
-							<select class="select w-full" bind:value={existingWorktreeDir}>
-								{#each existingWorktrees as w (w.path)}
-									<option value={w.path}>{w.branch} — {w.path}</option>
-								{/each}
-							</select>
-						{:else}
-							<p class="text-xs opacity-60">no existing worktrees for this repo</p>
-						{/if}
-					{:else if worktreeMode === 'new'}
-						<input
-							class="input w-full"
-							placeholder="branch name (defaults to title)"
-							bind:value={branch}
-							oninput={() => (branchDirty = true)}
-						/>
-						<label class="label cursor-pointer justify-start gap-2">
-							<input type="checkbox" class="checkbox checkbox-sm" bind:checked={newBranch} />
-							<span>New branch</span>
-						</label>
-						{#if newBranch}
-							<select class="select w-full" bind:value={base} onchange={() => (baseDirty = true)}>
-								<option value="">base: default branch</option>
-								{#if base && !branches.includes(base)}
-									<option value={base}>base: {base}</option>
-								{/if}
-								{#each branches as b (b)}
-									<option value={b}>base: {b}</option>
-								{/each}
-							</select>
-						{/if}
-					{/if}
-				</fieldset>
 			{/if}
 
 			{#if kind === 'shell'}
@@ -709,54 +701,7 @@
 				</fieldset>
 			{:else}
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">{kind}</legend>
-					{#if kind === 'claude'}
-						<select class="select w-full" bind:value={model} onchange={() => (modelDirty = true)}>
-							{#each CLAUDE_MODELS as m (m)}
-								<option value={m}>{m}</option>
-							{/each}
-						</select>
-						<label class="label cursor-pointer justify-start gap-2">
-							<input type="checkbox" class="checkbox checkbox-sm" bind:checked={yolo} />
-							<span>YOLO mode (bypass permissions)</span>
-						</label>
-					{:else if kind === 'pi'}
-						<ComboInput
-							bind:value={provider}
-							options={piProviders}
-							placeholder="provider (optional, e.g. anthropic, google)"
-							oninput={() => (modelDirty = true)}
-						/>
-						<ComboInput
-							bind:value={model}
-							options={piModels}
-							placeholder="model (optional, pi pattern or id)"
-							oninput={() => (modelDirty = true)}
-						/>
-					{:else if kind === 'opencode'}
-						<ComboInput
-							bind:value={model}
-							options={opencodeModels}
-							placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
-							oninput={() => (modelDirty = true)}
-						/>
-					{:else}
-						<input
-							class="input w-full"
-							placeholder="model (optional, e.g. gpt-5-codex)"
-							bind:value={model}
-							oninput={() => (modelDirty = true)}
-						/>
-					{/if}
-					{#if expensivePick}
-						<div class="alert alert-warning items-start py-1 text-xs">
-							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
-							<span>
-								<span class="font-mono">{pickedModelLabel}</span> is an expensive model; you'll be asked
-								to confirm before it starts.
-							</span>
-						</div>
-					{/if}
+					<legend class="fieldset-legend">First prompt <span class="opacity-50">(optional)</span></legend>
 					<textarea
 						class="textarea w-full"
 						rows="3"
@@ -782,6 +727,140 @@
 						<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
 					{/if}
 				</fieldset>
+			{/if}
+
+			{#if hasOptions}
+				<!-- Worktree, model, and permission controls: right by default, so they
+				     start folded behind a digest of what will happen. -->
+				<div class="mt-3 rounded-box border border-base-300">
+					<button
+						class="flex w-full items-center gap-2 px-3 py-2 text-left"
+						onclick={() => (showOptions = !showOptions)}
+						aria-expanded={showOptions}
+					>
+						<SlidersHorizontal size={14} class="shrink-0 opacity-70" />
+						<span class="text-sm font-medium">Options</span>
+						<span class="min-w-0 flex-1 truncate text-right text-xs opacity-60">{optionsSummary}</span>
+						<ChevronDown
+							size={14}
+							class="shrink-0 opacity-70 transition-transform {showOptions ? 'rotate-180' : ''}"
+						/>
+					</button>
+					{#if showOptions}
+						<div class="border-t border-base-300 px-3 pb-3">
+							{#if context === 'issue'}
+								<fieldset class="fieldset">
+									<legend class="fieldset-legend">Worktree</legend>
+									<div class="join w-full">
+										<button
+											class="btn join-item btn-sm flex-1 {worktreeMode === 'none' ? 'btn-active' : ''}"
+											aria-pressed={worktreeMode === 'none'}
+											onclick={() => setMode('none')}>None</button
+										>
+										<button
+											class="btn join-item btn-sm flex-1 {worktreeMode === 'existing' ? 'btn-active' : ''}"
+											aria-pressed={worktreeMode === 'existing'}
+											onclick={() => setMode('existing')}>Existing</button
+										>
+										<button
+											class="btn join-item btn-sm flex-1 {worktreeMode === 'new' ? 'btn-active' : ''}"
+											aria-pressed={worktreeMode === 'new'}
+											onclick={() => setMode('new')}>New</button
+										>
+									</div>
+									{#if worktreeMode === 'existing'}
+										{#if existingWorktrees.length}
+											<select class="select w-full" bind:value={existingWorktreeDir}>
+												{#each existingWorktrees as w (w.path)}
+													<option value={w.path}>{w.branch} — {w.path}</option>
+												{/each}
+											</select>
+										{:else}
+											<p class="text-xs opacity-60">no existing worktrees for this repo</p>
+										{/if}
+									{:else if worktreeMode === 'new'}
+										<input
+											class="input w-full"
+											placeholder="branch name (defaults to title)"
+											bind:value={branch}
+											oninput={() => (branchDirty = true)}
+										/>
+										<label class="label cursor-pointer justify-start gap-2">
+											<input type="checkbox" class="checkbox checkbox-sm" bind:checked={newBranch} />
+											<span>New branch</span>
+										</label>
+										{#if newBranch}
+											<select class="select w-full" bind:value={base} onchange={() => (baseDirty = true)}>
+												<option value="">base: default branch</option>
+												{#if base && !branches.includes(base)}
+													<option value={base}>base: {base}</option>
+												{/if}
+												{#each branches as b (b)}
+													<option value={b}>base: {b}</option>
+												{/each}
+											</select>
+										{/if}
+									{/if}
+								</fieldset>
+							{/if}
+							{#if isAgentKind(kind)}
+								<fieldset class="fieldset">
+									<legend class="fieldset-legend">Model</legend>
+									{#if kind === 'claude'}
+										<select class="select w-full" bind:value={model} onchange={() => (modelDirty = true)}>
+											{#each CLAUDE_MODELS as m (m)}
+												<option value={m}>{m}</option>
+											{/each}
+										</select>
+										<label class="label cursor-pointer justify-start gap-2">
+											<input type="checkbox" class="checkbox checkbox-sm" bind:checked={yolo} />
+											<span>YOLO mode (bypass permissions)</span>
+										</label>
+									{:else if kind === 'pi'}
+										<ComboInput
+											bind:value={provider}
+											options={piProviders}
+											placeholder="provider (optional, e.g. anthropic, google)"
+											oninput={() => (modelDirty = true)}
+										/>
+										<ComboInput
+											bind:value={model}
+											options={piModels}
+											placeholder="model (optional, pi pattern or id)"
+											oninput={() => (modelDirty = true)}
+										/>
+									{:else if kind === 'opencode'}
+										<ComboInput
+											bind:value={model}
+											options={opencodeModels}
+											placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
+											oninput={() => (modelDirty = true)}
+										/>
+									{:else}
+										<input
+											class="input w-full"
+											placeholder="model (optional, e.g. gpt-5-codex)"
+											bind:value={model}
+											oninput={() => (modelDirty = true)}
+										/>
+									{/if}
+								</fieldset>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if expensivePick}
+				<!-- Outside the collapse: the cost flag must be visible while Options is
+				     folded, since the remembered default can itself be expensive. -->
+				<div class="alert alert-warning mt-3 items-start py-1 text-xs">
+					<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+					<span>
+						<span class="font-mono">{pickedModelLabel}</span> is an expensive model; you'll be asked
+						to confirm before it starts.
+					</span>
+				</div>
 			{/if}
 
 			{#if errorMsg}

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { ChevronDown, Check } from '@lucide/svelte';
+	import Popover from './Popover.svelte';
 
 	// A free-text input paired with a visible dropdown of detected suggestions
 	// (issue #102). Unlike a <datalist>, the chevron is always visible, the list
@@ -35,17 +35,17 @@
 {#if items.length}
 	<div class="join w-full">
 		<input class="input join-item w-full" {placeholder} bind:value oninput={() => oninput?.()} />
-		<details class="dropdown dropdown-end" bind:open use:dismissOnOutside={() => (open = false)}>
-			<summary
-				class="btn btn-square join-item list-none [&::-webkit-details-marker]:hidden"
-				aria-label="Show detected options"
-			>
+		<Popover
+			bind:open
+			drawer={false}
+			summaryClass="btn btn-square join-item"
+			summaryLabel="Show detected options"
+			panelClass="w-64 p-1"
+		>
+			{#snippet trigger()}
 				<ChevronDown size={16} />
-			</summary>
-			<ul
-				class="dropdown-content menu menu-sm z-20 mt-1 max-h-64 w-64 flex-nowrap overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
-				use:keepInView
-			>
+			{/snippet}
+			<ul class="menu menu-sm w-full max-h-64 flex-nowrap overflow-y-auto p-0">
 				{#each items as opt (opt)}
 					<li>
 						<button type="button" onclick={() => pick(opt)}>
@@ -55,7 +55,7 @@
 					</li>
 				{/each}
 			</ul>
-		</details>
+		</Popover>
 	</div>
 {:else}
 	<input class="input w-full" {placeholder} bind:value oninput={() => oninput?.()} />

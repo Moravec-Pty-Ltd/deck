@@ -187,6 +187,69 @@ h3,
 	grid-template-columns: minmax(0, 1fr);
 }
 
+/* ── popovers (Popover.svelte): dropdown on desktop, bottom drawer on phones.
+   Below sm the panel is repositioned as a fixed sheet; keepInView detects the
+   fixed position and steps aside. Unlayered rules, so they win over daisyUI's
+   layered .dropdown-content positioning. */
+.popover-backdrop,
+.popover-grip {
+	display: none;
+}
+
+@media (max-width: 39.99rem) {
+	.popover-host[open] > .popover-backdrop {
+		display: block;
+		position: fixed;
+		inset: 0;
+		z-index: 40;
+		border: 0;
+		padding: 0;
+		background: oklch(15% 0.01 220 / 0.55);
+	}
+	.popover-host > .popover-panel {
+		position: fixed;
+		top: auto;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		width: 100%;
+		max-width: none;
+		max-height: calc(100dvh - 4rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		z-index: 50;
+		margin: 0;
+		border-radius: var(--radius-box) var(--radius-box) 0 0;
+		border-bottom-width: 0;
+		padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom));
+		animation: popover-sheet-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+	.popover-grip {
+		display: block;
+		margin: 0 auto 0.5rem;
+		height: 0.25rem;
+		width: 2.25rem;
+		border-radius: 99px;
+		background: color-mix(in oklch, var(--color-base-content) 22%, transparent);
+	}
+	/* Thumb-sized rows: relax the compact desktop menu sizing inside a drawer. */
+	.popover-panel .menu :where(li > *) {
+		padding-block: 0.625rem;
+		font-size: 0.875rem;
+	}
+}
+
+@keyframes popover-sheet-in {
+	from {
+		transform: translateY(0.75rem);
+		opacity: 0;
+	}
+	to {
+		transform: translateY(0);
+		opacity: 1;
+	}
+}
+
 /* Quiet, themed scrollbars that read as part of the surface, not chrome. */
 * {
 	scrollbar-width: thin;

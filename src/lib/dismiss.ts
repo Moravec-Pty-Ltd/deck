@@ -76,6 +76,13 @@ export const keepInView: Action<HTMLElement> = (node) => {
 	// Deterministic for a given viewport (no reset-then-remeasure), so re-running
 	// under the ResizeObserver converges instead of thrashing the element's size.
 	function adjust() {
+		// Drawer mode (Popover.svelte below sm): the panel is repositioned as a
+		// fixed bottom sheet by CSS, which owns its geometry entirely. Clear any
+		// overrides a desktop-mode run left behind and step aside.
+		if (getComputedStyle(node).position === 'fixed') {
+			reset();
+			return;
+		}
 		if (!capsRead) {
 			authorMaxW = readCap(getComputedStyle(node).maxWidth);
 			authorMaxH = readCap(getComputedStyle(node).maxHeight);

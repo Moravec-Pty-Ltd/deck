@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { QuickMessage } from '$lib/types';
-	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 	import { MessageSquareText, Plus, Trash2, ArrowUp, ArrowDown, Settings2 } from '@lucide/svelte';
+	import Popover from './Popover.svelte';
 
 	// The composer's quick-message popover (issue #45): a button next to send that
 	// lists the system-wide canned messages; clicking one fires it immediately via
@@ -97,42 +97,39 @@
 
 </script>
 
-<details class="dropdown dropdown-top dropdown-end" bind:open use:dismissOnOutside={() => (open = false)}>
-	<summary
-		class="btn btn-ghost btn-square list-none [&::-webkit-details-marker]:hidden"
-		aria-label="Quick messages"
-		title="Quick messages"
-	>
+<Popover
+	bind:open
+	direction="top"
+	summaryClass="btn btn-ghost btn-square"
+	summaryLabel="Quick messages"
+	summaryTitle="Quick messages"
+	panelClass="p-2 sm:w-64"
+>
+	{#snippet trigger()}
 		<MessageSquareText size={16} />
-	</summary>
-
-	<div
-		class="dropdown-content z-20 mb-1 w-64 rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg"
-		use:keepInView
-	>
-		{#if messages.length}
-			<ul class="menu menu-sm max-h-64 w-full flex-nowrap overflow-y-auto p-0">
-				{#each messages as m (m.id)}
-					<li>
-						<button class="block truncate text-left" onclick={() => pick(m)}>{menuLabel(m)}</button>
-					</li>
-				{/each}
-			</ul>
-			<div class="mt-1 border-t border-base-300 pt-1">
-				<button class="btn btn-ghost btn-xs w-full justify-start gap-2" onclick={openManage}>
-					<Settings2 size={14} /> Manage
-				</button>
-			</div>
-		{:else}
-			<div class="px-1 py-3 text-center">
-				<p class="mb-2 text-xs opacity-70">No quick messages yet.</p>
-				<button class="btn btn-primary btn-xs gap-1" onclick={openManage}>
-					<Plus size={14} /> Add messages
-				</button>
-			</div>
-		{/if}
-	</div>
-</details>
+	{/snippet}
+	{#if messages.length}
+		<ul class="menu menu-sm max-h-64 w-full flex-nowrap overflow-y-auto p-0">
+			{#each messages as m (m.id)}
+				<li>
+					<button class="block truncate text-left" onclick={() => pick(m)}>{menuLabel(m)}</button>
+				</li>
+			{/each}
+		</ul>
+		<div class="mt-1 border-t border-base-300 pt-1">
+			<button class="btn btn-ghost btn-xs w-full justify-start gap-2" onclick={openManage}>
+				<Settings2 size={14} /> Manage
+			</button>
+		</div>
+	{:else}
+		<div class="px-1 py-3 text-center">
+			<p class="mb-2 text-xs opacity-70">No quick messages yet.</p>
+			<button class="btn btn-primary btn-xs gap-1" onclick={openManage}>
+				<Plus size={14} /> Add messages
+			</button>
+		</div>
+	{/if}
+</Popover>
 
 {#if managing}
 	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
