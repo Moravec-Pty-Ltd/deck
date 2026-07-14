@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import type { Cookies } from '@sveltejs/kit';
 import { DEMO } from './demo';
 
 const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
@@ -35,6 +36,22 @@ function loadToken(): string {
 }
 
 export const authToken = loadToken();
+
+// The browser session credential. Both the ?token= gate (exchangeUrlToken in
+// hooks.server.ts) and the pairing status endpoint mint this same cookie, so its
+// name and options live here as the single source of truth. A year-long httpOnly
+// cookie: deck is a trusted single-user tool on a LAN/tailnet.
+export const AUTH_COOKIE = 'deck_token';
+
+export function setAuthCookie(cookies: Cookies, secure: boolean) {
+	cookies.set(AUTH_COOKIE, authToken, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		secure,
+		maxAge: 60 * 60 * 24 * 365
+	});
+}
 
 // Where a programmatic client reaches this deck server. Stamped into spawned
 // agents' env (DECK_BASE_URL) and printed in /llms.txt; override when deck is

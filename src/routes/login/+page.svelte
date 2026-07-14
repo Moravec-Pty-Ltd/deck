@@ -23,5 +23,8 @@
 			/>
 			<button class="btn w-full btn-primary" type="submit">Sign in</button>
 		</form>
+		<a href="/pair" class="mt-4 block text-center text-sm opacity-60 hover:opacity-100"
+			>No token? Request access from a signed-in device</a
+		>
 	</div>
 </div>
