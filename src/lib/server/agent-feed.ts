@@ -1,13 +1,18 @@
 import { EventEmitter } from 'node:events';
+import { appendEventLog } from './event-log';
 
-// Global lifecycle feed for the agent API (issue #127): one bus carrying every
-// session's transitions, so /api/agent/events can multiplex all sessions on a
-// single SSE stream instead of subscribers opening one per-session stream.
-// Producers are the existing chokepoints (claude.ts setStatus/appendEvent,
-// ask.ts, workflows.ts, sessions.ts, pr.ts, monitor.ts); this module stays
-// dependency-free so any of them can import it without a cycle.
+// Global lifecycle feed for the agent API (issues #127, #143): every session
+// transition is assigned a monotonic `seq`, appended to the durable event log,
+// and emitted on this in-process bus. The durable log (~/.deck/events.jsonl) is
+// now the consumption surface — a consumer tails the file or reads the resumable
+// /api/agent/events cursor — so the emitter's only remaining job is to wake that
+// cursor's long-poll. Producers are the existing chokepoints (claude.ts
+// setStatus/appendEvent, ask.ts, workflows.ts, sessions.ts, pr.ts, monitor.ts).
 
 export interface AgentFeedEvent {
+	// Global monotonic cursor: the single handle a consumer resumes from, shared by
+	// the log line and this in-memory event.
+	seq: number;
 	sessionId: string;
 	type:
 		| 'status'
@@ -21,7 +26,7 @@ export interface AgentFeedEvent {
 	[key: string]: unknown;
 }
 
-// Survives HMR in dev so SSE subscribers and producers share one emitter.
+// Survives HMR in dev so long-poll waiters and producers share one emitter.
 const g = globalThis as { __deckAgentFeed?: EventEmitter };
 export const agentFeed = (g.__deckAgentFeed ??= new EventEmitter());
 agentFeed.setMaxListeners(100);
@@ -31,11 +36,20 @@ export function publishAgentEvent(
 	type: AgentFeedEvent['type'],
 	payload?: Record<string, unknown>
 ): void {
-	// A throwing subscriber must not escape into the producer's frame (several
-	// producers publish from .finally continuations); log and carry on.
-	try {
-		agentFeed.emit('event', { sessionId, type, at: Date.now(), ...payload });
-	} catch (err) {
-		console.error(`[deck] agent feed emit failed (${type}):`, err);
-	}
+	// seq is a placeholder until appendEventLog commits the durable write and
+	// stamps the real value (0 means the write failed and this event was dropped).
+	const event: AgentFeedEvent = { seq: 0, sessionId, type, at: Date.now(), ...payload };
+	// Append durably first, then wake the feed once the line is on disk, so a
+	// long-poll reader that wakes always finds the event via readCursor (the same
+	// event-after-write ordering appendEvent uses for the transcript). A throwing
+	// subscriber must not escape into the producer's frame (several publish from
+	// .finally continuations); log and carry on.
+	appendEventLog(event).finally(() => {
+		if (event.seq === 0) return; // write failed: nothing durable to signal
+		try {
+			agentFeed.emit('event', event);
+		} catch (err) {
+			console.error(`[deck] agent feed emit failed (${type}):`, err);
+		}
+	});
 }

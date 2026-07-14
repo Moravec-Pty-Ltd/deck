@@ -10,6 +10,9 @@ export const transcriptsDir = path.join(dataDir, 'transcripts');
 export const agentSessionsDir = path.join(dataDir, 'agent-sessions');
 // User image attachments, stored out-of-band so the transcript JSONL stays small.
 export const imagesDir = path.join(dataDir, 'images');
+// Durable, monotonically-sequenced agent event log (issue #143): append-only
+// JSONL a consumer tails or reads via the /api/agent/events cursor.
+export const eventLogFile = path.join(dataDir, 'events.jsonl');
 
 fs.mkdirSync(transcriptsDir, { recursive: true });
 fs.mkdirSync(agentSessionsDir, { recursive: true });

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { transcriptsDir } from './config';
 import { emptyCostSummary, foldResult, type CostSummary } from '$lib/session-cost-core';
+import { projectTranscript, type TranscriptMessage } from '$lib/agent-transcript-core';
 
 // Transcript files are append-only JSONL: one JSON event per line, written by
 // appendEvent. The live view only ever needs the tail (initial snapshot) or a
@@ -201,6 +202,26 @@ export function readTranscriptTailText(id: string): string {
 	return readTranscriptTail(id)
 		.events.map((e) => JSON.stringify(e))
 		.join('\n');
+}
+
+// The session's most recent assistant reply (bounded to the snapshot tail), or
+// null when it has produced no text yet. Cheap enough to attach to a
+// single-session digest's `lastResult` (issue #144).
+export function sessionLastResult(id: string): string | null {
+	return projectTranscript(readTranscriptTail(id).events).lastResult;
+}
+
+// Readable, projected turn output for the agent transcript endpoint (issue #144):
+// the recent user/assistant messages, the last assistant reply, and the running
+// cost — what an orchestrator reads to see what a session actually said.
+export function agentTranscriptView(id: string): {
+	messages: TranscriptMessage[];
+	lastResult: string | null;
+	cost: CostSummary;
+} {
+	const tail = readTranscriptTail(id);
+	const projected = projectTranscript(tail.events);
+	return { messages: projected.messages, lastResult: projected.lastResult, cost: tail.cost };
 }
 
 // Running cost/turns/duration total over the whole transcript, kept per session

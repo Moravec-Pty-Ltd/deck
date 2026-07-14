@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DeckSession } from '$lib/types';
+import type { DeckSession, Issue, Project, PullRequest, Workflow } from '$lib/types';
 import { pinEnv } from './test-env';
 
 // agent-digest pulls baseUrl/config and the transcript reader, both of which
@@ -10,7 +10,8 @@ import { pinEnv } from './test-env';
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-digest-'));
 const restoreEnv = pinEnv({ DECK_DATA: tmpDir, DECK_BASE_URL: 'http://example.test:4818' });
 
-const { sessionDigest } = await import('./agent-digest');
+const { sessionDigest, projectDigest, workflowDigest, startableWorkflows, issueDigest, prDigest } =
+	await import('./agent-digest');
 
 afterAll(() => {
 	restoreEnv();
@@ -70,5 +71,91 @@ describe('sessionDigest', () => {
 
 	it('normalises absent awaitingInput to false', () => {
 		expect(sessionDigest(session()).awaitingInput).toBe(false);
+	});
+
+	it('omits lastResult unless requested, and reads null for a transcript-less session', () => {
+		expect(sessionDigest(session()).lastResult).toBeUndefined();
+		expect(sessionDigest(session(), { lastResult: true }).lastResult).toBeNull();
+	});
+});
+
+describe('discovery projections', () => {
+	it('projects a project to { path, name, group }, dropping stored internals', () => {
+		const project = {
+			name: 'web',
+			path: '/path/to/web',
+			group: 'apps',
+			sources: [{ id: 's1', type: 'github', owner: 'acme', repo: 'web' }],
+			dev: { ports: [] }
+		} as unknown as Project;
+		expect(projectDigest(project)).toEqual({ path: '/path/to/web', name: 'web', group: 'apps' });
+	});
+
+	it('projects a workflow to id/name/context/steps', () => {
+		const wf: Workflow = {
+			id: 'ship',
+			name: 'Ship it',
+			context: 'issue',
+			steps: [
+				{ type: 'agent', name: 'Implement', prompt: 'do it' },
+				{ type: 'gate', name: 'Test', command: 'pnpm test' }
+			]
+		};
+		expect(workflowDigest(wf)).toEqual({
+			id: 'ship',
+			name: 'Ship it',
+			context: 'issue',
+			steps: [
+				{ name: 'Implement', type: 'agent' },
+				{ name: 'Test', type: 'gate' }
+			]
+		});
+	});
+
+	it('excludes the synthesized legacy pair from startable workflows', () => {
+		const project = {
+			name: 'web',
+			path: '/p',
+			workflows: [{ id: 'ship', name: 'Ship', context: 'issue', steps: [{ type: 'agent', name: 'a', prompt: 'p' }] }]
+		} as unknown as Project;
+		const ids = startableWorkflows(project).map((w) => w.id);
+		expect(ids).toEqual(['ship']);
+		// A project without configured workflows offers nothing startable (only the
+		// legacy New/Review pair, which is filtered out).
+		expect(startableWorkflows(undefined)).toEqual([]);
+	});
+
+	it('maps an issue row onto create\'s issue shape', () => {
+		const issue: Issue = {
+			sourceId: 's1',
+			sourceType: 'github',
+			id: 'acme/web#12',
+			title: 'Fix it',
+			url: 'https://github.com/acme/web/issues/12',
+			updatedAt: 0,
+			blockers: []
+		};
+		expect(issueDigest(issue)).toEqual({
+			source: 'github',
+			id: 'acme/web#12',
+			title: 'Fix it',
+			url: 'https://github.com/acme/web/issues/12'
+		});
+	});
+
+	it('maps a PR row onto review\'s pr shape plus context', () => {
+		const pr: PullRequest = {
+			sourceId: 's1',
+			repo: 'acme/web',
+			number: 42,
+			title: 'A change',
+			url: 'https://github.com/acme/web/pull/42',
+			headRefName: 'feat',
+			baseRefName: 'main',
+			isDraft: false,
+			author: 'someone',
+			updatedAt: 0
+		};
+		expect(prDigest(pr)).toMatchObject({ repo: 'acme/web', number: 42, headRefName: 'feat', baseRefName: 'main' });
 	});
 });

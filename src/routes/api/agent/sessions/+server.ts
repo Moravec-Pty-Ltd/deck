@@ -4,6 +4,7 @@ import { listSessions } from '$lib/server/sessions';
 import { createSessionFromRequest, parsePr } from '$lib/server/create-session';
 import { sessionDigest } from '$lib/server/agent-digest';
 import { objectBody } from '$lib/server/http';
+import { runIdempotent } from '$lib/server/idempotency';
 import { baseUrl } from '$lib/server/config';
 
 // Agent-facing sessions surface (issue #127): a stable, documented contract
@@ -12,7 +13,7 @@ import { baseUrl } from '$lib/server/config';
 // one payload instead of per-session SSE snapshots.
 
 export const GET: RequestHandler = async () => {
-	return json((await listSessions()).map(sessionDigest));
+	return json((await listSessions()).map((s) => sessionDigest(s)));
 };
 
 // Fields shared by both modes, passed through to the create pipeline (which
@@ -54,10 +55,27 @@ function internalBody(body: Record<string, unknown>): Record<string, unknown> {
 	error(400, "mode must be 'work' or 'review'");
 }
 
+// An idempotency key (header `Idempotency-Key`, or body `idempotencyKey`) dedupes
+// a retried create so a lost 201 response can't spawn a second session + worktree.
+// Bounded so a junk header can't bloat the in-memory map; empty means none.
+function bodyKey(body: Record<string, unknown>): string {
+	return typeof body.idempotencyKey === 'string' ? body.idempotencyKey : '';
+}
+function idempotencyKey(headers: Headers, body: Record<string, unknown>): string | null {
+	const key = (headers.get('idempotency-key') || bodyKey(body)).trim();
+	return key && key.length <= 200 ? key : null;
+}
+
 // { mode: 'work' | 'review', cwd, ... } -> { id, url }. Both modes map onto
 // the shared create pipeline, so validation and side effects match the UI path.
+// A replayed idempotency key returns the original result with 200 instead of 201.
 export const POST: RequestHandler = async ({ request }) => {
-	const internal = internalBody(await objectBody(request));
-	const session = await createSessionFromRequest(internal);
-	return json({ id: session.id, url: `${baseUrl}/s/${session.id}` }, { status: 201 });
+	const body = await objectBody(request);
+	// Validate before the idempotent run so a malformed body 400s without caching.
+	const internal = internalBody(body);
+	const { replay, result } = runIdempotent(idempotencyKey(request.headers, body), async () => {
+		const session = await createSessionFromRequest(internal);
+		return { id: session.id, url: `${baseUrl}/s/${session.id}` };
+	});
+	return json(await result, { status: replay ? 200 : 201 });
 };

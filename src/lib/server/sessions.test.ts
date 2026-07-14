@@ -25,8 +25,15 @@ vi.mock('./agents/dispatch', () => ({
 }));
 
 const sessions = await import('./sessions');
+const { whenEventLogDrained } = await import('./event-log');
 
-afterAll(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+// createSession publishes a session-created event, which appends to the durable
+// log asynchronously; let those writes settle before removing the data dir so a
+// late failed write can't log during worker teardown.
+afterAll(async () => {
+	await whenEventLogDrained();
+	fs.rmSync(dataDir, { recursive: true, force: true });
+});
 
 beforeEach(async () => {
 	// createSession busts the list memo, so each test starts from a cold cache.
