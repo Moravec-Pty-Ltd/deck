@@ -110,7 +110,7 @@
 </script>
 
 {#snippet sessionRow(s: DeckSession)}
-	{@const proj = deriveGroup(s.cwd, projects)}
+	{@const proj = viewMode === 'status' ? deriveGroup(s.cwd, projects) : null}
 	<li class="flex items-center gap-1 pl-1 pr-0">
 		<a
 			href={`/s/${encodeURIComponent(s.id)}`}
@@ -128,7 +128,7 @@
 			<span class="size-1.5 shrink-0 rounded-full {dotClass(s)}" title={s.status}></span>
 			<div class="flex min-w-0 flex-1 flex-col">
 				<span class="truncate text-sm">{s.title}</span>
-				{#if viewMode === 'status'}
+				{#if proj}
 					<span class="truncate text-xs leading-tight opacity-60">{proj.label}</span>
 				{/if}
 			</div>
@@ -157,7 +157,7 @@
 				<Terminal size={12} />
 			</button>
 		{/if}
-		{#if viewMode === 'status' && projectPaths.has(proj.key)}
+		{#if proj && projectPaths.has(proj.key)}
 			<button
 				class="btn btn-ghost btn-xs"
 				onclick={() => onQuickAdd(proj.key)}
