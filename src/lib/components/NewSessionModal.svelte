@@ -111,7 +111,7 @@
 	let pickedPrs = $state<PullRequest[]>([]);
 	// Split a multi-item selection into one session per item (loop the create).
 	// Work defaults to combine (one session, all issues); review always splits
-	// (one session per PR — no multi-PR worktree). Only offered for work.
+	// (one session per PR; no multi-PR worktree). Only offered for work.
 	let split = $state(false);
 	// Per-item progress shown on the Create button while a split batch runs.
 	let createProgress = $state('');
@@ -593,7 +593,7 @@
 		busy = true;
 		createProgress = '';
 		try {
-			// Single create: unchanged path — a failure keeps the modal open with the
+			// Single create: unchanged path; a failure keeps the modal open with the
 			// error, success navigates to the new session.
 			if (creates.length === 1) {
 				finishCreate(await postCreate(creates[0].body));
