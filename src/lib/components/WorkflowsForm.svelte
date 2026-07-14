@@ -38,10 +38,19 @@
 	];
 	const STEP_TYPES: WorkflowStep['type'][] = ['run', 'agent', 'gate', 'ask'];
 
-	let workflows = $state<EditWorkflow[]>(clone(project.workflows));
+	// Seeded on open, not at mount: the card outlives project reloads, so a
+	// mount-time copy would go stale (and clobber on save) when the workflows
+	// change elsewhere. Collapsing the editor discards unsaved edits.
+	let workflows = $state<EditWorkflow[]>([]);
 	let open = $state(false);
 	let localError = $state('');
 	const saver = createProjectSaver(() => onchanged());
+
+	function toggle() {
+		if (!open) workflows = clone(project.workflows);
+		open = !open;
+	}
+	const count = $derived(open ? workflows.length : (project.workflows?.length ?? 0));
 
 	let stepSeq = 0;
 	function blankStep(type: WorkflowStep['type'] = 'agent'): EditStep {
@@ -143,9 +152,9 @@
 </script>
 
 <div class="mt-3">
-	<button class="flex items-center gap-2 text-xs font-medium opacity-60" onclick={() => (open = !open)}>
+	<button class="flex items-center gap-2 text-xs font-medium opacity-60" onclick={toggle}>
 		<WorkflowIcon size={13} />
-		Workflows{#if workflows.length}<span class="badge badge-ghost badge-xs">{workflows.length}</span>{/if}
+		Workflows{#if count}<span class="badge badge-ghost badge-xs">{count}</span>{/if}
 		<ChevronDown size={13} class={open ? '' : '-rotate-90'} />
 	</button>
 

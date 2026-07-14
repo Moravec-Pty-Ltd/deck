@@ -6,12 +6,24 @@
 	let { project, onchanged }: { project: Project; onchanged: () => void } = $props();
 
 	// Editable working copies. Reassigned (not mutated) so Svelte tracks them.
-	let copyFromMain = $state<string[]>([...(project.dev?.copyFromMain ?? [])]);
-	let setup = $state<SetupStep[]>(cloneSteps(project.dev?.setup));
-	let servers = $state<ServerSpec[]>(cloneServers(project.dev?.servers));
+	// Seeded on open, not at mount: the card outlives project reloads, so a
+	// mount-time copy would go stale (and clobber on save) when the config
+	// changes elsewhere. Collapsing the editor discards unsaved edits.
+	let copyFromMain = $state<string[]>([]);
+	let setup = $state<SetupStep[]>([]);
+	let servers = $state<ServerSpec[]>([]);
 
 	let open = $state(false);
 	const saver = createProjectSaver(() => onchanged());
+
+	function toggle() {
+		if (!open) {
+			copyFromMain = [...(project.dev?.copyFromMain ?? [])];
+			setup = cloneSteps(project.dev?.setup);
+			servers = cloneServers(project.dev?.servers);
+		}
+		open = !open;
+	}
 
 	function cloneSteps(steps: SetupStep[] | undefined): SetupStep[] {
 		return (steps ?? []).map((s) => ({ label: s.label, run: s.run, cwd: s.cwd ?? '' }));
@@ -30,7 +42,7 @@
 		}));
 	}
 
-	const serverCount = $derived(servers.length);
+	const serverCount = $derived(open ? servers.length : (project.dev?.servers?.length ?? 0));
 
 	// --- copyFromMain ---
 	function addCopy() {
@@ -108,7 +120,7 @@
 </script>
 
 <div class="mt-3">
-	<button class="flex items-center gap-2 text-xs font-medium opacity-60" onclick={() => (open = !open)}>
+	<button class="flex items-center gap-2 text-xs font-medium opacity-60" onclick={toggle}>
 		<Server size={13} />
 		Dev servers{#if serverCount}<span class="badge badge-ghost badge-xs">{serverCount}</span>{/if}
 		<ChevronDown size={13} class={open ? '' : '-rotate-90'} />
