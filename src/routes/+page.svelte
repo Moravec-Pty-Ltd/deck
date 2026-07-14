@@ -6,7 +6,9 @@
 	import { DeleteFlow } from '$lib/delete-flow.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
-	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, ChevronRight, ChevronDown, X } from '@lucide/svelte';
+	import QrModal from '$lib/components/QrModal.svelte';
+	import PairApprovals, { type PendingPairing } from '$lib/components/PairApprovals.svelte';
+	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, QrCode, ChevronRight, ChevronDown, X } from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
@@ -17,6 +19,8 @@
 	let modalOpen = $state(false);
 	let preset = $state<NewSessionPreset | null>(null);
 	let loaded = $state(false);
+	let qrOpen = $state(false);
+	let pending = $state<PendingPairing[]>([]);
 
 	function openNew() {
 		preset = null;
@@ -38,9 +42,14 @@
 	}
 
 	async function refresh() {
-		const [sRes, pRes] = await Promise.all([fetch('/api/sessions'), fetch('/api/projects')]);
+		const [sRes, pRes, pairRes] = await Promise.all([
+			fetch('/api/sessions'),
+			fetch('/api/projects'),
+			fetch('/api/pair/pending')
+		]);
 		if (sRes.ok) sessions = await sRes.json();
 		if (pRes.ok) projects = await pRes.json();
+		if (pairRes.ok) pending = (await pairRes.json()).pending;
 		loaded = true;
 	}
 
@@ -111,6 +120,14 @@
 		<a href="/projects" class="btn btn-ghost btn-sm" aria-label="Manage projects" title="Projects">
 			<FolderCog size={16} />
 		</a>
+		<button
+			class="btn btn-ghost btn-sm"
+			onclick={() => (qrOpen = true)}
+			aria-label="Sign in another device"
+			title="Sign in another device"
+		>
+			<QrCode size={16} />
+		</button>
 		<button class="btn btn-ghost btn-sm" onclick={refresh} aria-label="Refresh">
 			<RefreshCw size={16} />
 		</button>
@@ -119,6 +136,8 @@
 		</button>
 	</div>
 </div>
+
+<PairApprovals {pending} onchange={refresh} />
 
 {#snippet row(s: DeckSession)}
 	<div
@@ -246,5 +265,7 @@
 {/if}
 
 <NewSessionModal bind:open={modalOpen} {preset} />
+
+<QrModal bind:open={qrOpen} />
 
 <DeleteSessionModal flow={del} />
