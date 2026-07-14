@@ -307,6 +307,13 @@
 		worktreeModeDirty = true;
 	}
 
+	// Split only applies with a fresh worktree per issue. Clear it whenever the
+	// mode leaves 'new' (by any path) so the hidden toggle can't silently re-enable
+	// split when the mode later returns to 'new'.
+	$effect(() => {
+		if (effectiveWorktreeMode !== 'new' && split) split = false;
+	});
+
 	// Prefill the first prompt until the user edits it: the selected workflow's
 	// first agent-step prompt (for the legacy pair that's exactly the old
 	// template/reviewPrompt). Empty means an empty field, same as today.
