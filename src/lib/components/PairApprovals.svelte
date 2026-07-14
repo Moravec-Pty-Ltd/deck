@@ -54,14 +54,14 @@
 					<button
 						class="btn btn-sm btn-primary"
 						onclick={() => decide(req.id, true)}
-						disabled={busy === req.id}
+						disabled={busy !== null}
 					>
 						<Check size={15} /> Approve
 					</button>
 					<button
 						class="btn btn-ghost btn-sm"
 						onclick={() => decide(req.id, false)}
-						disabled={busy === req.id}
+						disabled={busy !== null}
 					>
 						<X size={15} /> Deny
 					</button>

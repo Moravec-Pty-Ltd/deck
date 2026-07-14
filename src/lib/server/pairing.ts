@@ -98,8 +98,11 @@ export function decidePairing(id: string, approve: boolean): boolean {
 // (single-use); the caller sets the cookie when the result is 'approved'.
 export function claimPairing(secret: string): core.ClaimResult {
 	const now = Date.now();
-	const { list, result } = core.consumeBySecret(load(), secret, now);
-	// Persist consumption (approved/denied removal) and any pruning of an expired hit.
-	if (result === 'approved' || result === 'denied' || result === 'expired') save(list);
+	const loaded = load();
+	const pruned = core.prune(loaded, now);
+	const { list, result } = core.consumeBySecret(pruned, secret, now);
+	// Persist when the store shrank: either pruning dropped expired records or a
+	// terminal (approved/denied) hit was consumed.
+	if (list.length !== loaded.length) save(list);
 	return result;
 }
