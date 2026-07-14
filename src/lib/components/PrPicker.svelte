@@ -2,13 +2,18 @@
 	import type { Project, PullRequest } from '$lib/types';
 	import { relativeTime } from '$lib/time';
 	import { runLoad } from '$lib/picker';
-	import { RefreshCw } from '@lucide/svelte';
+	import { RefreshCw, Check } from '@lucide/svelte';
 
 	let {
 		project,
-		picked,
+		picked = [],
 		onpick
-	}: { project: Project; picked: PullRequest | null; onpick: (pr: PullRequest) => void } = $props();
+	}: { project: Project; picked?: PullRequest[]; onpick: (pr: PullRequest) => void } = $props();
+
+	// Multi-select mirrors IssuePicker: `onpick` toggles and the list stays open.
+	// Selected rows show a check; the modal owns the array and renders chips.
+	const prKey = (pr: PullRequest) => `${pr.sourceId}:${pr.number}`;
+	const selectedKeys = $derived(new Set(picked.map(prKey)));
 
 	type SourceError = { sourceId: string; message: string };
 
@@ -84,14 +89,14 @@
 			{:else if !prs.length}
 				<p class="p-4 text-center text-sm opacity-60">No PRs awaiting your review.</p>
 			{:else}
-				{#each prs as pr (`${pr.sourceId}:${pr.number}`)}
+				{#each prs as pr (prKey(pr))}
 					<button
-						class="flex w-full items-center gap-2 border-b border-base-300 py-1.5 text-left last:border-0 {picked?.sourceId ===
-							pr.sourceId && picked?.number === pr.number
-							? 'bg-primary/10'
-							: ''}"
+						class="flex w-full items-center gap-2 border-b border-base-300 py-1.5 text-left last:border-0"
 						onclick={() => onpick(pr)}
 					>
+						<span class="flex w-4 shrink-0 justify-center">
+							{#if selectedKeys.has(prKey(pr))}<Check size={14} class="text-primary" />{/if}
+						</span>
 						<span class="shrink-0 font-mono text-xs opacity-70">#{pr.number}</span>
 						<span class="min-w-0 flex-1 truncate text-sm">{pr.title}</span>
 						{#if pr.isDraft}
