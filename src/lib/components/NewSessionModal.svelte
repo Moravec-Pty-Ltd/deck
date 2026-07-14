@@ -785,7 +785,7 @@
 				{/if}
 				{#if context === 'issue' && pickedIssues.length > 1 && effectiveWorktreeMode === 'new'}
 					<label class="label mt-1 cursor-pointer justify-start gap-2">
-						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={split} />
+						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={split} disabled={busy} />
 						<span class="text-xs">Split into {pickedIssues.length} sessions (one per issue)</span>
 					</label>
 				{/if}
