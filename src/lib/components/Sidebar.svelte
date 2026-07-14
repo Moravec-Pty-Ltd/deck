@@ -2,6 +2,7 @@
 	import { browser } from '$app/environment';
 	import type { DeckSession, Project, ServerState } from '$lib/types';
 	import { groupSessions } from '$lib/groups';
+	import { deriveGroup } from '$lib/time';
 	import { bucketSessions, type StatusBucketKey } from '$lib/status-groups';
 	import { flattenVisibleGroups, flattenVisibleBuckets, pickNeighbor } from '$lib/sidebar-neighbor';
 	import { createCollapseState } from '$lib/collapse.svelte';
@@ -109,6 +110,7 @@
 </script>
 
 {#snippet sessionRow(s: DeckSession)}
+	{@const proj = deriveGroup(s.cwd, projects)}
 	<li class="flex items-center gap-1 pl-1 pr-0">
 		<a
 			href={`/s/${encodeURIComponent(s.id)}`}
@@ -124,7 +126,12 @@
 				<Bot size={13} class="shrink-0 opacity-60" />
 			{/if}
 			<span class="size-1.5 shrink-0 rounded-full {dotClass(s)}" title={s.status}></span>
-			<span class="min-w-0 flex-1 truncate text-sm">{s.title}</span>
+			<div class="flex min-w-0 flex-1 flex-col">
+				<span class="truncate text-sm">{s.title}</span>
+				{#if viewMode === 'status'}
+					<span class="truncate text-xs leading-tight opacity-60">{proj.label}</span>
+				{/if}
+			</div>
 			{#if serverDot(s.id)}
 				{@const st = serverDot(s.id)!}
 				<span class="size-1.5 shrink-0 rounded-full {SERVER_DOT[st]}" title={`servers: ${SERVER_LABEL[st]}`}></span>
@@ -148,6 +155,16 @@
 				title="Shell in this worktree"
 			>
 				<Terminal size={12} />
+			</button>
+		{/if}
+		{#if viewMode === 'status' && projectPaths.has(proj.key)}
+			<button
+				class="btn btn-ghost btn-xs"
+				onclick={() => onQuickAdd(proj.key)}
+				aria-label={`New session in ${proj.label}`}
+				title={`New session in ${proj.label}`}
+			>
+				<Plus size={12} class="text-primary" />
 			</button>
 		{/if}
 		<button
