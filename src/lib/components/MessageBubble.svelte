@@ -77,7 +77,7 @@
 
 <div class="chat chat-{side}">
 	<div
-		class="chat-bubble bubble group relative max-w-[85%] break-words whitespace-pre-wrap {bubbleClass}"
+		class="chat-bubble bubble group relative max-w-[85%] whitespace-pre-wrap wrap-anywhere {bubbleClass}"
 		role="group"
 		onpointerdown={onPointerDown}
 		onpointermove={onPointerMove}

@@ -88,7 +88,7 @@
 	}
 </script>
 
-<div class="flex h-full min-h-0 flex-col">
+<div class="@container flex h-full min-h-0 flex-col">
 	{#if !connected}
 		<div class="mb-2 text-xs text-warning">reconnecting…</div>
 	{:else if cleared}
