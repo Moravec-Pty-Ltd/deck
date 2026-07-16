@@ -118,6 +118,17 @@ export function joinDiffFiles(nameStatus: string, numstat: string): DiffFile[] {
 	});
 }
 
+// Ordered refs to try as the diff base for a stored base branch name. A plain
+// branch name prefers its remote-tracking form (origin/<base>) — the ref GitHub
+// diffs the PR against, and current even when local <base> has drifted behind —
+// then falls back to the local branch (offline, or a local-only base with no
+// remote). An already-qualified base (origin/… or a full refs/… ref) is used
+// verbatim, never double-prefixed.
+export function baseRefCandidates(base: string): string[] {
+	if (base.startsWith('origin/') || base.startsWith('refs/')) return [base];
+	return [`origin/${base}`, base];
+}
+
 // Totals for the summary badge, summed from the file list so badge and rows agree.
 export function diffStats(files: DiffFile[]): DiffStats {
 	let additions = 0;
