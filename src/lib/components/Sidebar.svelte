@@ -8,6 +8,7 @@
 	import { createCollapseState } from '$lib/collapse.svelte';
 	import { aggregateState, SERVER_DOT, SERVER_LABEL } from '$lib/servers';
 	import { pickSessionIcon, type SessionIconKind } from '$lib/session-icon';
+	import ReviewMarks from './ReviewMarks.svelte';
 	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown } from '@lucide/svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
@@ -144,6 +145,13 @@
 					class="shrink-0 {icon.color ? '' : 'opacity-40'}"
 					style={icon.color ? `color:${icon.color}` : undefined}
 					title={icon.title}
+				/>
+			{/if}
+			{#if s.pr}
+				<ReviewMarks
+					approvals={s.pr.approvals ?? 0}
+					changesRequested={s.pr.changesRequested ?? 0}
+					class="inline-flex shrink-0 items-center gap-0.5"
 				/>
 			{/if}
 		</a>
