@@ -539,7 +539,7 @@
 	<div
 		bind:this={scroller}
 		onscroll={onScroll}
-		class="min-h-0 flex-1 space-y-3 overflow-y-auto py-3"
+		class="@container min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto py-3"
 	>
 		{#if !loaded}
 			<div class="flex h-full items-center justify-center">
@@ -568,7 +568,7 @@
 					{/if}
 				</MessageBubble>
 			{:else if event.type === 'deck.error'}
-				<div class="alert alert-error py-2 text-sm break-words whitespace-pre-wrap">{event.text}</div>
+				<div class="alert alert-error py-2 text-sm whitespace-pre-wrap wrap-anywhere">{event.text}</div>
 			{:else if event.type === 'deck.model'}
 				<div class="px-2 text-center text-xs opacity-50">model → {modelLabel(event.model)}</div>
 			{:else if event.type === 'deck.workflow'}

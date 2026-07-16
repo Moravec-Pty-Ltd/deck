@@ -357,8 +357,13 @@ h3,
 
 .terminal-output {
 	font-family: 'Hack Nerd Font Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 0.8rem;
+	/* Scale mono text to the query container (the pane, via container-type on the
+	   transcript/shell scrollers) so long output fits on narrow panes without
+	   snapping at a breakpoint. Floor keeps it legible; ceiling is the old size. */
+	font-size: clamp(0.72rem, 0.62rem + 0.5cqi, 0.8rem);
 	line-height: 1.35;
 	white-space: pre-wrap;
-	word-break: break-all;
+	/* anywhere (not break-all) breaks only when a token would overflow and counts
+	   toward min-content sizing, so the box can actually shrink to the pane. */
+	overflow-wrap: anywhere;
 }
