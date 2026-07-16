@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type { PrReviewDecision, SessionPR } from '$lib/types';
 	import { PR_STATE_COLOR, REVIEW_COLOR, canMergePr } from '$lib/pr';
-	import { GitPullRequest, Check, X, ExternalLink, GitMerge, ChevronLeft } from '@lucide/svelte';
+	import { GitPullRequest, X, ExternalLink, GitMerge, ChevronLeft } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
+	import ReviewMarks from './ReviewMarks.svelte';
 
 	// GitHub's overall review decision, shown as a verdict line in the menu header.
 	const VERDICT: Record<PrReviewDecision, { label: string; color?: string }> = {
@@ -142,18 +143,6 @@
 	}
 </script>
 
-{#snippet marks(count: number, color: string, Icon: typeof Check)}
-	{#if count > 0}
-		<span class="inline-flex items-center" style="color:{color}">
-			{#if count <= 5}
-				{#each Array(count) as _, i (i)}<Icon size={11} strokeWidth={3} />{/each}
-			{:else}
-				<Icon size={11} strokeWidth={3} /><span class="ml-0.5 text-[10px] font-semibold leading-none">{count}</span>
-			{/if}
-		</span>
-	{/if}
-{/snippet}
-
 <span class="inline-flex shrink-0 items-center gap-1">
 	<Popover
 		bind:open
@@ -177,12 +166,7 @@
 							{verdict.label}
 						</span>
 					{/if}
-					{#if approvals > 0 || changes > 0}
-						<span class="ml-auto inline-flex items-center gap-0.5">
-							{@render marks(approvals, REVIEW_COLOR.approve, Check)}
-							{@render marks(changes, REVIEW_COLOR.changes, X)}
-						</span>
-					{/if}
+					<ReviewMarks {approvals} changesRequested={changes} class="ml-auto inline-flex items-center gap-0.5" />
 				</div>
 			{/if}
 			<ul class="menu menu-sm w-full p-0">
@@ -293,10 +277,10 @@
 		{/if}
 	</Popover>
 
-	{#if approvals > 0 || changes > 0}
-		<span class="hidden items-center gap-0.5 sm:inline-flex" title={tallyTitle}>
-			{@render marks(approvals, REVIEW_COLOR.approve, Check)}
-			{@render marks(changes, REVIEW_COLOR.changes, X)}
-		</span>
-	{/if}
+	<ReviewMarks
+		{approvals}
+		changesRequested={changes}
+		class="hidden items-center gap-0.5 sm:inline-flex"
+		title={tallyTitle}
+	/>
 </span>
