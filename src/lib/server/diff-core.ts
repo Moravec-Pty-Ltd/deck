@@ -119,11 +119,11 @@ export function joinDiffFiles(nameStatus: string, numstat: string): DiffFile[] {
 }
 
 // Ordered refs to try as the diff base for a stored base branch name. A plain
-// branch name prefers its remote-tracking form (origin/<base>), the ref GitHub
-// diffs the PR against and current even when local <base> has drifted behind,
-// then falls back to the local branch (offline, or a local-only base with no
-// remote). An already-qualified base (an origin/ prefix or a full refs/ ref) is
-// used verbatim, never double-prefixed.
+// branch name prefers its remote-tracking form (origin/<base>): the ref GitHub
+// diffs the PR against, which stays current even when local <base> has drifted
+// behind. It then falls back to the local branch (offline, or a local-only base
+// with no remote). An already-qualified base (an origin/ prefix or a full
+// refs/ ref) is used verbatim, never double-prefixed.
 export function baseRefCandidates(base: string): string[] {
 	if (base.startsWith('origin/') || base.startsWith('refs/')) return [base];
 	return [`origin/${base}`, base];
