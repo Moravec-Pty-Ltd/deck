@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isFlagSafe } from './agents/args';
 import type { DiffFile } from '$lib/diff';
-import { type DiffStats, joinDiffFiles, diffStats } from './diff-core';
+import { type DiffStats, joinDiffFiles, diffStats, baseRefCandidates } from './diff-core';
 
 const exec = promisify(execFile);
 
@@ -271,13 +271,20 @@ async function mergeBaseOf(repo: string, ref: string): Promise<string | null> {
 	}
 }
 
-// The base ref to diff against and its merge-base with HEAD, or null if neither
-// the requested base nor the default branch shares history with HEAD.
+// The base ref to diff against and its merge-base with HEAD, or null if none of
+// the candidate refs share history with HEAD. A stored base is tried in
+// remote-then-local order (baseRefCandidates) so the diff matches the PR even
+// when local <base> has drifted behind origin/<base>; the base-less default
+// prefers the remote default via origin/HEAD, falling back to local main/master.
 async function pickBase(repo: string, base: string | undefined): Promise<DiffBase | null> {
-	const ref = base || (await defaultBranchRef(repo));
-	if (!ref) return null;
-	const mergeBase = await mergeBaseOf(repo, ref);
-	return mergeBase ? { baseRef: ref, mergeBase, baseResolved: true } : null;
+	const candidates = base
+		? baseRefCandidates(base)
+		: [await defaultBranchRef(repo)].filter((ref): ref is string => ref !== null);
+	for (const ref of candidates) {
+		const mergeBase = await mergeBaseOf(repo, ref);
+		if (mergeBase) return { baseRef: ref, mergeBase, baseResolved: true };
+	}
+	return null;
 }
 
 // Resolve the commit the diff is taken against: the merge-base of the
