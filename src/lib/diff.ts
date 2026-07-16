@@ -4,6 +4,19 @@ export interface DiffLine {
 	text: string;
 }
 
+// One changed file in the worktree diff (the Changes tab), shared between the
+// server that builds it (git.ts / diff-core.ts) and the client that renders the
+// per-file summary (DiffView.svelte).
+export type DiffFileStatus = 'added' | 'modified' | 'deleted' | 'renamed';
+export interface DiffFile {
+	path: string; // new path (destination path for a rename)
+	status: DiffFileStatus;
+	additions: number;
+	deletions: number;
+	binary: boolean;
+	oldPath?: string; // pre-rename path, set only for renames
+}
+
 // Line-level diff between two snippets via LCS. Used for Edit/MultiEdit where we
 // only have old_string/new_string. Falls back to a plain remove+add block for
 // large inputs to avoid an O(n*m) table blowup.

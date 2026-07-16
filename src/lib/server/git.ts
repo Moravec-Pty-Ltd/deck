@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isFlagSafe } from './agents/args';
+import type { DiffFile } from '$lib/diff';
+import { type DiffStats, joinDiffFiles, diffStats } from './diff-core';
 
 const exec = promisify(execFile);
 
@@ -212,17 +214,13 @@ const PATCH_CAP = 5 * 1024 * 1024; // ~5 MB of patch before we trim whole files
 // diff drivers, force a/ b/ prefixes regardless of diff.noprefix/mnemonicPrefix).
 const DIFF_FLAGS = ['--no-ext-diff', '--default-prefix'];
 
-export interface DiffStats {
-	fileCount: number;
-	additions: number;
-	deletions: number;
-}
-
-// Public summary the diff endpoint returns alongside the patch.
+// Public summary the diff endpoint returns alongside the patch. `files` is the
+// per-file breakdown (status + per-file counts); the DiffStats totals feed the badge.
 export interface WorktreeDiffMeta extends DiffStats {
 	baseRef: string;
 	baseResolved: boolean;
 	truncated: boolean;
+	files: DiffFile[];
 }
 
 export interface WorktreeDiff {
@@ -355,20 +353,6 @@ async function diffContext(repo: string, base: string | undefined): Promise<Diff
 	return { base: resolved, env, cleanup };
 }
 
-// Sum additions/deletions from `git diff --numstat`. Binary rows report `-` and
-// contribute 0; fileCount is the row count.
-export function parseNumstat(out: string): DiffStats {
-	const rows = out.split('\n').filter(Boolean);
-	let additions = 0;
-	let deletions = 0;
-	for (const row of rows) {
-		const [add, del] = row.split('\t');
-		additions += Number(add) || 0;
-		deletions += Number(del) || 0;
-	}
-	return { fileCount: rows.length, additions, deletions };
-}
-
 // Cap the patch at PATCH_CAP on whole-file boundaries so a giant diff can't
 // freeze the renderer; truncated says whether any files were dropped.
 export function capPatch(patch: string): { patch: string; truncated: boolean } {
@@ -384,8 +368,27 @@ export function capPatch(patch: string): { patch: string; truncated: boolean } {
 	return { patch: kept.join(''), truncated: kept.length < files.length };
 }
 
-function buildMeta(base: DiffBase, stats: DiffStats, truncated: boolean): WorktreeDiffMeta {
-	return { ...stats, baseRef: base.baseRef, baseResolved: base.baseResolved, truncated };
+function buildMeta(base: DiffBase, files: DiffFile[], truncated: boolean): WorktreeDiffMeta {
+	return {
+		...diffStats(files),
+		files,
+		baseRef: base.baseRef,
+		baseResolved: base.baseResolved,
+		truncated
+	};
+}
+
+// `git diff` flags shared by the per-file summary calls: `-M` detects renames
+// (so they collapse to one entry) and `-z` NUL-delimits records with raw paths.
+const NAME_STAT_FLAGS = [...DIFF_FLAGS, '-M', '-z'];
+
+// The per-file breakdown: status letters from `--name-status`, per-file counts
+// from `--numstat`, joined on the new path. Reuses the caller's diff env so
+// untracked (intent-to-add) files still surface as additions.
+async function diffFiles(cwd: string, env: NodeJS.ProcessEnv, mb: string): Promise<DiffFile[]> {
+	const nameStatus = await gitBig(cwd, env, 'diff', ...NAME_STAT_FLAGS, '--name-status', mb, '--');
+	const numstat = await gitBig(cwd, env, 'diff', ...NAME_STAT_FLAGS, '--numstat', mb, '--');
+	return joinDiffFiles(nameStatus, numstat);
 }
 
 // All changes in `cwd` since its base branch as one unified patch: committed +
@@ -396,10 +399,10 @@ export async function worktreeDiff(cwd: string, base?: string): Promise<Worktree
 	const ctx = await diffContext(cwd, base);
 	try {
 		const mb = ctx.base.mergeBase;
-		const numstat = await gitBig(cwd, ctx.env, 'diff', ...DIFF_FLAGS, '--numstat', mb, '--');
+		const files = await diffFiles(cwd, ctx.env, mb);
 		const raw = await gitBig(cwd, ctx.env, 'diff', ...DIFF_FLAGS, mb, '--');
 		const capped = capPatch(raw);
-		return { patch: capped.patch, meta: buildMeta(ctx.base, parseNumstat(numstat), capped.truncated) };
+		return { patch: capped.patch, meta: buildMeta(ctx.base, files, capped.truncated) };
 	} finally {
 		ctx.cleanup();
 	}
@@ -410,8 +413,8 @@ export async function worktreeDiff(cwd: string, base?: string): Promise<Worktree
 export async function worktreeDiffMeta(cwd: string, base?: string): Promise<WorktreeDiffMeta> {
 	const ctx = await diffContext(cwd, base);
 	try {
-		const numstat = await gitBig(cwd, ctx.env, 'diff', ...DIFF_FLAGS, '--numstat', ctx.base.mergeBase, '--');
-		return buildMeta(ctx.base, parseNumstat(numstat), false);
+		const files = await diffFiles(cwd, ctx.env, ctx.base.mergeBase);
+		return buildMeta(ctx.base, files, false);
 	} finally {
 		ctx.cleanup();
 	}
