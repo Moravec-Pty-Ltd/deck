@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import type { DeckSession } from '$lib/types';
+	import type { DiffFile, DiffFileStatus } from '$lib/diff';
 	import { RefreshCw, Columns2, Rows2 } from '@lucide/svelte';
 
 	let {
@@ -20,6 +21,15 @@
 		baseRef: string;
 		baseResolved: boolean;
 		truncated: boolean;
+		files: DiffFile[];
+	};
+
+	// Per-file status glyph, colour and sort order for the summary list.
+	const STATUS: Record<DiffFileStatus, { letter: string; label: string; cls: string; order: number }> = {
+		added: { letter: 'A', label: 'Added', cls: 'text-success', order: 0 },
+		modified: { letter: 'M', label: 'Modified', cls: 'text-warning', order: 1 },
+		renamed: { letter: 'R', label: 'Renamed', cls: 'text-info', order: 2 },
+		deleted: { letter: 'D', label: 'Deleted', cls: 'text-error', order: 3 }
 	};
 
 	// @pierre/diffs is a Shadow-DOM web component built on Shiki, so it only runs
@@ -30,6 +40,10 @@
 	// Only cleanUp() is needed across renders; structural typing avoids the
 	// FileDiff<undefined> vs FileDiff<unknown> generic-variance friction.
 	let instances: { cleanUp(): void }[] = [];
+	// The rendered @pierre/diffs mount per file path, so a summary row can scroll to
+	// its diff block. Rebuilt on every render(); a path with no mount (a
+	// truncated-out file) just no-ops on click.
+	let fileMounts = new Map<string, HTMLElement>();
 
 	let container = $state<HTMLDivElement>();
 	let ready = $state(false); // the lazy @pierre/diffs import has resolved
@@ -72,6 +86,7 @@
 			}
 		}
 		instances = [];
+		fileMounts.clear();
 		if (container) container.innerHTML = '';
 	}
 
@@ -84,6 +99,7 @@
 			const mount = document.createElement('div');
 			mount.className = 'diff-file';
 			container.appendChild(mount);
+			fileMounts.set(fileDiff.name, mount);
 			const inst = new diffs.FileDiff({
 				theme: { dark: 'github-dark', light: 'github-light' },
 				themeType: isDark ? 'dark' : 'light',
@@ -97,6 +113,12 @@
 			inst.render({ fileDiff, containerWrapper: mount });
 			instances.push(inst);
 		}
+	}
+
+	// Scroll a summary row's diff block into view. No-op if that file's diff isn't
+	// mounted (e.g. it was dropped by the size cap).
+	function jumpTo(path: string) {
+		fileMounts.get(path)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 	}
 
 	async function load() {
@@ -192,6 +214,13 @@
 	});
 
 	const empty = $derived(!!meta && meta.fileCount === 0);
+	// Grouped by status (added, modified, renamed, deleted) then path, so the kinds
+	// of change read at a glance regardless of git's alphabetical patch order.
+	const sortedFiles = $derived(
+		[...(meta?.files ?? [])].sort(
+			(a, b) => STATUS[a.status].order - STATUS[b.status].order || a.path.localeCompare(b.path)
+		)
+	);
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
@@ -242,8 +271,8 @@
 	{/if}
 	{#if meta?.truncated}
 		<div class="alert alert-warning mb-2 py-2 text-xs">
-			Diff too large. Showing the first {shownFiles}
-			{shownFiles === 1 ? 'file' : 'files'}; the rest were omitted.
+			Diff too large. All {meta.fileCount} files are listed below; showing the first {shownFiles}
+			{shownFiles === 1 ? 'diff' : 'diffs'}, the rest were omitted.
 		</div>
 	{/if}
 	{#if errMsg}
@@ -257,6 +286,43 @@
 			</div>
 		{:else if empty}
 			<div class="flex h-full items-center justify-center text-sm opacity-60">No changes vs base.</div>
+		{/if}
+		{#if !empty && sortedFiles.length > 0}
+			<ul class="mb-3 flex flex-col gap-px text-xs">
+				{#each sortedFiles as file (file.path)}
+					<li>
+						<button
+							type="button"
+							class="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-base-200"
+							onclick={() => jumpTo(file.path)}
+							title="Jump to {file.path}"
+						>
+							<span
+								class="w-4 shrink-0 text-center font-mono font-semibold {STATUS[file.status].cls}"
+								title={STATUS[file.status].label}
+								aria-label={STATUS[file.status].label}>{STATUS[file.status].letter}</span
+							>
+							<span class="min-w-0 flex-1 truncate font-mono">
+								{#if file.status === 'renamed' && file.oldPath}
+									<span class="opacity-60">{file.oldPath} → </span>{file.path}
+								{:else}
+									{file.path}
+								{/if}
+							</span>
+							{#if file.binary}
+								<span class="shrink-0 opacity-50">binary</span>
+							{:else}
+								{#if file.additions}<span class="shrink-0 font-mono text-success"
+										>+{file.additions}</span
+									>{/if}
+								{#if file.deletions}<span class="shrink-0 font-mono text-error"
+										>-{file.deletions}</span
+									>{/if}
+							{/if}
+						</button>
+					</li>
+				{/each}
+			</ul>
 		{/if}
 		<div bind:this={container} class="space-y-3" class:hidden={empty}></div>
 	</div>

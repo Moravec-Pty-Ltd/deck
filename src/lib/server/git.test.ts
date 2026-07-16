@@ -7,7 +7,6 @@ import {
 	createWorktree,
 	worktreeAddArgs,
 	worktreeDiff,
-	parseNumstat,
 	capPatch,
 	fetchPullRef,
 	parseOriginRepo,
@@ -222,28 +221,6 @@ describe('cloneRepo against a real repo', () => {
 	});
 });
 
-describe('parseNumstat', () => {
-	it('sums additions and deletions and counts files', () => {
-		expect(parseNumstat('3\t1\tone.txt\n0\t2\ttwo.txt\n')).toEqual({
-			fileCount: 2,
-			additions: 3,
-			deletions: 3
-		});
-	});
-
-	it('treats binary rows (-) as zero', () => {
-		expect(parseNumstat('-\t-\timg.png\n5\t0\tcode.ts\n')).toEqual({
-			fileCount: 2,
-			additions: 5,
-			deletions: 0
-		});
-	});
-
-	it('is empty for an empty diff', () => {
-		expect(parseNumstat('')).toEqual({ fileCount: 0, additions: 0, deletions: 0 });
-	});
-});
-
 describe('capPatch', () => {
 	it('keeps a patch under the cap untouched', () => {
 		const patch = 'diff --git a/f b/f\n+hi\n';
@@ -277,6 +254,8 @@ describe('worktreeDiff against a real repo', () => {
 
 	execFileSync('git', ['init', '-q', '-b', 'main', repo], { env });
 	write('tracked.txt', 'base\n');
+	write('to-rename.txt', 'r1\nr2\nr3\n');
+	fs.writeFileSync(path.join(repo, 'bin.dat'), Buffer.from([0, 1, 2, 3]));
 	run('add', '-A');
 	run('commit', '-qm', 'base');
 	run('checkout', '-qb', 'feature');
@@ -287,6 +266,8 @@ describe('worktreeDiff against a real repo', () => {
 	run('add', 'staged.txt');
 	write('tracked.txt', 'base\nunstaged\n');
 	write('untracked.txt', 'untracked\n');
+	run('mv', 'to-rename.txt', 'renamed.txt'); // staged pure rename
+	fs.writeFileSync(path.join(repo, 'bin.dat'), Buffer.from([4, 5, 6, 7, 255])); // binary change
 
 	afterAll(() => {
 		fs.rmSync(repo, { recursive: true, force: true });
@@ -300,8 +281,19 @@ describe('worktreeDiff against a real repo', () => {
 		expect(patch).toContain('staged.txt');
 		expect(patch).toContain('+unstaged');
 		expect(patch).toContain('untracked.txt');
-		expect(meta.fileCount).toBe(4);
-		expect(meta.additions).toBe(4);
+		expect(meta.fileCount).toBe(6);
+		expect(meta.additions).toBe(4); // rename (0/0) and binary (-/-) add nothing
+	});
+
+	it('reports a per-file breakdown with status, counts, renames and binary', async () => {
+		const { meta } = await worktreeDiff(repo, 'main');
+		const byPath = Object.fromEntries(meta.files.map((f) => [f.path, f]));
+		expect(meta.files).toHaveLength(6);
+		expect(byPath['committed.txt']).toMatchObject({ status: 'added', additions: 1, binary: false });
+		expect(byPath['tracked.txt']).toMatchObject({ status: 'modified', additions: 1 });
+		expect(byPath['untracked.txt']).toMatchObject({ status: 'added', additions: 1 });
+		expect(byPath['renamed.txt']).toMatchObject({ status: 'renamed', oldPath: 'to-rename.txt' });
+		expect(byPath['bin.dat']).toMatchObject({ status: 'modified', binary: true });
 	});
 
 	it('leaves the real index untouched (untracked stays untracked)', async () => {
