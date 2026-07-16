@@ -323,31 +323,36 @@ describe('worktreeDiff base resolution against origin', () => {
 		GIT_COMMITTER_NAME: 't',
 		GIT_COMMITTER_EMAIL: 't@t'
 	};
-	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-origin-diff-')));
-	const originDir = path.join(root, 'origin.git');
-	const work = path.join(root, 'work');
-	const run = (...args: string[]) => execFileSync('git', ['-C', work, ...args], { env });
-	const write = (name: string, body: string) => fs.writeFileSync(path.join(work, name), body);
+	let root: string;
+	let work: string;
 
-	execFileSync('git', ['init', '-q', '--bare', '-b', 'main', originDir], { env });
-	execFileSync('git', ['clone', '-q', originDir, work], { env });
-	write('a.txt', 'base\n');
-	run('add', '-A');
-	run('commit', '-qm', 'init');
-	run('push', '-q', 'origin', 'main');
-	// origin/main advances with a big unrelated commit; local main stays behind it.
-	for (let i = 0; i < 20; i++) write(`big_${i}.txt`, 'x\n');
-	run('add', '-A');
-	run('commit', '-qm', 'big advance');
-	run('push', '-q', 'origin', 'main');
-	run('reset', '-q', '--hard', 'HEAD~1'); // local main now stale vs origin/main
-	run('fetch', '-q', 'origin');
-	// A feature branch cut from the up-to-date origin/main plus a local-only base.
-	run('checkout', '-q', '-b', 'feature', 'origin/main');
-	run('branch', 'local-only');
-	write('feature.txt', 'feat\n');
-	run('add', '-A');
-	run('commit', '-qm', 'small feature change');
+	beforeAll(() => {
+		root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-origin-diff-')));
+		const originDir = path.join(root, 'origin.git');
+		work = path.join(root, 'work');
+		const run = (...args: string[]) => execFileSync('git', ['-C', work, ...args], { env });
+		const write = (name: string, body: string) => fs.writeFileSync(path.join(work, name), body);
+
+		execFileSync('git', ['init', '-q', '--bare', '-b', 'main', originDir], { env });
+		execFileSync('git', ['clone', '-q', originDir, work], { env });
+		write('a.txt', 'base\n');
+		run('add', '-A');
+		run('commit', '-qm', 'init');
+		run('push', '-q', 'origin', 'main');
+		// origin/main advances with a big unrelated commit; local main stays behind it.
+		for (let i = 0; i < 20; i++) write(`big_${i}.txt`, 'x\n');
+		run('add', '-A');
+		run('commit', '-qm', 'big advance');
+		run('push', '-q', 'origin', 'main');
+		run('reset', '-q', '--hard', 'HEAD~1'); // local main now stale vs origin/main
+		run('fetch', '-q', 'origin');
+		// A feature branch cut from the up-to-date origin/main plus a local-only base.
+		run('checkout', '-q', '-b', 'feature', 'origin/main');
+		run('branch', 'local-only');
+		write('feature.txt', 'feat\n');
+		run('add', '-A');
+		run('commit', '-qm', 'small feature change');
+	});
 
 	afterAll(() => {
 		fs.rmSync(root, { recursive: true, force: true });
