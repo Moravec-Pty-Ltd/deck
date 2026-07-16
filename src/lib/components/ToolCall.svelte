@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Linked from './Linked.svelte';
+	import AnsiText from './AnsiText.svelte';
 	import Diff from './Diff.svelte';
 	import { lineDiff, addedLines, looksLikeDiff, parseUnified } from '$lib/diff';
 	import { shortPath } from '$lib/time';
@@ -122,7 +122,7 @@
 					{#if looksLikeDiff(resText)}
 						<Diff lines={parseUnified(resText)} />
 					{:else}
-						<div class="terminal-output max-h-72 overflow-y-auto rounded-box border border-base-300 px-2 py-1.5 {isErr ? 'text-error' : 'opacity-80'}"><Linked text={shownResult} />{#if clipped}{'\n'}…{/if}</div>
+						<div class="terminal-output max-h-72 overflow-y-auto rounded-box border border-base-300 px-2 py-1.5 {isErr ? 'text-error' : 'opacity-80'}"><AnsiText text={shownResult} />{#if clipped}{'\n'}…{/if}</div>
 					{/if}
 				{/if}
 			{/if}
@@ -164,11 +164,11 @@
 
 		{#if !hideResult && name !== 'Bash'}
 			{#if isErr}
-				<div class="terminal-output max-h-72 overflow-y-auto rounded-box border border-error/40 bg-error/5 px-2 py-1.5 text-error"><Linked text={shownResult} /></div>
+				<div class="terminal-output max-h-72 overflow-y-auto rounded-box border border-error/40 bg-error/5 px-2 py-1.5 text-error"><AnsiText text={shownResult} /></div>
 			{:else if resText}
 				<details>
 					<summary class="cursor-pointer select-none text-xs opacity-50">output</summary>
-					<div class="terminal-output mt-1 max-h-72 overflow-y-auto rounded-box border border-base-300 px-2 py-1.5 opacity-80"><Linked text={shownResult} />{#if clipped}{'\n'}…{/if}</div>
+					<div class="terminal-output mt-1 max-h-72 overflow-y-auto rounded-box border border-base-300 px-2 py-1.5 opacity-80"><AnsiText text={shownResult} />{#if clipped}{'\n'}…{/if}</div>
 				</details>
 			{/if}
 		{/if}
