@@ -101,7 +101,7 @@ describe('baseRefCandidates', () => {
 		expect(baseRefCandidates('origin/main')).toEqual(['origin/main']);
 	});
 
-	it('uses a full refs/… ref verbatim', () => {
+	it('uses a full refs/ ref verbatim', () => {
 		expect(baseRefCandidates('refs/heads/main')).toEqual(['refs/heads/main']);
 	});
 });
