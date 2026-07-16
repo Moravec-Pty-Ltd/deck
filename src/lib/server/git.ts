@@ -275,7 +275,7 @@ async function mergeBaseOf(repo: string, ref: string): Promise<string | null> {
 // the candidate refs shares history with HEAD. A stored base is tried in
 // remote-then-local order (baseRefCandidates) so the diff matches the PR even
 // when local <base> has drifted behind origin/<base>; the base-less default
-// already resolves to a remote ref (origin/HEAD).
+// prefers the remote default via origin/HEAD, falling back to local main/master.
 async function pickBase(repo: string, base: string | undefined): Promise<DiffBase | null> {
 	const candidates = base
 		? baseRefCandidates(base)
