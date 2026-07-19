@@ -1,5 +1,6 @@
 import webpush, { type PushSubscription } from 'web-push';
 import { readJson, writeJson } from './config';
+import { apnsNotify } from './apns';
 
 // Web Push so the installed PWA gets notified (question asked, turn ended,
 // session crashed/exited) even when it's backgrounded on a phone. VAPID keys and
@@ -89,8 +90,10 @@ function redactEndpoint(endpoint: string): string {
 }
 
 // Fire-and-forget push to every subscription; prune ones the push service has
-// expired (404/410).
+// expired (404/410). Also fans out to any registered APNs devices (native
+// iOS/watchOS), independent of whether any web push subscription exists.
 export function notify(payload: NotifyPayload): void {
+	void apnsNotify(payload);
 	const subs = listSubs();
 	if (!subs.length) return;
 	const data = JSON.stringify(payload);

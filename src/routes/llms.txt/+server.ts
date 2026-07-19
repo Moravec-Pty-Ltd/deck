@@ -258,6 +258,23 @@ correlates the resulting turn). On failure \`{ "ok": false, "reason": ... }\`:
 - \`askid-required\` — a workflow checkpoint is waiting but no \`askId\` was sent.
 - \`askid-mismatch\` — the \`askId\` doesn't match the waiting checkpoint.
 
+## Push notifications
+
+Native iOS/watchOS clients register a device token to receive the same nudges
+the installed PWA gets over web push (question asked, turn finished, session
+crashed/exited, PR/workflow updates). Disabled server-side until an APNs key
+is configured; registering is harmless either way.
+
+### POST /api/push/apns/register
+
+\`{ "token": "...", "platform": "ios" | "watchos", "env": "development" | "production" }\`,
+upsert this device (\`token\` is the hex APNs device token). Returns
+\`{ "ok": true }\`.
+
+### POST /api/push/apns/unregister
+
+\`{ "token": "..." }\`, stop sending to this device. Returns \`{ "ok": true }\`.
+
 ## Monitoring — the event log
 
 Every session transition is appended to a durable, monotonically-sequenced log
