@@ -13,7 +13,6 @@ import * as core from './apns-core';
 const CONFIG_FILE = 'apns.json';
 const DEVICES_FILE = 'apns-devices.json';
 
-const DEFAULT_TEAM_ID = '7E2VA357ZD';
 const DEFAULT_TOPIC = 'tech.moravec.deck';
 
 interface ApnsFileConfig {
@@ -36,7 +35,7 @@ function resolveConfig(): ResolvedConfig {
 	const file = readJson<ApnsFileConfig>(CONFIG_FILE, {});
 	return {
 		keyId: process.env.DECK_APNS_KEY_ID?.trim() || file.keyId || '',
-		teamId: process.env.DECK_APNS_TEAM_ID?.trim() || file.teamId || DEFAULT_TEAM_ID,
+		teamId: process.env.DECK_APNS_TEAM_ID?.trim() || file.teamId || '',
 		topic: process.env.DECK_APNS_TOPIC?.trim() || file.topic || DEFAULT_TOPIC,
 		keyPath:
 			process.env.DECK_APNS_KEY_PATH?.trim() || file.keyPath || path.join(dataDir, 'apns-key.p8')
@@ -57,12 +56,12 @@ const signingKey = loadSigningKey(config.keyPath);
 // Silently disabled when the key file or keyId is missing, same as push.ts
 // with no subscriptions - logged once here (not per send) so it's visible at
 // startup without spamming every notify() call.
-const apnsEnabled = Boolean(signingKey && config.keyId);
+const apnsEnabled = Boolean(signingKey && config.keyId && config.teamId);
 if (!apnsEnabled) {
 	console.log(
-		signingKey
-			? '[deck] APNs disabled: no keyId configured (DECK_APNS_KEY_ID or apns.json)'
-			: `[deck] APNs disabled: no key file at ${config.keyPath}`
+		!signingKey
+			? `[deck] APNs disabled: no key file at ${config.keyPath}`
+			: '[deck] APNs disabled: keyId and teamId are required (DECK_APNS_* or apns.json)'
 	);
 }
 
