@@ -87,7 +87,8 @@ Dev server: `pnpm dev`.
 | `HOST` | `0.0.0.0` | Bind address |
 | `DECK_DATA` | `~/.deck` | Data directory (state, transcripts, keys) |
 | `DECK_TOKEN` | random | Override the generated access token |
-| `DECK_NO_AUTH` | unset | Set to `1` to skip the token gate entirely |
+| `DECK_NO_AUTH` | unset | Set to `1` to skip the token gate entirely. **Only safe when the network path is genuinely private** (Tailscale with Funnel off, loopback, or a LAN), never on a raw public tunnel. If the resolved host (`DECK_BASE_URL`) isn't obviously private, deck ignores this flag and keeps the gate on. |
+| `DECK_NO_AUTH_PUBLIC` | unset | Set to `1` to force `DECK_NO_AUTH` even when the host looks public, acknowledging the app is served unauthenticated to anyone with the URL. Don't use this with a raw public tunnel; carry the token instead. |
 | `DECK_DEMO` | unset | Set to `1` to serve a fixed, sanitized demo dataset instead of `~/.deck` (used for the README screenshots). Skips auth and the host tmux scan, so it never shows real sessions or paths. |
 | `DECK_PUSH_SUBJECT` | `mailto:info@moravec.tech` | VAPID contact for web push (Apple rejects a localhost mailto) |
 
@@ -101,6 +102,8 @@ HOST=127.0.0.1 PORT=4818 DECK_NO_AUTH=1 node build/index.js
 ```
 
 `DECK_NO_AUTH=1` drops the token gate, which is redundant once only the tailnet can reach it. Leave it unset to keep token auth.
+
+**Public tunnels: keep the token on.** `DECK_NO_AUTH` is safe only when the network path itself is private (Tailscale with Funnel off, loopback, a LAN, or an authenticating proxy like Cloudflare Access in front). deck can't see the network path, so it treats the resolved host (`DECK_BASE_URL`) as the signal: if no-auth is set but the host isn't obviously private (not loopback, not a `.ts.net` / `100.64.0.0/10` Tailscale address, not RFC1918), deck ignores the flag, keeps the gate on, and logs a warning rather than exposing every route to the open internet. If you reach deck over a raw public tunnel (a Cloudflare/ngrok-style hostname), don't set `DECK_NO_AUTH` at all: authenticate the browser once via `/?token=` or the QR/pairing flow, and have native/programmatic clients send the bearer token per request. (`DECK_NO_AUTH_PUBLIC=1` overrides the guardrail if you really are behind an authenticating proxy, but a plain tunnel is not that.)
 
 The dev server does this for you: `vite dev` runs a small plugin that registers a `tailscale serve` for the lifetime of the process (see `vite.config.ts`). It's on by default; set `DECK_NO_TAILSCALE=1` to opt out (no tailscale installed, native Windows, or you just don't want it), and the dev server runs without touching tailscale.
 

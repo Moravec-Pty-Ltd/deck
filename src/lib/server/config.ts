@@ -91,10 +91,101 @@ export function tokenMatches(candidate: string | null | undefined): boolean {
 	return crypto.timingSafeEqual(candidateHash, authTokenHash);
 }
 
-// When fronted by Tailscale, the tailnet is the access boundary; the token gate
-// is redundant. Set DECK_NO_AUTH=1 to skip it. Demo mode also bypasses auth.
-export const noAuth =
-	DEMO || process.env.DECK_NO_AUTH === '1' || process.env.DECK_NO_AUTH === 'true';
+// Paths an unauthenticated client may reach: the token-paste login, the pairing
+// request flow (a new device asking for access), and the public agent-API
+// contract. Shared by the request hook and the root layout guard so the two gates
+// never disagree on what's public.
+export const PUBLIC_PATHS = new Set(['/login', '/pair', '/api/pair/request', '/api/pair/status']);
+
+// Does this request already carry a valid credential - the per-request header
+// token (programmatic clients) or the session cookie (browsers)? Shared by the
+// request hook and the root layout load so the token check lives in one place
+// (issue #164). The ?token= URL exchange stays in the hook: it mints the cookie.
+export function requestIsAuthed(headers: Headers, cookies: Cookies): boolean {
+	return tokenMatches(headerToken(headers)) || tokenMatches(cookies.get(AUTH_COOKIE));
+}
+
+// Whether the DECK_NO_AUTH env flag (as opposed to demo mode) asked to drop the
+// token gate. Kept separate so the public-host guardrail below only second-guesses
+// a real deployment, never the canned demo dataset.
+const noAuthRequested = process.env.DECK_NO_AUTH === '1' || process.env.DECK_NO_AUTH === 'true';
+
+// Private/loopback/CGNAT IPv4 bands, as [firstOctet, minSecond, maxSecond]:
+// loopback, the three RFC1918 blocks, link-local, and the Tailscale 100.64.0.0/10
+// CGNAT range.
+const PRIVATE_IPV4: [number, number, number][] = [
+	[127, 0, 255],
+	[10, 0, 255],
+	[192, 168, 168],
+	[172, 16, 31],
+	[169, 254, 254],
+	[100, 64, 127]
+];
+
+function isPrivateIpv4(h: string): boolean {
+	const m = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(h);
+	if (!m) return false;
+	const a = Number(m[1]);
+	const b = Number(m[2]);
+	return PRIVATE_IPV4.some(([first, lo, hi]) => a === first && b >= lo && b <= hi);
+}
+
+// IPv6 literal: loopback (::1), link-local (fe80::/10), unique-local (fc00::/7).
+function isPrivateIpv6(h: string): boolean {
+	return h === '::1' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd');
+}
+
+// Is `host` provably a private access boundary? Loopback, a Tailscale address (a
+// `.ts.net` MagicDNS name or the 100.64.0.0/10 CGNAT range), or an RFC1918 /
+// link-local LAN address. Anything else - a public tunnel hostname, a routable IP,
+// or an unparseable/empty host - is treated as not private (issue #163).
+export function isPrivateHost(host: string): boolean {
+	const h = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+	if (!h) return false;
+	if (h === 'localhost' || h.endsWith('.localhost')) return true;
+	if (h.endsWith('.ts.net')) return true;
+	return h.includes(':') ? isPrivateIpv6(h) : isPrivateIpv4(h);
+}
+
+function hostFromBaseUrl(): string {
+	for (const candidate of [baseUrl, `http://${baseUrl}`]) {
+		try {
+			return new URL(candidate).hostname;
+		} catch {
+			// Try the scheme-prefixed form next; give up (unknown host) if both fail.
+		}
+	}
+	return '';
+}
+
+// DECK_NO_AUTH drops the token gate on the assumption that a private network path
+// (Tailscale, loopback, a LAN) is the real access boundary. deck can't see that
+// path, so it uses the configured host as the signal: if no-auth is on but the
+// host isn't obviously private, it's likely a public tunnel and the flag would
+// fling every route open to the internet (issue #163). Fail safe - keep the gate
+// on - unless DECK_NO_AUTH_PUBLIC=1 acknowledges the risk. Either way, warn loudly.
+function resolveNoAuth(): boolean {
+	if (DEMO) return true; // canned dataset; nothing real to expose
+	if (!noAuthRequested) return false;
+	const host = hostFromBaseUrl();
+	if (isPrivateHost(host)) return true;
+	const shown = host || baseUrl;
+	if (process.env.DECK_NO_AUTH_PUBLIC === '1' || process.env.DECK_NO_AUTH_PUBLIC === 'true') {
+		console.warn(
+			`[deck] WARNING: DECK_NO_AUTH is on and ${shown} is not a private host. Every route is served UNAUTHENTICATED to anyone who can reach this URL (DECK_NO_AUTH_PUBLIC=1 acknowledged). Prefer the token or QR/pairing flow for tunnelled access.`
+		);
+		return true;
+	}
+	console.error(
+		`[deck] Ignoring DECK_NO_AUTH: ${shown} is not obviously private (not loopback, Tailscale, or a LAN address), so the token gate stays ON rather than exposing deck unauthenticated on a public URL. Use the token or QR/pairing flow, or set DECK_NO_AUTH_PUBLIC=1 to override if this path really is private.`
+	);
+	return false;
+}
+
+// When fronted by Tailscale, the tailnet is the access boundary and the token gate
+// is redundant; DECK_NO_AUTH=1 (or demo mode) skips it. On a non-private host the
+// flag is refused unless DECK_NO_AUTH_PUBLIC=1 - see resolveNoAuth / issue #163.
+export const noAuth = resolveNoAuth();
 
 let printed = false;
 export function printAccessUrl(origin: string) {

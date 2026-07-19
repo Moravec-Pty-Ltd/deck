@@ -1,14 +1,8 @@
 import type { Handle, RequestEvent } from '@sveltejs/kit';
 import { redirect, json } from '@sveltejs/kit';
-import { AUTH_COOKIE, headerToken, noAuth, printAccessUrl, setAuthCookie, tokenMatches } from '$lib/server/config';
+import { PUBLIC_PATHS, noAuth, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches } from '$lib/server/config';
 import { ensureMcp } from '$lib/server/mcp';
 import '$lib/server/monitor';
-
-// Paths an unauthenticated browser may reach: the token-paste login, the pairing
-// request flow (a new device asking for access), and the public agent-API contract.
-// Everything else falls through to the auth gate. The pairing approve/pending
-// endpoints are deliberately absent - they require an already-authenticated browser.
-const PUBLIC_PATHS = new Set(['/login', '/pair', '/api/pair/request', '/api/pair/status']);
 
 // Start the localhost MCP server (blocking `ask` tool) and shell monitor at boot
 // so the MCP port is ready before any claude session spawns.
@@ -40,13 +34,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// no secrets, and a client needs it before it can authenticate).
 	if (event.url.pathname === '/llms.txt') return resolve(event);
 
-	// Programmatic clients authenticate per-request with a header; no cookie.
-	if (tokenMatches(headerToken(event.request.headers))) return resolve(event);
+	// A valid header token (programmatic clients) or session cookie (browsers)
+	// authenticates the request outright.
+	if (requestIsAuthed(event.request.headers, event.cookies)) return resolve(event);
 
+	// A valid ?token= mints the session cookie and redirects to a clean URL.
 	if (tokenMatches(event.url.searchParams.get('token'))) exchangeUrlToken(event);
 
-	const authed = tokenMatches(event.cookies.get(AUTH_COOKIE));
-	if (!authed && !PUBLIC_PATHS.has(event.url.pathname)) return deny(event);
-
-	return resolve(event);
+	if (PUBLIC_PATHS.has(event.url.pathname)) return resolve(event);
+	return deny(event);
 };

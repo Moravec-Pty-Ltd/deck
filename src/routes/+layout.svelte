@@ -3,6 +3,8 @@
 	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff, RefreshCw, X } from '@lucide/svelte';
 	import { urlBase64ToUint8Array } from '$lib/push';
 	import { watchForUpdate } from '$lib/pwa-update';
+	import { guardedFetch } from '$lib/api-guard';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 
@@ -35,6 +37,19 @@
 	// (sidebar + panel flush under the header); every other route wants the body
 	// padding, so scope it here rather than stripping it from every page.
 	const bodyPadding = $derived(page.url.pathname.startsWith('/s/') ? '' : 'p-3 sm:p-4');
+
+	// Bounce to /login when any /api call 401s (an expired or absent session), so
+	// the UI can't wedge on failed data. Defence-in-depth behind the load guard
+	// (issue #164). Skip if we're already on a public path.
+	$effect(() => {
+		const original = window.fetch;
+		window.fetch = guardedFetch(original, location.origin, () => {
+			if (location.pathname !== '/login' && location.pathname !== '/pair') goto('/login');
+		});
+		return () => {
+			window.fetch = original;
+		};
+	});
 
 	let updateReady = $state(false);
 	let refreshing = false;
