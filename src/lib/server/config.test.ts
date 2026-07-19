@@ -157,6 +157,8 @@ describe('noAuth guardrail (#163)', () => {
 		expect(await loadNoAuth({ DECK_NO_AUTH: '1', DECK_BASE_URL: 'http://localhost:4818' })).toBe(true);
 		expect(await loadNoAuth({ DECK_NO_AUTH: '1', DECK_BASE_URL: 'https://box.ts.net:4818' })).toBe(true);
 		expect(await loadNoAuth({ DECK_NO_AUTH: '1', DECK_BASE_URL: 'http://100.100.0.12:4818' })).toBe(true);
+		// Scheme-less base URL: the host parse must fall back to the http:// form.
+		expect(await loadNoAuth({ DECK_NO_AUTH: '1', DECK_BASE_URL: 'localhost:4818' })).toBe(true);
 	});
 
 	it('ignores DECK_NO_AUTH on a public host and warns', async () => {

@@ -154,7 +154,11 @@ export function isPrivateHost(host: string): boolean {
 function hostFromBaseUrl(): string {
 	for (const candidate of [baseUrl, `http://${baseUrl}`]) {
 		try {
-			return new URL(candidate).hostname;
+			// A scheme-less base URL like `localhost:4818` parses with `localhost:` as
+			// the protocol and an empty hostname, so only accept a non-empty hostname
+			// and otherwise fall through to the http://-prefixed form.
+			const { hostname } = new URL(candidate);
+			if (hostname) return hostname;
 		} catch {
 			// Try the scheme-prefixed form next; give up (unknown host) if both fail.
 		}
