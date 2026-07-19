@@ -13,7 +13,14 @@
 </script>
 
 {#if task}
-	<li><input type="checkbox" {checked} disabled />{@render children?.()}</li>
+	<li class="task-list-item">
+		<input
+			type="checkbox"
+			{checked}
+			disabled
+			aria-label={checked ? 'Completed task' : 'Incomplete task'}
+		/>{@render children?.()}
+	</li>
 {:else}
 	<li>{@render children?.()}</li>
 {/if}

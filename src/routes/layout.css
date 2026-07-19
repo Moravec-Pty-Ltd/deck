@@ -425,12 +425,13 @@ h3,
 .markdown li::marker {
 	color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
 }
-/* GFM task lists: drop the bullet, keep the checkbox inline. */
-.markdown li:has(> input[type='checkbox']) {
+/* GFM task lists: drop the bullet, keep the checkbox inline. Target the class
+   MdListItem sets rather than :has(), which recalcs relationally on every item. */
+.markdown li.task-list-item {
 	list-style: none;
 	margin-inline-start: -1.2em;
 }
-.markdown li > input[type='checkbox'] {
+.markdown li.task-list-item > input[type='checkbox'] {
 	margin-inline-end: 0.4em;
 }
 .markdown blockquote {
