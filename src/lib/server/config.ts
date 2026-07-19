@@ -110,6 +110,12 @@ export function requestIsAuthed(headers: Headers, cookies: Cookies): boolean {
 // a real deployment, never the canned demo dataset.
 const noAuthRequested = process.env.DECK_NO_AUTH === '1' || process.env.DECK_NO_AUTH === 'true';
 
+// Explicit acknowledgement that no-auth on a non-private host is intended (an
+// authenticating proxy is in front). Skips the guardrail's refusal and its
+// warnings.
+const noAuthPublicAck =
+	process.env.DECK_NO_AUTH_PUBLIC === '1' || process.env.DECK_NO_AUTH_PUBLIC === 'true';
+
 // Private/loopback/CGNAT IPv4 bands, as [firstOctet, minSecond, maxSecond]:
 // loopback, the three RFC1918 blocks, link-local, and the Tailscale 100.64.0.0/10
 // CGNAT range.
@@ -178,7 +184,7 @@ function resolveNoAuth(): boolean {
 	const host = hostFromBaseUrl();
 	if (isPrivateHost(host)) return true;
 	const shown = host || baseUrl;
-	if (process.env.DECK_NO_AUTH_PUBLIC === '1' || process.env.DECK_NO_AUTH_PUBLIC === 'true') {
+	if (noAuthPublicAck) {
 		console.warn(
 			`[deck] WARNING: DECK_NO_AUTH is on and ${shown} is not a private host. Every route is served UNAUTHENTICATED to anyone who can reach this URL (DECK_NO_AUTH_PUBLIC=1 acknowledged). Prefer the token or QR/pairing flow for tunnelled access.`
 		);
@@ -194,6 +200,23 @@ function resolveNoAuth(): boolean {
 // is redundant; DECK_NO_AUTH=1 (or demo mode) skips it. On a non-private host the
 // flag is refused unless DECK_NO_AUTH_PUBLIC=1 - see resolveNoAuth / issue #163.
 export const noAuth = resolveNoAuth();
+
+// Request-time backstop for the boot guardrail. The boot check keys off
+// DECK_BASE_URL; if that's left at its localhost default while deck is actually
+// reached over a public tunnel, no-auth still slips through. Observing the real
+// request Host catches that and warns loudly, once. Deliberately a warning, not a
+// gate: the Host header is spoofable (a request can claim Host: localhost), so it
+// can't decide the bypass - the token stays the real boundary for public tunnels
+// (issue #163).
+let warnedPublicNoAuthHost = false;
+export function warnIfPublicNoAuthHost(hostname: string) {
+	if (warnedPublicNoAuthHost || !noAuth || !noAuthRequested || noAuthPublicAck) return;
+	if (isPrivateHost(hostname)) return;
+	warnedPublicNoAuthHost = true;
+	console.error(
+		`[deck] WARNING: DECK_NO_AUTH is serving requests on public host ${hostname} unauthenticated. If deck is reached over a public tunnel, unset DECK_NO_AUTH and carry the token (or set DECK_BASE_URL so the boot check can refuse). See the README on remote access.`
+	);
+}
 
 let printed = false;
 export function printAccessUrl(origin: string) {

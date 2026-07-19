@@ -185,6 +185,33 @@ describe('noAuth guardrail (#163)', () => {
 		expect(await loadNoAuth({ DECK_BASE_URL: 'https://deck.example.com' })).toBe(false);
 		expect(await loadNoAuth({ DECK_DEMO: '1', DECK_BASE_URL: 'https://deck.example.com' })).toBe(true);
 	});
+
+	it('warns once at request time when no-auth serves a public Host', async () => {
+		// DECK_BASE_URL stays private so the boot check passes; the leak only shows in
+		// the actual request Host (the DECK_BASE_URL-unset public-tunnel case).
+		const restore = pinEnv({
+			DECK_DATA: tmpDir,
+			DECK_TOKEN: 'x',
+			DECK_NO_AUTH: '1',
+			DECK_NO_AUTH_PUBLIC: undefined,
+			DECK_DEMO: undefined,
+			DECK_BASE_URL: 'http://localhost:4818'
+		});
+		vi.resetModules();
+		const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const mod = await import('./config');
+			expect(mod.noAuth).toBe(true);
+			mod.warnIfPublicNoAuthHost('localhost'); // private Host: no warning
+			expect(err).not.toHaveBeenCalled();
+			mod.warnIfPublicNoAuthHost('deck.example.com'); // public Host: warn
+			mod.warnIfPublicNoAuthHost('other.example.com'); // only once
+			expect(err).toHaveBeenCalledTimes(1);
+		} finally {
+			err.mockRestore();
+			restore();
+		}
+	});
 });
 
 describe('loadToken', () => {

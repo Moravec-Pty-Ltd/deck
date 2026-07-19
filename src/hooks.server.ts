@@ -1,6 +1,6 @@
 import type { Handle, RequestEvent } from '@sveltejs/kit';
 import { redirect, json } from '@sveltejs/kit';
-import { PUBLIC_PATHS, noAuth, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches } from '$lib/server/config';
+import { PUBLIC_PATHS, noAuth, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches, warnIfPublicNoAuthHost } from '$lib/server/config';
 import { ensureMcp } from '$lib/server/mcp';
 import '$lib/server/monitor';
 
@@ -27,6 +27,7 @@ function deny(event: RequestEvent): Response {
 
 export const handle: Handle = async ({ event, resolve }) => {
 	printAccessUrl(event.url.origin);
+	warnIfPublicNoAuthHost(event.url.hostname);
 
 	if (noAuth) return resolve(event);
 
