@@ -5,7 +5,10 @@ import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
 import { DEMO } from './demo';
 
-const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
+// Exported so callers that need a literal filesystem path outside the
+// readJson/writeJson helpers (e.g. apns.ts's default key file location) still
+// respect a DECK_DATA override in tests.
+export const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
 export const transcriptsDir = path.join(dataDir, 'transcripts');
 // Per-session resume files for per-turn agents (pi session files, etc).
 export const agentSessionsDir = path.join(dataDir, 'agent-sessions');
