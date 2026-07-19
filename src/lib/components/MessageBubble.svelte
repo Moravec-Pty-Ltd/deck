@@ -2,21 +2,32 @@
 	import type { Snippet } from 'svelte';
 	import { Copy, Check } from '@lucide/svelte';
 	import Linked from './Linked.svelte';
+	import Markdown from './Markdown.svelte';
 	import { haptic } from '$lib/haptics';
 
 	// A transcript message bubble (user / assistant / live) with a copy affordance:
 	// a hover copy button on desktop, a long-press to copy on touch. Copies the raw
-	// `text` verbatim. `children` renders before the text (e.g. a user message's
-	// attached images).
+	// `text` verbatim (the Markdown source, not the rendered HTML). `children`
+	// renders before the text (e.g. a user message's attached images).
+	//
+	// `markdown` renders `text` as Markdown (assistant/live/thinking) instead of
+	// plain text + URL autolinks; `streaming`/`streamId` are forwarded to the
+	// renderer for the live block, which receives partial Markdown as it streams.
 	let {
 		text = '',
 		side,
 		bubbleClass = '',
+		markdown = false,
+		streaming = false,
+		streamId,
 		children
 	}: {
 		text?: string;
 		side: 'start' | 'end';
 		bubbleClass?: string;
+		markdown?: boolean;
+		streaming?: boolean;
+		streamId?: string | number;
 		children?: Snippet;
 	} = $props();
 
@@ -77,7 +88,9 @@
 
 <div class="chat chat-{side}">
 	<div
-		class="chat-bubble bubble group relative max-w-[85%] whitespace-pre-wrap wrap-anywhere {bubbleClass}"
+		class="chat-bubble bubble group relative max-w-[85%] wrap-anywhere {markdown
+			? ''
+			: 'whitespace-pre-wrap'} {bubbleClass}"
 		role="group"
 		onpointerdown={onPointerDown}
 		onpointermove={onPointerMove}
@@ -86,7 +99,9 @@
 		onpointerleave={cancelPress}
 	>
 		{@render children?.()}
-		{#if text}<Linked {text} />{/if}
+		{#if markdown}<Markdown source={text} {streaming} {streamId} />{:else if text}<Linked
+				{text}
+			/>{/if}
 		{#if copyable}
 			<button
 				type="button"
