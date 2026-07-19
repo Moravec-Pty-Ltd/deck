@@ -111,8 +111,9 @@ describe('isPrivateHost', () => {
 			expect(isPrivateHost(h)).toBe(true);
 	});
 
-	it('treats IPv6 link-local and unique-local as private', () => {
-		for (const h of ['fe80::1', 'fc00::1', 'fd12:3456::1']) expect(isPrivateHost(h)).toBe(true);
+	it('treats IPv6 link-local (across fe80::/10) and unique-local as private', () => {
+		for (const h of ['fe80::1', 'fe9a::1', 'feb0::1', 'fc00::1', 'fd12:3456::1'])
+			expect(isPrivateHost(h)).toBe(true);
 	});
 
 	it('treats public hosts and out-of-range IPs as not private', () => {
@@ -125,6 +126,7 @@ describe('isPrivateHost', () => {
 			'100.63.0.1', // just below the CGNAT 100.64-127 band
 			'100.128.0.1', // just above it
 			'fc-barcelona.com', // a hostname, not an fc00::/7 IPv6 literal
+			'fec0::1', // deprecated site-local, outside the link-local /10
 			''
 		])
 			expect(isPrivateHost(h)).toBe(false);

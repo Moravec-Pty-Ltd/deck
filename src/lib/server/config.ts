@@ -130,9 +130,13 @@ function isPrivateIpv4(h: string): boolean {
 	return PRIVATE_IPV4.some(([first, lo, hi]) => a === first && b >= lo && b <= hi);
 }
 
-// IPv6 literal: loopback (::1), link-local (fe80::/10), unique-local (fc00::/7).
+// IPv6 literal: loopback (::1), unique-local (fc00::/7), or link-local. The
+// link-local block is fe80::/10, so its first hextet runs fe80-febf, not just
+// fe80.
 function isPrivateIpv6(h: string): boolean {
-	return h === '::1' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd');
+	if (h === '::1') return true;
+	if (h.startsWith('fc') || h.startsWith('fd')) return true;
+	return /^fe[89ab][0-9a-f]:/.test(h);
 }
 
 // Is `host` provably a private access boundary? Loopback, a Tailscale address (a
