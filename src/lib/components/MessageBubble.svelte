@@ -10,9 +10,10 @@
 	// `text` verbatim (the Markdown source, not the rendered HTML). `children`
 	// renders before the text (e.g. a user message's attached images).
 	//
-	// `markdown` renders `text` as Markdown (assistant/live/thinking) instead of
-	// plain text + URL autolinks; `streaming`/`streamId` are forwarded to the
+	// `markdown` renders `text` as Markdown (the assistant and live blocks) instead
+	// of plain text + URL autolinks; `streaming`/`streamId` are forwarded to the
 	// renderer for the live block, which receives partial Markdown as it streams.
+	// (Thinking blocks render Markdown directly via the Markdown component.)
 	let {
 		text = '',
 		side,
