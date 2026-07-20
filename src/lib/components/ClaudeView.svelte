@@ -11,6 +11,7 @@
 	} from '$lib/session-cost-core';
 	import { modelLabel } from '$lib/models';
 	import MessageBubble from './MessageBubble.svelte';
+	import Markdown from './Markdown.svelte';
 	import ToolCall from './ToolCall.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
@@ -43,6 +44,10 @@
 	let cost = $state<CostSummary>(emptyCostSummary());
 	let status = $state<string>(session.status);
 	let liveText = $state('');
+	// Identity of the current live stream, bumped each assistant message so the
+	// streaming Markdown renderer resets its buffer between turns (the live bubble
+	// is one recycled instance, not a per-message node).
+	let liveTurn = $state(0);
 	let input = $state(restored?.text ?? '');
 	let scroller: HTMLDivElement | undefined = $state();
 	let fileInput: HTMLInputElement | undefined = $state();
@@ -229,6 +234,7 @@
 		const t = ev.event?.type;
 		if (t === 'message_start') {
 			liveText = '';
+			liveTurn += 1;
 		} else if (t === 'content_block_delta' && ev.event.delta?.type === 'text_delta') {
 			liveText += ev.event.delta.text;
 			maybeScroll();
@@ -586,13 +592,18 @@
 			{:else if event.type === 'assistant'}
 				{#each contentBlocks(event) as block, j (j)}
 					{#if block.type === 'text' && block.text?.trim()}
-						<MessageBubble side="start" text={block.text} bubbleClass="bg-base-100 text-base-content" />
+						<MessageBubble
+							side="start"
+							text={block.text}
+							markdown
+							bubbleClass="bg-base-100 text-base-content"
+						/>
 					{:else if block.type === 'thinking' && block.thinking?.trim()}
 						<details class="px-2 text-xs opacity-50">
 							<summary class="cursor-pointer select-none">
 								<ChevronDown size={12} class="inline" /> thinking
 							</summary>
-							<pre class="break-words whitespace-pre-wrap pt-1">{block.thinking}</pre>
+							<div class="pt-1"><Markdown source={block.thinking} /></div>
 						</details>
 					{:else if block.type === 'tool_use' && isAskTool(block)}
 						<AskQuestion
@@ -611,7 +622,14 @@
 		{/each}
 
 		{#if loaded && liveText.trim()}
-			<MessageBubble side="start" text={liveText} bubbleClass="bg-base-100 text-base-content" />
+			<MessageBubble
+				side="start"
+				text={liveText}
+				markdown
+				streaming
+				streamId={liveTurn}
+				bubbleClass="bg-base-100 text-base-content"
+			/>
 		{:else if loaded && status === 'running'}
 			<div class="px-2 text-sm opacity-60">working...</div>
 		{/if}

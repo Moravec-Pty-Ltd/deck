@@ -367,3 +367,159 @@ h3,
 	   toward min-content sizing, so the box can actually shrink to the pane. */
 	overflow-wrap: anywhere;
 }
+
+/* ── Rendered Markdown for agent/assistant transcript bubbles (Markdown.svelte).
+   These are global (not scoped) because the nodes come from child renderer
+   components and {@html} Shiki output, which Svelte's scoped CSS can't reach.
+   Spacing lives on the block elements, since the bubble drops whitespace-pre-wrap
+   in markdown mode. Theme-aware via daisyUI tokens. ── */
+.markdown {
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+.markdown > :first-child {
+	margin-top: 0;
+}
+.markdown > :last-child {
+	margin-bottom: 0;
+}
+.markdown p {
+	margin: 0.5em 0;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+	margin: 0.8em 0 0.4em;
+	font-weight: 600;
+	line-height: 1.25;
+}
+.markdown h1 {
+	font-size: 1.4em;
+}
+.markdown h2 {
+	font-size: 1.25em;
+}
+.markdown h3 {
+	font-size: 1.1em;
+}
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+	font-size: 1em;
+}
+.markdown ul,
+.markdown ol {
+	margin: 0.5em 0;
+	padding-inline-start: 1.5em;
+}
+.markdown li {
+	margin: 0.15em 0;
+}
+.markdown li > ul,
+.markdown li > ol {
+	margin: 0.15em 0;
+}
+.markdown li::marker {
+	color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+}
+/* GFM task lists: drop the bullet, keep the checkbox inline. Target the class
+   MdListItem sets rather than :has(), which recalcs relationally on every item. */
+.markdown li.task-list-item {
+	list-style: none;
+	margin-inline-start: -1.2em;
+}
+.markdown li.task-list-item > input[type='checkbox'] {
+	margin-inline-end: 0.4em;
+}
+.markdown blockquote {
+	margin: 0.5em 0;
+	padding-inline-start: 0.8em;
+	border-inline-start: 3px solid var(--color-base-300);
+	color: color-mix(in oklch, var(--color-base-content) 75%, transparent);
+}
+.markdown hr {
+	margin: 0.8em 0;
+	border: 0;
+	border-top: 1px solid var(--color-base-300);
+}
+.markdown a {
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+/* Inline code (not a fenced block): a subtle chip. */
+.markdown :not(pre) > code {
+	font-family: 'Hack Nerd Font Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.9em;
+	padding: 0.1em 0.35em;
+	border-radius: var(--radius-field, 0.3125rem);
+	background: color-mix(in oklch, var(--color-base-content) 10%, transparent);
+	overflow-wrap: anywhere;
+}
+/* Fenced code: Shiki output (pre.shiki) and the escaped fallback (pre.shiki-fallback). */
+.markdown pre {
+	margin: 0.5em 0;
+	padding: 0.65em 0.8em;
+	border-radius: var(--radius-box, 0.375rem);
+	overflow-x: auto;
+	font-family: 'Hack Nerd Font Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.85em;
+	line-height: 1.45;
+	background: var(--color-base-200);
+	border: 1px solid var(--color-base-300);
+}
+.markdown pre code {
+	font: inherit;
+	white-space: pre;
+}
+/* Shiki dual theme: light by default, dark under [data-theme='dark']. Shiki emits
+   per-token --shiki-light/--shiki-dark custom properties (defaultColor:false), so
+   the theme switches by CSS alone with no re-highlight. */
+.markdown .shiki,
+.markdown .shiki span {
+	color: var(--shiki-light);
+}
+.markdown pre.shiki {
+	background: var(--shiki-light-bg);
+	border-color: transparent;
+}
+[data-theme='dark'] .markdown .shiki,
+[data-theme='dark'] .markdown .shiki span {
+	color: var(--shiki-dark);
+}
+[data-theme='dark'] .markdown pre.shiki {
+	background: var(--shiki-dark-bg);
+}
+/* e-ink: code stays monochrome, matching captured terminal output. */
+[data-theme='eink'] .markdown .shiki,
+[data-theme='eink'] .markdown .shiki span {
+	color: inherit;
+}
+[data-theme='eink'] .markdown pre.shiki {
+	background: var(--color-base-200);
+	border-color: var(--color-base-300);
+}
+/* Tables (GFM). Scroll horizontally on narrow panes instead of overflowing. */
+.markdown table {
+	margin: 0.5em 0;
+	border-collapse: collapse;
+	display: block;
+	overflow-x: auto;
+	font-size: 0.95em;
+}
+.markdown th,
+.markdown td {
+	border: 1px solid var(--color-base-300);
+	padding: 0.3em 0.6em;
+	text-align: left;
+}
+.markdown th {
+	background: color-mix(in oklch, var(--color-base-content) 6%, transparent);
+	font-weight: 600;
+}
+.markdown img {
+	max-width: 100%;
+	border-radius: var(--radius-box, 0.375rem);
+}
