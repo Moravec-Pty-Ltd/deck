@@ -198,6 +198,12 @@ from it and watch for this session's \`turn-finished\` to know the turn is done.
 
 Interrupt the in-flight turn (empty body). Returns \`{ "ok": true }\`.
 
+### POST /api/agent/sessions/{id}/model
+
+\`{ "model"?: "..." }\` — switch the session's model. Absent or empty resets to
+the CLI default. Idle-only (409 if a turn is running); applies on the next
+turn. Returns \`{ "ok": true }\`.
+
 ### POST /api/agent/sessions/{id}/workflow
 
 \`{ "workflowId": "..." }\` — start a workflow run on this session, or
