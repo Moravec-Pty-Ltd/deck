@@ -6,6 +6,10 @@ import { sessionDigest } from '$lib/server/agent-digest';
 import { objectBody } from '$lib/server/http';
 import { runIdempotent } from '$lib/server/idempotency';
 import { baseUrl } from '$lib/server/config';
+import { listProjects } from '$lib/server/store';
+import { projectForPath } from '$lib/server/confine';
+import { expandTilde } from '$lib/server/fsutil';
+import type { Project } from '$lib/types';
 
 // Agent-facing sessions surface (issue #127): a stable, documented contract
 // (see /llms.txt) over the internal create/list primitives. Digests aggregate
@@ -35,18 +39,51 @@ function requiredPr(v: unknown): Record<string, unknown> {
 	return v as Record<string, unknown>;
 }
 
+// A supplied prompt always wins; only a blank/missing one gets the project
+// default filled in below.
+function hasPrompt(body: Record<string, unknown>): boolean {
+	return typeof body.prompt === 'string' && body.prompt.trim().length > 0;
+}
+
+// The registered project a raw (untyped) cwd belongs to, or undefined.
+function projectForCwd(cwd: unknown): Project | undefined {
+	if (typeof cwd !== 'string' || !cwd) return undefined;
+	const path = projectForPath(expandTilde(cwd));
+	return listProjects().find((p) => p.path === path);
+}
+
+// Trimmed, or undefined for a blank/absent value.
+function nonEmpty(value: string | undefined): string | undefined {
+	return value?.trim() || undefined;
+}
+
+// The web new-session modal prefills the project's template/reviewPrompt into
+// the prompt field before posting (issue #127's agent API otherwise leaves a
+// prompt-less session idle forever, since maybeDispatch no-ops without one).
+// This mirrors that default for clients that can't prefill client-side (the
+// watch/iOS quick-start, Siri intents): resolve `cwd` back to its registered
+// project and use its configured first-prompt for the mode, if any.
+function defaultPrompt(cwd: unknown, review: boolean): string | undefined {
+	const project = projectForCwd(cwd);
+	return nonEmpty(review ? project?.reviewPrompt : project?.template);
+}
+
 // 'review': check out the PR's head into a worktree and seed the session with
 // the PR, so the review/merge endpoints work on it.
 function reviewBody(body: Record<string, unknown>): Record<string, unknown> {
 	const pr = requiredPr(body.pr);
 	const wt = (body.worktree ?? {}) as Record<string, unknown>;
-	return { ...commonFields(body), pr, worktree: { fromPr: pr.number, base: wt.base } };
+	const fields = commonFields(body);
+	if (!hasPrompt(body)) fields.prompt = defaultPrompt(body.cwd, true);
+	return { ...fields, pr, worktree: { fromPr: pr.number, base: wt.base } };
 }
 
 // 'work': start a session on an issue/prompt, optionally in a fresh worktree.
 function workBody(body: Record<string, unknown>): Record<string, unknown> {
 	const issues = body.issue ? [body.issue] : undefined;
-	return { ...commonFields(body), issues, worktree: body.worktree };
+	const fields = commonFields(body);
+	if (!hasPrompt(body)) fields.prompt = defaultPrompt(body.cwd, false);
+	return { ...fields, issues, worktree: body.worktree };
 }
 
 function internalBody(body: Record<string, unknown>): Record<string, unknown> {
