@@ -162,7 +162,7 @@ idempotent replay).
 \`\`\`json
 { "mode": "work",
 	"cwd": "/path/to/project",          // required; a registered project (see Discovery) for worktree/issue use
-	"prompt": "...",                    // optional first prompt
+	"prompt": "...",                    // optional first prompt; omitted/blank defaults to the project's template
 	"kind": "claude",                   // optional, default claude; use an available kind (see /api/agent/kinds)
 	"title": "...", "model": "...",     // optional; model is free-text
 	"workflowId": "...",                // optional startable workflow (see /api/agent/workflows)
@@ -175,12 +175,18 @@ idempotent replay).
 { "mode": "review",
 	"cwd": "/path/to/project",
 	"pr": { "repo": "owner/repo", "number": 42, "url": "...", "title": "..." },  // repo+number required; from /api/agent/prs
-	"prompt": "...", "kind": "claude", "workflowId": "..."
+	"prompt": "...", "kind": "claude", "workflowId": "..."  // prompt omitted/blank defaults to the project's review prompt
 }
 \`\`\`
 
 Review mode fetches the PR head into a worktree and seeds the session with the
 PR, so the review/merge endpoints below work on it.
+
+In both modes, an omitted or blank \`prompt\` defaults to the project's
+configured first-prompt template (work) / review prompt (review), the same
+default the web new-session modal prefills, so the session's first turn still
+starts. A supplied \`prompt\` always wins; there's no default when the project
+has none configured.
 
 **Idempotency**: send \`Idempotency-Key: <key>\` (or body \`"idempotencyKey"\`)
 so a retried create — after a lost 201 — returns the same session (200) instead
