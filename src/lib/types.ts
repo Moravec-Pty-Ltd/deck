@@ -213,6 +213,12 @@ export interface Project {
 	// Dev-server standup config (issue #32): copy env files in, run ordered setup,
 	// then launch one or more monitored dev commands on an agent session's worktree.
 	dev?: DevConfig;
+	// Background feed automation (issue #171): when on, the monitor's gh tick
+	// auto-spawns a session for each new matching feed item — `work` for issues
+	// assigned to me in a todo-ish state, `review` for PRs awaiting my review. Both
+	// default off; a given issue/PR fires at most once ever (durable dedupe in
+	// ~/.deck/automation.json).
+	automation?: { work?: boolean; review?: boolean };
 }
 
 // A port a dev server listens on. `primary` marks which one the preview link

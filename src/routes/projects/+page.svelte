@@ -10,7 +10,10 @@
 	import AgentSkills from '$lib/components/AgentSkills.svelte';
 	import { ArrowLeft, Plus, Trash2, Check, ChevronRight, ChevronDown } from '@lucide/svelte';
 
-	let projects = $state<Project[]>([]);
+	// automation is always materialised (both toggles present) so the checkboxes
+	// bind cleanly; the API stores both-off as absent.
+	type ProjectRow = Project & { automation: { work: boolean; review: boolean } };
+	let projects = $state<ProjectRow[]>([]);
 	let loaded = $state(false);
 	let savedPath = $state<string | null>(null);
 	let errorMsg = $state('');
@@ -56,7 +59,12 @@
 
 	async function load() {
 		const res = await fetch('/api/projects');
-		if (res.ok) projects = await res.json();
+		if (res.ok) {
+			projects = ((await res.json()) as Project[]).map((p) => ({
+				...p,
+				automation: { work: !!p.automation?.work, review: !!p.automation?.review }
+			}));
+		}
 		rebuildLayout();
 		loaded = true;
 	}
@@ -65,7 +73,7 @@
 		load();
 	});
 
-	async function save(p: Project) {
+	async function save(p: ProjectRow) {
 		errorMsg = '';
 		const res = await fetch('/api/projects', {
 			method: 'POST',
@@ -76,7 +84,8 @@
 				group: p.group ?? '',
 				template: p.template,
 				reviewPrompt: p.reviewPrompt ?? '',
-				lastBase: p.lastBase
+				lastBase: p.lastBase,
+				automation: p.automation
 			})
 		});
 		if (!res.ok) {
@@ -193,6 +202,17 @@
 										placeholder="default base branch (remembered automatically)"
 										bind:value={p.lastBase}
 									/>
+									<div class="mt-2 flex flex-wrap items-center gap-4">
+										<span class="text-xs font-medium opacity-70">Automation</span>
+										<label class="flex cursor-pointer items-center gap-2 text-sm">
+											<input type="checkbox" class="toggle toggle-sm" bind:checked={p.automation.work} />
+											<span>Auto-start work on assigned issues</span>
+										</label>
+										<label class="flex cursor-pointer items-center gap-2 text-sm">
+											<input type="checkbox" class="toggle toggle-sm" bind:checked={p.automation.review} />
+											<span>Auto-start review on requested PRs</span>
+										</label>
+									</div>
 									<div class="mt-1 flex items-center gap-2">
 										<span class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}; review adds {REVIEW_PLACEHOLDERS}</span>
 										<div class="flex-1"></div>
