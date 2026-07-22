@@ -169,6 +169,7 @@ export async function createSession(input: {
 	cwd: string;
 	model?: string;
 	provider?: string;
+	effort?: DeckSession['effort'];
 	permissionMode?: DeckSession['permissionMode'];
 	command?: string;
 	worktree?: { repo: string; branch: string; createdBranch: boolean; base?: string };
@@ -204,7 +205,10 @@ export async function createSession(input: {
 	if (isAgentKind(input.kind)) {
 		session.model = input.model || undefined;
 		session.provider = input.provider || undefined;
-		if (input.kind === 'claude') session.permissionMode = input.permissionMode ?? 'acceptEdits';
+		if (input.kind === 'claude') {
+			session.permissionMode = input.permissionMode ?? 'acceptEdits';
+			session.effort = input.effort || undefined;
+		}
 	} else {
 		session.tmuxName = tmuxNameFor(id);
 		await createTmuxSession(session.tmuxName, input.cwd, input.command);

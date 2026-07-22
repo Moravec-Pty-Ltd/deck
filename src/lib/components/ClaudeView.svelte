@@ -10,6 +10,7 @@
 		type CostSummary
 	} from '$lib/session-cost-core';
 	import { modelLabel } from '$lib/models';
+	import { effortLabel } from '$lib/effort';
 	import MessageBubble from './MessageBubble.svelte';
 	import Markdown from './Markdown.svelte';
 	import ToolCall from './ToolCall.svelte';
@@ -592,6 +593,8 @@
 				<div class="alert alert-error py-2 text-sm whitespace-pre-wrap wrap-anywhere">{event.text}</div>
 			{:else if event.type === 'deck.model'}
 				<div class="px-2 text-center text-xs opacity-50">model → {modelLabel(event.model)}</div>
+			{:else if event.type === 'deck.effort'}
+				<div class="px-2 text-center text-xs opacity-50">effort → {effortLabel(event.effort)}</div>
 			{:else if event.type === 'assistant'}
 				{#each contentBlocks(event) as block, j (j)}
 					{#if block.type === 'text' && block.text?.trim()}

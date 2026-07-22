@@ -29,6 +29,7 @@ export interface AgentSessionDigest {
 	createdAt: number;
 	lastActiveAt: number;
 	model?: string;
+	effort?: DeckSession['effort'];
 	worktree?: DeckSession['worktree'];
 	issues?: SessionIssue[];
 	pr?: SessionPR;
@@ -51,6 +52,7 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		createdAt: s.createdAt,
 		lastActiveAt: s.lastActiveAt,
 		model: s.model,
+		effort: s.effort,
 		worktree: s.worktree,
 		issues: s.issues ?? (s.issue ? [s.issue] : undefined),
 		pr: s.pr,

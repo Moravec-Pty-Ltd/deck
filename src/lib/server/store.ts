@@ -1,4 +1,4 @@
-import type { AgentKind, DeckSession, DeckSettings, IssueSource, ModelChoice, Project } from '$lib/types';
+import type { AgentKind, DeckEffort, DeckSession, DeckSettings, IssueSource, ModelChoice, Project } from '$lib/types';
 import { fileMtimeMs, readJson, writeJson } from './config';
 import { invalidateIssues } from './issues/cache';
 import { invalidatePrs } from './prs';
@@ -169,6 +169,17 @@ export function rememberModel(projectPath: string, kind: AgentKind, choice: Mode
 	if (project) updateProject(projectPath, { lastModels: { ...project.lastModels, [kind]: choice } });
 	const settings = readSettings();
 	writeSettings({ ...settings, lastModels: { ...settings.lastModels, [kind]: choice } });
+}
+
+// Remember the effort picked for a claude session (issue #178), same two scopes
+// as rememberModel. A blank effort ("use the CLI default") never overwrites a
+// remembered pick.
+export function rememberEffort(projectPath: string, effort: DeckEffort | undefined): void {
+	if (!effort) return;
+	const project = listProjects().find((p) => p.path === projectPath);
+	if (project) updateProject(projectPath, { lastEffort: effort });
+	const settings = readSettings();
+	writeSettings({ ...settings, lastEffort: effort });
 }
 
 // --- Issue sources (stored on the project, secrets kept separately) ---
