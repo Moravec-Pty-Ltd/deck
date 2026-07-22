@@ -50,7 +50,6 @@
 	let method = $state<MergeMethod>('squash');
 	let deleteBranch = $state(false);
 	let model = $state('');
-	// The expensive model awaiting a confirm in the model step, or null when none.
 	let pendingModel = $state<string | null>(null);
 	let busy = $state(false);
 	let err = $state('');
