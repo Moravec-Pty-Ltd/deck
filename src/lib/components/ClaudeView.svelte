@@ -189,7 +189,11 @@
 				liveText = '';
 				loaded = true;
 				await tick();
-				forceScroll();
+				// Behind another tab the scroller has no layout, so forcing scroll here
+				// would only flip atBottom and lose a scrolled-up reader's place on a
+				// background reconnect. Defer to the visibility effect; hydrateRest
+				// self-defers while hidden.
+				if (visible) forceScroll();
 				hydrateRest();
 			});
 			es.addEventListener('transcript', (e) => {
@@ -284,6 +288,7 @@
 			if (!scroller) return;
 			if (atBottom) forceScroll();
 			else scroller.scrollTop = savedScrollTop;
+			hydrateRest(); // resume any hydration deferred while hidden
 		});
 	});
 
@@ -305,10 +310,13 @@
 
 	let hydrating = false;
 	function hydrateRest() {
-		if (hydrating || limit >= events.length) return;
+		// Don't widen the window behind another tab: growWindow's scroll compensation
+		// is a no-op without layout, so it would desync a scrolled-up reader. The
+		// visibility effect resumes hydration on re-show.
+		if (hydrating || limit >= events.length || !visible) return;
 		hydrating = true;
 		const step = () => {
-			if (limit >= events.length) {
+			if (limit >= events.length || !visible) {
 				hydrating = false;
 				return;
 			}
