@@ -12,8 +12,6 @@
 	import PrMenu from '$lib/components/PrMenu.svelte';
 	import IssueMenu from '$lib/components/IssueMenu.svelte';
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
-	import WorkflowMenu from '$lib/components/WorkflowMenu.svelte';
-	import WorkflowProgress from '$lib/components/WorkflowProgress.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
@@ -72,35 +70,6 @@
 		const live = sessions.find((s) => s.id === session.id);
 		return live ? live.model : session.model;
 	});
-
-	// Workflow run state for the progress strip. Same trust order as livePr:
-	// the polled session once loaded (it reflects cancel/step transitions), the
-	// page-load session until then. `workflowRun` can legitimately be undefined
-	// after a dismiss, so don't ??-coalesce back to the page-load value.
-	const liveRun = $derived.by(() => {
-		const live = sessions.find((s) => s.id === session.id);
-		return live ? live.workflowRun : session.workflowRun;
-	});
-	const runActive = $derived(
-		liveRun?.status === 'running' || liveRun?.status === 'awaiting-input'
-	);
-
-	// The registered project this session belongs to (directly, or via the
-	// worktree it was created from), for the run-workflow menu. Only configured
-	// workflows are offered; the legacy synthesized pair isn't a run. Longest
-	// matching path wins so a nested project isn't shadowed by its parent.
-	const sessionProject = $derived(
-		projects.find((p) => p.path === session.worktree?.repo) ??
-			projects
-				.filter(
-					(p) =>
-						session.cwd === p.path ||
-						session.cwd.startsWith(`${p.path}/`) ||
-						session.cwd.startsWith(`${p.path}-worktrees/`)
-				)
-				.sort((a, b) => b.path.length - a.path.length)[0]
-	);
-	const sessionWorkflows = $derived(sessionProject?.workflows ?? []);
 
 	// Dev-server states per session, from the monitor's cached poll (cheap), for
 	// the header chip and the sidebar dots (issue #32). The Servers tab fetches
@@ -405,9 +374,6 @@
 					     so the standalone chip is sm+ only. -->
 					<span class="hidden sm:contents"><ServerChip state={serverChip} count={myServers.length} /></span>
 				{/if}
-				{#if session.kind !== 'shell' && sessionWorkflows.length && !runActive}
-					<WorkflowMenu sessionId={session.id} workflows={sessionWorkflows} onChange={refresh} />
-				{/if}
 				{#if session.kind !== 'shell'}
 					<ModelMenu
 						id={session.id}
@@ -427,10 +393,6 @@
 				{/if}
 			</div>
 		</div>
-
-		{#if liveRun}
-			<WorkflowProgress run={liveRun} sessionId={session.id} onChange={refresh} />
-		{/if}
 
 		{#if gitRepo || hasServers}
 			<div class="join mb-2 shrink-0 self-start">

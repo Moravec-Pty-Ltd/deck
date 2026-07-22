@@ -16,7 +16,7 @@ export async function objectBody(request: Request): Promise<Record<string, unkno
 }
 
 // The agent session a per-session action route targets, or a 404. Shells (and
-// unknown ids) have no asks, workflows, or turns to act on.
+// unknown ids) have no asks or turns to act on.
 export async function agentSessionOr404(id: string): Promise<DeckSession> {
 	const session = await getSession(id);
 	if (!session || !isAgentKind(session.kind)) error(404, 'session not found');

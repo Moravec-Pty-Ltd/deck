@@ -5,7 +5,6 @@
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import IssueSources from '$lib/components/IssueSources.svelte';
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
-	import WorkflowsForm from '$lib/components/WorkflowsForm.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
 	import AgentSkills from '$lib/components/AgentSkills.svelte';
 	import { ArrowLeft, Plus, Trash2, Check, ChevronRight, ChevronDown } from '@lucide/svelte';
@@ -222,7 +221,6 @@
 										<button class="btn btn-sm btn-primary" onclick={() => save(p)}>Save</button>
 									</div>
 									<IssueSources project={p} onchanged={load} />
-									<WorkflowsForm project={p} onchanged={load} />
 									<DevConfigForm project={p} onchanged={load} />
 								</div>
 							{/if}

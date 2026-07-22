@@ -13,10 +13,10 @@ const doc = `# deck agent API
 
 > deck is a single-user local web app that drives coding-agent sessions
 > (claude / pi / codex / opencode) and tmux terminals. This documents its
-> stable agent-facing API: discover projects / issues / PRs / workflows, create
-> and steer sessions, read what they replied, act on PRs, answer blocking
-> questions, and follow a durable, resumable event log. Designed so an
-> autonomous orchestrator can drive deck end-to-end from this document alone.
+> stable agent-facing API: discover projects / issues / PRs, create and steer
+> sessions, read what they replied, act on PRs, answer blocking questions, and
+> follow a durable, resumable event log. Designed so an autonomous orchestrator
+> can drive deck end-to-end from this document alone.
 
 Version: ${shippedSkillVersion}
 Base URL: ${baseUrl}
@@ -40,7 +40,7 @@ Every /api error is a JSON body \`{ "message": "..." }\` with an HTTP status:
 - \`403\` — a worktree/issue operation whose \`cwd\` is outside the registered
   project set (project confinement).
 - \`404\` — unknown session / project / route.
-- \`409\` — conflict (a workflow run or turn is already in flight).
+- \`409\` — conflict (a turn is already in flight, e.g. a model switch mid-turn).
 
 Parse \`message\` for the reason; don't rely on the status alone.
 
@@ -96,23 +96,11 @@ Open PRs awaiting your review for a project. Each row carries \`review\`'s
   "errors": [] }
 \`\`\`
 
-### GET /api/agent/workflows?project=<path>
-
-Startable workflows configured for a project:
-
-\`\`\`json
-[{ "id": "ship", "name": "Ship it", "context": "issue",
-	"steps": [{ "name": "Implement", "type": "agent" }, { "name": "Test", "type": "gate" }] }]
-\`\`\`
-
-An \`id\` here is a valid \`workflowId\` for create or run-on-session. The plain
-New/Review pair is *not* listed and is not a startable id.
-
 ## Sessions
 
 A session is the unit of work: one agent (kind: claude|pi|codex|opencode) or
-shell in a working directory, optionally in its own git worktree, optionally
-running a multi-step workflow. Statuses: running | idle | error | dead.
+shell in a working directory, optionally in its own git worktree. Statuses:
+running | idle | error | dead.
 \`awaitingInput: true\` means the session is blocked on a question (see Asks).
 Shell sessions appear in digests and the event log for monitoring, but the
 agent API cannot create or drive them (kind "shell" is rejected on create).
@@ -131,8 +119,6 @@ Digest of every session:
 	"issues": [{ "source": "github", "id": "owner/repo#1", "url": "..." }],
 	"pr": { "repo": "owner/repo", "number": 42, "url": "...", "state": "open",
 		"reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "approvals": 1, "changesRequested": 0 },
-	"workflowRun": { "workflowId": "...", "name": "...", "step": 1, "status": "running",
-		"steps": [{ "name": "...", "type": "agent" }] },
 	"cost": { "costUsd": 0.42, "turns": 12, "durationMs": 258000, "results": 12 }
 }]
 \`\`\`
@@ -165,7 +151,6 @@ idempotent replay).
 	"prompt": "...",                    // optional first prompt; omitted/blank defaults to the project's template
 	"kind": "claude",                   // optional, default claude; use an available kind (see /api/agent/kinds)
 	"title": "...", "model": "...",     // optional; model is free-text
-	"workflowId": "...",                // optional startable workflow (see /api/agent/workflows)
 	"issue": { "source": "github|linear|clickup", "id": "owner/repo#1", "url": "..." },  // optional; from /api/agent/issues
 	"worktree": { "branch": "my-branch", "newBranch": true, "base": "main" }             // optional
 }
@@ -175,7 +160,7 @@ idempotent replay).
 { "mode": "review",
 	"cwd": "/path/to/project",
 	"pr": { "repo": "owner/repo", "number": 42, "url": "...", "title": "..." },  // repo+number required; from /api/agent/prs
-	"prompt": "...", "kind": "claude", "workflowId": "..."  // prompt omitted/blank defaults to the project's review prompt
+	"prompt": "...", "kind": "claude"  // prompt omitted/blank defaults to the project's review prompt
 }
 \`\`\`
 
@@ -210,13 +195,6 @@ Interrupt the in-flight turn (empty body). Returns \`{ "ok": true }\`.
 the CLI default. Idle-only (409 if a turn is running); applies on the next
 turn. Returns \`{ "ok": true }\`.
 
-### POST /api/agent/sessions/{id}/workflow
-
-\`{ "workflowId": "..." }\` — start a workflow run on this session, or
-\`{ "action": "cancel" }\` to cancel/dismiss the current run. Returns
-\`{ "ok": true, "status": "running" }\` (start) or \`{ "ok": true }\` (cancel).
-409 if a run or turn is already in flight.
-
 ### POST /api/agent/sessions/{id}/review
 
 \`{ "decision": "approve" | "request-changes" | "comment", "body": "..." }\` —
@@ -241,41 +219,32 @@ proceed:
 - A **turn** is finished when the session's \`status\` goes running → idle and a
   \`turn-finished\` event fires (subtype "success" = clean end); \`cost.results\`
   advances. Read the reply via \`lastResult\` / the transcript endpoint.
-- A **run** is finished when \`workflowRun.status\` ∈ done | paused | cancelled
-  (running | awaiting-input mean still going).
 
 ## Asks (blocking questions)
 
 ### GET /api/agent/asks
 
-Everything waiting on a human answer, oldest first:
+Every MCP \`ask\` waiting on a human answer, oldest first:
 
 \`\`\`json
-[{ "sessionId": "c_abc123", "source": "mcp" | "workflow", "askId": "wfask-...",
-	"askedAt": 0,
+[{ "sessionId": "c_abc123", "source": "mcp", "askedAt": 0,
 	"questions": [{ "question": "...", "header": "...", "multiSelect": false,
 		"options": [{ "label": "...", "description": "..." }] }] }]
 \`\`\`
 
-\`askId\` is present only for workflow checkpoints and must be echoed back when
-answering one.
-
 ### POST /api/agent/sessions/{id}/answer
 
-\`{ "text": "...", "askId": "..." }\` — resolve the pending ask (\`askId\` only
-for workflow checkpoints). On success \`{ "ok": true, "seq": <n> }\` (\`seq\`
-correlates the resulting turn). On failure \`{ "ok": false, "reason": ... }\`:
-
-- \`no-pending-ask\` — nothing was waiting (already answered, or a race).
-- \`askid-required\` — a workflow checkpoint is waiting but no \`askId\` was sent.
-- \`askid-mismatch\` — the \`askId\` doesn't match the waiting checkpoint.
+\`{ "text": "..." }\` — resolve the pending ask by text. On success
+\`{ "ok": true, "seq": <n> }\` (\`seq\` correlates the resulting turn). On failure
+\`{ "ok": false, "reason": "no-pending-ask" }\` — nothing was waiting (already
+answered, or a race).
 
 ## Push notifications
 
 Native iOS/watchOS clients register a device token to receive the same nudges
 the installed PWA gets over web push (question asked, turn finished, session
-crashed/exited, PR/workflow updates). Disabled server-side until an APNs key
-is configured; registering is harmless either way.
+crashed/exited, PR updates). Disabled server-side until an APNs key is
+configured; registering is harmless either way.
 
 ### POST /api/push/apns/register
 
@@ -312,9 +281,8 @@ follow by name (\`tail -F\`) or re-read from your last \`seq\`.
 Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 
 - \`status\` — { status: running|idle|error|dead }
-- \`awaiting-input\` — { awaitingInput, source: mcp|workflow, askId?, questions? }
+- \`awaiting-input\` — { awaitingInput, source: mcp, questions? }
 - \`turn-finished\` — { subtype, cost } (subtype "success" = clean turn end)
-- \`workflow\` — { workflowRun } (every step/status transition)
 - \`pr\` — { pr } (captured PR seen or its GitHub state changed)
 - \`session-created\` — { session: <digest> }
 - \`session-deleted\` — {}
@@ -324,9 +292,7 @@ event may repeat state the snapshot already reflects.
 
 ## Notes
 
-- Sessions are the unit of work; there is no separate job queue. Workflow runs
-  (\`workflowRun\`) are per-session step pipelines: running | awaiting-input |
-  paused | done | cancelled.
+- Sessions are the unit of work; there is no separate job queue.
 - Worktree, issue, and PR operations require \`cwd\` to be a registered project
   (see Discovery); plain sessions can run in any existing directory.
 - All endpoints are also usable by deck-spawned agents: \`$DECK_BASE_URL\`,

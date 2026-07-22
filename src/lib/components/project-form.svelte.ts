@@ -1,5 +1,5 @@
-// Shared machinery for the per-project config forms (dev servers, workflows):
-// the ordered-list move helper and the busy/saved/error state around the
+// Shared machinery for the per-project config forms (dev servers): the
+// ordered-list move helper and the busy/saved/error state around the
 // /api/projects POST (which carries every field the form doesn't send).
 
 // Swap list[i] with its neighbour at i+delta, bounds-checked.

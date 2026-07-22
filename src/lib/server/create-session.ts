@@ -9,10 +9,8 @@ import { appendEvent } from './claude';
 import { listProjects, updateProject, rememberModel, readSecret } from './store';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
-import { expandPlaceholders, contextFromSession, type PlaceholderContext } from '$lib/placeholders';
+import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 import { buildIssuePrompt, type IssueForFetch, type IssuePromptContext } from './issues/detail';
-import { isLegacyWorkflowId } from '$lib/workflows-core';
-import { startRun, workflowForPath } from './workflows';
 
 // The create-session request pipeline, extracted from the POST /api/sessions
 // route so the agent API (POST /api/agent/sessions) can share it. Validation
@@ -241,50 +239,20 @@ async function issueContext(cwd: string, picked: PickedIssue[]): Promise<Partial
 	}
 }
 
-// A workflow id that should start a run: a real configured id, not the legacy
-// synthesized pair (those are today's plain new/review paths).
-function wantsRun(workflowId: unknown): workflowId is string {
-	return typeof workflowId === 'string' && !!workflowId && !isLegacyWorkflowId(workflowId);
-}
-
-// Resolve a requested workflow id against the project the session starts in.
-// An unknown id is a 400 so a stale modal doesn't silently fall back to a
-// bare session.
-function pickWorkflow(startCwd: string, workflowId: unknown) {
-	if (!wantsRun(workflowId)) return undefined;
-	const workflow = workflowForPath(startCwd, workflowId);
-	if (!workflow) error(400, 'unknown workflow');
-	return workflow;
-}
-
-// Start the requested run, or send the plain first prompt (today's path).
-async function dispatch(
-	session: Awaited<ReturnType<typeof createSession>>,
-	workflow: ReturnType<typeof pickWorkflow>,
-	promptText: string,
-	ctx: PlaceholderContext
-): Promise<void> {
-	if (workflow) startRun(session, workflow, ctx, promptText);
-	else await agentSend(session, expandPlaceholders(promptText, ctx));
-}
-
 // Kick off the agent's first turn if a non-empty prompt was supplied, expanding
 // its [tokens] against the freshly-created session. When issues are attached,
 // their body/title/images are fetched server-side first (best-effort) so the
 // prompt starts grounded. Fire-and-forget: the fetch must not delay the 201.
-// With a workflow attached this generalises into "start the run": the prompt
-// (the modal's possibly-edited first agent step) rides along as the override.
 async function maybeDispatch(
 	session: Awaited<ReturnType<typeof createSession>>,
 	kind: SessionKind,
 	promptText: string,
-	picked: PickedIssue[],
-	workflow: ReturnType<typeof pickWorkflow>
+	picked: PickedIssue[]
 ): Promise<void> {
 	if (!isAgentKind(kind)) return;
-	if (!workflow && !promptText) return;
+	if (!promptText) return;
 	const ctx = { ...contextFromSession(session), ...(await issueContext(session.cwd, picked)) };
-	await dispatch(session, workflow, promptText, ctx);
+	await agentSend(session, expandPlaceholders(promptText, ctx));
 }
 
 // The whole POST /api/sessions pipeline for one untyped JSON body: validate,
@@ -304,8 +272,6 @@ export async function createSessionFromRequest(
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
 
 	const startCwd = resolveCwd(body.cwd);
-	// Resolve the workflow before any worktree work so a stale id fails fast.
-	const workflow = pickWorkflow(startCwd, body.workflowId);
 	const { cwd, worktree, branch } = await resolveWorktree(startCwd, body as { worktree?: WorktreeReq });
 	const picked = parseIssues(body);
 	const pr = parsePr(body.pr);
@@ -325,10 +291,9 @@ export async function createSessionFromRequest(
 
 	if (isAgentKind(kind)) rememberPickedModel(startCwd, kind, model, provider);
 
-	// Fire-and-forget, but not silent: a failed dispatch (e.g. the workflow
-	// refusing to start) lands on the transcript so the fresh session says why
-	// nothing is happening.
-	void maybeDispatch(session, kind, asStr(prompt), picked, workflow).catch((e) => {
+	// Fire-and-forget, but not silent: a failed dispatch lands on the transcript
+	// so the fresh session says why nothing is happening.
+	void maybeDispatch(session, kind, asStr(prompt), picked).catch((e) => {
 		console.error(`[deck] first-turn dispatch failed for ${session.id}:`, e);
 		appendEvent(session.id, {
 			type: 'deck.error',
