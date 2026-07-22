@@ -3,7 +3,7 @@
 // to me in a todo-ish state) and review (PRs awaiting my review), each toggled
 // independently. Idempotence is durable: a given issue/PR fires at most once ever,
 // across polls and restarts, tracked in ~/.deck/automation.json. The pure
-// key/dedupe logic lives in automation-core.ts.
+// key/dedupe logic and request bodies live in automation-core.ts.
 import type { Issue, Project, PullRequest } from '$lib/types';
 import { listProjects } from './store';
 import { getProjectIssues } from './issues';
@@ -13,8 +13,10 @@ import { notify, type NotifyPayload } from './push';
 import { runIdempotent } from './idempotency';
 import { readJson, writeJson } from './config';
 import {
+	reviewBody,
 	reviewTriggerKey,
 	selectNewTriggers,
+	workBody,
 	workTriggerKey,
 	type NewTrigger,
 	type ProcessedKeys
@@ -32,32 +34,6 @@ function loadProcessed(): ProcessedKeys {
 }
 function persist(processed: ProcessedKeys): void {
 	writeJson(FILE, { processed });
-}
-
-// The internal create-pipeline body for a work session: run in the project dir on
-// the issue, seeded with the project's `template` (blank-safe — an empty prompt
-// just leaves the session idle, exactly like the UI). `issue` mirrors the picker's
-// shape (source, not sourceType) so parseIssue accepts it.
-function workBody(project: Project, issue: Issue): Record<string, unknown> {
-	return {
-		kind: 'claude',
-		cwd: project.path,
-		prompt: project.template ?? '',
-		issue: { source: issue.sourceType, id: issue.id, url: issue.url, sourceId: issue.sourceId }
-	};
-}
-
-// The internal create-pipeline body for a review session: check the PR head into a
-// worktree (fromPr) with the PR's base ref for the Changes diff, seeded with the
-// project's `reviewPrompt`.
-function reviewBody(project: Project, pr: PullRequest): Record<string, unknown> {
-	return {
-		kind: 'claude',
-		cwd: project.path,
-		prompt: project.reviewPrompt ?? '',
-		pr: { repo: pr.repo, number: pr.number, url: pr.url, title: pr.title },
-		worktree: { fromPr: pr.number, base: pr.baseRefName }
-	};
 }
 
 // Claim the key durably before creating, so a crash mid-create can't respawn the
