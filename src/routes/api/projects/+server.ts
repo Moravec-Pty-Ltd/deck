@@ -49,12 +49,18 @@ function toAutomation(o: Record<string, unknown>): Project['automation'] {
 	return work || review ? { work, review } : undefined;
 }
 
+// A JSON object (not null, not an array). An array would pass a bare typeof check
+// and then normalise to both-off, silently wiping the toggles.
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+	return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 // The two automation toggles (issue #171). Carry the existing value across a save
 // that omits the field; a bad shape is a 400, not a silent wipe.
 function resolveAutomation(v: unknown, existing: Project['automation']): Project['automation'] {
 	if (v === undefined) return existing;
-	if (v === null || typeof v !== 'object') error(400, 'automation must be an object');
-	return toAutomation(v as Record<string, unknown>);
+	if (!isPlainObject(v)) error(400, 'automation must be an object');
+	return toAutomation(v);
 }
 
 // Validate configured workflows when sent; carry the existing list across a

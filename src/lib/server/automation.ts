@@ -73,14 +73,22 @@ async function spawn(
 ): Promise<void> {
 	processed[key] = Date.now();
 	persist(processed);
+	let session: Awaited<ReturnType<typeof createSessionFromRequest>>;
 	try {
 		const { result } = runIdempotent(key, () => createSessionFromRequest(body()));
-		const session = await result;
-		notify(describe(session.id));
+		session = await result;
 	} catch (e) {
 		delete processed[key];
 		persist(processed);
 		console.error(`[deck] automation spawn failed for ${key}:`, e);
+		return;
+	}
+	// The session exists now, so the claim stays put even if notify fails —
+	// releasing it would let the next poll respawn, breaking at-most-once.
+	try {
+		notify(describe(session.id));
+	} catch (e) {
+		console.error(`[deck] automation notification failed for ${key}:`, e);
 	}
 }
 
