@@ -1,7 +1,8 @@
-// Pure trigger-key + dedupe logic for feed automation (issue #171), kept node-free
-// so it unit-tests without fs/gh. The orchestration (feed fetch, session create,
-// notify, durable ledger) lives in the sibling automation.ts.
-import type { Issue, PullRequest } from '$lib/types';
+// Pure trigger-key + dedupe logic and the /api/sessions request bodies for feed
+// automation (issue #171), kept node-free so they unit-test without fs/gh. The
+// orchestration (feed fetch, session create, notify, durable ledger) lives in the
+// sibling automation.ts.
+import type { Issue, Project, PullRequest } from '$lib/types';
 
 // The durable ledger of trigger keys that have already spawned a session, keyed
 // to their first-fired timestamp. An item lingering in a feed across polls and
@@ -43,4 +44,37 @@ export function selectNewTriggers<T>(
 		out.push({ key, candidate });
 	}
 	return out;
+}
+
+// The /api/sessions body for a work session, mirroring the New Session modal's
+// per-issue split: titled with the issue id and run in a fresh worktree whose
+// branch is the issue id, off the project's remembered base (repo default when
+// unset), never the project checkout itself. Seeded with the project's `template`
+// (blank-safe: an empty prompt just leaves the session idle, like the UI). `issue`
+// mirrors the picker's shape (source, not sourceType) so parseIssue accepts it. If
+// the issue-id branch already exists, the worktree add throws and spawn releases
+// the claim rather than clobbering it.
+export function workBody(project: Project, issue: Issue): Record<string, unknown> {
+	return {
+		kind: 'claude',
+		cwd: project.path,
+		title: issue.id,
+		prompt: project.template ?? '',
+		issue: { source: issue.sourceType, id: issue.id, url: issue.url, sourceId: issue.sourceId },
+		worktree: { branch: issue.id, newBranch: true, base: project.lastBase || undefined }
+	};
+}
+
+// The /api/sessions body for a review session, mirroring the modal: titled with the
+// PR title, checking the PR head into a worktree (fromPr) with the PR's base ref
+// for the Changes diff, seeded with the project's `reviewPrompt`.
+export function reviewBody(project: Project, pr: PullRequest): Record<string, unknown> {
+	return {
+		kind: 'claude',
+		cwd: project.path,
+		title: pr.title,
+		prompt: project.reviewPrompt ?? '',
+		pr: { repo: pr.repo, number: pr.number, url: pr.url, title: pr.title },
+		worktree: { fromPr: pr.number, base: pr.baseRefName }
+	};
 }
