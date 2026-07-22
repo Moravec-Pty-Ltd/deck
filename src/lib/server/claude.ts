@@ -169,6 +169,9 @@ function startProcess(id: string): Proc {
 	if (session.claudeSessionId) args.push('--resume', session.claudeSessionId);
 	// Same flag-injection guard as the pi/codex spawns (see agents/args.ts).
 	if (isFlagSafe(session.model)) args.push('--model', session.model!);
+	// Reasoning effort (issue #178): absent runs the CLI default. The value is one
+	// of a fixed enum, but guard it like --model so a leading dash can't inject.
+	if (isFlagSafe(session.effort)) args.push('--effort', session.effort!);
 	if (session.permissionMode === 'bypassPermissions') {
 		args.push('--dangerously-skip-permissions');
 	} else {

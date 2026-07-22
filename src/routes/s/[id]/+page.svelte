@@ -12,6 +12,7 @@
 	import PrMenu from '$lib/components/PrMenu.svelte';
 	import IssueMenu from '$lib/components/IssueMenu.svelte';
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
+	import EffortMenu from '$lib/components/EffortMenu.svelte';
 	import WorkflowMenu from '$lib/components/WorkflowMenu.svelte';
 	import WorkflowProgress from '$lib/components/WorkflowProgress.svelte';
 	import { shortPath } from '$lib/time';
@@ -71,6 +72,13 @@
 	const liveModel = $derived.by(() => {
 		const live = sessions.find((s) => s.id === session.id);
 		return live ? live.model : session.model;
+	});
+
+	// Current reasoning effort for the header switcher (issue #178), same trust
+	// order as liveModel. claude-only; undefined means the CLI default.
+	const liveEffort = $derived.by(() => {
+		const live = sessions.find((s) => s.id === session.id);
+		return live ? live.effort : session.effort;
 	});
 
 	// Workflow run state for the progress strip. Same trust order as livePr:
@@ -413,6 +421,14 @@
 						id={session.id}
 						kind={session.kind}
 						model={liveModel}
+						disabled={liveStatus === 'running'}
+						onChange={refresh}
+					/>
+				{/if}
+				{#if session.kind === 'claude'}
+					<EffortMenu
+						id={session.id}
+						effort={liveEffort}
 						disabled={liveStatus === 'running'}
 						onChange={refresh}
 					/>

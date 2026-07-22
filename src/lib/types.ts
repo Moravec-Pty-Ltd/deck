@@ -15,6 +15,10 @@ export interface ModelChoice {
 	model: string;
 }
 
+// Reasoning-effort levels the claude CLI accepts via `--effort` (issue #178).
+// claude-only; the other kinds have no equivalent. Absent means the CLI default.
+export type DeckEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface DeckSession {
 	id: string;
 	kind: SessionKind;
@@ -34,6 +38,9 @@ export interface DeckSession {
 	agentSessionId?: string;
 	model?: string;
 	provider?: string;
+	// Reasoning effort for claude sessions (issue #178). Absent runs the CLI's own
+	// default (no --effort flag); mirrors `model`.
+	effort?: DeckEffort;
 	permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default' | 'plan';
 	// shell
 	tmuxName?: string;
@@ -204,6 +211,10 @@ export interface Project {
 	// Last model picked per agent kind for this project, so the new-session modal
 	// re-selects it next time (issue #51). Stored in ~/.deck, never committed.
 	lastModels?: Partial<Record<AgentKind, ModelChoice>>;
+	// Last reasoning effort picked for a claude session in this project (issue
+	// #178), the new-session modal's default. claude-only, so a scalar rather than
+	// the per-kind record `lastModels` needs.
+	lastEffort?: DeckEffort;
 	// Issue sources are per-project and additive. API keys never live here; they
 	// sit in ~/.deck/secrets.json keyed by source id (see server/store.ts).
 	sources?: IssueSource[];
@@ -403,4 +414,7 @@ export interface SkillStatus {
 // off the public repo.
 export interface DeckSettings {
 	lastModels?: Partial<Record<AgentKind, ModelChoice>>;
+	// Global fallback for the new-session modal's effort default (issue #178): the
+	// effort last picked for a claude session anywhere, used when the project has none.
+	lastEffort?: DeckEffort;
 }

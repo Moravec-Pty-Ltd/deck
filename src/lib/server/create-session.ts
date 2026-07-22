@@ -1,12 +1,13 @@
 import { error } from '@sveltejs/kit';
 import fs from 'node:fs';
-import { isAgentKind, type AgentKind, type SessionIssue, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
+import { isAgentKind, type AgentKind, type DeckEffort, type SessionIssue, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
 import { createSession } from './sessions';
 import { createWorktree, fetchPullRef, isGitRepo } from './git';
 import { isFlagSafe } from './agents/args';
 import { agentSend } from './agents/dispatch';
 import { appendEvent } from './claude';
-import { listProjects, updateProject, rememberModel, readSecret } from './store';
+import { listProjects, updateProject, rememberModel, rememberEffort, readSecret } from './store';
+import { parseEffort } from './session-effort-core';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
 import { expandPlaceholders, contextFromSession, type PlaceholderContext } from '$lib/placeholders';
@@ -115,6 +116,26 @@ function rememberBase(repo: string, newBranch: boolean, base: string | undefined
 function rememberPickedModel(cwd: string, kind: AgentKind, model: unknown, provider: unknown): void {
 	const provider_ = kind === 'pi' ? asStr(provider) || undefined : undefined;
 	rememberModel(projectForPath(cwd) ?? cwd, kind, { model: asStr(model), provider: provider_ });
+}
+
+// Persist the chosen effort so the next claude session in this project defaults to
+// it (issue #178), the same per-project + global scoping as rememberPickedModel.
+// claude-only (effort has no meaning for the other kinds); a no-op elsewhere so
+// the caller stays branch-free.
+function rememberPickedEffort(cwd: string, kind: SessionKind, effort: DeckEffort | undefined): void {
+	if (kind !== 'claude') return;
+	rememberEffort(projectForPath(cwd) ?? cwd, effort);
+}
+
+// Validate the create body's `effort`, returning the normalised level or a clean
+// 400 (issue #178). Absent/blank is the CLI default; an unknown value is rejected;
+// and effort is claude-only, so a level supplied for another kind 400s rather than
+// being silently ignored (the same claude-only contract the /effort route enforces).
+function safeEffort(raw: unknown, kind: SessionKind): DeckEffort | undefined {
+	const parsed = parseEffort(raw);
+	if (!parsed.ok) error(400, 'invalid effort');
+	if (parsed.effort && kind !== 'claude') error(400, 'effort is only valid for claude sessions');
+	return parsed.effort;
 }
 
 // A worktree ref is safe only if it is a string git won't read as a flag. The
@@ -292,16 +313,18 @@ async function maybeDispatch(
 export async function createSessionFromRequest(
 	body: Record<string, unknown>
 ): Promise<Awaited<ReturnType<typeof createSession>>> {
-	const { kind, title, model, provider, permissionMode, command, prompt } = body as {
+	const { kind, title, model, provider, effort, permissionMode, command, prompt } = body as {
 		kind: SessionKind;
 		title?: string;
 		model?: string;
 		provider?: string;
+		effort?: unknown;
 		permissionMode?: Parameters<typeof createSession>[0]['permissionMode'];
 		command?: string;
 		prompt?: unknown;
 	};
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
+	const effortLevel = safeEffort(effort, kind);
 
 	const startCwd = resolveCwd(body.cwd);
 	// Resolve the workflow before any worktree work so a stale id fails fast.
@@ -316,6 +339,7 @@ export async function createSessionFromRequest(
 		cwd,
 		model,
 		provider,
+		effort: effortLevel,
 		permissionMode,
 		command,
 		worktree,
@@ -324,6 +348,7 @@ export async function createSessionFromRequest(
 	});
 
 	if (isAgentKind(kind)) rememberPickedModel(startCwd, kind, model, provider);
+	rememberPickedEffort(startCwd, kind, effortLevel);
 
 	// Fire-and-forget, but not silent: a failed dispatch (e.g. the workflow
 	// refusing to start) lands on the transcript so the fresh session says why
