@@ -1,6 +1,7 @@
 import { listSessions } from './sessions';
 import { pollServers } from './devservers';
 import { syncCapturedPrs } from './pr';
+import { pollAutomation } from './automation';
 import { notify } from './push';
 import { publishAgentEvent } from './agent-feed';
 
@@ -64,10 +65,14 @@ function start() {
 	}, 10000);
 	timer.unref();
 
-	// syncCapturedPrs is single-flight internally, so a slow gh call just skips the
-	// overlapping tick rather than queueing. Best-effort: swallow a stray rejection
-	// (e.g. a failed store write) so the timer keeps ticking.
-	const prTimer = setInterval(() => void syncCapturedPrs().catch(() => {}), PR_SYNC_INTERVAL_MS);
+	// syncCapturedPrs and pollAutomation are each single-flight internally, so a slow
+	// gh call just skips the overlapping tick rather than queueing. Best-effort:
+	// swallow a stray rejection (e.g. a failed store write) so the timer keeps
+	// ticking. Automation rides this same gh cadence (issue #171).
+	const prTimer = setInterval(() => {
+		void syncCapturedPrs().catch(() => {});
+		void pollAutomation().catch(() => {});
+	}, PR_SYNC_INTERVAL_MS);
 	prTimer.unref();
 }
 

@@ -35,6 +35,28 @@ function nonEmpty(workflows: Workflow[]): Workflow[] | undefined {
 	return workflows.length ? workflows : undefined;
 }
 
+// One automation toggle: a boolean (absent reads as off); anything else is a 400.
+function autoFlag(o: Record<string, unknown>, k: 'work' | 'review'): boolean {
+	if (o[k] !== undefined && typeof o[k] !== 'boolean') error(400, `automation.${k} must be a boolean`);
+	return !!o[k];
+}
+
+// A validated automation object in stored form: both-off collapses to absent so
+// projects.json stays tidy at the default.
+function toAutomation(o: Record<string, unknown>): Project['automation'] {
+	const work = autoFlag(o, 'work');
+	const review = autoFlag(o, 'review');
+	return work || review ? { work, review } : undefined;
+}
+
+// The two automation toggles (issue #171). Carry the existing value across a save
+// that omits the field; a bad shape is a 400, not a silent wipe.
+function resolveAutomation(v: unknown, existing: Project['automation']): Project['automation'] {
+	if (v === undefined) return existing;
+	if (v === null || typeof v !== 'object') error(400, 'automation must be an object');
+	return toAutomation(v as Record<string, unknown>);
+}
+
 // Validate configured workflows when sent; carry the existing list across a
 // save that omits it (the main card and other forms never send `workflows`).
 function resolveWorkflowsField(
@@ -83,7 +105,8 @@ function buildProject(body: Record<string, unknown>, dir: string): Project {
 		lastBase: carryStr(body.lastBase, existing.lastBase, 'lastBase'),
 		sources: existing.sources,
 		dev: resolveDev(body, existing.dev),
-		workflows: resolveWorkflowsField(body, existing.workflows)
+		workflows: resolveWorkflowsField(body, existing.workflows),
+		automation: resolveAutomation(body.automation, existing.automation)
 	};
 }
 
