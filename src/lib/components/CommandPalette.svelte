@@ -11,8 +11,8 @@
 	} from '$lib/commands';
 	import type { DeckSession, ServerRuntime } from '$lib/types';
 	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
-	import { CLAUDE_MODELS, modelLabel, switchModel } from '$lib/models';
-	import { Search, CornerDownLeft, ChevronLeft } from '@lucide/svelte';
+	import { CLAUDE_MODELS, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
+	import { Search, CornerDownLeft, ChevronLeft, TriangleAlert } from '@lucide/svelte';
 
 	// Global Cmd+K palette. Rendered once in the layout; `open` is toggled by the
 	// layout's keydown listener. Uses a native <dialog> so focus trapping, Escape,
@@ -37,6 +37,7 @@
 	let mergeBtnEl = $state<HTMLButtonElement>();
 	let modelEl = $state<HTMLInputElement>();
 	let modelListEl = $state<HTMLUListElement>();
+	let confirmBtnEl = $state<HTMLButtonElement>();
 
 	let query = $state('');
 	let selected = $state(0);
@@ -49,6 +50,7 @@
 	let method = $state<MergeMethod>('squash');
 	let deleteBranch = $state(false);
 	let model = $state('');
+	let pendingModel = $state<string | null>(null);
 	let busy = $state(false);
 	let err = $state('');
 
@@ -130,6 +132,7 @@
 			query = '';
 			selected = 0;
 			active = null;
+			pendingModel = null;
 			err = '';
 			d.showModal();
 			void loadData();
@@ -161,6 +164,7 @@
 			method = 'squash';
 			deleteBranch = false;
 			model = currentSession?.model ?? '';
+			pendingModel = null;
 		} else {
 			void execute(cmd);
 		}
@@ -174,7 +178,7 @@
 		if (active?.step === 'text') messageEl?.focus();
 		else if (active?.step === 'merge') mergeBtnEl?.focus();
 		else if (active?.step === 'model')
-			(modelEl ?? modelListEl?.querySelector('button'))?.focus();
+			(pendingModel !== null ? confirmBtnEl : (modelEl ?? modelListEl?.querySelector('button')))?.focus();
 	});
 
 	const METHODS: MergeMethod[] = ['squash', 'merge', 'rebase'];
@@ -208,8 +212,29 @@
 		}
 	}
 
+	// Guard the model step: picking an expensive model (fable/sol) that differs from
+	// the current one asks first, so a premium model is never applied by accident
+	// (issue #134). Non-expensive picks and reselecting the current model apply
+	// straight away.
+	function pickModel(next: string) {
+		if (busy) return;
+		if (isExpensiveModel(next) && next !== (currentSession?.model ?? '')) {
+			err = '';
+			pendingModel = next;
+			return;
+		}
+		void execute(active!, { model: next });
+	}
+
+	// Cancel the expensive-model confirm, back to the picker with the model unchanged.
+	function cancelPending() {
+		pendingModel = null;
+		err = '';
+	}
+
 	function backToList() {
 		active = null;
+		pendingModel = null;
 		err = '';
 		inputEl?.focus();
 	}
@@ -229,7 +254,10 @@
 
 	// Escape backs out of a step panel first, and only then closes the palette.
 	function onCancel(e: Event) {
-		if (active) {
+		if (pendingModel !== null) {
+			e.preventDefault();
+			cancelPending();
+		} else if (active) {
 			e.preventDefault();
 			backToList();
 		}
@@ -316,11 +344,31 @@
 						</button>
 					</div>
 				{:else if active.step === 'model'}
-					{#if currentSession?.kind === 'claude'}
+					{#if pendingModel !== null}
+						<div class="flex items-start gap-2 text-sm">
+							<TriangleAlert size={16} class="mt-0.5 shrink-0 text-warning" />
+							<p>
+								<span class="font-mono">{modelLabel(pendingModel)}</span> is an expensive model. Switch
+								this session to it anyway?
+							</p>
+						</div>
+						{#if err}<p class="text-xs text-error">{err}</p>{/if}
+						<div class="flex justify-end gap-2">
+							<button class="btn btn-ghost btn-sm" onclick={cancelPending}>Cancel</button>
+							<button
+								bind:this={confirmBtnEl}
+								class="btn btn-warning btn-sm"
+								onclick={() => execute(active!, { model: pendingModel! })}
+								disabled={busy}
+							>
+								{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if} Switch anyway
+							</button>
+						</div>
+					{:else if currentSession?.kind === 'claude'}
 						<ul bind:this={modelListEl} class="menu menu-sm w-full p-0">
 							{#each ['', ...CLAUDE_MODELS] as m (m)}
 								<li>
-									<button onclick={() => execute(active!, { model: m })} disabled={busy}>
+									<button onclick={() => pickModel(m)} disabled={busy}>
 										<span class="flex-1">{modelLabel(m)}</span>
 										{#if (currentSession?.model ?? '') === m}
 											<span class="text-xs opacity-50">current</span>
@@ -329,6 +377,7 @@
 								</li>
 							{/each}
 						</ul>
+						{#if err}<p class="text-xs text-error">{err}</p>{/if}
 					{:else}
 						<input
 							bind:this={modelEl}
@@ -336,7 +385,7 @@
 							onkeydown={(e) => {
 								if (e.key === 'Enter') {
 									e.preventDefault();
-									execute(active!, { model });
+									pickModel(model);
 								}
 							}}
 							class="input input-bordered input-sm w-full"
@@ -345,16 +394,12 @@
 							spellcheck="false"
 						/>
 						<div class="flex justify-end">
-							<button
-								class="btn btn-primary btn-sm"
-								onclick={() => execute(active!, { model })}
-								disabled={busy}
-							>
+							<button class="btn btn-primary btn-sm" onclick={() => pickModel(model)} disabled={busy}>
 								{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if} Apply
 							</button>
 						</div>
+						{#if err}<p class="text-xs text-error">{err}</p>{/if}
 					{/if}
-					{#if err}<p class="text-xs text-error">{err}</p>{/if}
 				{:else}
 					<div class="join w-full">
 						{#each [['squash', 'Squash'], ['merge', 'Merge'], ['rebase', 'Rebase']] as [value, label] (value)}
