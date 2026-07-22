@@ -2,8 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import { dismissOnOutside, keepInView } from '$lib/dismiss';
 
-	// The one trigger + panel primitive behind every menu (model, PR, workflow,
-	// servers, quick messages, combo suggestions). On desktop it is a daisyUI
+	// The one trigger + panel primitive behind every menu (model, PR, servers,
+	// quick messages, combo suggestions). On desktop it is a daisyUI
 	// <details> dropdown anchored to its trigger; below the sm breakpoint the
 	// panel becomes a bottom drawer (see .popover-* in layout.css) so actions
 	// land in thumb reach instead of a cramped popover at the top of the screen.

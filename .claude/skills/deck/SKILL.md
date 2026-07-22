@@ -1,7 +1,7 @@
 ---
 name: deck
 description: Drive and monitor deck (the local Claude Code session manager) through its agent API. Use when asked to start deck work sessions or PR-review sessions, send prompts to or stop running deck sessions, check what deck sessions need attention or have finished, answer a blocking deck question, or review/merge a PR through deck.
-version: 2.0.0
+version: 3.0.0
 ---
 
 # deck agent API
@@ -30,12 +30,11 @@ GET /api/agent/projects              # [{ path, name, group }] — every valid c
 GET /api/agent/kinds                 # installed agent CLIs + models
 GET /api/agent/issues?project=<path> # open issues → create's issue {source,id,url}
 GET /api/agent/prs?project=<path>    # open PRs → review's pr {repo,number}
-GET /api/agent/workflows?project=<path>  # startable workflowIds (not the New/Review pair)
 ```
 
 ## Common operations
 
-Check every session (status, awaitingInput, workflowRun, cost, pr):
+Check every session (status, awaitingInput, cost, pr):
 
 ```sh
 curl -s -H "Authorization: Bearer $DECK_TOKEN" "$DECK_BASE_URL/api/agent/sessions"
@@ -59,16 +58,15 @@ curl -s -X POST -H "Authorization: Bearer $DECK_TOKEN" -H 'content-type: applica
 	"$DECK_BASE_URL/api/agent/sessions"
 ```
 
-Steer, read output, run/cancel a workflow, answer, tear down:
+Steer, read output, answer, tear down:
 
 ```sh
 POST /api/agent/sessions/<id>/message     {"text":"..."}   # -> { ok, status, seq }
 GET  /api/agent/sessions/<id>             # digest + lastResult (the latest reply)
 GET  /api/agent/sessions/<id>/transcript  # readable messages + lastResult + cost
 POST /api/agent/sessions/<id>/stop
-POST /api/agent/sessions/<id>/workflow    {"workflowId":"..."} | {"action":"cancel"}
 GET  /api/agent/asks                      # what's blocking, with the options
-POST /api/agent/sessions/<id>/answer      {"text":"...", "askId":"..."}  # askId only for workflow asks
+POST /api/agent/sessions/<id>/answer      {"text":"..."}
 POST /api/agent/sessions/<id>/review      {"decision":"approve|request-changes|comment","body":"..."}
 POST /api/agent/sessions/<id>/merge       {"method":"squash|merge|rebase","deleteBranch":true}
 DELETE /api/agent/sessions/<id>           {"deleteWorktree":true,"deleteBranch":true}
@@ -78,7 +76,6 @@ DELETE /api/agent/sessions/<id>           {"deleteWorktree":true,"deleteBranch":
 
 - A **turn** is done when `status` goes running → idle and a `turn-finished`
   event fires; read the reply via `lastResult` or `/transcript`.
-- A **run** is done when `workflowRun.status` ∈ done | paused | cancelled.
 
 ## Monitor — the event log
 

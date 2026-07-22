@@ -7,7 +7,7 @@ import { appendEventLog } from './event-log';
 // now the consumption surface — a consumer tails the file or reads the resumable
 // /api/agent/events cursor — so the emitter's only remaining job is to wake that
 // cursor's long-poll. Producers are the existing chokepoints (claude.ts
-// setStatus/appendEvent, ask.ts, workflows.ts, sessions.ts, pr.ts, monitor.ts).
+// setStatus/appendEvent, ask.ts, sessions.ts, pr.ts, monitor.ts).
 
 export interface AgentFeedEvent {
 	// Global monotonic cursor: the single handle a consumer resumes from, shared by
@@ -18,7 +18,6 @@ export interface AgentFeedEvent {
 		| 'status'
 		| 'awaiting-input'
 		| 'turn-finished'
-		| 'workflow'
 		| 'pr'
 		| 'session-created'
 		| 'session-deleted';

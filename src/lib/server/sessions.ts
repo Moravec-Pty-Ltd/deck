@@ -20,8 +20,6 @@ import {
 } from './tmux';
 import { agentTurnRunning, agentStop } from './agents/dispatch';
 import { hasPendingAsk } from './ask';
-import { cancelRun, runActive, workflowAskPending } from './workflows';
-import { viewRun } from '$lib/workflows-core';
 import { stopSessionServers } from './devservers';
 import { SERVER_TMUX_PREFIX } from './devservers-core';
 import { removeWorktree } from './git';
@@ -90,10 +88,8 @@ function storedView(s: DeckSession, tmuxSessions: TmuxSession[]): DeckSession {
 		? {
 				...s,
 				status: agentStatus(s),
-				// blocked on the MCP ask or on a workflow ask step — both bucket
-				// under "Needs attention" and both resolve through /answer.
-				awaitingInput: hasPendingAsk(s.id) || workflowAskPending(s.id),
-				workflowRun: viewRun(s.workflowRun, runActive(s.id))
+				// blocked on the MCP ask — buckets under "Needs attention".
+				awaitingInput: hasPendingAsk(s.id)
 			}
 		: shellView(s, tmuxSessions);
 }
@@ -143,16 +139,15 @@ function backfillPr(id: string, alreadyBackfilled?: boolean): SessionPR | undefi
 	return pr;
 }
 
-// Derived live view of a stored agent session: the live run status plus a
-// one-time PR backfill so the header chip lights up on open.
+// Derived live view of a stored agent session: the live status plus a one-time
+// PR backfill so the header chip lights up on open.
 function agentSessionView(id: string, stored: DeckSession): DeckSession {
 	const pr = stored.pr ?? backfillPr(id, stored.prBackfilled);
 	return {
 		...stored,
 		status: agentStatus(stored),
 		pr,
-		awaitingInput: hasPendingAsk(id) || workflowAskPending(id),
-		workflowRun: viewRun(stored.workflowRun, runActive(id))
+		awaitingInput: hasPendingAsk(id)
 	};
 }
 
@@ -224,11 +219,10 @@ export async function createSession(input: {
 	return session;
 }
 
-// Kill whatever the stored session is running: the workflow run, agent turn,
-// and dev servers (issue #32) for agent kinds; the tmux session for shells.
+// Kill whatever the stored session is running: the agent turn and dev servers
+// (issue #32) for agent kinds; the tmux session for shells.
 async function teardownSession(stored: DeckSession): Promise<void> {
 	if (isAgentKind(stored.kind)) {
-		if (runActive(stored.id)) cancelRun(stored.id);
 		agentStop(stored.id);
 		await stopSessionServers(stored.id).catch(() => {});
 	} else if (stored.tmuxName && (await hasTmuxSession(stored.tmuxName))) {

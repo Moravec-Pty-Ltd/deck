@@ -64,10 +64,6 @@ export interface DeckSession {
 	// doesn't repeat on every open and a dismissed `pr` isn't resurrected from the
 	// transcript on reload (see getSession backfill).
 	prBackfilled?: boolean;
-	// state of the workflow run attached to this session, if any (issue #111).
-	// Written by the server runner on every step transition; read by the session
-	// view's progress strip via the /api/sessions poll.
-	workflowRun?: WorkflowRun;
 }
 
 // Live GitHub state of a captured PR, mapped from a PR's state + isDraft (see
@@ -130,62 +126,6 @@ export interface SessionIssue {
 	url: string;
 }
 
-// What a workflow runs against. Drives the new-session modal (which picker to
-// show, which [token] set applies) and the worktree behaviour, mirroring
-// today's new/review split: 'issue' behaves like New mode, 'pr' like Review,
-// 'worktree' targets an existing worktree, 'none' runs with no worktree.
-export type WorkflowContext = 'issue' | 'pr' | 'worktree' | 'none';
-
-// One step of a workflow. `run`/`gate` execute a shell command in the session
-// cwd; `agent` is one turn in the session; `ask` blocks on the deck ask UI.
-// Prompts, commands, and questions accept the [token] placeholders plus
-// [step:<name>] for a previous step's captured output.
-export type WorkflowStep =
-	| { type: 'run'; name: string; command: string }
-	| { type: 'agent'; name: string; prompt: string; model?: string }
-	| { type: 'gate'; name: string; command: string; retries?: number }
-	| { type: 'ask'; name: string; question: string };
-
-// A named per-project automation (issue #111). Generalises the old
-// template/reviewPrompt pair: those synthesize into single-agent-step
-// workflows when `Project.workflows` is absent (see workflows-core.ts).
-export interface Workflow {
-	id: string;
-	name: string;
-	context: WorkflowContext;
-	steps: WorkflowStep[];
-}
-
-// Where a workflow run currently is. 'awaiting-input' means blocked on an ask
-// step; 'paused' means it stopped short (gate retries exhausted, a step
-// failed, or the server restarted mid-run) with `reason` saying why.
-export type WorkflowRunStatus =
-	| 'running'
-	| 'awaiting-input'
-	| 'paused'
-	| 'done'
-	| 'cancelled';
-
-// The step list snapshotted onto the run at start, so progress renders
-// stably even if the project's workflow config is edited mid-run.
-export interface WorkflowRunStep {
-	name: string;
-	type: WorkflowStep['type'];
-}
-
-// Run state persisted on the session (one run per session). `step` is the
-// index into `steps` the run is at; retry counters live in the server runner's
-// memory, so a run does not survive a server restart (it surfaces as paused).
-export interface WorkflowRun {
-	workflowId: string;
-	name: string;
-	steps: WorkflowRunStep[];
-	step: number;
-	status: WorkflowRunStatus;
-	reason?: string;
-	startedAt: number;
-}
-
 // A user-configured canned message shown in the agent composer's quick-message
 // popover (issue #45). `label` is the menu label, falling back to the text when
 // absent. `text` may contain [tokens] expanded server-side at send time (see
@@ -218,9 +158,6 @@ export interface Project {
 	// Issue sources are per-project and additive. API keys never live here; they
 	// sit in ~/.deck/secrets.json keyed by source id (see server/store.ts).
 	sources?: IssueSource[];
-	// Configured workflows (issue #111). Absent means the legacy
-	// template/reviewPrompt fields drive the two synthesized defaults.
-	workflows?: Workflow[];
 	// Dev-server standup config (issue #32): copy env files in, run ordered setup,
 	// then launch one or more monitored dev commands on an agent session's worktree.
 	dev?: DevConfig;

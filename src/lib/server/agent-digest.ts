@@ -7,13 +7,9 @@ import type {
 	SessionIssue,
 	SessionKind,
 	SessionPR,
-	SessionStatus,
-	Workflow,
-	WorkflowRun,
-	WorkflowStep
+	SessionStatus
 } from '$lib/types';
 import { isAgentKind } from '$lib/types';
-import { isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
 import { baseUrl } from './config';
 import { sessionLastResult, transcriptCostSummary } from './transcript';
 
@@ -37,7 +33,6 @@ export interface AgentSessionDigest {
 	worktree?: DeckSession['worktree'];
 	issues?: SessionIssue[];
 	pr?: SessionPR;
-	workflowRun?: WorkflowRun;
 	cost?: CostSummary;
 	// The session's most recent assistant reply, attached only when requested (the
 	// single-session GET), since it reads the transcript. Omitted on the list/feed
@@ -61,7 +56,6 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		worktree: s.worktree,
 		issues: s.issues ?? (s.issue ? [s.issue] : undefined),
 		pr: s.pr,
-		workflowRun: s.workflowRun,
 		// Cheap: transcriptCostSummary is LRU-cached and extended incrementally.
 		cost: isAgentKind(s.kind) ? transcriptCostSummary(s.id) : undefined,
 		lastResult: opts?.lastResult && isAgentKind(s.kind) ? sessionLastResult(s.id) : undefined
@@ -69,10 +63,10 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 }
 
 // ---- Discovery projections (issue #144) ----
-// Stable agent-namespace views of the internal Project / Workflow / Issue /
-// PullRequest rows, so the contract doesn't couple to their full stored shapes
-// (dev config, sources, sync internals). Each maps directly onto a field the
-// create / review calls accept.
+// Stable agent-namespace views of the internal Project / Issue / PullRequest
+// rows, so the contract doesn't couple to their full stored shapes (dev config,
+// sources, sync internals). Each maps directly onto a field the create / review
+// calls accept.
 
 export interface AgentProject {
 	path: string;
@@ -83,36 +77,6 @@ export interface AgentProject {
 // The { path, name, group } an orchestrator needs to pick a valid `cwd`.
 export function projectDigest(p: Project): AgentProject {
 	return { path: p.path, name: p.name, group: p.group };
-}
-
-export interface AgentWorkflowStep {
-	name: string;
-	type: WorkflowStep['type'];
-}
-
-export interface AgentWorkflow {
-	id: string;
-	name: string;
-	context: Workflow['context'];
-	steps: AgentWorkflowStep[];
-}
-
-export function workflowDigest(w: Workflow): AgentWorkflow {
-	return {
-		id: w.id,
-		name: w.name,
-		context: w.context,
-		steps: w.steps.map((s) => ({ name: s.name, type: s.type }))
-	};
-}
-
-// The startable workflows for a project: the configured ones, with the
-// synthesized legacy New/Review pair excluded — those are the plain-session path,
-// not a startable workflowId (see workflows-core.ts).
-export function startableWorkflows(project: Project | undefined): AgentWorkflow[] {
-	return resolveWorkflows(project)
-		.filter((w) => !isLegacyWorkflowId(w.id))
-		.map(workflowDigest);
 }
 
 // Maps onto create's `issue { source, id, url }`.

@@ -20,12 +20,11 @@ export interface AskQuestion {
 	options: { label: string; description?: string }[];
 }
 
-// A pending ask as the agent API lists it. `askId` is set for workflow
-// checkpoints (see workflows.ts), absent for MCP asks (answered by text alone).
+// A pending ask as the agent API lists it: the MCP `ask` tool, answered by text
+// alone.
 export interface PendingAsk {
 	sessionId: string;
-	source: 'mcp' | 'workflow';
-	askId?: string;
+	source: 'mcp';
 	questions: AskQuestion[];
 	askedAt: number;
 }

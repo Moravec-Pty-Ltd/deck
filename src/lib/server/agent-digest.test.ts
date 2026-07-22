@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DeckSession, Issue, Project, PullRequest, Workflow } from '$lib/types';
+import type { DeckSession, Issue, Project, PullRequest } from '$lib/types';
 import { pinEnv } from './test-env';
 
 // agent-digest pulls baseUrl/config and the transcript reader, both of which
@@ -10,8 +10,7 @@ import { pinEnv } from './test-env';
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-digest-'));
 const restoreEnv = pinEnv({ DECK_DATA: tmpDir, DECK_BASE_URL: 'http://example.test:4818' });
 
-const { sessionDigest, projectDigest, workflowDigest, startableWorkflows, issueDigest, prDigest } =
-	await import('./agent-digest');
+const { sessionDigest, projectDigest, issueDigest, prDigest } = await import('./agent-digest');
 
 afterAll(() => {
 	restoreEnv();
@@ -89,40 +88,6 @@ describe('discovery projections', () => {
 			dev: { ports: [] }
 		} as unknown as Project;
 		expect(projectDigest(project)).toEqual({ path: '/path/to/web', name: 'web', group: 'apps' });
-	});
-
-	it('projects a workflow to id/name/context/steps', () => {
-		const wf: Workflow = {
-			id: 'ship',
-			name: 'Ship it',
-			context: 'issue',
-			steps: [
-				{ type: 'agent', name: 'Implement', prompt: 'do it' },
-				{ type: 'gate', name: 'Test', command: 'pnpm test' }
-			]
-		};
-		expect(workflowDigest(wf)).toEqual({
-			id: 'ship',
-			name: 'Ship it',
-			context: 'issue',
-			steps: [
-				{ name: 'Implement', type: 'agent' },
-				{ name: 'Test', type: 'gate' }
-			]
-		});
-	});
-
-	it('excludes the synthesized legacy pair from startable workflows', () => {
-		const project = {
-			name: 'web',
-			path: '/p',
-			workflows: [{ id: 'ship', name: 'Ship', context: 'issue', steps: [{ type: 'agent', name: 'a', prompt: 'p' }] }]
-		} as unknown as Project;
-		const ids = startableWorkflows(project).map((w) => w.id);
-		expect(ids).toEqual(['ship']);
-		// A project without configured workflows offers nothing startable (only the
-		// legacy New/Review pair, which is filtered out).
-		expect(startableWorkflows(undefined)).toEqual([]);
 	});
 
 	it('maps an issue row onto create\'s issue shape', () => {

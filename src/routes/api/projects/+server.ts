@@ -2,11 +2,10 @@ import { json, error } from '@sveltejs/kit';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { RequestHandler } from './$types';
-import type { DevConfig, Project, Workflow } from '$lib/types';
+import type { DevConfig, Project } from '$lib/types';
 import { listProjects, addProject, removeProject } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
 import { parseDevConfig } from '$lib/server/devservers-core';
-import { parseWorkflows } from '$lib/workflows-core';
 
 // Validate the dev-server config when present; carry the existing one across an
 // edit that doesn't touch it (the form sends the whole object when it does). A
@@ -27,12 +26,6 @@ function carryStr(v: unknown, existing: string | undefined, label: string): stri
 	if (v === undefined) return existing;
 	if (typeof v !== 'string') error(400, `${label} must be a string`);
 	return v.trim() || undefined;
-}
-
-// An empty workflows list is stored as absent, falling back to the legacy
-// template/reviewPrompt synthesis (see workflows-core.ts).
-function nonEmpty(workflows: Workflow[]): Workflow[] | undefined {
-	return workflows.length ? workflows : undefined;
 }
 
 // One automation toggle: a boolean (absent reads as off); anything else is a 400.
@@ -61,20 +54,6 @@ function resolveAutomation(v: unknown, existing: Project['automation']): Project
 	if (v === undefined) return existing;
 	if (!isPlainObject(v)) error(400, 'automation must be an object');
 	return toAutomation(v);
-}
-
-// Validate configured workflows when sent; carry the existing list across a
-// save that omits it (the main card and other forms never send `workflows`).
-function resolveWorkflowsField(
-	body: { workflows?: unknown },
-	existing: Workflow[] | undefined
-): Workflow[] | undefined {
-	if (body.workflows === undefined) return existing;
-	try {
-		return nonEmpty(parseWorkflows(body.workflows));
-	} catch (e) {
-		error(400, e instanceof Error ? e.message : 'invalid workflows');
-	}
 }
 
 export const GET: RequestHandler = async () => {
@@ -111,7 +90,6 @@ function buildProject(body: Record<string, unknown>, dir: string): Project {
 		lastBase: carryStr(body.lastBase, existing.lastBase, 'lastBase'),
 		sources: existing.sources,
 		dev: resolveDev(body, existing.dev),
-		workflows: resolveWorkflowsField(body, existing.workflows),
 		automation: resolveAutomation(body.automation, existing.automation)
 	};
 }
