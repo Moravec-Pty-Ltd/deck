@@ -467,9 +467,9 @@
 		<div class="min-h-0 flex-1">
 			<div class="h-full" class:hidden={tab !== 'main'}>
 				{#if session.kind === 'shell'}
-					<ShellView {session} />
+					<ShellView {session} visible={tab === 'main'} />
 				{:else}
-					<ClaudeView {session} {sessions} />
+					<ClaudeView {session} {sessions} visible={tab === 'main'} />
 				{/if}
 			</div>
 			{#if tab === 'changes'}

@@ -26,7 +26,14 @@
 	} from '$lib/composer-draft-core';
 	import { haptic } from '$lib/haptics';
 
-	let { session, sessions = [] }: { session: DeckSession; sessions?: DeckSession[] } = $props();
+	// `visible` is false while the Chat pane sits behind the Changes/Servers tabs
+	// (the page keeps it mounted but display:none). A hidden scroller has no layout,
+	// so we pause scroll bookkeeping and re-pin once it's shown again.
+	let {
+		session,
+		sessions = [],
+		visible = true
+	}: { session: DeckSession; sessions?: DeckSession[]; visible?: boolean } = $props();
 
 	// A single global composer draft, persisted so a cold reload / iOS PWA relaunch
 	// restores it. Restored once at init (this component isn't remounted on session
@@ -52,6 +59,10 @@
 	let scroller: HTMLDivElement | undefined = $state();
 	let fileInput: HTMLInputElement | undefined = $state();
 	let atBottom = $state(true);
+	// Last scrollTop recorded while the pane was visible. The browser clamps a
+	// hidden scroller's scrollTop to 0 and doesn't restore it, so we replay this
+	// for a reader who had scrolled up when the Chat tab comes back into view.
+	let savedScrollTop = 0;
 	let dragging = $state(false);
 	let connected = $state(true);
 	let loaded = $state(false);
@@ -76,7 +87,7 @@
 	// stable absolute index) so prepending older rows still reuses nodes.
 	let baseIndex = $state(0);
 	const start = $derived(Math.max(0, events.length - limit));
-	const visible = $derived(events.slice(start));
+	const visibleEvents = $derived(events.slice(start));
 
 	// Two lookups the template needs while rendering the visible window:
 	//   resultsById       — tool_use_id → its tool_result block (ToolCall)
@@ -178,7 +189,11 @@
 				liveText = '';
 				loaded = true;
 				await tick();
-				forceScroll();
+				// Behind another tab the scroller has no layout, so forcing scroll here
+				// would only flip atBottom and lose a scrolled-up reader's place on a
+				// background reconnect. Defer to the visibility effect; hydrateRest
+				// self-defers while hidden.
+				if (visible) forceScroll();
 				hydrateRest();
 			});
 			es.addEventListener('transcript', (e) => {
@@ -242,7 +257,10 @@
 	}
 
 	function onScroll() {
-		if (!scroller) return;
+		// While hidden the scroller has no layout and scrollTop clamps to 0; ignore
+		// those events so atBottom can't flip and no history is fetched behind a tab.
+		if (!scroller || !visible) return;
+		savedScrollTop = scroller.scrollTop;
 		atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
 		// Scrolling toward the top: widen the window over loaded rows, then pull
 		// older history from the server once the loaded slice is exhausted.
@@ -260,6 +278,19 @@
 		scroller?.scrollTo({ top: scroller.scrollHeight });
 		atBottom = true;
 	}
+
+	// When the Chat tab is shown again, the scroller regains layout but the browser
+	// left scrollTop at 0. Wait a tick for that layout, then restore the reader's
+	// place: re-pin to the bottom if they were there, else back to where they were.
+	$effect(() => {
+		if (!visible) return;
+		tick().then(() => {
+			if (!scroller) return;
+			if (atBottom) forceScroll();
+			else scroller.scrollTop = savedScrollTop;
+			hydrateRest(); // resume any hydration deferred while hidden
+		});
+	});
 
 	const idle: (cb: () => void) => void =
 		typeof requestIdleCallback === 'function'
@@ -279,10 +310,13 @@
 
 	let hydrating = false;
 	function hydrateRest() {
-		if (hydrating || limit >= events.length) return;
+		// Don't widen the window behind another tab: growWindow's scroll compensation
+		// is a no-op without layout, so it would desync a scrolled-up reader. The
+		// visibility effect resumes hydration on re-show.
+		if (hydrating || limit >= events.length || !visible) return;
 		hydrating = true;
 		const step = () => {
-			if (limit >= events.length) {
+			if (limit >= events.length || !visible) {
 				hydrating = false;
 				return;
 			}
@@ -557,7 +591,7 @@
 				<span class="loading loading-spinner loading-xs opacity-60"></span>
 			</div>
 		{/if}
-		{#each visible as event, i (baseIndex + start + i)}
+		{#each visibleEvents as event, i (baseIndex + start + i)}
 			{#if event.type === 'deck.user'}
 				<MessageBubble side="end" text={event.text ?? ''} bubbleClass="bg-base-300 text-base-content">
 					{#if event.images?.length}
