@@ -43,6 +43,23 @@ export function mapPrState(state: string, isDraft: boolean): PrState | null {
 	return base;
 }
 
+// Whether deck owns the worktree's branch and should delete it on teardown.
+// True when the `worktree add` (or the pr/<n> fetch) created the branch, so the
+// flag is authoritative for work sessions and for review sessions created after
+// createdBranch started recording fetch ownership. The pr/<n> fallback is the
+// migration for review sessions stored before that fix (they carry `false`
+// forever): a worktree parked on the exact pr/<n> ref for this session's captured
+// PR is a deck-fetched review ref, so recover ownership from the ref name. The
+// git branch -D on delete tolerates a ref another worktree still holds, so a
+// shared PR ref only drops once the last review session on it is removed.
+export function ownsWorktreeBranch(
+	worktree: { branch: string; createdBranch: boolean },
+	pr: { number: number } | undefined
+): boolean {
+	if (worktree.createdBranch) return true;
+	return pr !== undefined && worktree.branch === `pr/${pr.number}`;
+}
+
 // Standard GitHub state colours, applied literally (not theme tokens) so the
 // chip reads the same open/merged/closed/draft as GitHub itself.
 export const PR_STATE_COLOR: Record<PrState, string> = {

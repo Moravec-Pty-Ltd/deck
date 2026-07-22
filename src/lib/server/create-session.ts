@@ -195,8 +195,10 @@ async function makeWorktree(
 	return { cwd: dir, worktree: { repo: cwd, branch: wt.branch!, createdBranch: !!wt.newBranch, base } };
 }
 
-// Fetch the PR head into a local pr/<n> branch, surfacing a fetch failure as a 400.
-async function fetchPrBranch(cwd: string, number: number): Promise<string> {
+// Fetch the PR head into a local pr/<n> branch, surfacing a fetch failure as a
+// 400. `created` reports whether deck fetched the ref (vs reused one another
+// review session already holds), so ownership is recorded truthfully.
+async function fetchPrBranch(cwd: string, number: number): Promise<{ branch: string; created: boolean }> {
 	try {
 		return await fetchPullRef(cwd, number);
 	} catch (e) {
@@ -215,9 +217,12 @@ async function makePrWorktree(
 	const number = toPrNumber(wt.fromPr);
 	if (number === null) error(400, 'invalid PR number');
 	const base = safeBase(wt);
-	const branch = await fetchPrBranch(repo, number);
+	const { branch, created } = await fetchPrBranch(repo, number);
 	const dir = await createWorktree(repo, branch, { newBranch: false });
-	return { cwd: dir, worktree: { repo: cwd, branch, createdBranch: false, base } };
+	// `created` (not the worktree-add's newBranch) records ref ownership: deck
+	// made the pr/<n> ref here, so branch cleanup on delete should drop it. A
+	// pre-existing ref (another session already reviewing this PR) stays false.
+	return { cwd: dir, worktree: { repo: cwd, branch, createdBranch: created, base } };
 }
 
 // Resolve the effective cwd + worktree for the request (no-op when neither a
