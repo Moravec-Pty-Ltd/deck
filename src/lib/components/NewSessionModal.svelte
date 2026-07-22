@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { isAgentKind } from '$lib/types';
 	import type {
+		DeckEffort,
 		DeckSettings,
 		Issue,
 		ModelChoice,
@@ -16,6 +17,7 @@
 		resolveModelChoice,
 		shouldReseedModel
 	} from '$lib/models';
+	import { EFFORT_LEVELS, effortLabel, resolveEffort } from '$lib/effort';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import { firstAgentPrompt, isLegacyWorkflowId, resolveWorkflows } from '$lib/workflows-core';
 	import {
@@ -64,6 +66,9 @@
 	let title = $state('');
 	let model = $state('');
 	let provider = $state('');
+	// Reasoning effort for claude (issue #178). '' is the CLI default. Seeded and
+	// re-seeded alongside model under the same `modelDirty` guard.
+	let effort = $state<DeckEffort | ''>('');
 	let modelDirty = $state(false);
 	let settings = $state<DeckSettings>({});
 	// Detected model lists per agent kind, fetched once per session and reused
@@ -376,6 +381,7 @@
 		[
 			worktreeLabel,
 			isAgentKind(kind) ? pickedModelLabel || 'default model' : '',
+			kind === 'claude' && effort ? `${effort} effort` : '',
 			kind === 'claude' ? (yolo ? 'yolo' : 'ask first') : ''
 		]
 			.filter(Boolean)
@@ -409,6 +415,8 @@
 			: { model: '', provider: undefined };
 		model = choice.model;
 		provider = choice.provider ?? '';
+		// Effort is claude-only; other kinds always seed blank.
+		effort = kind === 'claude' ? (resolveEffort(selectedProject, settings) ?? '') : '';
 	});
 
 	// Fetch the detected model list once per agent kind while the modal is open;
@@ -480,6 +488,7 @@
 			kind,
 			model: model.trim() || undefined,
 			provider: kind === 'pi' && provider.trim() ? provider.trim() : undefined,
+			effort: kind === 'claude' && effort ? effort : undefined,
 			permissionMode: kind === 'claude' ? (yolo ? 'bypassPermissions' : 'acceptEdits') : undefined,
 			command: kind === 'shell' && command.trim() ? command.trim() : undefined,
 			prompt: kind !== 'shell' && prompt.trim() ? prompt.trim() : undefined,
@@ -975,6 +984,16 @@
 										<select class="select w-full" bind:value={model} onchange={() => (modelDirty = true)}>
 											{#each CLAUDE_MODELS as m (m)}
 												<option value={m}>{m}</option>
+											{/each}
+										</select>
+										<select
+											class="select w-full"
+											bind:value={effort}
+											onchange={() => (modelDirty = true)}
+											aria-label="Reasoning effort"
+										>
+											{#each ['', ...EFFORT_LEVELS] as e (e)}
+												<option value={e}>{effortLabel(e)} effort</option>
 											{/each}
 										</select>
 										<label class="label cursor-pointer justify-start gap-2">

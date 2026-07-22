@@ -26,9 +26,9 @@ export const GET: RequestHandler = async () => {
 // answer are agent-session endpoints), so creating one here would be a
 // session the contract can't control.
 function commonFields(body: Record<string, unknown>): Record<string, unknown> {
-	const { cwd, prompt, kind, workflowId, title, model, provider, permissionMode } = body;
+	const { cwd, prompt, kind, workflowId, title, model, provider, effort, permissionMode } = body;
 	if (kind === 'shell') error(400, 'the agent API drives agent sessions, not shells');
-	return { cwd, prompt, kind: kind ?? 'claude', workflowId, title, model, provider, permissionMode };
+	return { cwd, prompt, kind: kind ?? 'claude', workflowId, title, model, provider, effort, permissionMode };
 }
 
 // Reject an invalid pr up front with the create pipeline's own parser: it

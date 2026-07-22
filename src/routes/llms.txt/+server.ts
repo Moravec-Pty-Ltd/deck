@@ -126,7 +126,7 @@ Digest of every session:
 	"id": "c_abc123", "url": "${baseUrl}/s/c_abc123",
 	"kind": "claude", "title": "...", "cwd": "/path/to/worktree",
 	"status": "running", "awaitingInput": false,
-	"createdAt": 0, "lastActiveAt": 0, "model": "...",
+	"createdAt": 0, "lastActiveAt": 0, "model": "...", "effort": "high",
 	"worktree": { "repo": "/path/to/project", "branch": "...", "createdBranch": true, "base": "main" },
 	"issues": [{ "source": "github", "id": "owner/repo#1", "url": "..." }],
 	"pr": { "repo": "owner/repo", "number": 42, "url": "...", "state": "open",
@@ -165,6 +165,7 @@ idempotent replay).
 	"prompt": "...",                    // optional first prompt; omitted/blank defaults to the project's template
 	"kind": "claude",                   // optional, default claude; use an available kind (see /api/agent/kinds)
 	"title": "...", "model": "...",     // optional; model is free-text
+	"effort": "low|medium|high|xhigh|max",  // optional; claude reasoning effort, omit for the CLI default
 	"workflowId": "...",                // optional startable workflow (see /api/agent/workflows)
 	"issue": { "source": "github|linear|clickup", "id": "owner/repo#1", "url": "..." },  // optional; from /api/agent/issues
 	"worktree": { "branch": "my-branch", "newBranch": true, "base": "main" }             // optional
@@ -209,6 +210,13 @@ Interrupt the in-flight turn (empty body). Returns \`{ "ok": true }\`.
 \`{ "model"?: "..." }\` — switch the session's model. Absent or empty resets to
 the CLI default. Idle-only (409 if a turn is running); applies on the next
 turn. Returns \`{ "ok": true }\`.
+
+### POST /api/agent/sessions/{id}/effort
+
+\`{ "effort"?: "low|medium|high|xhigh|max" }\` — switch a claude session's
+reasoning effort. Absent or empty resets to the CLI default; an unknown value or
+a non-claude session is a 400. Idle-only (409 if a turn is running); applies on
+the next turn. Returns \`{ "ok": true }\`.
 
 ### POST /api/agent/sessions/{id}/workflow
 
