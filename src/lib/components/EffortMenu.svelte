@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { DeckEffort } from '$lib/types';
 	import { EFFORT_LEVELS, effortLabel, switchEffort } from '$lib/effort';
+	import { menuAction } from '$lib/menu-action.svelte';
 	import { Gauge, Check } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
 
@@ -22,24 +23,22 @@
 	} = $props();
 
 	let open = $state(false);
-	let err = $state('');
+	const act = menuAction();
 
 	// Clear a stale error on close.
 	$effect(() => {
-		if (!open) err = '';
+		if (!open) act.clearErr();
 	});
 
-	// No in-flight busy guard (unlike ModelMenu/WorkflowMenu): switching effort is
-	// an idle-only enum POST, so a double-click just re-applies a level harmlessly.
-	async function apply(next: string) {
-		err = '';
-		try {
-			await switchEffort(id, next);
-			open = false;
-			onChange();
-		} catch (e) {
-			err = e instanceof Error ? e.message : 'effort switch failed';
-		}
+	function apply(next: string) {
+		void act.run(
+			() => switchEffort(id, next),
+			() => {
+				open = false;
+				onChange();
+			},
+			'effort switch failed'
+		);
 	}
 </script>
 
@@ -62,13 +61,13 @@
 		<ul class="menu menu-sm w-full p-0">
 			{#each ['', ...EFFORT_LEVELS] as e (e)}
 				<li>
-					<button onclick={() => apply(e)}>
+					<button onclick={() => apply(e)} disabled={act.busy}>
 						{effortLabel(e)}
 						{#if (effort ?? '') === e}<Check size={14} class="ml-auto" />{/if}
 					</button>
 				</li>
 			{/each}
 		</ul>
-		{#if err}<p class="mt-1 px-1 text-xs text-error">{err}</p>{/if}
+		{#if act.err}<p class="mt-1 px-1 text-xs text-error">{act.err}</p>{/if}
 	</Popover>
 {/if}

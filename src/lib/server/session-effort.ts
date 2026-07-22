@@ -3,6 +3,7 @@ import type { DeckEffort, DeckSession } from '$lib/types';
 import { getStoredSession, updateSession } from './store';
 import { agentTurnRunning } from './agents/dispatch';
 import { appendEvent, stopProcess } from './claude';
+import { objectBody } from './http';
 import { parseEffort } from './session-effort-core';
 
 // Change a session's reasoning effort mid-session (issue #178), mirroring
@@ -32,11 +33,10 @@ export async function changeSessionEffort(event: {
 	request: Request;
 }): Promise<Response> {
 	const session = effortSession(event.params.id!);
-	// Malformed JSON must 400, not read as "reset to default" (an absent or empty
-	// `effort` in a well-formed body is the explicit reset).
-	const body = (await event.request.json().catch(() => error(400, 'invalid body'))) as {
-		effort?: unknown;
-	};
+	// objectBody 400s a missing/malformed/null/array/scalar body, so a non-object
+	// can't throw a 500 or silently read as a reset; an absent or empty `effort` in
+	// a well-formed object is the explicit reset.
+	const body = await objectBody(event.request);
 	const parsed = parseEffort(body.effort);
 	if (!parsed.ok) error(400, 'invalid effort');
 	if (agentTurnRunning(session.id)) error(409, 'a turn is running');

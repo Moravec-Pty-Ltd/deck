@@ -128,10 +128,13 @@ function rememberPickedEffort(cwd: string, kind: SessionKind, effort: DeckEffort
 }
 
 // Validate the create body's `effort`, returning the normalised level or a clean
-// 400 (issue #178). Absent/blank is the CLI default; an unknown value is rejected.
-function safeEffort(raw: unknown): DeckEffort | undefined {
+// 400 (issue #178). Absent/blank is the CLI default; an unknown value is rejected;
+// and effort is claude-only, so a level supplied for another kind 400s rather than
+// being silently ignored (the same claude-only contract the /effort route enforces).
+function safeEffort(raw: unknown, kind: SessionKind): DeckEffort | undefined {
 	const parsed = parseEffort(raw);
 	if (!parsed.ok) error(400, 'invalid effort');
+	if (parsed.effort && kind !== 'claude') error(400, 'effort is only valid for claude sessions');
 	return parsed.effort;
 }
 
@@ -321,7 +324,7 @@ export async function createSessionFromRequest(
 		prompt?: unknown;
 	};
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
-	const effortLevel = safeEffort(effort);
+	const effortLevel = safeEffort(effort, kind);
 
 	const startCwd = resolveCwd(body.cwd);
 	// Resolve the workflow before any worktree work so a stale id fails fast.
