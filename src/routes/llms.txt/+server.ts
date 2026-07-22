@@ -40,7 +40,7 @@ Every /api error is a JSON body \`{ "message": "..." }\` with an HTTP status:
 - \`403\` — a worktree/issue operation whose \`cwd\` is outside the registered
   project set (project confinement).
 - \`404\` — unknown session / project / route.
-- \`409\` — conflict (a turn is already in flight, e.g. a model switch mid-turn).
+- \`409\`: conflict (a turn is already in flight, e.g. a model switch mid-turn).
 
 Parse \`message\` for the reason; don't rely on the status alone.
 
@@ -234,9 +234,9 @@ Every MCP \`ask\` waiting on a human answer, oldest first:
 
 ### POST /api/agent/sessions/{id}/answer
 
-\`{ "text": "..." }\` — resolve the pending ask by text. On success
+\`{ "text": "..." }\` resolves the pending ask by text. On success
 \`{ "ok": true, "seq": <n> }\` (\`seq\` correlates the resulting turn). On failure
-\`{ "ok": false, "reason": "no-pending-ask" }\` — nothing was waiting (already
+\`{ "ok": false, "reason": "no-pending-ask" }\` means nothing was waiting (already
 answered, or a race).
 
 ## Push notifications
@@ -281,7 +281,7 @@ follow by name (\`tail -F\`) or re-read from your last \`seq\`.
 Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 
 - \`status\` — { status: running|idle|error|dead }
-- \`awaiting-input\` — { awaitingInput, source: mcp, questions? }
+- \`awaiting-input\`: { awaitingInput, source: mcp, questions? }
 - \`turn-finished\` — { subtype, cost } (subtype "success" = clean turn end)
 - \`pr\` — { pr } (captured PR seen or its GitHub state changed)
 - \`session-created\` — { session: <digest> }
