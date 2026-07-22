@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { DeckSession } from '$lib/types';
 	import AnsiText from './AnsiText.svelte';
 	import { Send, RefreshCw } from '@lucide/svelte';
@@ -6,16 +7,21 @@
 	// Defaults drive the session's own terminal; pass snapshotPath/sendPath to
 	// repoint at another tmux pane (e.g. a dev server's log, issue #32). readonly
 	// hides the input + key controls for a log-only view.
+	// `visible` is false while this pane sits behind the Changes/Servers tabs (kept
+	// mounted but display:none). A hidden scroller has no layout, so we pause the
+	// atBottom bookkeeping and re-pin once it's shown again.
 	let {
 		session,
 		snapshotPath = `/api/sessions/${encodeURIComponent(session.id)}/snapshot`,
 		sendPath = `/api/sessions/${encodeURIComponent(session.id)}/send`,
-		readonly = false
+		readonly = false,
+		visible = true
 	}: {
 		session: DeckSession;
 		snapshotPath?: string;
 		sendPath?: string;
 		readonly?: boolean;
+		visible?: boolean;
 	} = $props();
 
 	let text = $state('');
@@ -27,6 +33,10 @@
 	let autoRefresh = $state(true);
 	let scroller: HTMLDivElement | undefined = $state();
 	let lastHash = ''; // last snapshot tag; lets the server skip resending unchanged output
+	let atBottom = $state(true);
+	// Last scrollTop recorded while visible; replayed on re-show for a reader who
+	// had scrolled up (a hidden scroller's scrollTop is clamped to 0 and lost).
+	let savedScrollTop = 0;
 
 	async function refresh() {
 		let res: Response;
@@ -44,12 +54,20 @@
 		loaded = true;
 		if (data.unchanged) return; // pane output identical since last poll; nothing to re-render
 		lastHash = String(data.h ?? '').slice(0, 64);
-		const atBottom =
-			!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
+		// Measure against the pre-update content, but only when laid out: a hidden
+		// pane reports 0s, so keep the last visible reading instead of misjudging it.
+		if (visible && scroller)
+			atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
 		text = data.text;
 		dead = data.dead;
 		cleared = !!data.cleared;
 		if (atBottom) queueMicrotask(() => scroller?.scrollTo({ top: scroller.scrollHeight }));
+	}
+
+	function onScroll() {
+		if (!scroller || !visible) return;
+		savedScrollTop = scroller.scrollTop;
+		atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
 	}
 
 	$effect(() => {
@@ -57,6 +75,17 @@
 		if (!autoRefresh) return;
 		const interval = setInterval(refresh, 2500);
 		return () => clearInterval(interval);
+	});
+
+	// When the Terminal tab is shown again the scroller regains layout but the
+	// browser left scrollTop at 0; restore the reader's place after a tick.
+	$effect(() => {
+		if (!visible) return;
+		tick().then(() => {
+			if (!scroller) return;
+			if (atBottom) scroller.scrollTo({ top: scroller.scrollHeight });
+			else scroller.scrollTop = savedScrollTop;
+		});
 	});
 
 	async function send(submit = true) {
@@ -98,6 +127,7 @@
 	{/if}
 	<div
 		bind:this={scroller}
+		onscroll={onScroll}
 		class="terminal-output min-h-0 flex-1 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-3"
 	><AnsiText text={text || (loaded ? '(empty)' : 'connecting…')} /></div>
 
