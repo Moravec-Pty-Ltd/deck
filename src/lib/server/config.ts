@@ -22,6 +22,13 @@ fs.mkdirSync(transcriptsDir, { recursive: true });
 fs.mkdirSync(agentSessionsDir, { recursive: true });
 fs.mkdirSync(imagesDir, { recursive: true });
 
+// Absolute path to morabot's status.json (issue #188); unset disables the
+// integration entirely (no sidebar section, no file reads, no notifications).
+// `||` deliberately: a blank env var reads as unset. Confinement (the path must
+// resolve inside a registered project) is validated where it's consumed, in
+// server/morabot.ts, to avoid a config -> confine -> store -> config import cycle.
+export const morabotStatusPath = process.env.DECK_MORABOT_STATUS?.trim() || null;
+
 const tokenFile = path.join(dataDir, 'token');
 
 function loadToken(): string {

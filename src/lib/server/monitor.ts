@@ -4,6 +4,7 @@ import { syncCapturedPrs } from './pr';
 import { pollAutomation } from './automation';
 import { notify } from './push';
 import { publishAgentEvent } from './agent-feed';
+import { pollMorabot } from './morabot';
 
 // Claude lifecycle (turn end, crash, question) is notified inline from the event
 // stream in claude.ts. Shells have no event stream, so a lightweight poll watches
@@ -58,6 +59,10 @@ function start() {
 				if (s.kind === 'shell') onShellTransition(s, before);
 			}
 			for (const id of prev.keys()) if (!seen.has(id)) prev.delete(id);
+			// Cheap local-file poll (mtime-guarded, issue #188): surfaces morabot's
+			// in-flight review and fires one push per new verdict on a session's PR.
+			// Self-guarding, so a bad status file cannot wedge the health tick.
+			pollMorabot(sessions);
 			await pollServers(sessions).catch(() => {});
 		} finally {
 			polling = false;

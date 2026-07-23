@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import type { DeckSession, NewSessionPreset, Project, ServerState } from '$lib/types';
+	import type { ReviewsPayload } from '$lib/morabot-core';
 	import ClaudeView from '$lib/components/ClaudeView.svelte';
 	import ShellView from '$lib/components/ShellView.svelte';
 	import DiffView from '$lib/components/DiffView.svelte';
@@ -84,6 +85,9 @@
 	// the header chip and the sidebar dots (issue #32). The Servers tab fetches
 	// live per-server detail itself; its onStates keeps this fresh while open.
 	let serverStates = $state<Record<string, ServerState[]>>({});
+	// morabot review snapshot (issue #188), for the sidebar Reviews section. Unset
+	// until the first poll; `unconfigured` from the server hides the section.
+	let reviews = $state<ReviewsPayload | null>(null);
 	const myServers = $derived(serverStates[session.id] ?? []);
 	const serverChip = $derived(aggregateState(myServers));
 	const hasServers = $derived(myServers.length > 0);
@@ -91,14 +95,16 @@
 	async function refresh() {
 		// allSettled, not all: a single endpoint failure (e.g. /api/servers) must not
 		// abort the whole refresh and leave projects/sessions stale.
-		const [pRes, sRes, vRes] = await Promise.allSettled([
+		const [pRes, sRes, vRes, rRes] = await Promise.allSettled([
 			fetch('/api/projects'),
 			fetch('/api/sessions'),
-			fetch('/api/servers')
+			fetch('/api/servers'),
+			fetch('/api/reviews')
 		]);
 		if (pRes.status === 'fulfilled' && pRes.value.ok) projects = await pRes.value.json();
 		if (sRes.status === 'fulfilled' && sRes.value.ok) sessions = await sRes.value.json();
 		if (vRes.status === 'fulfilled' && vRes.value.ok) serverStates = await vRes.value.json();
+		if (rRes.status === 'fulfilled' && rRes.value.ok) reviews = await rRes.value.json();
 	}
 
 	$effect(() => {
@@ -270,6 +276,7 @@
 		{projects}
 		{sessions}
 		{serverStates}
+		{reviews}
 		currentId={session.id}
 		deletingIds={del.deletingIds}
 		onQuickAdd={quickAdd}
