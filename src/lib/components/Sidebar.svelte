@@ -9,7 +9,15 @@
 	import { aggregateState, SERVER_DOT, SERVER_LABEL } from '$lib/servers';
 	import { pickSessionIcon, type SessionIconKind } from '$lib/session-icon';
 	import ReviewMarks from './ReviewMarks.svelte';
-	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown } from '@lucide/svelte';
+	import {
+		decisionLabel,
+		phaseLabel,
+		matchSessionForReview,
+		type ReviewsPayload,
+		type RecentReview,
+		type ReviewDecision
+	} from '$lib/morabot-core';
+	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff } from '@lucide/svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
 	// what the session is attached to, colour still says PR state.
@@ -24,14 +32,39 @@
 		projects: Project[];
 		sessions: DeckSession[];
 		serverStates?: Record<string, ServerState[]>;
+		reviews?: ReviewsPayload | null;
 		currentId?: string;
 		deletingIds?: Set<string>;
 		onQuickAdd: (path: string) => void;
 		onShellHere: (session: DeckSession) => void;
 		onDelete: (session: DeckSession, neighbor?: DeckSession | null) => void;
 	}
-	let { projects, sessions, serverStates, currentId, deletingIds, onQuickAdd, onShellHere, onDelete }: Props =
+	let { projects, sessions, serverStates, reviews, currentId, deletingIds, onQuickAdd, onShellHere, onDelete }: Props =
 		$props();
+
+	// morabot review section (issue #188). Hidden entirely unless the integration is
+	// configured; an `offline` snapshot shows a hint instead of stale data as live.
+	const showReviews = $derived(!!reviews && reviews.status !== 'unconfigured');
+
+	const DECISION_ICON: Record<ReviewDecision, typeof CircleCheck> = {
+		APPROVE: CircleCheck,
+		REQUEST_CHANGES: CircleX,
+		COMMENT: MessageSquare
+	};
+	function decisionColor(d: ReviewDecision): string {
+		if (d === 'APPROVE') return 'text-success';
+		if (d === 'REQUEST_CHANGES') return 'text-error';
+		return 'opacity-60';
+	}
+	// Link a recent review to a matching session when one captured its PR, else out
+	// to the GitHub review.
+	function reviewHref(r: RecentReview): string {
+		const s = matchSessionForReview(r, sessions);
+		return s ? `/s/${encodeURIComponent(s.id)}` : r.url;
+	}
+	function reviewIsExternal(r: RecentReview): boolean {
+		return matchSessionForReview(r, sessions) === null;
+	}
 
 	// Aggregate dev-server state for a session, or null when it runs none (issue #32).
 	function serverDot(id: string): ServerState | null {
@@ -190,6 +223,58 @@
 		</button>
 	</li>
 {/snippet}
+
+{#if showReviews && reviews}
+	<section class="mb-3">
+		<div class="flex items-center gap-2 px-2 pb-2">
+			<GitPullRequest size={15} class="opacity-60" />
+			<span class="text-sm font-semibold">Reviews</span>
+			{#if reviews.status === 'offline'}
+				<span class="ml-auto flex items-center gap-1 text-xs opacity-50" title="morabot hasn't reported recently">
+					<CloudOff size={12} />
+					offline
+				</span>
+			{/if}
+		</div>
+
+		{#if reviews.inFlight}
+			{@const f = reviews.inFlight}
+			<div class="flex items-center gap-2 px-2 py-1 text-sm">
+				<span class="loading loading-spinner loading-xs shrink-0 text-primary"></span>
+				<span class="truncate font-medium">{f.repo}#{f.pr}</span>
+				<span class="ml-auto flex shrink-0 items-center gap-1 text-xs opacity-60">
+					<ScanEye size={12} />
+					{phaseLabel(f.phase)}
+				</span>
+			</div>
+		{/if}
+
+		{#if reviews.recent.length > 0}
+			<ul class="space-y-0.5">
+				{#each reviews.recent as r (r.reviewId)}
+					{@const Icon = DECISION_ICON[r.decision]}
+					<li>
+						<a
+							href={reviewHref(r)}
+							target={reviewIsExternal(r) ? '_blank' : undefined}
+							rel={reviewIsExternal(r) ? 'noreferrer' : undefined}
+							class="flex items-center gap-1.5 rounded-btn px-2 py-1 hover:bg-base-200"
+							title={`${r.repo}#${r.pr} — ${decisionLabel(r.decision)}`}
+						>
+							<Icon size={13} class="shrink-0 {decisionColor(r.decision)}" />
+							<span class="truncate text-sm">{r.repo}#{r.pr}</span>
+							<span class="ml-auto shrink-0 text-xs opacity-60">{decisionLabel(r.decision)}</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{:else if !reviews.inFlight}
+			<p class="px-2 py-1 text-xs opacity-50">
+				{reviews.status === 'offline' ? 'morabot offline.' : 'No recent reviews.'}
+			</p>
+		{/if}
+	</section>
+{/if}
 
 <div class="flex items-center gap-2 px-2 pb-2">
 	<FolderGit2 size={15} class="opacity-60" />
