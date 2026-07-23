@@ -1,5 +1,6 @@
 import { SvelteSet } from 'svelte/reactivity';
 import type { DeckSession } from '$lib/types';
+import { ownsWorktreeBranch } from '$lib/pr';
 
 export async function requestDelete(
 	id: string,
@@ -39,7 +40,7 @@ export class DeleteFlow {
 		if (this.deletingIds.has(s.id)) return;
 		if (s.worktree) {
 			this.worktree = true;
-			this.branch = s.worktree.createdBranch;
+			this.branch = ownsWorktreeBranch(s.worktree, s.pr);
 			this.target = s;
 			return;
 		}

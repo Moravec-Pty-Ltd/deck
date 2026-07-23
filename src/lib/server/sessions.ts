@@ -1,7 +1,7 @@
 import { customAlphabet } from 'nanoid';
 import type { DeckSession, SessionIssue, SessionKind, SessionPR, SessionStatus } from '$lib/types';
 import { isAgentKind } from '$lib/types';
-import { lastPrLink } from '$lib/pr';
+import { lastPrLink, ownsWorktreeBranch } from '$lib/pr';
 import {
 	listStoredSessions,
 	getStoredSession,
@@ -237,7 +237,7 @@ async function removeSessionWorktree(
 	if (!opts.deleteWorktree || !stored.worktree) return;
 	try {
 		await removeWorktree(stored.worktree.repo, stored.cwd, {
-			deleteBranch: opts.deleteBranch && stored.worktree.createdBranch,
+			deleteBranch: !!opts.deleteBranch && ownsWorktreeBranch(stored.worktree, stored.pr),
 			branch: stored.worktree.branch
 		});
 	} catch {

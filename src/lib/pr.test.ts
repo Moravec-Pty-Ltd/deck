@@ -8,6 +8,7 @@ import {
 	canMergePr,
 	shouldAdminMerge,
 	shouldRefreshPrOnOpen,
+	ownsWorktreeBranch,
 	PR_OPEN_REFRESH_TTL_MS
 } from './pr';
 import type { SessionPR } from './types';
@@ -270,5 +271,31 @@ describe('shouldRefreshPrOnOpen', () => {
 		expect(
 			shouldRefreshPrOnOpen(pr({ state: 'open', checkedAt: now - PR_OPEN_REFRESH_TTL_MS }), now)
 		).toBe(true);
+	});
+});
+
+describe('ownsWorktreeBranch', () => {
+	it('owns any worktree deck created the branch for', () => {
+		expect(ownsWorktreeBranch({ branch: 'jin/fix', createdBranch: true }, undefined)).toBe(true);
+	});
+
+	it('does not own a work session on an existing branch', () => {
+		expect(ownsWorktreeBranch({ branch: 'main', createdBranch: false }, undefined)).toBe(false);
+	});
+
+	it('recovers ownership of a pr/<n> review ref matching the captured PR', () => {
+		// Migration: a review session stored before createdBranch recorded fetch
+		// ownership still carries false; the ref name proves deck fetched it.
+		const pr = { number: 42 } as SessionPR;
+		expect(ownsWorktreeBranch({ branch: 'pr/42', createdBranch: false }, pr)).toBe(true);
+	});
+
+	it('does not match a pr/<n> ref for a different PR number', () => {
+		const pr = { number: 7 } as SessionPR;
+		expect(ownsWorktreeBranch({ branch: 'pr/42', createdBranch: false }, pr)).toBe(false);
+	});
+
+	it('does not match a pr/<n> ref with no captured PR', () => {
+		expect(ownsWorktreeBranch({ branch: 'pr/42', createdBranch: false }, undefined)).toBe(false);
 	});
 });

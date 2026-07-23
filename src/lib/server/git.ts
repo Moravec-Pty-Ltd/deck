@@ -126,15 +126,20 @@ export async function createWorktree(
 // (a re-open, or another worktree already holds it — git refuses to update a
 // checked-out branch) the existing ref is reused. Assumes `origin` is the GitHub
 // repo, which holds for registered projects; anything else fails with a clear
-// error. Returns the local branch name.
-export async function fetchPullRef(repo: string, prNumber: number): Promise<string> {
+// error. Returns the local branch name and whether this call freshly created the
+// ref (`created: false` means a pre-existing ref was reused), so the caller can
+// record whether deck owns the branch for later cleanup.
+export async function fetchPullRef(
+	repo: string,
+	prNumber: number
+): Promise<{ branch: string; created: boolean }> {
 	// Safe integer only: rejects scientific-notation / oversized coercions so a
 	// crafted number can't form a bogus pull/<n> ref (the route bounds it too).
 	if (!Number.isSafeInteger(prNumber) || prNumber <= 0) throw new Error(`invalid PR number: ${prNumber}`);
 	const branch = `pr/${prNumber}`;
 	// branch reaches git as a ref arg; pr/<n> is isFlagSafe, but assert at the sink.
 	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);
-	if (await refExists(repo, branch)) return branch;
+	if (await refExists(repo, branch)) return { branch, created: false };
 	try {
 		await git(repo, 'fetch', 'origin', `pull/${prNumber}/head:${branch}`);
 	} catch (e) {
@@ -142,7 +147,7 @@ export async function fetchPullRef(repo: string, prNumber: number): Promise<stri
 			`failed to fetch PR #${prNumber} from origin (is origin the GitHub repo?): ${e instanceof Error ? e.message : e}`
 		);
 	}
-	return branch;
+	return { branch, created: true };
 }
 
 // owner/repo parsed from a git remote URL, or null for a local origin (bare

@@ -1,9 +1,16 @@
 <script lang="ts">
 	import type { DeleteFlow } from '$lib/delete-flow.svelte';
+	import { ownsWorktreeBranch } from '$lib/pr';
 
 	// Confirm modal for deleting a worktree session, shared by the home list and
 	// the session view. All state lives on the delete flow (see delete-flow.svelte.ts).
 	let { flow }: { flow: DeleteFlow } = $props();
+
+	// Whether deck owns the branch, so the "Delete the branch" option is offered
+	// (matches the server's cleanup decision and the flow's default seeding).
+	let ownsBranch = $derived(
+		!!flow.target?.worktree && ownsWorktreeBranch(flow.target.worktree, flow.target.pr)
+	);
 </script>
 
 {#if flow.target}
@@ -24,11 +31,11 @@
 						type="checkbox"
 						class="checkbox checkbox-sm"
 						bind:checked={flow.branch}
-						disabled={!flow.worktree || !flow.target.worktree?.createdBranch}
+						disabled={!flow.worktree || !ownsBranch}
 					/>
 					<span>
 						Delete the branch
-						{#if !flow.target.worktree?.createdBranch}
+						{#if !ownsBranch}
 							<span class="opacity-50">(existing branch, kept)</span>
 						{/if}
 					</span>

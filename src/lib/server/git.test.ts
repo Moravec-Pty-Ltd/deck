@@ -141,7 +141,7 @@ describe('fetchPullRef against a real repo', () => {
 
 	it('reuses an existing pr/<n> branch without fetching', async () => {
 		execFileSync('git', ['-C', repo, 'branch', 'pr/7'], { env });
-		await expect(fetchPullRef(repo, 7)).resolves.toBe('pr/7');
+		await expect(fetchPullRef(repo, 7)).resolves.toEqual({ branch: 'pr/7', created: false });
 	});
 
 	it('wraps a fetch failure (no GitHub origin) in a clear error', async () => {
