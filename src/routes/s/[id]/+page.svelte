@@ -13,6 +13,7 @@
 	import IssueMenu from '$lib/components/IssueMenu.svelte';
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
 	import EffortMenu from '$lib/components/EffortMenu.svelte';
+	import ZedButton from '$lib/components/ZedButton.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
@@ -376,6 +377,9 @@
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
 			<div class="flex items-center gap-2">
+				{#if session.kind !== 'shell' && data.zedCommand}
+					<ZedButton command={data.zedCommand} />
+				{/if}
 				{#if serverChip}
 					<RunButton {session} serverState={serverChip} onRefresh={refresh} />
 					<!-- Status lives in RunButton's collapsed dropdown on mobile (issue #123),
