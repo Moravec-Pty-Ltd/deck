@@ -14,5 +14,12 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		.then((r) => (r.ok ? r.json() : null))
 		.then((d: { login: string | null } | null) => d?.login ?? null)
 		.catch(() => null);
-	return { session, me };
+	// The `zed ssh://…` command for this session's cwd, composed server-side (it
+	// needs the deck user + request hostname). Fetched here so the "Open in Zed"
+	// copy stays inside the click gesture. Null for a session with no cwd.
+	const zedCommand = await fetch(`/api/sessions/${encodeURIComponent(params.id)}/zed`)
+		.then((r) => (r.ok ? r.json() : null))
+		.then((d: { command: string | null } | null) => d?.command ?? null)
+		.catch(() => null);
+	return { session, me, zedCommand };
 };

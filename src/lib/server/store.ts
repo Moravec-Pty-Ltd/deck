@@ -158,6 +158,13 @@ function writeSettings(settings: DeckSettings) {
 	writeJson(SETTINGS_FILE, settings, 0o600);
 }
 
+// Whole-object settings write for the settings API's PUT (the client sends the
+// full object back, as the store helpers keep it whole).
+export function saveSettings(settings: DeckSettings): DeckSettings {
+	writeSettings(settings);
+	return settings;
+}
+
 // Remember the model picked for a session so the new-session modal re-selects it.
 // Recorded at two scopes: on the project (per kind), so that project defaults to
 // it next time, and globally in settings (the fresh-project fallback). A blank
