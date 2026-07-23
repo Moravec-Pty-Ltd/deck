@@ -89,14 +89,14 @@
 </script>
 
 {#if disabled}
-	<span class="badge badge-outline badge-sm shrink-0 gap-1 opacity-50" title="Model switches apply between turns">
+	<span class="badge badge-outline badge-sm header-chip shrink-0 gap-1 opacity-50" title="Model switches apply between turns">
 		<Cpu size={12} />
 		<span class="hidden sm:inline">{modelLabel(model)}</span>
 	</span>
 {:else}
 	<Popover
 		bind:open
-		summaryClass="badge badge-outline badge-sm gap-1"
+		summaryClass="badge badge-outline badge-sm header-chip gap-1"
 		summaryTitle="Model: {modelLabel(model)} (click to change)"
 		panelClass="p-2 sm:w-48"
 	>

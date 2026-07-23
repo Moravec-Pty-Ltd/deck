@@ -187,6 +187,16 @@ h3,
 	grid-template-columns: minmax(0, 1fr);
 }
 
+/* Session header control row: daisyUI badges size from --size-selector (*5)
+   while buttons size from --size-field (*6), so a row mixing them (issue / PR /
+   server / model chips beside the Run split-button) has mismatched heights. Pin
+   every chip's --size to the btn-xs value so top/bottom edges line up; padding
+   scales from --size too, so the pills stay proportionate. Unlayered, so it wins
+   over daisyUI's layered .badge-sm --size. */
+.header-chip {
+	--size: calc(var(--size-field, 0.25rem) * 6);
+}
+
 /* ── popovers (Popover.svelte): dropdown on desktop, bottom drawer on phones.
    Below sm the panel is repositioned as a fixed sheet; keepInView detects the
    fixed position and steps aside. Unlayered rules, so they win over daisyUI's

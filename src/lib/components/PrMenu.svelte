@@ -146,14 +146,14 @@
 <span class="inline-flex shrink-0 items-center gap-1">
 	<Popover
 		bind:open
-		summaryClass="badge badge-outline badge-sm gap-1"
+		summaryClass="badge badge-outline badge-sm header-chip gap-1"
 		summaryStyle={prColor ? `color:${prColor};border-color:${prColor}` : undefined}
 		summaryTitle="{pr.repo}#{pr.number}{pr.state ? ` (${pr.state})` : ''}"
 		panelClass="p-2 sm:w-64"
 	>
 		{#snippet trigger()}
 			<GitPullRequest size={12} />
-			<span class="hidden sm:inline">{pr.repo}#{pr.number}</span>
+			<span class="hidden sm:inline">#{pr.number}</span>
 		{/snippet}
 		{#if panel === 'menu'}
 			{#if verdict || approvals > 0 || changes > 0}
