@@ -18,7 +18,7 @@
 
 <Popover
 	bind:open
-	summaryClass="badge badge-outline badge-sm gap-1"
+	summaryClass="badge badge-outline badge-sm header-chip gap-1"
 	summaryTitle={summary}
 	summaryLabel="{issues.length} linked issues"
 	panelClass="p-2 sm:w-max"

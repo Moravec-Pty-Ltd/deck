@@ -6,7 +6,7 @@
 	let { state, count }: { state: ServerState; count?: number } = $props();
 </script>
 
-<span class="badge badge-sm shrink-0 gap-1 {SERVER_BADGE[state]}" title="dev servers: {SERVER_LABEL[state]}">
+<span class="badge badge-sm header-chip shrink-0 gap-1 {SERVER_BADGE[state]}" title="dev servers: {SERVER_LABEL[state]}">
 	<Server size={11} />
 	{SERVER_LABEL[state]}{#if count && count > 1}<span class="opacity-70">×{count}</span>{/if}
 </span>

@@ -15,7 +15,7 @@
 	import EffortMenu from '$lib/components/EffortMenu.svelte';
 	import ZedButton from '$lib/components/ZedButton.svelte';
 	import { shortPath } from '$lib/time';
-	import { ISSUE_BADGE } from '$lib/issues';
+	import { ISSUE_BADGE, issueChipText } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import { DeleteFlow, requestDelete } from '$lib/delete-flow.svelte';
@@ -334,7 +334,7 @@
 				<Menu size={16} />
 			</button>
 			{#if session.kind !== 'claude' && session.kind !== 'shell'}
-				<span class="badge badge-ghost badge-sm shrink-0">{session.kind}</span>
+				<span class="badge badge-ghost badge-sm header-chip shrink-0">{session.kind}</span>
 			{/if}
 			<div class="flex min-w-0 flex-1 items-center gap-2">
 				<span class="truncate font-medium">{session.title}</span>
@@ -345,19 +345,23 @@
 							href={issue.url}
 							target="_blank"
 							rel="noopener noreferrer"
-							class="badge badge-outline badge-sm link link-hover shrink-0 gap-1"
+							class="badge badge-outline badge-sm header-chip link link-hover shrink-0 gap-1"
 							title="{ISSUE_BADGE[issue.source].label} {issue.id}"
 						>
 							<Ticket size={12} />
-							<span class="hidden sm:inline">{ISSUE_BADGE[issue.source].label} {issue.id}</span>
+							<span class="hidden sm:inline"
+								>{ISSUE_BADGE[issue.source].label} {issueChipText(issue.source, issue.id)}</span
+							>
 						</a>
 					{:else}
 						<span
-							class="badge badge-outline badge-sm shrink-0 gap-1"
+							class="badge badge-outline badge-sm header-chip shrink-0 gap-1"
 							title="{ISSUE_BADGE[issue.source].label} {issue.id}"
 						>
 							<Ticket size={12} />
-							<span class="hidden sm:inline">{ISSUE_BADGE[issue.source].label} {issue.id}</span>
+							<span class="hidden sm:inline"
+								>{ISSUE_BADGE[issue.source].label} {issueChipText(issue.source, issue.id)}</span
+							>
 						</span>
 					{/if}
 				{:else if issueChips.length > 1}
@@ -405,7 +409,7 @@
 				{/if}
 				{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}
 					<span
-						class="badge badge-outline badge-sm hidden shrink-0 sm:inline-flex"
+						class="badge badge-outline badge-sm header-chip hidden shrink-0 sm:inline-flex"
 						title="yolo (bypassPermissions)"
 					>
 						yolo
