@@ -187,14 +187,28 @@ h3,
 	grid-template-columns: minmax(0, 1fr);
 }
 
-/* Session header control row: daisyUI badges size from --size-selector (*5)
-   while buttons size from --size-field (*6), so a row mixing them (issue / PR /
-   server / model chips beside the Run split-button) has mismatched heights. Pin
-   every chip's --size to the btn-xs value so top/bottom edges line up; padding
-   scales from --size too, so the pills stay proportionate. Unlayered, so it wins
-   over daisyUI's layered .badge-sm --size. */
+/* Session header control row: one box contract for every control (issue / PR /
+   server / model / effort / kind / yolo badges, the Zed button, and the Run/Stop
+   split-button), so they all resolve to the same height, padding, border weight,
+   font size and radius regardless of whether the primitive is a daisyUI badge
+   (sized from --size-selector, its own font-size/padding) or a btn (sized from
+   --size-field, --fontsize, --btn-p). Every value is driven off the theme tokens
+   so it tracks the eink theme's thicker border and square corners too. Unlayered,
+   so these win over daisyUI's layered component rules. */
 .header-chip {
 	--size: calc(var(--size-field, 0.25rem) * 6);
+	height: var(--size);
+	min-height: var(--size);
+	padding-inline: calc(var(--size) / 2 - var(--border, 1px));
+	border-width: var(--border, 1px);
+	font-size: 0.6875rem;
+	line-height: 1;
+}
+/* Standalone chips take the field radius; join items (the Run/Stop split control)
+   keep daisyUI's per-corner join radii so the group rounds only on its outer
+   corners and stays flush in the middle. */
+.header-chip:not(.join-item) {
+	border-radius: var(--radius-field, 0.3125rem);
 }
 
 /* ── popovers (Popover.svelte): dropdown on desktop, bottom drawer on phones.

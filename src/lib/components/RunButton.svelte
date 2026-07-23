@@ -175,8 +175,8 @@
 <span class="flex shrink-0 items-center gap-1">
 	{#if isInFlight(current)}
 		<!-- sm+: disabled labelled button; mobile: a plain spinner status chip -->
-		<button class="btn btn-xs hidden gap-1 sm:inline-flex" disabled aria-label={SERVER_LABEL[current]}>
-			<Loader2 size={14} class="animate-spin" /> {SERVER_LABEL[current]}
+		<button class="btn btn-xs header-chip hidden gap-1 sm:inline-flex" disabled aria-label={SERVER_LABEL[current]}>
+			<Loader2 size={12} class="animate-spin" /> {SERVER_LABEL[current]}
 		</button>
 		<span
 			class="badge badge-sm gap-1 sm:hidden {SERVER_BADGE[current]}"
@@ -189,24 +189,24 @@
 		<!-- sm+: inline split control [Run|Stop][▾] -->
 		<div class="join hidden sm:inline-flex">
 			<button
-				class="btn join-item btn-xs gap-1 {mainTint}"
+				class="btn join-item btn-xs header-chip gap-1 {mainTint}"
 				onclick={primaryClick}
 				disabled={busy || !primary}
 				title={runningLike ? `Stop ${primary?.name ?? ''}` : `Run ${primary?.name ?? ''}`}
 			>
 				{#if busy}
-					<Loader2 size={14} class="animate-spin" />
+					<Loader2 size={12} class="animate-spin" />
 				{:else if runningLike}
-					<Square size={14} />
+					<Square size={12} />
 				{:else}
-					<Play size={14} />
+					<Play size={12} />
 				{/if}
 				{runningLike ? 'Stop' : 'Run'}
 			</button>
 			{#if showCaret}
-				<Popover bind:open={menuOpen} summaryClass="btn join-item btn-xs px-1" summaryLabel="More server actions" panelClass="p-1 sm:w-56">
+				<Popover bind:open={menuOpen} summaryClass="btn join-item btn-xs header-chip" summaryLabel="More server actions" panelClass="p-1 sm:w-56">
 					{#snippet trigger()}
-						<ChevronDown size={14} />
+						<ChevronDown size={12} />
 					{/snippet}
 					<ul class="menu menu-sm w-full p-0">
 						{@render secondaryActions()}

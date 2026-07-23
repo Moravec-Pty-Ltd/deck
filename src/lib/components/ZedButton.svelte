@@ -25,7 +25,7 @@
 
 <button
 	type="button"
-	class="badge badge-outline badge-sm shrink-0 gap-1"
+	class="badge badge-outline badge-sm header-chip shrink-0 gap-1"
 	title={copied ? 'Copied' : `Copy: ${command}`}
 	onclick={copy}
 >
