@@ -54,12 +54,12 @@ if (morabotStatusPath !== null && statusPath === null) {
 	);
 }
 
-const UNCONFIGURED: ReviewsPayload = { status: 'unconfigured', inFlight: null, recent: [] };
+const UNCONFIGURED: ReviewsPayload = { status: 'unconfigured', inFlight: null, recent: [], recentErrors: [] };
 
 let lastMtimeMs: number | null = null;
 let lastParsed: MorabotStatus | null = null;
 let snapshot: ReviewsPayload =
-	statusPath === null ? UNCONFIGURED : { status: 'offline', inFlight: null, recent: [] };
+	statusPath === null ? UNCONFIGURED : { status: 'offline', inFlight: null, recent: [], recentErrors: [] };
 let ledger: Ledger | null = null;
 
 function getLedger(): Ledger {
@@ -130,7 +130,7 @@ export function pollMorabot(sessions: DeckSession[]): void {
 	if (statusPath === null) return;
 	const now = Date.now();
 	if (!refreshParsed(statusPath)) {
-		snapshot = { status: 'offline', inFlight: null, recent: [] };
+		snapshot = { status: 'offline', inFlight: null, recent: [], recentErrors: [] };
 		return;
 	}
 	snapshot = deriveReviewsPayload(lastParsed, now);

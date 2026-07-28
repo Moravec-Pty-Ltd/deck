@@ -9,7 +9,8 @@ import {
 	selectNewReviews,
 	MORABOT_STALE_MS,
 	type NotifiedReviews,
-	type RecentReview
+	type RecentReview,
+	type RecentError
 } from './morabot-core';
 
 const NOW = 1_700_000_000_000;
@@ -23,6 +24,17 @@ const recent = (over: Partial<RecentReview> = {}): RecentReview => ({
 	reviewId: 1,
 	url: 'https://github.com/acme/web/pull/42#pullrequestreview-1',
 	reviewedAt: iso(NOW),
+	...over
+});
+
+const error = (over: Partial<RecentError> = {}): RecentError => ({
+	repo: 'acme/web',
+	pr: 42,
+	headSha: 'abc',
+	phase: 'model',
+	message: 'Rate limit exceeded',
+	url: 'https://github.com/acme/web/pull/42',
+	failedAt: iso(NOW),
 	...over
 });
 
@@ -69,6 +81,34 @@ describe('parseMorabotStatus', () => {
 		expect(parsed?.inFlight).toBeNull();
 		expect(parsed?.recent).toHaveLength(0);
 	});
+
+	it('parses recentErrors and drops malformed entries', () => {
+		const parsed = parseMorabotStatus({
+			version: 1,
+			updatedAt: iso(NOW),
+			inFlight: null,
+			recent: [],
+			recentErrors: [
+				error(),
+				error({ phase: 'prepare' }),
+				{ repo: 'x', pr: 'not-a-number' },
+				{ phase: 'nope' }
+			]
+		});
+		expect(parsed?.recentErrors).toHaveLength(2);
+		expect(parsed?.recentErrors?.[0].phase).toBe('model');
+		expect(parsed?.recentErrors?.[1].phase).toBe('prepare');
+	});
+
+	it('treats absent recentErrors as an empty list', () => {
+		const parsed = parseMorabotStatus({
+			version: 1,
+			updatedAt: iso(NOW),
+			inFlight: null,
+			recent: []
+		});
+		expect(parsed?.recentErrors).toEqual([]);
+	});
 });
 
 describe('isStale', () => {
@@ -83,7 +123,12 @@ describe('isStale', () => {
 
 describe('deriveReviewsPayload', () => {
 	it('offline with no data when the file is absent/unparseable', () => {
-		expect(deriveReviewsPayload(null, NOW)).toEqual({ status: 'offline', inFlight: null, recent: [] });
+		expect(deriveReviewsPayload(null, NOW)).toEqual({
+			status: 'offline',
+			inFlight: null,
+			recent: [],
+			recentErrors: []
+		});
 	});
 
 	it('ok with in-flight for a fresh snapshot', () => {
@@ -106,13 +151,30 @@ describe('deriveReviewsPayload', () => {
 				version: 1,
 				updatedAt: iso(NOW - MORABOT_STALE_MS - 1),
 				inFlight: { repo: 'a', pr: 1, headSha: 'h', phase: 'context', startedAt: iso(NOW) },
-				recent: [recent()]
+				recent: [recent()],
+				recentErrors: [error()]
 			},
 			NOW
 		);
 		expect(payload.status).toBe('offline');
 		expect(payload.inFlight).toBeNull();
 		expect(payload.recent).toHaveLength(1);
+		expect(payload.recentErrors).toHaveLength(1);
+	});
+
+	it('includes recentErrors in the payload', () => {
+		const payload = deriveReviewsPayload(
+			{
+				version: 1,
+				updatedAt: iso(NOW),
+				inFlight: null,
+				recent: [],
+				recentErrors: [error()]
+			},
+			NOW
+		);
+		expect(payload.status).toBe('ok');
+		expect(payload.recentErrors).toHaveLength(1);
 	});
 });
 
