@@ -2,7 +2,7 @@
 	import { browser } from '$app/environment';
 	import type { DeckSession, Project, ServerState } from '$lib/types';
 	import { groupSessions } from '$lib/groups';
-	import { deriveGroup } from '$lib/time';
+	import { deriveGroup, relativeTime } from '$lib/time';
 	import { bucketSessions, type StatusBucketKey } from '$lib/status-groups';
 	import { flattenVisibleGroups, flattenVisibleBuckets, pickNeighbor } from '$lib/sidebar-neighbor';
 	import { createCollapseState } from '$lib/collapse.svelte';
@@ -12,9 +12,11 @@
 	import {
 		decisionLabel,
 		phaseLabel,
+		errorPhaseLabel,
 		matchSessionForReview,
 		type ReviewsPayload,
 		type RecentReview,
+		type RecentError,
 		type ReviewDecision
 	} from '$lib/morabot-core';
 	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff } from '@lucide/svelte';
@@ -64,6 +66,15 @@
 	}
 	function reviewIsExternal(r: RecentReview): boolean {
 		return matchSessionForReview(r, sessions) === null;
+	}
+
+	// Same as reviewHref, but for errors.
+	function errorHref(e: RecentError): string {
+		const s = matchSessionForReview(e, sessions);
+		return s ? `/s/${encodeURIComponent(s.id)}` : e.url;
+	}
+	function errorIsExternal(e: RecentError): boolean {
+		return matchSessionForReview(e, sessions) === null;
 	}
 
 	// Aggregate dev-server state for a session, or null when it runs none (issue #32).
@@ -272,6 +283,30 @@
 			<p class="px-2 py-1 text-xs opacity-50">
 				{reviews.status === 'offline' ? 'morabot offline.' : 'No recent reviews.'}
 			</p>
+		{/if}
+
+		{#if reviews.recentErrors.length > 0}
+			<ul class="space-y-0.5">
+				{#each reviews.recentErrors as e (e.failedAt + e.pr + e.phase)}
+					<li>
+						<a
+							href={errorHref(e)}
+							target={errorIsExternal(e) ? '_blank' : undefined}
+							rel={errorIsExternal(e) ? 'noreferrer' : undefined}
+							class="flex flex-col gap-0.5 rounded-btn px-2 py-1 hover:bg-error/10"
+							title={`${e.repo}#${e.pr} — ${errorPhaseLabel(e.phase)}: ${e.message}`}
+						>
+							<div class="flex items-center gap-1.5">
+								<span class="size-1 shrink-0 rounded-full bg-error"></span>
+								<span class="truncate text-sm text-error font-medium">{e.repo}#{e.pr}</span>
+								<span class="ml-auto shrink-0 text-xs opacity-60">{errorPhaseLabel(e.phase)}</span>
+							</div>
+							<div class="truncate text-xs text-error/80 px-[5px]">{e.message}</div>
+							<div class="text-xs opacity-50 px-[5px]">{relativeTime(Date.parse(e.failedAt))}</div>
+						</a>
+					</li>
+				{/each}
+			</ul>
 		{/if}
 	</section>
 {/if}

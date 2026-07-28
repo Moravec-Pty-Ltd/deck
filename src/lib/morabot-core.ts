@@ -13,6 +13,7 @@ export const MORABOT_STALE_MS = MORABOT_POLL_INTERVAL_MS * 3;
 
 export type ReviewDecision = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
 export type ReviewPhase = 'context' | 'model' | 'posting';
+export type ErrorPhase = 'context' | 'model' | 'posting' | 'prepare';
 
 // The review morabot is working on right now; null in the file when idle.
 export interface InFlightReview {
@@ -34,12 +35,25 @@ export interface RecentReview {
 	reviewedAt: string;
 }
 
-// The status.json contract, version 1.
+// A failed review attempt, recorded after it fails at some phase.
+export interface RecentError {
+	repo: string;
+	pr: number;
+	headSha: string;
+	phase: ErrorPhase;
+	message: string;
+	url: string;
+	failedAt: string;
+}
+
+// The status.json contract, version 1. The recentErrors field is optional to tolerate
+// older morabot instances that don't produce it yet.
 export interface MorabotStatus {
 	version: number;
 	updatedAt: string;
 	inFlight: InFlightReview | null;
 	recent: RecentReview[];
+	recentErrors?: RecentError[];
 }
 
 // What the client sees. `unconfigured` hides the sidebar section entirely (env
@@ -53,9 +67,11 @@ export interface ReviewsPayload {
 	updatedAt?: string;
 	inFlight: InFlightReview | null;
 	recent: RecentReview[];
+	recentErrors: RecentError[];
 }
 
 const PHASES: ReviewPhase[] = ['context', 'model', 'posting'];
+const ERROR_PHASES: ErrorPhase[] = ['context', 'model', 'posting', 'prepare'];
 const DECISIONS: ReviewDecision[] = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -81,8 +97,18 @@ function parseRecent(v: unknown): RecentReview | null {
 	return { repo, pr, headSha, decision: decision as ReviewDecision, reviewId, url, reviewedAt };
 }
 
+function parseError(v: unknown): RecentError | null {
+	if (!isObj(v)) return null;
+	const { repo, pr, headSha, phase, message, url, failedAt } = v;
+	if (typeof repo !== 'string' || typeof pr !== 'number') return null;
+	if (typeof headSha !== 'string' || typeof message !== 'string') return null;
+	if (typeof url !== 'string' || typeof failedAt !== 'string') return null;
+	if (!ERROR_PHASES.includes(phase as ErrorPhase)) return null;
+	return { repo, pr, headSha, phase: phase as ErrorPhase, message, url, failedAt };
+}
+
 // Parse the raw file contents defensively: return null if it isn't the expected
-// shape, and drop individual malformed `recent` entries rather than rejecting the
+// shape, and drop individual malformed `recent` or `recentErrors` entries rather than rejecting the
 // whole file. A single-user local file, but it's produced by another process, so
 // treat it as untrusted input.
 export function parseMorabotStatus(raw: unknown): MorabotStatus | null {
@@ -91,11 +117,15 @@ export function parseMorabotStatus(raw: unknown): MorabotStatus | null {
 	const recent = Array.isArray(raw.recent)
 		? raw.recent.map(parseRecent).filter((r): r is RecentReview => r !== null)
 		: [];
+	const recentErrors = Array.isArray(raw.recentErrors)
+		? raw.recentErrors.map(parseError).filter((e): e is RecentError => e !== null)
+		: [];
 	return {
 		version: raw.version,
 		updatedAt: raw.updatedAt,
 		inFlight: parseInFlight(raw.inFlight),
-		recent
+		recent,
+		recentErrors
 	};
 }
 
@@ -109,18 +139,25 @@ export function isStale(updatedAt: string, now: number, thresholdMs = MORABOT_ST
 
 // The client payload for a *configured* integration, from the parsed status (null
 // when the file is absent/unparseable) and the current time. Absent or stale both
-// render as `offline`; a stale file keeps its recent list (for context) but never
+// render as `offline`; a stale file keeps its recent list and errors (for context) but never
 // its in-flight review.
 export function deriveReviewsPayload(parsed: MorabotStatus | null, now: number): ReviewsPayload {
-	if (!parsed) return { status: 'offline', inFlight: null, recent: [] };
+	if (!parsed) return { status: 'offline', inFlight: null, recent: [], recentErrors: [] };
 	if (isStale(parsed.updatedAt, now)) {
-		return { status: 'offline', updatedAt: parsed.updatedAt, inFlight: null, recent: parsed.recent };
+		return {
+			status: 'offline',
+			updatedAt: parsed.updatedAt,
+			inFlight: null,
+			recent: parsed.recent,
+			recentErrors: parsed.recentErrors ?? []
+		};
 	}
 	return {
 		status: 'ok',
 		updatedAt: parsed.updatedAt,
 		inFlight: parsed.inFlight,
-		recent: parsed.recent
+		recent: parsed.recent,
+		recentErrors: parsed.recentErrors ?? []
 	};
 }
 
@@ -165,4 +202,11 @@ export function phaseLabel(phase: ReviewPhase): string {
 	if (phase === 'context') return 'Gathering context';
 	if (phase === 'model') return 'Reviewing';
 	return 'Posting';
+}
+
+export function errorPhaseLabel(phase: ErrorPhase): string {
+	if (phase === 'context') return 'Context';
+	if (phase === 'model') return 'Model';
+	if (phase === 'posting') return 'Posting';
+	return 'Preparation';
 }
