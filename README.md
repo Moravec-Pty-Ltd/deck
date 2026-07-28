@@ -72,7 +72,7 @@ The [`claude` CLI](https://docs.claude.com/en/docs/claude-code) is the same inst
 ```sh
 pnpm install
 pnpm build
-PORT=4818 node build/index.js
+PORT=4818 node --env-file=.env build/index.js
 ```
 
 On first request deck prints an access URL with a token, and stores the token in `~/.deck/token`. Open `http://<host>:4818/?token=<token>` once and a year-long cookie is set.
@@ -91,6 +91,9 @@ Dev server: `pnpm dev`.
 | `DECK_NO_AUTH_PUBLIC` | unset | Set to `1` to force `DECK_NO_AUTH` even when the host looks public, acknowledging the app is served unauthenticated to anyone with the URL. Don't use this with a raw public tunnel; carry the token instead. |
 | `DECK_DEMO` | unset | Set to `1` to serve a fixed, sanitized demo dataset instead of `~/.deck` (used for the README screenshots). Skips auth and the host tmux scan, so it never shows real sessions or paths. |
 | `DECK_PUSH_SUBJECT` | `mailto:info@moravec.tech` | VAPID contact for web push (Apple rejects a localhost mailto) |
+| `DECK_MORABOT_STATUS` | unset | Absolute path to morabot's `status.json` (enables the morabot integration, review verdicts, and notifications). |
+
+**Configuration**: Variables are loaded from a `.env` file in the repo root by `vite dev` (dev server) and via `node --env-file=.env build/index.js` (production). Explicit environment variables (set inline or exported) always take precedence over `.env` values.
 
 ## Remote access (Tailscale)
 
@@ -98,7 +101,7 @@ Bind loopback and front it with Tailscale `serve` so the tailnet is the access b
 
 ```sh
 tailscale serve --bg --https 4818 http://127.0.0.1:4818
-HOST=127.0.0.1 PORT=4818 DECK_NO_AUTH=1 node build/index.js
+HOST=127.0.0.1 PORT=4818 DECK_NO_AUTH=1 node --env-file=.env build/index.js
 ```
 
 `DECK_NO_AUTH=1` drops the token gate, which is redundant once only the tailnet can reach it. Leave it unset to keep token auth.
