@@ -7,6 +7,7 @@ const PORT = 4818;
 
 // Load .env file into process.env, respecting that explicit environment
 // variables (already in process.env) take precedence over file values.
+// With empty mode, loadEnv loads .env and .env.local (plus empty-mode variants).
 const env = loadEnv('', process.cwd(), '');
 for (const [key, value] of Object.entries(env)) {
 	if (!(key in process.env) && value !== undefined) {
