@@ -1,9 +1,19 @@
 import { execFile, execFileSync } from 'node:child_process';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 
 const PORT = 4818;
+
+// Load .env file into process.env, respecting that explicit environment
+// variables (already in process.env) take precedence over file values.
+// With empty mode, loadEnv loads .env and .env.local (plus empty-mode variants).
+const env = loadEnv('', process.cwd(), '');
+for (const [key, value] of Object.entries(env)) {
+	if (!(key in process.env) && value !== undefined) {
+		process.env[key] = value;
+	}
+}
 
 // Expose the dev server over the tailnet for the lifetime of `vite dev`.
 // Serve is applied only after Vite has bound the port (so the two never
