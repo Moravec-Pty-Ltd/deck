@@ -138,6 +138,9 @@
 	// (the inverse of the project-view collapse) reusing the same #34 mechanism.
 	const statusCollapse = createCollapseState('deck:sidebar:collapsedStatusBuckets');
 
+	// Reviews section collapse state, default-expanded, tracking collapsed ones like statusCollapse.
+	const reviewsCollapse = createCollapseState('deck:sidebar:collapsedReviews');
+
 	// The sessions actually on screen, in render order, computed on demand at
 	// delete time (only read then, so not a derived recomputed every poll).
 	function visibleOrder(): DeckSession[] {
@@ -237,7 +240,16 @@
 
 {#if showReviews && reviews}
 	<section class="mb-3">
-		<div class="flex items-center gap-2 px-2 pb-2">
+		<button
+			class="flex w-full items-center gap-2 rounded-btn pl-1 pr-0 py-0.5 text-left hover:bg-base-200"
+			onclick={() => reviewsCollapse.toggle('reviews')}
+			aria-expanded={!reviewsCollapse.has('reviews')}
+		>
+			{#if !reviewsCollapse.has('reviews')}
+				<ChevronDown size={13} class="shrink-0 opacity-60" />
+			{:else}
+				<ChevronRight size={13} class="shrink-0 opacity-60" />
+			{/if}
 			<GitPullRequest size={15} class="opacity-60" />
 			<span class="text-sm font-semibold">Reviews</span>
 			{#if reviews.status === 'offline'}
@@ -245,8 +257,12 @@
 					<CloudOff size={12} />
 					offline
 				</span>
+			{:else if reviewsCollapse.has('reviews') && (reviews.recent.length > 0 || reviews.recentErrors.length > 0)}
+				<span class="ml-auto badge badge-ghost badge-sm shrink-0">
+					{reviews.recent.length + reviews.recentErrors.length}
+				</span>
 			{/if}
-		</div>
+		</button>
 
 		{#if reviews.inFlight}
 			{@const f = reviews.inFlight}
@@ -260,53 +276,55 @@
 			</div>
 		{/if}
 
-		{#if reviews.recent.length > 0}
-			<ul class="space-y-0.5">
-				{#each reviews.recent as r (r.reviewId)}
-					{@const Icon = DECISION_ICON[r.decision]}
-					<li>
-						<a
-							href={reviewHref(r)}
-							target={reviewIsExternal(r) ? '_blank' : undefined}
-							rel={reviewIsExternal(r) ? 'noreferrer' : undefined}
-							class="flex items-center gap-1.5 rounded-btn px-2 py-1 hover:bg-base-200"
-							title={`${r.repo}#${r.pr} — ${decisionLabel(r.decision)}`}
-						>
-							<Icon size={13} class="shrink-0 {decisionColor(r.decision)}" />
-							<span class="truncate text-sm">{r.repo}#{r.pr}</span>
-							<span class="ml-auto shrink-0 text-xs opacity-60">{decisionLabel(r.decision)}</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
-		{:else if !reviews.inFlight}
-			<p class="px-2 py-1 text-xs opacity-50">
-				{reviews.status === 'offline' ? 'morabot offline.' : 'No recent reviews.'}
-			</p>
-		{/if}
+		{#if !reviewsCollapse.has('reviews')}
+			{#if reviews.recent.length > 0}
+				<ul class="space-y-0.5">
+					{#each reviews.recent as r (r.reviewId)}
+						{@const Icon = DECISION_ICON[r.decision]}
+						<li>
+							<a
+								href={reviewHref(r)}
+								target={reviewIsExternal(r) ? '_blank' : undefined}
+								rel={reviewIsExternal(r) ? 'noreferrer' : undefined}
+								class="flex items-center gap-1.5 rounded-btn px-2 py-1 hover:bg-base-200"
+								title={`${r.repo}#${r.pr} — ${decisionLabel(r.decision)}`}
+							>
+								<Icon size={13} class="shrink-0 {decisionColor(r.decision)}" />
+								<span class="truncate text-sm">{r.repo}#{r.pr}</span>
+								<span class="ml-auto shrink-0 text-xs opacity-60">{decisionLabel(r.decision)}</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{:else if !reviews.inFlight}
+				<p class="px-2 py-1 text-xs opacity-50">
+					{reviews.status === 'offline' ? 'morabot offline.' : 'No recent reviews.'}
+				</p>
+			{/if}
 
-		{#if reviews.recentErrors.length > 0}
-			<ul class="space-y-0.5">
-				{#each reviews.recentErrors as e (e.failedAt + e.pr + e.phase)}
-					<li>
-						<a
-							href={errorHref(e)}
-							target={errorIsExternal(e) ? '_blank' : undefined}
-							rel={errorIsExternal(e) ? 'noreferrer' : undefined}
-							class="flex flex-col gap-0.5 rounded-btn px-2 py-1 hover:bg-error/10"
-							title={`${e.repo}#${e.pr} — ${errorPhaseLabel(e.phase)}: ${e.message}`}
-						>
-							<div class="flex items-center gap-1.5">
-								<span class="size-1 shrink-0 rounded-full bg-error"></span>
-								<span class="truncate text-sm text-error font-medium">{e.repo}#{e.pr}</span>
-								<span class="ml-auto shrink-0 text-xs opacity-60">{errorPhaseLabel(e.phase)}</span>
-							</div>
-							<div class="truncate text-xs text-error/80 px-[5px]">{e.message}</div>
-							<div class="text-xs opacity-50 px-[5px]">{relativeTime(Date.parse(e.failedAt))}</div>
-						</a>
-					</li>
-				{/each}
-			</ul>
+			{#if reviews.recentErrors.length > 0}
+				<ul class="space-y-0.5">
+					{#each reviews.recentErrors as e (e.failedAt + e.pr + e.phase)}
+						<li>
+							<a
+								href={errorHref(e)}
+								target={errorIsExternal(e) ? '_blank' : undefined}
+								rel={errorIsExternal(e) ? 'noreferrer' : undefined}
+								class="flex flex-col gap-0.5 rounded-btn px-2 py-1 hover:bg-error/10"
+								title={`${e.repo}#${e.pr} — ${errorPhaseLabel(e.phase)}: ${e.message}`}
+							>
+								<div class="flex items-center gap-1.5">
+									<span class="size-1 shrink-0 rounded-full bg-error"></span>
+									<span class="truncate text-sm text-error font-medium">{e.repo}#{e.pr}</span>
+									<span class="ml-auto shrink-0 text-xs opacity-60">{errorPhaseLabel(e.phase)}</span>
+								</div>
+								<div class="truncate text-xs text-error/80 px-[5px]">{e.message}</div>
+								<div class="text-xs opacity-50 px-[5px]">{relativeTime(Date.parse(e.failedAt))}</div>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		{/if}
 	</section>
 {/if}
