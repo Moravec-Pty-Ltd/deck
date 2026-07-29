@@ -68,15 +68,26 @@ export function isWithinProjects(dir: string): boolean {
 // worktrees — or null. Returns the stored (un-canonicalized) project path so it
 // matches the store's by-string project lookup, letting a worktree cwd map back
 // to its project for per-project state (see rememberModel).
+//
+// Projects nest: registering an umbrella dir like ~/code makes it an ancestor of
+// every project under it. The deepest match is the one that owns the path, so
+// per-project state (template, reviewPrompt, lastModels, lastBase) lands on the
+// actual project rather than whichever ancestor happens to be listed first.
 export function projectForPath(dir: string): string | null {
 	const real = canonical(dir);
 	if (real === null) return null;
+	let best: string | null = null;
+	let bestLength = -1;
 	for (const p of listProjects()) {
 		const proj = canonical(p.path);
 		if (proj === null) continue;
-		if (within(real, proj) || within(real, `${proj}-worktrees`)) return p.path;
+		if (!within(real, proj) && !within(real, `${proj}-worktrees`)) continue;
+		if (proj.length > bestLength) {
+			best = p.path;
+			bestLength = proj.length;
+		}
 	}
-	return null;
+	return best;
 }
 
 // Is `dir` somewhere the path picker may enumerate? The picker also needs $HOME,
