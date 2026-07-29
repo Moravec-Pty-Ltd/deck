@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Issue, IssueSourceType, Project } from '$lib/types';
-	import { ISSUE_BADGE } from '$lib/issues';
+	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
 	import { runLoad } from '$lib/picker';
 	import { RefreshCw, TriangleAlert, ChevronRight, Check } from '@lucide/svelte';
 
@@ -101,7 +101,9 @@
 							<span class="badge badge-sm {ISSUE_BADGE[issue.sourceType].cls} shrink-0">
 								{ISSUE_BADGE[issue.sourceType].label}
 							</span>
-							<span class="shrink-0 font-mono text-xs opacity-70">{issue.id}</span>
+							<span class="shrink-0 font-mono text-xs opacity-70" title={issue.id}>
+								{shortIssueId(issue.sourceType, issue.id)}
+							</span>
 							<span class="min-w-0 flex-1 truncate text-sm">{issue.title}</span>
 						</button>
 						{#if issue.blockers.length}
@@ -119,7 +121,10 @@
 						<div class="pb-1.5 pl-10 text-xs opacity-70">
 							<div class="mb-0.5 font-medium">Blocked by:</div>
 							{#each issue.blockers as b (b.id)}
-								<div class="truncate"><span class="font-mono">{b.id}</span> {b.title}</div>
+								<div class="truncate" title={b.id}>
+									<span class="font-mono">{shortIssueId(issue.sourceType, b.id)}</span>
+									{b.title}
+								</div>
 							{/each}
 						</div>
 					{/if}

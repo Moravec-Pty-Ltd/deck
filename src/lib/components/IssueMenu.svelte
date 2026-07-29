@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { SessionIssue } from '$lib/types';
-	import { ISSUE_BADGE } from '$lib/issues';
+	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
 	import { Ticket } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
 
@@ -11,6 +11,8 @@
 
 	let open = $state(false);
 
+	// The chip's hover text, so it keeps the full `owner/repo#n` refs the menu
+	// entries below shorten.
 	const summary = $derived(
 		issues.map((i) => `${ISSUE_BADGE[i.source].label} ${i.id}`).join(', ')
 	);
@@ -35,13 +37,14 @@
 						href={issue.url}
 						target="_blank"
 						rel="noopener noreferrer"
+						title={issue.id}
 						onclick={() => (open = false)}
 					>
-						<Ticket size={14} /> {ISSUE_BADGE[issue.source].label} {issue.id}
+						<Ticket size={14} /> {ISSUE_BADGE[issue.source].label} {shortIssueId(issue.source, issue.id)}
 					</a>
 				{:else}
-					<span>
-						<Ticket size={14} /> {ISSUE_BADGE[issue.source].label} {issue.id}
+					<span title={issue.id}>
+						<Ticket size={14} /> {ISSUE_BADGE[issue.source].label} {shortIssueId(issue.source, issue.id)}
 					</span>
 				{/if}
 			</li>

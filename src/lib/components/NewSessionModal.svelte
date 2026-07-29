@@ -135,6 +135,10 @@
 	// pick (unchanged), else the refs joined so the field reads sensibly.
 	const prTitleField = (list: PullRequest[]) =>
 		list.length === 1 ? list[0].title : list.map((p) => `#${p.number}`).join('+');
+	// Same for an issue selection. Short ids, matching the split-create path and
+	// the header chip; the full ref stays on the issue itself.
+	const issueTitleField = (list: Issue[]) =>
+		list.map((i) => shortIssueId(i.sourceType, i.id)).join('+');
 
 	let wasOpen = false;
 	$effect(() => {
@@ -263,7 +267,7 @@
 		}
 		errorMsg = '';
 		pickedIssues = has ? pickedIssues.filter((i) => issueKey(i) !== k) : [...pickedIssues, issue];
-		title = pickedIssues.map((i) => i.id).join('+');
+		title = issueTitleField(pickedIssues);
 		branchDirty = false;
 	}
 
@@ -316,9 +320,12 @@
 		if (!promptDirty) prompt = template;
 	});
 
-	// Branch defaults to the title until the user edits it.
+	// Branch defaults to the title until the user edits it. Issue picks seed it
+	// from the full `owner/repo#n` refs instead, which the title now shortens, so
+	// the branch keeps the repo (as the split-create path already does).
 	$effect(() => {
-		if (worktreeMode === 'new' && !branchDirty) branch = title.trim();
+		if (worktreeMode !== 'new' || branchDirty) return;
+		branch = pickedIssues.length ? pickedIssues.map((i) => i.id).join('+') : title.trim();
 	});
 
 	// Base branch defaults to the project's remembered last base.
@@ -637,7 +644,7 @@
 					title = prTitleField(pickedPrs);
 				} else {
 					pickedIssues = submittedIssues.filter((i) => !succeeded.has(issueKey(i)));
-					title = pickedIssues.map((i) => i.id).join('+');
+					title = issueTitleField(pickedIssues);
 				}
 				errorMsg = `created ${okIds.length}, failed: ${failed.join('; ')}`;
 				return;
@@ -769,9 +776,9 @@
 							<button
 								class="btn btn-ghost btn-xs gap-1 font-mono"
 								onclick={() => pickIssue(i)}
-								title="remove"
+								title="remove {i.id}"
 							>
-								{i.id} <X size={12} />
+								{shortIssueId(i.sourceType, i.id)} <X size={12} />
 							</button>
 						{/each}
 					</div>
@@ -788,11 +795,14 @@
 							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
 							<div class="min-w-0">
 								<div class="font-medium">
-									<span class="font-mono">{i.id}</span>: {i.blockers.length} incomplete blocker(s) — you
-									can still start.
+									<span class="font-mono" title={i.id}>{shortIssueId(i.sourceType, i.id)}</span>:
+									{i.blockers.length} incomplete blocker(s) — you can still start.
 								</div>
 								{#each i.blockers as b (b.id)}
-									<div class="truncate"><span class="font-mono">{b.id}</span> {b.title}</div>
+									<div class="truncate" title={b.id}>
+										<span class="font-mono">{shortIssueId(i.sourceType, b.id)}</span>
+										{b.title}
+									</div>
 								{/each}
 							</div>
 						</div>
