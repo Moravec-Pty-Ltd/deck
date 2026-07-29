@@ -18,6 +18,7 @@
 		shouldReseedModel
 	} from '$lib/models';
 	import { EFFORT_LEVELS, effortLabel, resolveEffort } from '$lib/effort';
+	import { shortIssueId } from '$lib/issues';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import {
 		Bot,
@@ -509,7 +510,7 @@
 				body: {
 					...common,
 					cwd: startCwd,
-					title: issue.id,
+					title: shortIssueId(issue.sourceType, issue.id),
 					worktree: newWorktree(issue.id),
 					issues: [issueField(issue)]
 				}
