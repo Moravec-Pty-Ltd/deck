@@ -38,16 +38,29 @@ fs.symlinkSync(outside2, `${proj2Root}-worktrees`);
 const linkIn = path.join(outside, 'link-in');
 fs.symlinkSync(projRoot, linkIn);
 
+// A project registered *inside* another, the shape you get from registering an
+// umbrella dir (~/code) alongside the repos under it. Listed after its ancestor,
+// so a first-match lookup would hand back the umbrella.
+const nestedRoot = path.join(projRoot, 'nested');
+fs.mkdirSync(path.join(nestedRoot, 'src'), { recursive: true });
+fs.mkdirSync(path.join(`${nestedRoot}-worktrees`, 'feature'), { recursive: true });
+
 fs.writeFileSync(
 	path.join(dataDir, 'projects.json'),
 	JSON.stringify([
 		{ name: 'p', path: projRoot },
-		{ name: 'p2', path: proj2Root }
+		{ name: 'p2', path: proj2Root },
+		{ name: 'nested', path: nestedRoot }
 	])
 );
 
-const { isWithinProjects, resolveWithinProjects, isPickerAllowed, confineRelative } =
-	await import('./confine');
+const {
+	isWithinProjects,
+	resolveWithinProjects,
+	isPickerAllowed,
+	confineRelative,
+	projectForPath
+} = await import('./confine');
 const { completeDirs } = await import('./fsutil');
 
 afterAll(() => {
@@ -100,6 +113,25 @@ describe('resolveWithinProjects', () => {
 	it('returns null outside the project set', () => {
 		expect(resolveWithinProjects(outside)).toBe(null);
 		expect(resolveWithinProjects('/etc')).toBe(null);
+	});
+});
+
+describe('projectForPath', () => {
+	it('maps a project and its worktrees back to the project', () => {
+		expect(projectForPath(projRoot)).toBe(projRoot);
+		expect(projectForPath(path.join(projRoot, 'src'))).toBe(projRoot);
+		expect(projectForPath(path.join(worktrees, 'feature'))).toBe(projRoot);
+	});
+
+	it('picks the deepest project when one is registered inside another', () => {
+		expect(projectForPath(nestedRoot)).toBe(nestedRoot);
+		expect(projectForPath(path.join(nestedRoot, 'src'))).toBe(nestedRoot);
+		expect(projectForPath(path.join(`${nestedRoot}-worktrees`, 'feature'))).toBe(nestedRoot);
+	});
+
+	it('returns null outside the project set', () => {
+		expect(projectForPath(outside)).toBe(null);
+		expect(projectForPath('/etc')).toBe(null);
 	});
 });
 
