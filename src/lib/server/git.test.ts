@@ -12,6 +12,7 @@ import {
 	parseOriginRepo,
 	cloneRepo
 } from './git';
+import { slugifyBranch } from './branch-core';
 
 // Lock the argv ordering: every positional arg must sit after `--`, so the test
 // fails if the separator is dropped or reordered (the S4 regression guard).
@@ -92,22 +93,39 @@ describe('createWorktree against a real repo', () => {
 	});
 
 	it('creates a worktree on a new branch', async () => {
-		const dir = await createWorktree(repo, 'feature-x', { newBranch: true });
+		const { dir, branch } = await createWorktree(repo, 'feature-x', { newBranch: true });
 		expect(fs.existsSync(dir)).toBe(true);
 		expect(branchOf(dir)).toBe('feature-x');
+		expect(branch).toBe('feature-x');
 	});
 
 	it('checks out an existing branch into a worktree', async () => {
 		execFileSync('git', ['-C', repo, 'branch', 'existing-b'], { env });
-		const dir = await createWorktree(repo, 'existing-b', { newBranch: false });
+		const { dir } = await createWorktree(repo, 'existing-b', { newBranch: false });
 		expect(fs.existsSync(dir)).toBe(true);
 		expect(branchOf(dir)).toBe('existing-b');
+	});
+
+	it('creates a slugified issue-id branch whose dir matches the ref', async () => {
+		const slug = slugifyBranch('owner/repo#198');
+		const { dir, branch } = await createWorktree(repo, slug, { newBranch: true });
+		expect(branchOf(dir)).toBe(slug);
+		expect(path.basename(dir)).toBe(slug);
+		expect(branch).toBe(slug);
 	});
 
 	it('is idempotent when the worktree dir already exists', async () => {
 		const first = await createWorktree(repo, 'feature-x', { newBranch: true });
 		const second = await createWorktree(repo, 'feature-x', { newBranch: true });
-		expect(second).toBe(first);
+		expect(second).toEqual(first);
+	});
+
+	// A worktree created before branch slugifying sits in the same dir under a
+	// different ref; reusing it must report the branch that's actually there.
+	it('reports the checked-out branch when the dir already exists', async () => {
+		execFileSync('git', ['-C', repo, 'worktree', 'add', '-b', 'acme/web#42', '--', `${repo}-worktrees/acme-web-42`], { env });
+		const { branch } = await createWorktree(repo, 'acme-web-42', { newBranch: true });
+		expect(branch).toBe('acme/web#42');
 	});
 });
 

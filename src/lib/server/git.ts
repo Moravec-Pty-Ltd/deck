@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isFlagSafe } from './agents/args';
+import { worktreeDirName } from './branch-core';
 import type { DiffFile } from '$lib/diff';
 import { type DiffStats, joinDiffFiles, diffStats, baseRefCandidates } from './diff-core';
 
@@ -96,12 +97,25 @@ export function worktreeAddArgs(
 	return args;
 }
 
-// Worktrees land next to the repo: <repo>-worktrees/<branch>
+// The branch a worktree dir is checked out on, or '' when detached/unreadable.
+async function checkedOutBranch(dir: string): Promise<string> {
+	try {
+		const branch = (await git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')).trim();
+		return branch === 'HEAD' ? '' : branch;
+	} catch {
+		return '';
+	}
+}
+
+// Worktrees land next to the repo: <repo>-worktrees/<branch>. Returns the dir
+// and the branch it is actually on, which differs from the requested one when
+// the dir already existed (an older worktree for the same name, before branch
+// slugifying), so the caller stores what it gets and the record stays true.
 export async function createWorktree(
 	repo: string,
 	branch: string,
 	opts: { newBranch?: boolean; base?: string } = {}
-): Promise<string> {
+): Promise<{ dir: string; branch: string }> {
 	// branch/base reach git as ref arguments; a value starting with `-` would be
 	// parsed as a flag (the class isFlagSafe guards elsewhere), and `.`/`..`
 	// survive the dir sanitiser as path segments. Reject crafted refs, keep the
@@ -110,14 +124,13 @@ export async function createWorktree(
 	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);
 	if (opts.base !== undefined && !isFlagSafe(opts.base))
 		throw new Error(`unsafe base branch: ${opts.base}`);
-	const safe = branch.replace(/[^a-zA-Z0-9._/-]/g, '-').replace(/\//g, '-');
 	const worktrees = path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`);
-	const dir = path.join(worktrees, safe);
+	const dir = path.join(worktrees, worktreeDirName(branch));
 	if (!dir.startsWith(worktrees + path.sep)) throw new Error(`unsafe branch name: ${branch}`);
-	if (fs.existsSync(dir)) return dir;
+	if (fs.existsSync(dir)) return { dir, branch: (await checkedOutBranch(dir)) || branch };
 	fs.mkdirSync(path.dirname(dir), { recursive: true });
 	await git(repo, ...worktreeAddArgs(dir, branch, opts));
-	return dir;
+	return { dir, branch };
 }
 
 // Fetch a PR's head into a local branch `pr/<n>` so a worktree can be checked
