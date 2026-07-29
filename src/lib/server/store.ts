@@ -3,10 +3,15 @@ import { fileMtimeMs, readJson, writeJson } from './config';
 import { invalidateIssues } from './issues/cache';
 import { invalidatePrs } from './prs';
 import { DEMO, demoProjects } from './demo';
+import { deleteSecret } from './secrets';
+
+// Issue-source API keys never sit in projects.json; they live behind the secret
+// store (OS keyring, or an opt-in 0600 file - see secrets.ts). Re-exported here
+// so callers keep reaching for them through the store.
+export { readSecret, setSecret } from './secrets';
 
 const SESSIONS_FILE = 'sessions.json';
 const PROJECTS_FILE = 'projects.json';
-const SECRETS_FILE = 'secrets.json';
 const SETTINGS_FILE = 'settings.json';
 
 // In-memory cache of the sessions store. This module is the sole writer of
@@ -210,28 +215,4 @@ export function removeSource(projectPath: string, sourceId: string): Project | u
 	deleteSecret(sourceId);
 	invalidateProjectCaches(projectPath);
 	return project;
-}
-
-// --- Secrets (~/.deck/secrets.json, keyed by source id) ---
-// Linear/ClickUp API keys live here, never in projects.json, mirroring the way
-// `token` / `vapid.json` sit apart from the project + session stores.
-
-type SecretsFile = Record<string, { apiKey: string }>;
-
-export function readSecret(sourceId: string): string | undefined {
-	return readJson<SecretsFile>(SECRETS_FILE, {})[sourceId]?.apiKey;
-}
-
-export function setSecret(sourceId: string, apiKey: string) {
-	const secrets = readJson<SecretsFile>(SECRETS_FILE, {});
-	secrets[sourceId] = { apiKey };
-	// 0o600 — API keys must not be world/group readable (cf. the auth token).
-	writeJson(SECRETS_FILE, secrets, 0o600);
-}
-
-function deleteSecret(sourceId: string) {
-	const secrets = readJson<SecretsFile>(SECRETS_FILE, {});
-	if (!(sourceId in secrets)) return;
-	delete secrets[sourceId];
-	writeJson(SECRETS_FILE, secrets, 0o600);
 }

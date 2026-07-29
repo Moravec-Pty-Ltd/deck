@@ -64,7 +64,7 @@ const BUILDERS: Record<string, (id: string, b: Body) => Built> = {
 };
 
 // Validate the per-type body and return the source to persist plus, for keyed
-// providers, the apiKey to stash in secrets.json. Throws a 400 on bad input.
+// providers, the apiKey to stash in the secret store. Throws a 400 on bad input.
 function buildSource(id: string, body: Body): Built {
 	const builder = BUILDERS[str(body.type)];
 	if (!builder) error(400, 'unknown source type');
@@ -72,7 +72,7 @@ function buildSource(id: string, body: Body): Built {
 }
 
 // POST /api/projects/sources — add a source to a project. Generates the id,
-// stashes any apiKey in secrets.json, and stores the (secret-free) source.
+// stashes any apiKey in the secret store, and stores the (secret-free) source.
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await objectBody(request);
 	const path = str(body.projectPath);
