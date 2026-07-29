@@ -153,7 +153,7 @@ idempotent replay).
 	"title": "...", "model": "...",     // optional; model is free-text
 	"effort": "low|medium|high|xhigh|max",  // optional; claude reasoning effort, omit for the CLI default
 	"issue": { "source": "github|linear|clickup", "id": "owner/repo#1", "url": "..." },  // optional; from /api/agent/issues
-	"worktree": { "branch": "my-branch", "newBranch": true, "base": "main" }             // optional
+	"worktree": { "branch": "my-branch", "newBranch": true, "base": "main" }             // optional; a newBranch is slugified into a valid ref (owner/repo#1 -> owner-repo-1)
 }
 \`\`\`
 

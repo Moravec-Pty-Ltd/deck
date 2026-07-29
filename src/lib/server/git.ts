@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isFlagSafe } from './agents/args';
+import { worktreeDirName } from './branch-core';
 import type { DiffFile } from '$lib/diff';
 import { type DiffStats, joinDiffFiles, diffStats, baseRefCandidates } from './diff-core';
 
@@ -110,9 +111,8 @@ export async function createWorktree(
 	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);
 	if (opts.base !== undefined && !isFlagSafe(opts.base))
 		throw new Error(`unsafe base branch: ${opts.base}`);
-	const safe = branch.replace(/[^a-zA-Z0-9._/-]/g, '-').replace(/\//g, '-');
 	const worktrees = path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`);
-	const dir = path.join(worktrees, safe);
+	const dir = path.join(worktrees, worktreeDirName(branch));
 	if (!dir.startsWith(worktrees + path.sep)) throw new Error(`unsafe branch name: ${branch}`);
 	if (fs.existsSync(dir)) return dir;
 	fs.mkdirSync(path.dirname(dir), { recursive: true });

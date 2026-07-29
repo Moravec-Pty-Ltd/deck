@@ -4,6 +4,7 @@ import { isAgentKind, type AgentKind, type DeckEffort, type SessionIssue, type S
 import { createSession } from './sessions';
 import { createWorktree, fetchPullRef, isGitRepo } from './git';
 import { isFlagSafe } from './agents/args';
+import { slugifyBranch } from './branch-core';
 import { agentSend } from './agents/dispatch';
 import { appendEvent } from './claude';
 import { listProjects, updateProject, rememberModel, rememberEffort, readSecret } from './store';
@@ -150,6 +151,20 @@ function assertRefsSafe(wt: WorktreeReq): void {
 	if (wt.base && !isSafeRef(wt.base)) error(400, 'invalid base branch');
 }
 
+// The branch the worktree is actually created on. Sessions are conventionally
+// named after their issue, and a GitHub issue id (`owner/repo#198`) isn't a
+// usable ref, so a *new* branch is slugified into one rather than 400ing (issue
+// #200). An existing branch is checked out under its real name, untouched. The
+// slug is what gets stored and returned, so callers see the branch they got.
+function effectiveBranch(wt: WorktreeReq): string {
+	const requested = wt.branch!;
+	if (!wt.newBranch) return requested;
+	const slug = slugifyBranch(requested);
+	if (!slug) error(400, 'invalid branch name');
+	if (slug !== requested) console.log(`[deck] branch ${requested} slugified to ${slug}`);
+	return slug;
+}
+
 // Validate + normalise the PR base ref (the PR path skips assertRefsSafe, which
 // also expects a branch). Returns undefined when no base was given.
 function safeBase(wt: WorktreeReq): string | undefined {
@@ -189,10 +204,11 @@ async function makeWorktree(
 	const repo = await assertWorktreeCwd(cwd);
 	if (wt.fromPr !== undefined) return makePrWorktree(cwd, repo, wt);
 	assertRefsSafe(wt);
+	const branch = effectiveBranch(wt);
 	const base = wt.base || undefined;
-	const dir = await createWorktree(repo, wt.branch!, { newBranch: wt.newBranch, base });
+	const dir = await createWorktree(repo, branch, { newBranch: wt.newBranch, base });
 	rememberBase(cwd, !!wt.newBranch, base);
-	return { cwd: dir, worktree: { repo: cwd, branch: wt.branch!, createdBranch: !!wt.newBranch, base } };
+	return { cwd: dir, worktree: { repo: cwd, branch, createdBranch: !!wt.newBranch, base } };
 }
 
 // Fetch the PR head into a local pr/<n> branch, surfacing a fetch failure as a

@@ -12,6 +12,7 @@ import {
 	parseOriginRepo,
 	cloneRepo
 } from './git';
+import { slugifyBranch } from './branch-core';
 
 // Lock the argv ordering: every positional arg must sit after `--`, so the test
 // fails if the separator is dropped or reordered (the S4 regression guard).
@@ -102,6 +103,13 @@ describe('createWorktree against a real repo', () => {
 		const dir = await createWorktree(repo, 'existing-b', { newBranch: false });
 		expect(fs.existsSync(dir)).toBe(true);
 		expect(branchOf(dir)).toBe('existing-b');
+	});
+
+	it('creates a slugified issue-id branch whose dir matches the ref', async () => {
+		const branch = slugifyBranch('owner/repo#198');
+		const dir = await createWorktree(repo, branch, { newBranch: true });
+		expect(branchOf(dir)).toBe(branch);
+		expect(path.basename(dir)).toBe(branch);
 	});
 
 	it('is idempotent when the worktree dir already exists', async () => {
