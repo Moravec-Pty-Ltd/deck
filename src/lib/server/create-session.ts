@@ -204,9 +204,9 @@ async function makeWorktree(
 	const repo = await assertWorktreeCwd(cwd);
 	if (wt.fromPr !== undefined) return makePrWorktree(cwd, repo, wt);
 	assertRefsSafe(wt);
-	const branch = effectiveBranch(wt);
+	const requested = effectiveBranch(wt);
 	const base = wt.base || undefined;
-	const dir = await createWorktree(repo, branch, { newBranch: wt.newBranch, base });
+	const { dir, branch } = await createWorktree(repo, requested, { newBranch: wt.newBranch, base });
 	rememberBase(cwd, !!wt.newBranch, base);
 	return { cwd: dir, worktree: { repo: cwd, branch, createdBranch: !!wt.newBranch, base } };
 }
@@ -234,7 +234,7 @@ async function makePrWorktree(
 	if (number === null) error(400, 'invalid PR number');
 	const base = safeBase(wt);
 	const { branch, created } = await fetchPrBranch(repo, number);
-	const dir = await createWorktree(repo, branch, { newBranch: false });
+	const { dir } = await createWorktree(repo, branch, { newBranch: false });
 	// `created` (not the worktree-add's newBranch) records ref ownership: deck
 	// made the pr/<n> ref here, so branch cleanup on delete should drop it. A
 	// pre-existing ref (another session already reviewing this PR) stays false.

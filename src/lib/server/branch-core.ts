@@ -16,13 +16,12 @@ const UNSAFE = /[^A-Za-z0-9._-]+/g;
 const trimEnds = (s: string) => s.replace(/^[-.]+/, '').replace(/[-.]+$/, '');
 
 // A valid git branch name derived from `raw`, or '' when nothing usable is
-// left (non-string input, or a name with no ASCII-safe characters at all).
-// Already-valid simple refs like `ABC-123` pass through untouched.
-export function slugifyBranch(raw: unknown): string {
-	if (typeof raw !== 'string') return '';
+// left (a name with no ASCII-safe characters at all). Already-valid simple
+// refs like `ABC-123` pass through untouched.
+export function slugifyBranch(raw: string): string {
 	// Decompose first so accented latin reads through as its base letters
 	// instead of collapsing to dashes.
-	const folded = raw.normalize('NFKD').replace(/[̀-ͯ]/g, '');
+	const folded = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
 	let s = trimEnds(folded.replace(UNSAFE, '-').replace(/-{2,}/g, '-').replace(/\.{2,}/g, '.'));
 	s = trimEnds(s.slice(0, MAX_LENGTH));
 	// `.lock` is reserved; a name ending in it can hide another behind it.

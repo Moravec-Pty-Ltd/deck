@@ -46,10 +46,8 @@ describe('slugifyBranch', () => {
 		expect(slugifyBranch(`${'y'.repeat(99)}-tail`)).toBe('y'.repeat(99));
 	});
 
-	it('returns empty for a non-string or empty input', () => {
-		expect(slugifyBranch(undefined)).toBe('');
-		expect(slugifyBranch(42)).toBe('');
-		expect(slugifyBranch({ branch: 'x' })).toBe('');
+	it('returns empty for blank input', () => {
+		expect(slugifyBranch('')).toBe('');
 		expect(slugifyBranch('   ')).toBe('');
 	});
 
