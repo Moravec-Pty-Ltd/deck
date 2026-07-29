@@ -4,6 +4,7 @@
 // independently. Idempotence is durable: a given issue/PR fires at most once ever,
 // across polls and restarts, tracked in ~/.deck/automation.json. The pure
 // key/dedupe logic and request bodies live in automation-core.ts.
+import { shortIssueId } from '$lib/issues';
 import type { Issue, Project, PullRequest } from '$lib/types';
 import { listProjects } from './store';
 import { getProjectIssues } from './issues';
@@ -73,7 +74,7 @@ async function runWork(project: Project, processed: ProcessedKeys): Promise<void
 	for (const { key, candidate } of selectNewTriggers(issues, workTriggerKey, processed)) {
 		await spawn(processed, key, () => workBody(project, candidate), (id) => ({
 			title: 'Automation started a work session',
-			body: `${candidate.id} · ${candidate.title}`,
+			body: `${shortIssueId(candidate.sourceType, candidate.id)} · ${candidate.title}`,
 			tag: id,
 			url: `/s/${id}`
 		}));

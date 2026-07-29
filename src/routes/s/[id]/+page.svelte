@@ -16,7 +16,7 @@
 	import EffortMenu from '$lib/components/EffortMenu.svelte';
 	import ZedButton from '$lib/components/ZedButton.svelte';
 	import { shortPath } from '$lib/time';
-	import { ISSUE_BADGE, issueChipText } from '$lib/issues';
+	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import { DeleteFlow, requestDelete } from '$lib/delete-flow.svelte';
@@ -357,7 +357,7 @@
 						>
 							<Ticket size={12} />
 							<span class="hidden sm:inline"
-								>{ISSUE_BADGE[issue.source].label} {issueChipText(issue.source, issue.id)}</span
+								>{ISSUE_BADGE[issue.source].label} {shortIssueId(issue.source, issue.id)}</span
 							>
 						</a>
 					{:else}
@@ -367,7 +367,7 @@
 						>
 							<Ticket size={12} />
 							<span class="hidden sm:inline"
-								>{ISSUE_BADGE[issue.source].label} {issueChipText(issue.source, issue.id)}</span
+								>{ISSUE_BADGE[issue.source].label} {shortIssueId(issue.source, issue.id)}</span
 							>
 						</span>
 					{/if}

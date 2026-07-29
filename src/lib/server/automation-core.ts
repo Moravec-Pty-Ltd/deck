@@ -2,6 +2,7 @@
 // automation (issue #171), kept node-free so they unit-test without fs/gh. The
 // orchestration (feed fetch, session create, notify, durable ledger) lives in the
 // sibling automation.ts.
+import { shortIssueId } from '$lib/issues';
 import type { Issue, Project, PullRequest } from '$lib/types';
 
 // The durable ledger of trigger keys that have already spawned a session, keyed
@@ -47,7 +48,7 @@ export function selectNewTriggers<T>(
 }
 
 // The /api/sessions body for a work session, mirroring the New Session modal's
-// per-issue split: titled with the issue id and run in a fresh worktree whose
+// per-issue split: titled with the issue's display id and run in a fresh worktree whose
 // branch is the issue id, off the project's remembered base (repo default when
 // unset), never the project checkout itself. Seeded with the project's `template`
 // (blank-safe: an empty prompt just leaves the session idle, like the UI). `issue`
@@ -58,7 +59,7 @@ export function workBody(project: Project, issue: Issue): Record<string, unknown
 	return {
 		kind: 'claude',
 		cwd: project.path,
-		title: issue.id,
+		title: shortIssueId(issue.sourceType, issue.id),
 		prompt: project.template ?? '',
 		issue: { source: issue.sourceType, id: issue.id, url: issue.url, sourceId: issue.sourceId },
 		worktree: { branch: issue.id, newBranch: true, base: project.lastBase || undefined }

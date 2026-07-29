@@ -82,19 +82,20 @@ describe('selectNewTriggers', () => {
 });
 
 describe('workBody', () => {
-	it('titles and branches by issue id, off the project base, mirroring the modal', () => {
+	it('titles by the short issue id and branches by the full one, off the project base', () => {
 		const body = workBody(
 			project({ path: '/p', lastBase: 'develop', template: 'go' }),
 			issue({ id: 'acme/web#42' })
 		);
-		expect(body.title).toBe('acme/web#42');
+		expect(body.title).toBe('#42');
 		expect(body.cwd).toBe('/p');
 		expect(body.prompt).toBe('go');
 		expect(body.worktree).toEqual({ branch: 'acme/web#42', newBranch: true, base: 'develop' });
 	});
 
 	it('falls back to the repo default base and an empty prompt when unset', () => {
-		const body = workBody(project({}), issue({ id: 'LIN-9' }));
+		const body = workBody(project({}), issue({ sourceType: 'linear', id: 'LIN-9' }));
+		expect(body.title).toBe('LIN-9');
 		expect(body.prompt).toBe('');
 		expect(body.worktree).toEqual({ branch: 'LIN-9', newBranch: true, base: undefined });
 	});
