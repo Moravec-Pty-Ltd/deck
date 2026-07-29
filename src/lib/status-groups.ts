@@ -10,6 +10,17 @@ export interface StatusBucket {
 	sessions: DeckSession[];
 }
 
+// The dot colour per bucket, shared by the sidebar and homepage headers. Needs
+// attention takes the error colour so it stands out (issue #48), and Just
+// finished takes success green to read as "done its turn" next to Idle grey.
+export const BUCKET_DOT: Record<StatusBucketKey, string> = {
+	'needs-attention': 'bg-error',
+	active: 'bg-primary',
+	'just-finished': 'bg-success',
+	idle: 'bg-base-content/35',
+	dead: 'border border-base-content/40'
+};
+
 // An idle session counts as "just finished" if it went idle within this window.
 const JUST_FINISHED_MS = 15 * 60 * 1000;
 

@@ -2,20 +2,22 @@
 	import type { DeckSession, NewSessionPreset, Project, SessionKind } from '$lib/types';
 	import { relativeTime, shortPath } from '$lib/time';
 	import { groupSessions } from '$lib/groups';
+	import { bucketSessions, BUCKET_DOT } from '$lib/status-groups';
+	import { viewMode } from '$lib/view-mode.svelte';
+	import { viewModeLabel } from '$lib/view-mode';
 	import { createCollapseState } from '$lib/collapse.svelte';
 	import { DeleteFlow } from '$lib/delete-flow.svelte';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
 	import PairApprovals, { type PendingPairing } from '$lib/components/PairApprovals.svelte';
-	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, List, FolderCog, QrCode, ChevronRight, ChevronDown, X } from '@lucide/svelte';
+	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, FolderCog, QrCode, ChevronRight, ChevronDown, X } from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
 	let sessions = $state<DeckSession[]>([]);
 	let projects = $state<Project[]>([]);
 	let filter = $state<'all' | SessionKind>('all');
-	let grouped = $state(true);
 	let modalOpen = $state(false);
 	let preset = $state<NewSessionPreset | null>(null);
 	let loaded = $state(false);
@@ -71,9 +73,16 @@
 	// Two-level grouping: project-group -> per-project subgroup -> sessions (issue #34).
 	const groups = $derived(groupSessions(visible, projects));
 
-	// Collapse state for the grouped view, default-collapsed and persisted
+	// Attention-first buckets cutting across projects, for the "By status" view;
+	// the same derivation the sidebar renders (issue #206).
+	const buckets = $derived(bucketSessions(visible));
+
+	// Collapse state for the project view, default-collapsed and persisted
 	// independently from the sidebar's (no auto-expand).
 	const collapse = createCollapseState('deck:home:expandedGroups');
+
+	// Status buckets default *expanded*, so this set tracks the collapsed ones.
+	const statusCollapse = createCollapseState('deck:home:collapsedStatusBuckets');
 
 	const del = new DeleteFlow(refresh);
 
@@ -109,11 +118,11 @@
 		</div>
 		<button
 			class="btn btn-ghost btn-sm"
-			onclick={() => (grouped = !grouped)}
-			title={grouped ? 'Flat list' : 'Group by project'}
-			aria-label="Toggle grouping"
+			onclick={viewMode.toggle}
+			title={viewModeLabel(viewMode.current)}
+			aria-label={viewModeLabel(viewMode.current)}
 		>
-			{#if grouped}<FolderGit2 size={16} />{:else}<List size={16} />{/if}
+			{#if viewMode.current === 'project'}<Activity size={16} />{:else}<FolderTree size={16} />{/if}
 		</button>
 	</div>
 	<div class="flex items-center gap-2">
@@ -208,7 +217,38 @@
 			<Plus size={16} /> New session
 		</button>
 	</div>
-{:else if grouped}
+{:else if viewMode.current === 'status'}
+	<div class="space-y-4">
+		{#each buckets as bucket (bucket.key)}
+			{@const isOpen = !statusCollapse.has(bucket.key)}
+			<section>
+				<button
+					class="flex w-full items-center gap-2 rounded-btn px-1 py-1 text-left hover:bg-base-200"
+					onclick={() => statusCollapse.toggle(bucket.key)}
+					aria-expanded={isOpen}
+				>
+					{#if isOpen}
+						<ChevronDown size={16} class="shrink-0 opacity-60" />
+					{:else}
+						<ChevronRight size={16} class="shrink-0 opacity-60" />
+					{/if}
+					<span class="size-2 shrink-0 rounded-full {BUCKET_DOT[bucket.key]}"></span>
+					<span class="font-semibold {bucket.key === 'needs-attention' ? 'text-error' : ''}">
+						{bucket.label}
+					</span>
+					<span class="text-xs opacity-50">{bucket.sessions.length}</span>
+				</button>
+				{#if isOpen}
+					<ul class="mt-2 space-y-2 pl-4">
+						{#each bucket.sessions as s (s.id)}
+							<li>{@render row(s)}</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		{/each}
+	</div>
+{:else}
 	<div class="space-y-4">
 		{#each groups as group (group.name)}
 			{@const isOpen = collapse.has(group.name)}
@@ -256,12 +296,6 @@
 			</section>
 		{/each}
 	</div>
-{:else}
-	<ul class="space-y-2">
-		{#each visible as s (s.id)}
-			<li>{@render row(s)}</li>
-		{/each}
-	</ul>
 {/if}
 
 <NewSessionModal bind:open={modalOpen} {preset} />
