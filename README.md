@@ -32,7 +32,7 @@ Light, dark, and e-ink themes (e-ink drops all motion and shadows for a flat, mo
 
 ## Platform support
 
-deck runs on **macOS** and **Linux**. It drives external CLIs (`claude`, `tmux`, `git`) over your shell and depends on `tmux` for the shell sessions, so it needs a POSIX environment. There are no native/compiled dependencies, so any Node 20+ runtime works.
+deck runs on **macOS** and **Linux**. It drives external CLIs (`claude`, `tmux`, `git`) over your shell and depends on `tmux` for the shell sessions, so it needs a POSIX environment. The one native dependency (`@napi-rs/keyring`, for [issue-source API keys](#issue-source-api-keys)) ships prebuilt binaries, so there's no compiler or `node-gyp` step.
 
 On **Windows** there are two paths. The supported one is [WSL2](https://learn.microsoft.com/windows/wsl/install): run deck inside it and treat it as Linux. There's also an **experimental native-Windows path** using [psmux](https://github.com/psmux/psmux), a tmux-compatible multiplexer, in place of `tmux` (see below).
 
@@ -92,6 +92,7 @@ Dev server: `pnpm dev`.
 | `DECK_DEMO` | unset | Set to `1` to serve a fixed, sanitized demo dataset instead of `~/.deck` (used for the README screenshots). Skips auth and the host tmux scan, so it never shows real sessions or paths. |
 | `DECK_PUSH_SUBJECT` | `mailto:info@moravec.tech` | VAPID contact for web push (Apple rejects a localhost mailto) |
 | `DECK_MORABOT_STATUS` | unset | Absolute path to morabot's `status.json` (enables the morabot integration, review verdicts, and notifications). |
+| `DECK_SECRETS_FILE` | unset | Set to `1` to store issue-source API keys in `~/.deck/secrets.json` (**plaintext**, mode `0600`) instead of the OS keyring. See [Issue-source API keys](#issue-source-api-keys). |
 
 **Configuration**: Variables are loaded from a `.env` file in the repo root by `vite dev` (dev server) and via `node --env-file=.env build/index.js` (production). Explicit environment variables (set inline or exported) always take precedence over `.env` values.
 
@@ -134,6 +135,14 @@ deck can push notifications to the installed PWA so you don't have to babysit a 
 VAPID keys are generated on first run and stored in `~/.deck/vapid.json`; subscriptions live in `~/.deck/push-subscriptions.json`. Override the VAPID contact with `DECK_PUSH_SUBJECT`.
 
 Prefer your agent harness's own notifications? deck stamps `DECK_SESSION_ID` into every agent it spawns, so a claude/pi/codex/opencode stop hook can push a notification that deep-links straight back to the session. See [docs/hooks.md](docs/hooks.md).
+
+## Issue-source API keys
+
+Linear and ClickUp sources need an API key (GitHub rides on `gh`'s own auth). deck keeps those keys in the **OS keyring**, not in a file: macOS **Keychain**, Windows **Credential Manager**, and the **Secret Service** (GNOME Keyring, KWallet) on Linux, under the service name `deck`, one entry per source. macOS and Windows work out of the box; on Linux it needs a running Secret Service, which a headless box, a container, or a bare tty session usually doesn't have.
+
+If the keyring can't be used, deck **fails to start** rather than quietly falling back to a plaintext file. Setting `DECK_SECRETS_FILE=1` opts in to the old behaviour: keys are stored in `~/.deck/secrets.json` as **plaintext**, readable by anything running as you, with the file mode set to `0600`. deck logs that choice once at boot. On Linux without a keyring daemon, this flag is the expected setup.
+
+Upgrading with an existing `~/.deck/secrets.json` migrates automatically on the first boot: each key is written to the keyring and read back, and only then is the file deleted. If anything fails, the file is left exactly as it was and deck stops with an error, so no key is ever lost half-way. Nothing to re-enter either way.
 
 ## How it works
 

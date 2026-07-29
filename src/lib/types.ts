@@ -156,7 +156,7 @@ export interface Project {
 	// the per-kind record `lastModels` needs.
 	lastEffort?: DeckEffort;
 	// Issue sources are per-project and additive. API keys never live here; they
-	// sit in ~/.deck/secrets.json keyed by source id (see server/store.ts).
+	// sit in the secret store keyed by source id (see server/secrets.ts).
 	sources?: IssueSource[];
 	// Dev-server standup config (issue #32): copy env files in, run ordered setup,
 	// then launch one or more monitored dev commands on an agent session's worktree.
@@ -257,7 +257,7 @@ export interface GithubSource {
 	repo: string;
 }
 
-// Team-scoped. apiKey lives in secrets.json; assignee is always "me".
+// Team-scoped. apiKey lives in the secret store; assignee is always "me".
 export interface LinearSource {
 	id: string;
 	type: 'linear';
@@ -268,7 +268,7 @@ export interface LinearSource {
 }
 
 // List-scoped, reached through a team → space → folder? → list cascade.
-// apiKey lives in secrets.json; assignee is always "me".
+// apiKey lives in the secret store; assignee is always "me".
 export interface ClickupSource {
 	id: string;
 	type: 'clickup';

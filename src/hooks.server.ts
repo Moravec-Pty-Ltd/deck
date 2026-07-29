@@ -2,11 +2,17 @@ import type { Handle, RequestEvent } from '@sveltejs/kit';
 import { redirect, json } from '@sveltejs/kit';
 import { PUBLIC_PATHS, noAuth, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches, warnIfPublicNoAuthHost } from '$lib/server/config';
 import { ensureMcp } from '$lib/server/mcp';
+import { initSecrets } from '$lib/server/secrets';
 import '$lib/server/monitor';
 
 // Start the localhost MCP server (blocking `ask` tool) and shell monitor at boot
 // so the MCP port is ready before any claude session spawns.
 ensureMcp();
+
+// Resolve the secret store before serving anything: an unusable OS keyring is a
+// startup failure, and an existing plaintext secrets.json migrates here (see
+// secrets.ts).
+initSecrets();
 
 // Exchange a valid ?token= for the session cookie and redirect to a clean URL.
 function exchangeUrlToken(event: RequestEvent): never {
