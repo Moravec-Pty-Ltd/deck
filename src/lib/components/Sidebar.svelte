@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import type { DeckSession, Project, ServerState } from '$lib/types';
 	import { groupSessions } from '$lib/groups';
 	import { deriveGroup, relativeTime } from '$lib/time';
-	import { bucketSessions, type StatusBucketKey } from '$lib/status-groups';
+	import { bucketSessions, BUCKET_DOT } from '$lib/status-groups';
+	import { viewMode } from '$lib/view-mode.svelte';
+	import { viewModeLabel } from '$lib/view-mode';
 	import { flattenVisibleGroups, flattenVisibleBuckets, pickNeighbor } from '$lib/sidebar-neighbor';
 	import { createCollapseState } from '$lib/collapse.svelte';
 	import { aggregateState, SERVER_DOT, SERVER_LABEL } from '$lib/servers';
@@ -93,36 +94,6 @@
 		return 'bg-base-content/35';
 	}
 
-	// The same dot vocabulary keyed by status bucket, for the "By status" headers;
-	// Needs attention takes the error colour so it stands out (issue #48), and
-	// Just finished takes success green to read as "done its turn" next to Idle grey.
-	function bucketDot(key: StatusBucketKey) {
-		if (key === 'needs-attention') return 'bg-error';
-		if (key === 'active') return 'bg-primary';
-		if (key === 'just-finished') return 'bg-success';
-		if (key === 'dead') return 'border border-base-content/40';
-		return 'bg-base-content/35';
-	}
-
-	// Grouping mode toggle (issue #48), persisted so the choice survives reloads;
-	// default "By project" so nothing changes until you switch.
-	const VIEW_KEY = 'deck:sidebar:viewMode';
-	function loadView(): 'project' | 'status' {
-		if (!browser) return 'project';
-		return localStorage.getItem(VIEW_KEY) === 'status' ? 'status' : 'project';
-	}
-	let viewMode = $state<'project' | 'status'>(loadView());
-	function toggleView() {
-		viewMode = viewMode === 'project' ? 'status' : 'project';
-		if (browser) {
-			try {
-				localStorage.setItem(VIEW_KEY, viewMode);
-			} catch {
-				// persistence is non-critical; keep the in-memory choice.
-			}
-		}
-	}
-
 	// Two-level switcher across all sessions: project-group -> per-project subgroup
 	// -> sessions, ordered per the rules in $lib/groups (issue #34).
 	const groups = $derived(groupSessions(sessions, projects));
@@ -144,7 +115,7 @@
 	// The sessions actually on screen, in render order, computed on demand at
 	// delete time (only read then, so not a derived recomputed every poll).
 	function visibleOrder(): DeckSession[] {
-		return viewMode === 'status'
+		return viewMode.current === 'status'
 			? flattenVisibleBuckets(buckets, (k) => statusCollapse.has(k))
 			: flattenVisibleGroups(groups, (name) => collapse.has(name));
 	}
@@ -158,7 +129,7 @@
 </script>
 
 {#snippet sessionRow(s: DeckSession)}
-	{@const proj = viewMode === 'status' ? deriveGroup(s.cwd, projects) : null}
+	{@const proj = viewMode.current === 'status' ? deriveGroup(s.cwd, projects) : null}
 	<li class="flex items-center gap-1 pl-1 pr-0">
 		<a
 			href={`/s/${encodeURIComponent(s.id)}`}
@@ -334,11 +305,11 @@
 	<span class="text-sm font-semibold">Sessions</span>
 	<button
 		class="btn btn-ghost btn-xs ml-auto"
-		onclick={toggleView}
-		aria-label={viewMode === 'project' ? 'Group by status' : 'Group by project'}
-		title={viewMode === 'project' ? 'Group by status' : 'Group by project'}
+		onclick={viewMode.toggle}
+		aria-label={viewModeLabel(viewMode.current)}
+		title={viewModeLabel(viewMode.current)}
 	>
-		{#if viewMode === 'project'}
+		{#if viewMode.current === 'project'}
 			<Activity size={14} class="opacity-70" />
 		{:else}
 			<FolderTree size={14} class="opacity-70" />
@@ -347,7 +318,7 @@
 </div>
 
 <nav class="space-y-2">
-	{#if viewMode === 'status'}
+	{#if viewMode.current === 'status'}
 		{#each buckets as bucket (bucket.key)}
 			{@const isOpen = !statusCollapse.has(bucket.key)}
 			<div>
@@ -361,7 +332,7 @@
 					{:else}
 						<ChevronRight size={13} class="shrink-0 opacity-60" />
 					{/if}
-					<span class="size-1.5 shrink-0 rounded-full {bucketDot(bucket.key)}" title={bucket.label}></span>
+					<span class="size-1.5 shrink-0 rounded-full {BUCKET_DOT[bucket.key]}" title={bucket.label}></span>
 					<span
 						class="min-w-0 truncate text-xs font-semibold {bucket.key === 'needs-attention'
 							? 'text-error'
