@@ -59,6 +59,7 @@ interface GhPr {
 	title: string;
 	url: string;
 	headRefName: string;
+	headRefOid: string;
 	baseRefName: string;
 	isDraft: boolean;
 	author: { login: string } | null;
@@ -82,7 +83,7 @@ export async function fetchReviewRequestedPrs(source: GithubSource): Promise<Pul
 		'--limit',
 		'100',
 		'--json',
-		'number,title,url,headRefName,baseRefName,isDraft,author,updatedAt'
+		'number,title,url,headRefName,headRefOid,baseRefName,isDraft,author,updatedAt'
 	]);
 	const items = JSON.parse(out) as GhPr[];
 	return items.map((p) => ({
@@ -92,6 +93,7 @@ export async function fetchReviewRequestedPrs(source: GithubSource): Promise<Pul
 		title: p.title,
 		url: p.url,
 		headRefName: p.headRefName,
+		headRefOid: p.headRefOid ?? '',
 		baseRefName: p.baseRefName,
 		isDraft: p.isDraft,
 		author: p.author?.login ?? '',

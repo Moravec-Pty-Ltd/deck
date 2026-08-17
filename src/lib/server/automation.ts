@@ -6,7 +6,7 @@
 // key/dedupe logic and request bodies live in automation-core.ts.
 import { shortIssueId } from '$lib/issues';
 import type { Issue, Project, PullRequest } from '$lib/types';
-import { listProjects } from './store';
+import { listProjects, listStoredSessions } from './store';
 import { getProjectIssues } from './issues';
 import { getProjectPrs } from './prs';
 import { createSessionFromRequest } from './create-session';
@@ -14,6 +14,9 @@ import { notify, type NotifyPayload } from './push';
 import { runIdempotent } from './idempotency';
 import { readJson, writeJson } from './config';
 import {
+	migrateReviewKeys,
+	prIdentity,
+	pruneSupersededReviewKeys,
 	reviewBody,
 	reviewTriggerKey,
 	selectNewTriggers,
@@ -81,9 +84,22 @@ async function runWork(project: Project, processed: ProcessedKeys): Promise<void
 	}
 }
 
+// PRs a session has already captured, so a review still in flight doesn't spawn a
+// second session on every push (the PR stays in `review-requested:@me` until you
+// review it). Retiring a finished review session (see pr.ts) is what clears this.
+function sessionPrIdentities(): Set<string> {
+	const out = new Set<string>();
+	for (const s of listStoredSessions()) if (s.pr) out.add(prIdentity(s.pr));
+	return out;
+}
+
 async function runReview(project: Project, processed: ProcessedKeys): Promise<void> {
 	const { prs } = await getProjectPrs(project).catch(() => ({ prs: [] as PullRequest[] }));
-	for (const { key, candidate } of selectNewTriggers(prs, reviewTriggerKey, processed)) {
+	if (migrateReviewKeys(prs, processed)) persist(processed);
+	const open = sessionPrIdentities();
+	const fresh = prs.filter((pr) => !open.has(prIdentity(pr)));
+	for (const { key, candidate } of selectNewTriggers(fresh, reviewTriggerKey, processed)) {
+		if (pruneSupersededReviewKeys(processed, candidate)) persist(processed);
 		await spawn(processed, key, () => reviewBody(project, candidate), (id) => ({
 			title: 'Automation started a review session',
 			body: `${candidate.repo}#${candidate.number} · ${candidate.title}`,

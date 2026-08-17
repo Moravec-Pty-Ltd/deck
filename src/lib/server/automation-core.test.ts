@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { Issue, Project, PullRequest } from '$lib/types';
 import {
+	migrateReviewKeys,
+	prIdentity,
+	pruneSupersededReviewKeys,
 	reviewBody,
 	reviewTriggerKey,
 	selectNewTriggers,
@@ -27,6 +30,7 @@ const pr = (over: Partial<PullRequest>): PullRequest => ({
 	title: 't',
 	url: 'https://example.com',
 	headRefName: 'h',
+	headRefOid: 'aaa',
 	baseRefName: 'main',
 	isDraft: false,
 	author: 'someone',
@@ -48,14 +52,15 @@ describe('trigger keys', () => {
 		expect(workTriggerKey(issue({ sourceId: 'other' }))).toBe(workTriggerKey(issue({ sourceId: 's1' })));
 	});
 
-	it('keys review by repo + number', () => {
-		expect(reviewTriggerKey(pr({ repo: 'acme/web', number: 7 }))).toBe('auto:review:acme/web#7');
+	it('keys review by repo + number + head sha, so a new head fires again', () => {
+		expect(reviewTriggerKey(pr({ repo: 'acme/web', number: 7 }))).toBe('auto:review:acme/web#7@aaa');
+		expect(reviewTriggerKey(pr({ headRefOid: 'bbb' }))).toBe('auto:review:acme/web#7@bbb');
 	});
 });
 
 describe('selectNewTriggers', () => {
 	it('skips already-processed keys', () => {
-		const processed: ProcessedKeys = { 'auto:review:acme/web#7': 123 };
+		const processed: ProcessedKeys = { 'auto:review:acme/web#7@aaa': 123 };
 		const fresh = selectNewTriggers([pr({ number: 7 }), pr({ number: 8 })], reviewTriggerKey, processed);
 		expect(fresh.map((f) => f.candidate.number)).toEqual([8]);
 	});
@@ -63,7 +68,7 @@ describe('selectNewTriggers', () => {
 	it('dedupes repeats within one batch', () => {
 		const fresh = selectNewTriggers([pr({ number: 7 }), pr({ number: 7 })], reviewTriggerKey, {});
 		expect(fresh).toHaveLength(1);
-		expect(fresh[0].key).toBe('auto:review:acme/web#7');
+		expect(fresh[0].key).toBe('auto:review:acme/web#7@aaa');
 	});
 
 	it('preserves input order and pairs the key', () => {
@@ -78,6 +83,45 @@ describe('selectNewTriggers', () => {
 
 	it('returns nothing for an empty feed', () => {
 		expect(selectNewTriggers([], workTriggerKey, {})).toEqual([]);
+	});
+});
+
+describe('review key migration and pruning', () => {
+	it('re-keys a pre-#209 entry onto the head seen now, so nothing respawns on upgrade', () => {
+		const processed: ProcessedKeys = { 'auto:review:acme/web#7': 123 };
+		expect(migrateReviewKeys([pr({ headRefOid: 'aaa' })], processed)).toBe(true);
+		expect(processed).toEqual({ 'auto:review:acme/web#7@aaa': 123 });
+		// Migrated, so the current head is already processed but a later head is not.
+		expect(selectNewTriggers([pr({ headRefOid: 'aaa' })], reviewTriggerKey, processed)).toEqual([]);
+		expect(selectNewTriggers([pr({ headRefOid: 'bbb' })], reviewTriggerKey, processed)).toHaveLength(1);
+	});
+
+	it('leaves a ledger with no legacy entries untouched', () => {
+		const processed: ProcessedKeys = { 'auto:review:acme/web#7@aaa': 1 };
+		expect(migrateReviewKeys([pr({ headRefOid: 'aaa' })], processed)).toBe(false);
+		expect(processed).toEqual({ 'auto:review:acme/web#7@aaa': 1 });
+	});
+
+	it('prunes older heads and a stray legacy entry for the same PR, keeping other PRs', () => {
+		const processed: ProcessedKeys = {
+			'auto:review:acme/web#7': 1,
+			'auto:review:acme/web#7@aaa': 2,
+			'auto:review:acme/web#7@bbb': 3,
+			'auto:review:acme/web#8@aaa': 4,
+			'auto:work:github:acme/web#7': 5
+		};
+		expect(pruneSupersededReviewKeys(processed, pr({ number: 7, headRefOid: 'bbb' }))).toBe(true);
+		expect(processed).toEqual({
+			'auto:review:acme/web#7@bbb': 3,
+			'auto:review:acme/web#8@aaa': 4,
+			'auto:work:github:acme/web#7': 5
+		});
+	});
+});
+
+describe('prIdentity', () => {
+	it('identifies a PR by repo and number, independent of head', () => {
+		expect(prIdentity(pr({ headRefOid: 'zzz' }))).toBe('acme/web#7');
 	});
 });
 
