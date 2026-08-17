@@ -14,6 +14,15 @@ pnpm install
 pnpm dev        # vite dev server
 ```
 
+Only one deck server may own a data directory at a time. If another one is
+already running against `~/.deck`, boot refuses and names the holder's pid and
+port. To run a second server (a worktree checkout alongside your main instance,
+say), give it its own directory:
+
+```sh
+DECK_DATA=~/.deck-worktree PORT=4819 pnpm dev
+```
+
 To run the production build locally:
 
 ```sh

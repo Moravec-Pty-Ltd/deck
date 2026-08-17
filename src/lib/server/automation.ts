@@ -12,7 +12,7 @@ import { getProjectPrs } from './prs';
 import { createSessionFromRequest } from './create-session';
 import { notify, type NotifyPayload } from './push';
 import { runIdempotent } from './idempotency';
-import { readJson, writeJson } from './config';
+import { loadProcessed, persist } from './automation-ledger';
 import {
 	migrateReviewKeys,
 	prIdentity,
@@ -25,20 +25,6 @@ import {
 	type NewTrigger,
 	type ProcessedKeys
 } from './automation-core';
-
-const FILE = 'automation.json';
-
-interface AutomationStore {
-	processed: ProcessedKeys;
-}
-
-// The durable ledger read/written whole; single-user, low volume, so no caching.
-function loadProcessed(): ProcessedKeys {
-	return readJson<AutomationStore>(FILE, { processed: {} }).processed ?? {};
-}
-function persist(processed: ProcessedKeys): void {
-	writeJson(FILE, { processed });
-}
 
 // Claim the key durably before creating, so a crash mid-create can't respawn the
 // item on the next poll. On a caught failure (transient gh/worktree error) release
