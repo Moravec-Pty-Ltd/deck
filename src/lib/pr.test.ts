@@ -9,9 +9,12 @@ import {
 	shouldAdminMerge,
 	shouldRefreshPrOnOpen,
 	ownsWorktreeBranch,
+	isReviewSession,
+	myReviewState,
+	shouldRetireReviewSession,
 	PR_OPEN_REFRESH_TTL_MS
 } from './pr';
-import type { SessionPR } from './types';
+import type { SessionPR, SessionStatus } from './types';
 
 describe('lastPrLink', () => {
 	it('detects a github PR url and parses owner/repo/number', () => {
@@ -113,7 +116,7 @@ describe('buildPrSyncQuery', () => {
 		expect(q).toContain('p1: repository(owner:"my-org.io", name:"deck-app") { pullRequest(number:7)');
 		expect(q).toContain('mergeStateStatus');
 		expect(q).toContain('author{login}');
-		expect(q).toContain('latestReviews(first:100){nodes{state}}');
+		expect(q).toContain('latestReviews(first:100){nodes{state author{login}}}');
 	});
 
 	it('produces a query with no aliases for an empty ref list', () => {
@@ -181,7 +184,7 @@ describe('parsePrSyncResponse', () => {
 
 	it('maps each positional alias onto a patch', () => {
 		const raw = JSON.stringify({ data: { p0: node(), p1: node({ state: 'MERGED', mergeable: 'UNKNOWN', mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED', author: { login: 'octocat' }, latestReviews: { nodes: [] } }) } });
-		expect(parsePrSyncResponse(raw, 2)).toEqual([
+		expect(parsePrSyncResponse(raw, 2, null)).toEqual([
 			{ state: 'open', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: 'APPROVED', author: 'jinbe', approvals: 1, changesRequested: 0 },
 			{ state: 'merged', mergeable: 'UNKNOWN', mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED', author: 'octocat', approvals: 0, changesRequested: 0 }
 		]);
@@ -189,24 +192,24 @@ describe('parsePrSyncResponse', () => {
 
 	it('captures the author login and drops an unknown mergeStateStatus', () => {
 		const raw = JSON.stringify({ data: { p0: node({ mergeStateStatus: 'WHATEVER', author: { login: 'octocat' } }) } });
-		const patch = parsePrSyncResponse(raw, 1)[0];
+		const patch = parsePrSyncResponse(raw, 1, null)[0];
 		expect(patch?.author).toBe('octocat');
 		expect(patch?.mergeStateStatus).toBeUndefined();
 	});
 
 	it('leaves the author undefined when the PR has no author node', () => {
 		const raw = JSON.stringify({ data: { p0: node({ author: null }) } });
-		expect(parsePrSyncResponse(raw, 1)[0]?.author).toBeUndefined();
+		expect(parsePrSyncResponse(raw, 1, null)[0]?.author).toBeUndefined();
 	});
 
 	it('maps an open draft to the draft state', () => {
 		const raw = JSON.stringify({ data: { p0: node({ isDraft: true }) } });
-		expect(parsePrSyncResponse(raw, 1)[0]?.state).toBe('draft');
+		expect(parsePrSyncResponse(raw, 1, null)[0]?.state).toBe('draft');
 	});
 
 	it('yields null for a missing alias or null pullRequest so last-known state is kept', () => {
 		const raw = JSON.stringify({ data: { p0: { pullRequest: null } } });
-		expect(parsePrSyncResponse(raw, 2)).toEqual([null, null]);
+		expect(parsePrSyncResponse(raw, 2, null)).toEqual([null, null]);
 	});
 
 	it('keeps the good aliases when a partial GraphQL error nulls one (one dead PR does not freeze the chunk)', () => {
@@ -216,19 +219,130 @@ describe('parsePrSyncResponse', () => {
 			data: { p0: node(), p1: { pullRequest: null } },
 			errors: [{ message: 'Could not resolve to a Repository' }]
 		});
-		const out = parsePrSyncResponse(raw, 2);
+		const out = parsePrSyncResponse(raw, 2, null);
 		expect(out[0]).toMatchObject({ state: 'open' });
 		expect(out[1]).toBeNull();
 	});
 
 	it('coerces an unexpected reviewDecision to null and drops an unknown mergeable', () => {
 		const raw = JSON.stringify({ data: { p0: node({ reviewDecision: null, mergeable: 'MERGING' }) } });
-		expect(parsePrSyncResponse(raw, 1)[0]).toMatchObject({ reviewDecision: null });
-		expect(parsePrSyncResponse(raw, 1)[0]?.mergeable).toBeUndefined();
+		expect(parsePrSyncResponse(raw, 1, null)[0]).toMatchObject({ reviewDecision: null });
+		expect(parsePrSyncResponse(raw, 1, null)[0]?.mergeable).toBeUndefined();
 	});
 
 	it('returns all-null on unparseable output', () => {
-		expect(parsePrSyncResponse('not json', 3)).toEqual([null, null, null]);
+		expect(parsePrSyncResponse('not json', 3, null)).toEqual([null, null, null]);
+	});
+});
+
+describe('myReviewState', () => {
+	const nodes = [
+		{ state: 'APPROVED', author: { login: 'octocat' } },
+		{ state: 'CHANGES_REQUESTED', author: { login: 'jinbe' } },
+		{ state: 'APPROVED', author: { login: 'hubot' } }
+	];
+
+	it('picks my own review out of several reviewers', () => {
+		expect(myReviewState(nodes, 'jinbe')).toBe('CHANGES_REQUESTED');
+		expect(myReviewState(nodes, 'octocat')).toBe('APPROVED');
+	});
+
+	it('reports a comment-only review as COMMENTED, not a verdict', () => {
+		expect(myReviewState([{ state: 'COMMENTED', author: { login: 'jinbe' } }], 'jinbe')).toBe(
+			'COMMENTED'
+		);
+	});
+
+	it('is undefined when I have not reviewed', () => {
+		expect(myReviewState(nodes, 'nobody')).toBeUndefined();
+		expect(myReviewState([], 'jinbe')).toBeUndefined();
+	});
+
+	// An unresolvable gh login must never be guessed at: no myReview, no retirement.
+	it('is undefined when the login is unresolved', () => {
+		expect(myReviewState(nodes, null)).toBeUndefined();
+	});
+
+	it('drops an unexpected review state and a missing author node', () => {
+		expect(myReviewState([{ state: 'DISMISSED', author: { login: 'jinbe' } }], 'jinbe')).toBeUndefined();
+		expect(myReviewState([{ state: 'APPROVED', author: null }], 'jinbe')).toBeUndefined();
+	});
+});
+
+describe('parsePrSyncResponse myReview', () => {
+	const raw = (reviews: unknown[]) =>
+		JSON.stringify({
+			data: {
+				p0: {
+					pullRequest: {
+						state: 'OPEN',
+						isDraft: false,
+						mergeable: 'MERGEABLE',
+						mergeStateStatus: 'CLEAN',
+						reviewDecision: 'APPROVED',
+						author: { login: 'octocat' },
+						latestReviews: { nodes: reviews }
+					}
+				}
+			}
+		});
+
+	it('sets myReview from the node authored by me while the tally counts everyone', () => {
+		const out = parsePrSyncResponse(
+			raw([
+				{ state: 'APPROVED', author: { login: 'hubot' } },
+				{ state: 'APPROVED', author: { login: 'jinbe' } }
+			]),
+			1,
+			'jinbe'
+		);
+		expect(out[0]).toMatchObject({ myReview: 'APPROVED', approvals: 2 });
+	});
+
+	it('leaves myReview absent for an unknown login', () => {
+		const out = parsePrSyncResponse(raw([{ state: 'APPROVED', author: { login: 'hubot' } }]), 1, 'jinbe');
+		expect(out[0]?.myReview).toBeUndefined();
+	});
+});
+
+describe('isReviewSession / shouldRetireReviewSession', () => {
+	const session = (
+		over: {
+			status?: SessionStatus;
+			branch?: string;
+			myReview?: SessionPR['myReview'];
+			pr?: false;
+		} = {}
+	) => ({
+		status: over.status ?? ('idle' as SessionStatus),
+		worktree: { branch: over.branch ?? 'pr/7' },
+		pr: over.pr === false ? undefined : { number: 7, myReview: 'myReview' in over ? over.myReview : ('APPROVED' as const) }
+	});
+
+	it('identifies a fromPr review session by its pr/<n> worktree', () => {
+		expect(isReviewSession(session())).toBe(true);
+		expect(isReviewSession(session({ branch: 'jinbe/deck-209' }))).toBe(false);
+		expect(isReviewSession(session({ pr: false }))).toBe(false);
+	});
+
+	it('retires on either verdict', () => {
+		expect(shouldRetireReviewSession(session({ myReview: 'APPROVED' }))).toBe(true);
+		expect(shouldRetireReviewSession(session({ myReview: 'CHANGES_REQUESTED' }))).toBe(true);
+	});
+
+	it('leaves a comment-only or unreviewed session alone', () => {
+		expect(shouldRetireReviewSession(session({ myReview: 'COMMENTED' }))).toBe(false);
+		expect(shouldRetireReviewSession(session({ myReview: undefined }))).toBe(false);
+	});
+
+	it('never retires a running session', () => {
+		expect(shouldRetireReviewSession(session({ status: 'running' }))).toBe(false);
+	});
+
+	// A work session that reviews some other PR keeps its own branch, so it is
+	// never a retirement candidate.
+	it('leaves a work session alone even with a verdict on its captured PR', () => {
+		expect(shouldRetireReviewSession(session({ branch: 'jinbe/deck-209' }))).toBe(false);
 	});
 });
 

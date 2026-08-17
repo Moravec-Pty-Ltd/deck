@@ -80,6 +80,9 @@ self.addEventListener('notificationclick', (event) => {
 			for (const client of clients) {
 				if (client.url.includes(target) && 'focus' in client) return client.focus();
 			}
+			// Reusing a window only works same-origin: client.navigate rejects on a
+			// cross-origin target (a retired review session links out to its PR).
+			if (!target.startsWith('/')) return self.clients.openWindow(target);
 			if (clients.length && 'navigate' in clients[0]) {
 				return clients[0].focus().then((c) => c && c.navigate(target));
 			}

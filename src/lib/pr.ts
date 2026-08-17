@@ -1,7 +1,15 @@
 // Pure GitHub PR-link detection, shared by the server-side capture hook
 // (appendEvent) and the one-time backfill scan. Node-free and unit-tested per
 // the repo convention so the regex logic stays verifiable in isolation.
-import type { PrMergeable, PrMergeStateStatus, PrReviewDecision, PrState, SessionPR } from './types';
+import type {
+	MyReviewState,
+	PrMergeable,
+	PrMergeStateStatus,
+	PrReviewDecision,
+	PrState,
+	SessionPR,
+	SessionStatus
+} from './types';
 
 export interface PrMatch {
 	url: string;
@@ -58,6 +66,39 @@ export function ownsWorktreeBranch(
 ): boolean {
 	if (worktree.createdBranch) return true;
 	return pr !== undefined && worktree.branch === `pr/${pr.number}`;
+}
+
+// --- Review-session retirement (issue #209) ------------------------------
+// A review session exists to produce a verdict on someone else's PR; once that
+// verdict is in it has nothing left to do, so deck retires it (session,
+// worktree, and the fetched pr/<n> ref) instead of leaving it in the sidebar.
+
+// APPROVED and CHANGES_REQUESTED are verdicts; COMMENTED is not (a mid-review
+// note must never retire the session).
+function isReviewVerdict(state: MyReviewState | undefined): boolean {
+	return state === 'APPROVED' || state === 'CHANGES_REQUESTED';
+}
+
+// Whether the session is a review session: it has a captured PR and its worktree
+// is parked on that PR's fetched `pr/<n>` ref (the `fromPr` shape). A work
+// session that happens to review some other PR has its own branch, so it never
+// matches.
+export function isReviewSession(session: {
+	worktree?: { branch: string };
+	pr?: Pick<SessionPR, 'number'>;
+}): boolean {
+	return !!session.pr && session.worktree?.branch === `pr/${session.pr.number}`;
+}
+
+// The single retirement predicate, called both from the idle transition and from
+// the bulk sync. Idle is required in both: a running session is never deleted
+// mid-turn.
+export function shouldRetireReviewSession(session: {
+	status: SessionStatus;
+	worktree?: { branch: string };
+	pr?: Pick<SessionPR, 'number' | 'myReview'>;
+}): boolean {
+	return session.status === 'idle' && isReviewSession(session) && isReviewVerdict(session.pr?.myReview);
 }
 
 // Standard GitHub state colours, applied literally (not theme tokens) so the
@@ -119,11 +160,18 @@ export interface PrRef {
 // The synced fields merged onto a stored SessionPR each tick.
 export type PrSyncPatch = Pick<
 	SessionPR,
-	'state' | 'mergeable' | 'mergeStateStatus' | 'reviewDecision' | 'approvals' | 'changesRequested' | 'author'
+	| 'state'
+	| 'mergeable'
+	| 'mergeStateStatus'
+	| 'reviewDecision'
+	| 'approvals'
+	| 'changesRequested'
+	| 'author'
+	| 'myReview'
 >;
 
 const PR_FIELDS =
-	'state isDraft mergeable mergeStateStatus reviewDecision author{login} latestReviews(first:100){nodes{state}}';
+	'state isDraft mergeable mergeStateStatus reviewDecision author{login} latestReviews(first:100){nodes{state author{login}}}';
 
 // One aliased GraphQL selection per captured PR, so a single request covers every
 // non-terminal PR across all repos. Aliases are positional (p0, p1, ...) and the
@@ -152,6 +200,27 @@ export function reviewCounts(nodes: { state: string }[]): {
 	return { approvals, changesRequested };
 }
 
+// My own latest review on the PR, picked out of the same latestReviews nodes the
+// tally uses (one node per reviewer). `me` is the authenticated gh login, passed
+// in by the server caller so this module stays node-free; an unresolved login
+// (null) yields undefined, so nothing downstream ever acts on a guess.
+export function myReviewState(
+	nodes: { state: string; author?: { login: string } | null }[],
+	me: string | null
+): MyReviewState | undefined {
+	if (!me) return undefined;
+	const mine = nodes.find((n) => n.author?.login === me);
+	if (!mine) return undefined;
+	return MY_REVIEW_STATES.has(mine.state) ? (mine.state as MyReviewState) : undefined;
+}
+
+const MY_REVIEW_STATES = new Set<string>(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED']);
+
+interface GhReviewNode {
+	state: string;
+	author?: { login: string } | null;
+}
+
 interface GhPrNode {
 	state: string;
 	isDraft: boolean;
@@ -159,7 +228,7 @@ interface GhPrNode {
 	mergeStateStatus: string;
 	reviewDecision: string | null;
 	author: { login: string } | null;
-	latestReviews?: { nodes: { state: string }[] };
+	latestReviews?: { nodes: GhReviewNode[] };
 }
 
 const MERGEABLE = new Set<string>(['MERGEABLE', 'CONFLICTING', 'UNKNOWN']);
@@ -182,28 +251,35 @@ const pickMergeState = (v: string): PrMergeStateStatus | undefined =>
 const pickDecision = (v: string | null): PrReviewDecision | null =>
 	v && DECISIONS.has(v) ? (v as PrReviewDecision) : null;
 
-function prPatch(node: GhPrNode | undefined): PrSyncPatch | null {
+function prPatch(node: GhPrNode | undefined, me: string | null): PrSyncPatch | null {
 	if (!node) return null;
 	const state = mapPrState(node.state, node.isDraft);
+	const reviews = node.latestReviews?.nodes ?? [];
 	return {
 		state: state ?? undefined,
 		mergeable: pickMergeable(node.mergeable),
 		mergeStateStatus: pickMergeState(node.mergeStateStatus),
 		reviewDecision: pickDecision(node.reviewDecision),
 		author: node.author?.login,
-		...reviewCounts(node.latestReviews?.nodes ?? [])
+		myReview: myReviewState(reviews, me),
+		...reviewCounts(reviews)
 	};
 }
 
 // Map a bulk-sync GraphQL response back onto the positional refs. A missing alias
 // or null pullRequest (deleted repo, lost access, partial error) yields null at
-// that index, so the caller leaves that PR's last-known state untouched.
-export function parsePrSyncResponse(raw: string, count: number): (PrSyncPatch | null)[] {
+// that index, so the caller leaves that PR's last-known state untouched. `me` is
+// the authenticated gh login, used only to pick out my own review.
+export function parsePrSyncResponse(
+	raw: string,
+	count: number,
+	me: string | null
+): (PrSyncPatch | null)[] {
 	let data: Record<string, { pullRequest?: GhPrNode | null } | null>;
 	try {
 		data = JSON.parse(raw)?.data ?? {};
 	} catch {
 		data = {};
 	}
-	return Array.from({ length: count }, (_, i) => prPatch(data[`p${i}`]?.pullRequest ?? undefined));
+	return Array.from({ length: count }, (_, i) => prPatch(data[`p${i}`]?.pullRequest ?? undefined, me));
 }

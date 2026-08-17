@@ -75,6 +75,10 @@ export type PrState = 'open' | 'merged' | 'closed' | 'draft';
 // GraphQL PR object so the chip/menu can gate the Merge action and show a verdict.
 export type PrMergeable = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 export type PrReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
+// My own latest review on a PR, as opposed to the PR-wide reviewDecision. Drives
+// review-session retirement (issue #209); COMMENTED is carried but is not a
+// verdict.
+export type MyReviewState = 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED';
 // GitHub's mergeStateStatus: whether a mergeable PR is actually mergeable *now*.
 // `BLOCKED` means branch protection is holding it (e.g. self-review disallowed),
 // which is where the Merge button offers a force (admin) merge.
@@ -115,6 +119,9 @@ export interface SessionPR {
 	// PR author login, captured by the sync. Absent on a captured-but-never-synced
 	// PR (older sessions); the own-PR merge guard treats absent as allowed.
 	author?: string;
+	// My own latest review on this PR, from the same sync. Absent when I haven't
+	// reviewed or the gh login couldn't be resolved.
+	myReview?: MyReviewState;
 }
 
 // The issue a session was launched from, persisted so the header can deep-link
@@ -315,6 +322,9 @@ export interface PullRequest {
 	title: string;
 	url: string;
 	headRefName: string;
+	// The head commit sha. Keys the review automation trigger, so a PR re-entering
+	// the review-requested feed at a new head can fire again (issue #209).
+	headRefOid: string;
 	baseRefName: string;
 	isDraft: boolean;
 	author: string;

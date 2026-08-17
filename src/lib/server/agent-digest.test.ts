@@ -116,6 +116,7 @@ describe('discovery projections', () => {
 			title: 'A change',
 			url: 'https://github.com/acme/web/pull/42',
 			headRefName: 'feat',
+			headRefOid: 'deadbeef',
 			baseRefName: 'main',
 			isDraft: false,
 			author: 'someone',

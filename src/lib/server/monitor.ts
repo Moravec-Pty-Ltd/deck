@@ -1,6 +1,6 @@
 import { listSessions } from './sessions';
 import { pollServers } from './devservers';
-import { syncCapturedPrs } from './pr';
+import { retireReviewSession, syncCapturedPrs } from './pr';
 import { pollAutomation } from './automation';
 import { notify } from './push';
 import { publishAgentEvent } from './agent-feed';
@@ -31,6 +31,20 @@ function onShellTransition(s: { id: string; status: string; title: string; cwd: 
 	}
 }
 
+// A review session is done once its verdict is on the PR, so retire it (issue
+// #209). Driven from this poll rather than claude.ts's setStatus so the deletion
+// doesn't have to reach back into sessions.ts from inside the agent engine, which
+// would close an import cycle. Only idle sessions qualify, so a running one is
+// never killed mid-turn. On the transition into idle, refresh the PR first: the
+// verdict was almost certainly just submitted and the synced snapshot can be a
+// 75s tick behind. On later ticks ride the stored PR, which catches both a
+// verdict landing long after the session settled (approving from the GitHub web
+// UI) and a restart with the verdict already synced.
+function onAgentIdle(s: { id: string; status: string }, before?: string) {
+	if (s.status !== 'idle') return;
+	retireReviewSession(s.id, { refresh: before !== undefined && before !== 'idle' });
+}
+
 function start() {
 	if (g.__deckMonitor) return;
 	g.__deckMonitor = true;
@@ -57,6 +71,7 @@ function start() {
 				const before = prev.get(s.id);
 				prev.set(s.id, s.status);
 				if (s.kind === 'shell') onShellTransition(s, before);
+				else onAgentIdle(s, before);
 			}
 			for (const id of prev.keys()) if (!seen.has(id)) prev.delete(id);
 			// Cheap local-file poll (mtime-guarded, issue #188): surfaces morabot's

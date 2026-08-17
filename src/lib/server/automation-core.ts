@@ -17,9 +17,60 @@ export function workTriggerKey(issue: Pick<Issue, 'sourceType' | 'id'>): string 
 	return `auto:work:${issue.sourceType}:${issue.id}`;
 }
 
-// Deterministic per-PR key: the origin repo and PR number.
-export function reviewTriggerKey(pr: Pick<PullRequest, 'repo' | 'number'>): string {
+// Deterministic per-PR key, pinned to the head sha: a re-requested review comes
+// back into the feed at a new head, and that must fire again (issue #209). The
+// PR-only form below is the pre-#209 key shape, kept for migration and pruning.
+function reviewKeyPrefix(pr: Pick<PullRequest, 'repo' | 'number'>): string {
 	return `auto:review:${pr.repo}#${pr.number}`;
+}
+export function reviewTriggerKey(pr: Pick<PullRequest, 'repo' | 'number' | 'headRefOid'>): string {
+	return `${reviewKeyPrefix(pr)}@${pr.headRefOid}`;
+}
+
+// Ledgers written before #209 hold the PR-only key, which the new shape would
+// never match — so every PR still awaiting review would respawn on upgrade.
+// Re-key those entries onto the head we see now (keeping their original
+// timestamp): that PR is treated as already fired at its current head, and any
+// later head fires normally. Returns whether the ledger changed.
+export function migrateReviewKeys(
+	prs: Pick<PullRequest, 'repo' | 'number' | 'headRefOid'>[],
+	processed: ProcessedKeys
+): boolean {
+	let changed = false;
+	for (const pr of prs) {
+		const legacy = reviewKeyPrefix(pr);
+		if (processed[legacy] === undefined) continue;
+		processed[reviewTriggerKey(pr)] ??= processed[legacy];
+		delete processed[legacy];
+		changed = true;
+	}
+	return changed;
+}
+
+// Drop the entries a newly-fired review key supersedes: every other key for the
+// same PR (older heads, plus a stray legacy entry). Without this the ledger grows
+// one entry per push, forever. Returns whether the ledger changed.
+export function pruneSupersededReviewKeys(
+	processed: ProcessedKeys,
+	pr: Pick<PullRequest, 'repo' | 'number' | 'headRefOid'>
+): boolean {
+	const legacy = reviewKeyPrefix(pr);
+	const keep = reviewTriggerKey(pr);
+	let changed = false;
+	for (const k of Object.keys(processed)) {
+		if (k === keep) continue;
+		if (k !== legacy && !k.startsWith(`${legacy}@`)) continue;
+		delete processed[k];
+		changed = true;
+	}
+	return changed;
+}
+
+// `repo#number` identity of a PR, used to skip a review trigger while a session
+// for that PR is still around. A PR stays in `review-requested:@me` until you
+// review it, so without this every push mid-review would spawn another session.
+export function prIdentity(pr: Pick<PullRequest, 'repo' | 'number'>): string {
+	return `${pr.repo}#${pr.number}`;
 }
 
 // A candidate whose trigger key hasn't fired yet, paired with that key.

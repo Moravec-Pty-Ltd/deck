@@ -9,15 +9,19 @@ import { promisify } from 'node:util';
 import {
 	buildPrSyncQuery,
 	canMergePr,
+	isReviewSession,
 	parsePrSyncResponse,
 	shouldAdminMerge,
 	shouldRefreshPrOnOpen,
+	shouldRetireReviewSession,
 	type PrRef,
 	type PrSyncPatch
 } from '$lib/pr';
 import type { SessionPR } from '$lib/types';
 import { listStoredSessions, getStoredSession, updateSession } from './store';
 import { publishAgentEvent } from './agent-feed';
+import { notify } from './push';
+import { deleteSession } from './sessions';
 
 const exec = promisify(execFile);
 
@@ -109,15 +113,62 @@ function persistPatch(item: SyncItem, patch: PrSyncPatch) {
 	if (changed) publishAgentEvent(item.id, 'pr', { pr });
 }
 
+// Sessions currently being retired. The refresh below can outlive the tick that
+// started it (gh's timeout is 15s, the health tick is 10s), so without this the
+// next tick would start a second delete-and-notify for the same session.
+const retiring = new Set<string>();
+
+// Retire a review session that has served its purpose: its agent's verdict is on
+// the PR it was created to review, so the session, its worktree, and the fetched
+// pr/<n> ref all go (issue #209). Driven off the monitor's health tick, which
+// only ever sees a settled session, so a running one is never killed mid-turn.
+// Fire-and-forget and fully swallowed: a slow or failing gh must never stall the
+// tick. `refresh` re-reads the PR first, for the caller whose snapshot may be up
+// to a 75s sync stale (the just-went-idle case, where the verdict was almost
+// certainly submitted moments ago).
+export function retireReviewSession(id: string, opts: { refresh: boolean }): void {
+	if (retiring.has(id)) return;
+	const stored = getStoredSession(id);
+	// Cheap shape gate before any gh work: only a fromPr review session qualifies,
+	// and a running one is never touched.
+	if (!stored || stored.status !== 'idle' || !isReviewSession(stored)) return;
+	// Without a refresh there's nothing new to learn, so skip the whole thing
+	// unless the stored PR already carries my verdict.
+	if (!opts.refresh && !shouldRetireReviewSession(stored)) return;
+	retiring.add(id);
+	void retire(id, opts.refresh)
+		.catch(() => {})
+		.finally(() => retiring.delete(id));
+}
+
+async function retire(id: string, refresh: boolean): Promise<void> {
+	if (refresh) await refreshPr(id);
+	const stored = getStoredSession(id);
+	const pr = stored?.pr;
+	if (!stored || !pr || !shouldRetireReviewSession(stored)) return;
+	await deleteSession(id, { deleteWorktree: true, deleteBranch: true });
+	const verdict = pr.myReview === 'APPROVED' ? 'approved' : 'requested changes';
+	// The session is gone, so this can't deep-link to it; link the PR instead.
+	notify({
+		title: 'Review session retired',
+		body: `${pr.repo}#${pr.number} · ${verdict}`,
+		tag: id,
+		url: pr.url
+	});
+}
+
 // Fetch one chunk's PR states in a single aliased GraphQL request and write each
 // result back. A whole-chunk failure is swallowed (last-known state stays).
 async function syncChunk(items: SyncItem[]): Promise<void> {
 	const refs: PrRef[] = items.map((it) => ({ repo: it.pr.repo, number: it.pr.number }));
 	const raw = await gh(['api', 'graphql', '-f', `query=${buildPrSyncQuery(refs)}`]).catch(() => null);
 	if (raw === null) return;
+	// The login only picks my own review out of the tally; an unresolved one leaves
+	// myReview absent, so nothing is retired on a guess.
+	const me = await currentUser();
 	// ponytail: one store write per changed PR (matches the existing per-update
 	// pattern); batch a chunk into a single write only if PR counts ever grow.
-	parsePrSyncResponse(raw, items.length).forEach((patch, i) => {
+	parsePrSyncResponse(raw, items.length, me).forEach((patch, i) => {
 		if (patch) persistPatch(items[i], patch);
 	});
 }
