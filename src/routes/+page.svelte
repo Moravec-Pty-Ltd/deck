@@ -7,11 +7,14 @@
 	import { viewModeLabel } from '$lib/view-mode';
 	import { createCollapseState } from '$lib/collapse.svelte';
 	import { DeleteFlow } from '$lib/delete-flow.svelte';
+	import { flattenVisibleBuckets, flattenVisibleGroups } from '$lib/sidebar-neighbor';
+	import { allSelected, rangeIds, staleIds } from '$lib/session-select';
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
 	import PairApprovals, { type PendingPairing } from '$lib/components/PairApprovals.svelte';
-	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, FolderCog, QrCode, ChevronRight, ChevronDown, X } from '@lucide/svelte';
+	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, FolderCog, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig } from '@lucide/svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
@@ -23,6 +26,12 @@
 	let loaded = $state(false);
 	let qrOpen = $state(false);
 	let pending = $state<PendingPairing[]>([]);
+
+	// Multi-select for batch removal (issue #211). `anchor` is the last row clicked
+	// in select mode, which a shift-click extends the range from.
+	let selectMode = $state(false);
+	const selected = new SvelteSet<string>();
+	let anchor: string | null = null;
 
 	function openNew() {
 		preset = null;
@@ -84,7 +93,71 @@
 	// Status buckets default *expanded*, so this set tracks the collapsed ones.
 	const statusCollapse = createCollapseState('deck:home:collapsedStatusBuckets');
 
-	const del = new DeleteFlow(refresh);
+	// Select mode ends the moment a confirmed batch starts, before the first request
+	// goes out, and the progress readout takes the action bar's place. Cancelling the
+	// confirm never gets here, so the selection survives it.
+	const del = new DeleteFlow(refresh, () => {}, exitSelect);
+
+	// The sessions in the order the current view actually renders them, collapsed
+	// sections contributing nothing. This is what Select All covers and what a
+	// shift-click range walks, so a range follows the rows on screen rather than the
+	// raw list. Reuses the sidebar's flatteners; note the project view tracks
+	// expanded groups while the status view tracks collapsed buckets.
+	const visibleOrder = $derived(
+		viewMode.current === 'status'
+			? flattenVisibleBuckets(buckets, (k) => statusCollapse.has(k))
+			: flattenVisibleGroups(groups, (n) => collapse.has(n))
+	);
+
+	// Keep the selection to rows that are actually on the list: the 5s poll can
+	// remove a session under it, and switching the kind filter can hide one, either
+	// of which would otherwise leave a stale id in the Remove count and in the batch.
+	// Leave select mode outright once there's nothing left to select.
+	$effect(() => {
+		for (const id of staleIds(selected, visible)) selected.delete(id);
+		if (visible.length === 0) exitSelect();
+	});
+
+	function exitSelect() {
+		selectMode = false;
+		selected.clear();
+		anchor = null;
+	}
+
+	function toggleSelect(id: string, shift: boolean) {
+		const range = shift && anchor && anchor !== id ? rangeIds(visibleOrder, anchor, id) : [];
+		if (range.length > 0) {
+			for (const rid of range) selected.add(rid);
+		} else if (selected.has(id)) {
+			selected.delete(id);
+		} else {
+			selected.add(id);
+		}
+		anchor = id;
+	}
+
+	// Select All covers exactly the rows on screen; Deselect All clears the lot, so a
+	// row hidden inside a collapsed section can't linger in the count.
+	function toggleAll() {
+		if (allSelected(visibleOrder, selected)) selected.clear();
+		else for (const s of visibleOrder) selected.add(s.id);
+		anchor = null;
+	}
+
+	function removeSelected() {
+		del.requestBatch(sessions.filter((s) => selected.has(s.id)));
+	}
+
+	// Escape leaves select mode, but not from under anything else that owns the key:
+	// this page's div-modals (which would be stranded over a list that's no longer
+	// selecting) and the command palette, a native <dialog> whose own Escape neither
+	// marks the event handled nor stops it bubbling up here.
+	function onKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Escape' || e.defaultPrevented) return;
+		if (!selectMode || modalOpen || qrOpen || del.target || del.batch) return;
+		if (document.querySelector('dialog[open]')) return;
+		exitSelect();
+	}
 
 	// Status as a quiet dot + label. Saturated colour is reserved for the states
 	// that want attention (running = brand orange, error = red); idle and dead stay
@@ -103,6 +176,8 @@
 		return 'text-base-content/55';
 	}
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
 	<div class="flex items-center gap-2">
@@ -140,6 +215,15 @@
 		<button class="btn btn-ghost btn-sm" onclick={refresh} aria-label="Refresh">
 			<RefreshCw size={16} />
 		</button>
+		{#if sessions.length > 0}
+			<button
+				class="btn btn-ghost btn-sm"
+				onclick={() => (selectMode ? exitSelect() : (selectMode = true))}
+				disabled={!!del.progress}
+			>
+				{selectMode ? 'Done' : 'Select'}
+			</button>
+		{/if}
 		<button class="btn btn-sm btn-primary" onclick={openNew}>
 			<Plus size={16} /> New
 		</button>
@@ -149,14 +233,30 @@
 <PairApprovals {pending} onchange={refresh} />
 
 {#snippet row(s: DeckSession)}
+	{@const picked = selected.has(s.id)}
 	<div
-		class="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 pr-2 hover:border-base-content/30 sm:gap-3 sm:pr-3"
+		class="flex items-center gap-2 rounded-box border bg-base-100 pr-2 hover:border-base-content/30 sm:gap-3 sm:pr-3 {selectMode
+			? 'select-none'
+			: ''} {selectMode && picked ? 'border-primary' : 'border-base-300'}"
 	>
 		<a
 			href={`/s/${encodeURIComponent(s.id)}`}
 			class="flex min-w-0 flex-1 items-center gap-2 py-3 pl-3 sm:gap-3 sm:pl-4"
+			role={selectMode ? 'checkbox' : undefined}
+			aria-checked={selectMode ? picked : undefined}
+			onclick={(e) => {
+				if (!selectMode) return;
+				e.preventDefault();
+				toggleSelect(s.id, e.shiftKey);
+			}}
 		>
-			{#if s.kind === 'shell'}
+			{#if selectMode}
+				{#if picked}
+					<SquareCheckBig size={18} class="shrink-0 text-primary" />
+				{:else}
+					<Square size={18} class="shrink-0 opacity-50" />
+				{/if}
+			{:else if s.kind === 'shell'}
 				<Terminal size={18} class="shrink-0 opacity-70" />
 			{:else}
 				<Bot size={18} class="shrink-0 opacity-70" />
@@ -204,6 +304,32 @@
 			aria-label="Dismiss error"
 		>
 			<X size={14} />
+		</button>
+	</div>
+{/if}
+
+{#if del.progress}
+	{@const p = del.progress}
+	<div class="mb-3 rounded-box border border-base-300 bg-base-100 px-3 py-2">
+		<div class="mb-1.5 text-sm">
+			{p.total === 1 ? 'Removing session' : `Removing ${Math.min(p.done + 1, p.total)} of ${p.total}`}
+		</div>
+		<progress class="progress w-full progress-primary" value={p.done} max={p.total}></progress>
+	</div>
+{:else if selectMode}
+	<div
+		class="mb-3 flex flex-wrap items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2"
+	>
+		<button class="btn btn-ghost btn-sm" onclick={toggleAll} disabled={visibleOrder.length === 0}>
+			{allSelected(visibleOrder, selected) ? 'Deselect All' : 'Select All'}
+		</button>
+		<span class="text-sm opacity-60">{selected.size} selected</span>
+		<button
+			class="btn ml-auto btn-error btn-sm"
+			onclick={removeSelected}
+			disabled={selected.size === 0}
+		>
+			<Trash2 size={14} /> Remove ({selected.size})
 		</button>
 	</div>
 {/if}
