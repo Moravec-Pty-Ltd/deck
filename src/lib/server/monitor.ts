@@ -1,3 +1,6 @@
+// First, so a losing second instance evaluates as little of the server as
+// possible before it exits (see holdDataDir below).
+import { holdDataDir, refreshDataDirLock } from './instance-lock';
 import { listSessions } from './sessions';
 import { pollServers } from './devservers';
 import { retireReviewSession, syncCapturedPrs } from './pr';
@@ -56,6 +59,9 @@ function start() {
 	let polling = false;
 
 	const timer = setInterval(async () => {
+		// Outside the re-entrancy guard: a slow poll must not age the heartbeat to
+		// the point where another server reads this one as stale.
+		refreshDataDirLock();
 		if (polling) return;
 		polling = true;
 		try {
@@ -95,5 +101,11 @@ function start() {
 	}, PR_SYNC_INTERVAL_MS);
 	prTimer.unref();
 }
+
+// Before start(), and before anything else schedules work against the data
+// directory: a second server sharing ~/.deck double-fires automation and can
+// resume the first server's claude session (issue #213). This exits rather than
+// returning when another live instance holds the lock.
+holdDataDir();
 
 start();
