@@ -23,6 +23,7 @@
 	import { goto } from '$app/navigation';
 	import { Menu, X, Ticket } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { transcriptMode } from '$lib/transcript-mode.svelte';
 	import {
 		clampSidebarWidth,
 		parseSidebarWidth,
@@ -43,7 +44,20 @@
 	// The Changes tab (worktree diff). Shown only when the session's cwd is a git
 	// repo. The badge count and the diff itself auto-refresh on turn end; the live
 	// status comes from the existing /api/sessions poll, not a separate stream.
-	let tab = $state<'main' | 'changes' | 'servers'>('main');
+	//
+	// 'main' is Thread (the full transcript) and 'chat' is the condensed read of the
+	// same one. Which of the two a session opens on is device-local, not per
+	// session; Changes and Servers still reset on every switch. The initial value is
+	// the SSR default so hydration matches, and the session effect below picks up
+	// the stored choice on the client.
+	let tab = $state<'main' | 'chat' | 'changes' | 'servers'>('main');
+	const transcriptTab = $derived(
+		session.kind !== 'shell' && transcriptMode.current === 'chat' ? 'chat' : 'main'
+	);
+	function pickTranscript(next: 'main' | 'chat') {
+		tab = next;
+		transcriptMode.set(next === 'chat' ? 'chat' : 'thread');
+	}
 	let gitRepo = $state(false);
 	let changedCount = $state<number | null>(null);
 	const liveStatus = $derived(
@@ -121,7 +135,7 @@
 			const data = await res.json();
 			gitRepo = !!data.git;
 			changedCount = data.git ? (data.meta?.fileCount ?? 0) : null;
-			if (!gitRepo && tab === 'changes') tab = 'main';
+			if (!gitRepo && tab === 'changes') tab = transcriptTab;
 		} catch {
 			// transient failure: keep the previous badge state
 		}
@@ -132,7 +146,7 @@
 	$effect(() => {
 		if (metaLoadedFor === session.id) return;
 		metaLoadedFor = session.id;
-		tab = 'main';
+		tab = transcriptTab;
 		gitRepo = false;
 		changedCount = null;
 		void loadDiffMeta();
@@ -150,7 +164,7 @@
 
 	// Don't strand the Servers tab if its config is removed mid-session.
 	$effect(() => {
-		if (tab === 'servers' && !hasServers) tab = 'main';
+		if (tab === 'servers' && !hasServers) tab = transcriptTab;
 	});
 
 	function quickAdd(path: string) {
@@ -425,15 +439,32 @@
 			</div>
 		</div>
 
-		{#if gitRepo || hasServers}
+		{#if session.kind !== 'shell' || gitRepo || hasServers}
 			<div class="join mb-2 shrink-0 self-start">
-				<button
-					class="btn join-item btn-sm {tab === 'main' ? 'btn-active' : 'btn-ghost'}"
-					onclick={() => (tab = 'main')}
-					aria-pressed={tab === 'main'}
-				>
-					{session.kind === 'shell' ? 'Terminal' : 'Chat'}
-				</button>
+				{#if session.kind === 'shell'}
+					<button
+						class="btn join-item btn-sm {tab === 'main' ? 'btn-active' : 'btn-ghost'}"
+						onclick={() => (tab = 'main')}
+						aria-pressed={tab === 'main'}
+					>
+						Terminal
+					</button>
+				{:else}
+					<button
+						class="btn join-item btn-sm {tab === 'main' ? 'btn-active' : 'btn-ghost'}"
+						onclick={() => pickTranscript('main')}
+						aria-pressed={tab === 'main'}
+					>
+						Thread
+					</button>
+					<button
+						class="btn join-item btn-sm {tab === 'chat' ? 'btn-active' : 'btn-ghost'}"
+						onclick={() => pickTranscript('chat')}
+						aria-pressed={tab === 'chat'}
+					>
+						Chat
+					</button>
+				{/if}
 				{#if gitRepo}
 					<button
 						class="btn join-item btn-sm gap-1 {tab === 'changes' ? 'btn-active' : 'btn-ghost'}"
@@ -458,11 +489,18 @@
 		{/if}
 
 		<div class="min-h-0 flex-1">
-			<div class="h-full" class:hidden={tab !== 'main'}>
+			<!-- Thread and Chat are one mounted transcript in two modes, so switching
+			     between them keeps the subscription, the window, and the scroller. -->
+			<div class="h-full" class:hidden={tab !== 'main' && tab !== 'chat'}>
 				{#if session.kind === 'shell'}
 					<ShellView {session} visible={tab === 'main'} />
 				{:else}
-					<ClaudeView {session} {sessions} visible={tab === 'main'} />
+					<ClaudeView
+						{session}
+						{sessions}
+						visible={tab === 'main' || tab === 'chat'}
+						condensed={transcriptTab === 'chat'}
+					/>
 				{/if}
 			</div>
 			{#if tab === 'changes'}
