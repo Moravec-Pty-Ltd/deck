@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { tick } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { tick, untrack } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { DeckSession } from '$lib/types';
 	import { indexForward, indexOlderBatch, type Answer } from '$lib/transcript-index';
 	import {
@@ -14,6 +14,7 @@
 	import MessageBubble from './MessageBubble.svelte';
 	import Markdown from './Markdown.svelte';
 	import ToolCall from './ToolCall.svelte';
+	import ToolRun from './ToolRun.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
 	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight } from '@lucide/svelte';
@@ -26,15 +27,31 @@
 		type Draft
 	} from '$lib/composer-draft-core';
 	import { haptic } from '$lib/haptics';
+	import {
+		chunkKeyFor,
+		flattenTranscript,
+		groupRuns,
+		isAskTool,
+		ungrouped,
+		type Row
+	} from '$lib/transcript-groups';
 
-	// `visible` is false while the Chat pane sits behind the Changes/Servers tabs
+	// `visible` is false while the transcript sits behind the Changes/Servers tabs
 	// (the page keeps it mounted but display:none). A hidden scroller has no layout,
 	// so we pause scroll bookkeeping and re-pin once it's shown again.
+	// `condensed` is the Chat tab: the same transcript with each run of tool calls
+	// collapsed to one line. Thread passes false and renders every row.
 	let {
 		session,
 		sessions = [],
-		visible = true
-	}: { session: DeckSession; sessions?: DeckSession[]; visible?: boolean } = $props();
+		visible = true,
+		condensed = false
+	}: {
+		session: DeckSession;
+		sessions?: DeckSession[];
+		visible?: boolean;
+		condensed?: boolean;
+	} = $props();
 
 	// A single global composer draft, persisted so a cold reload / iOS PWA relaunch
 	// restores it. Restored once at init (this component isn't remounted on session
@@ -90,6 +107,37 @@
 	const start = $derived(Math.max(0, events.length - limit));
 	const visibleEvents = $derived(events.slice(start));
 
+	// What the window actually paints, flattened across events so a run of tool
+	// calls can be grouped even though each call arrives as its own event.
+	const rows = $derived(flattenTranscript(visibleEvents, baseIndex + start));
+	const chunks = $derived(condensed ? groupRuns(rows) : ungrouped(rows));
+	// Runs the reader has opened, by run key. Per run, and only for as long as the
+	// session view is open.
+	const openRuns = new SvelteSet<string>();
+
+	// Size the Chat window by what's actually on screen, not by raw event count:
+	// condensing a window of 60 events can leave two lines, so it would otherwise
+	// open near-empty with nothing to scroll and so no way to ask for more. While
+	// the transcript is shorter than its scroller, keep widening over loaded events
+	// and then pulling older history. Capped: a turn that condenses to almost
+	// nothing shouldn't drag a whole session's history in behind one tab click.
+	const MAX_FILL_PULLS = 4;
+	let fillPulls = 0;
+	$effect(() => {
+		chunks; // re-check whenever what's rendered changes
+		if (!condensed || !loaded || !visible || fillPulls >= MAX_FILL_PULLS) return;
+		tick().then(() => {
+			if (!scroller || scroller.scrollHeight > scroller.clientHeight + 1) return;
+			if (limit < events.length) void growWindow(HYDRATE_CHUNK);
+			else if (!loadingOlder && baseIndex > 0) {
+				// Count the pull only when one actually starts: a fetch in flight would
+				// otherwise burn the budget on re-entries that loadOlder drops.
+				fillPulls += 1;
+				void loadOlder();
+			}
+		});
+	});
+
 	// Two lookups the template needs while rendering the visible window:
 	//   resultsById       — tool_use_id → its tool_result block (ToolCall)
 	//   answeredQuestions  — ask tool_use id → the chosen answers (AskQuestion)
@@ -116,10 +164,6 @@
 		for (const ev of list) indexForward(index, ev);
 	}
 
-	function isAskTool(block: AnyEvent): boolean {
-		return block.name === 'mcp__deck__ask' || block.name === 'AskUserQuestion';
-	}
-
 	async function answerQuestion(
 		id: string,
 		text: string,
@@ -143,6 +187,8 @@
 		events = [];
 		cost = emptyCostSummary();
 		clearIndex();
+		openRuns.clear();
+		fillPulls = 0;
 		baseIndex = 0;
 		limit = INITIAL_WINDOW;
 		liveText = '';
@@ -262,13 +308,18 @@
 		// those events so atBottom can't flip and no history is fetched behind a tab.
 		if (!scroller || !visible) return;
 		savedScrollTop = scroller.scrollTop;
-		atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
+		measureBottom();
 		// Scrolling toward the top: widen the window over loaded rows, then pull
 		// older history from the server once the loaded slice is exhausted.
 		if (scroller.scrollTop < 400) {
 			if (limit < events.length) hydrateRest();
 			else loadOlder();
 		}
+	}
+
+	function measureBottom() {
+		if (!scroller) return;
+		atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
 	}
 
 	function maybeScroll() {
@@ -280,7 +331,7 @@
 		atBottom = true;
 	}
 
-	// When the Chat tab is shown again, the scroller regains layout but the browser
+	// When the transcript is shown again, the scroller regains layout but the browser
 	// left scrollTop at 0. Wait a tick for that layout, then restore the reader's
 	// place: re-pin to the bottom if they were there, else back to where they were.
 	$effect(() => {
@@ -290,6 +341,74 @@
 			if (atBottom) forceScroll();
 			else scroller.scrollTop = savedScrollTop;
 			hydrateRest(); // resume any hydration deferred while hidden
+		});
+	});
+
+	// Switching Thread <-> Chat changes how much is on screen dramatically, so hold
+	// the reader's place across the swap: note the topmost row before the DOM
+	// updates, then line the chunk it ended up in back up afterwards. Both effects
+	// track `condensed` only; everything else they read is untracked so scrolling
+	// can't retrigger them.
+	let anchor: { key: string; offset: number } | null = null;
+	let wasVisible = false;
+
+	// The row covering the top of the view (a tall one can start well above it),
+	// or the first one below when nothing covers it.
+	function topRow(): { key: string; offset: number } | null {
+		if (!scroller) return null;
+		const top = scroller.getBoundingClientRect().top;
+		let covering: { key: string; offset: number } | null = null;
+		for (const el of scroller.querySelectorAll<HTMLElement>('[data-k]')) {
+			const row = { key: el.dataset.k as string, offset: el.getBoundingClientRect().top - top };
+			if (row.offset > 0) return covering ?? row;
+			covering = row;
+		}
+		return covering;
+	}
+
+	$effect.pre(() => {
+		const shown = visible;
+		condensed;
+		untrack(() => {
+			// Only measurable while the pane has layout: a hidden scroller's scrollTop
+			// is clamped to 0, so topRow() would read the wrong row. Capturing on the
+			// way out too means a mode picked from behind Changes/Servers still has an
+			// anchor to come back to, where the raw saved scrollTop would be a pixel
+			// offset into the other mode's layout.
+			if (wasVisible) anchor = atBottom ? null : topRow();
+			wasVisible = shown;
+			fillPulls = 0; // a fresh fill budget each time Chat is opened
+		});
+	});
+
+	$effect(() => {
+		condensed;
+		untrack(() => {
+			const held = anchor;
+			anchor = null;
+			if (!visible) return;
+			tick().then(() => {
+				if (!scroller) return;
+				if (atBottom) {
+					forceScroll();
+					return;
+				}
+				if (!held) return;
+				// The exact row when it's still rendered (an expanded run keeps its
+				// rows), else whichever chunk swallowed it.
+				const key = chunkKeyFor(chunks, held.key) ?? held.key;
+				const el =
+					scroller.querySelector<HTMLElement>(`[data-k="${held.key}"]`) ??
+					scroller.querySelector<HTMLElement>(`[data-k="${key}"]`);
+				if (!el) return;
+				const rect = el.getBoundingClientRect();
+				// A tall row that straddled the fold can now be a one-line summary, so
+				// don't push it further above the view than its own height.
+				const want = Math.max(held.offset, -rect.height);
+				scroller.scrollTop += rect.top - scroller.getBoundingClientRect().top - want;
+				savedScrollTop = scroller.scrollTop;
+				measureBottom(); // the other mode may be short enough that this lands at the bottom
+			});
 		});
 	});
 
@@ -523,9 +642,13 @@
 		}
 	}
 
-	function contentBlocks(event: AnyEvent): AnyEvent[] {
-		const content = event.message?.content;
-		return Array.isArray(content) ? content : [];
+	function toggleRun(key: string) {
+		if (openRuns.has(key)) openRuns.delete(key);
+		else openRuns.add(key);
+		// Expanding grows the content below the fold without firing a scroll event,
+		// so re-read whether we're still pinned. Otherwise the next streamed event
+		// yanks a reader who just opened a run down to the bottom.
+		tick().then(measureBottom);
 	}
 
 	function fmtCost(event: AnyEvent): string {
@@ -537,6 +660,64 @@
 		return parts.join(' · ');
 	}
 </script>
+
+<!-- One rendered row of the transcript. Both tabs render rows through here; Chat
+     only differs in which of them sit behind a run summary. Unhandled event types
+     (including deck.* markers from removed features, e.g. old workflow
+     transcripts) never reach this: they are dropped when the window is flattened. -->
+{#snippet transcriptRow(row: Row)}
+	{@const event = row.event}
+	{@const block = row.block}
+	{#if block}
+		{#if block.type === 'text'}
+			<MessageBubble
+				side="start"
+				text={block.text}
+				markdown
+				bubbleClass="bg-base-100 text-base-content"
+			/>
+		{:else if block.type === 'thinking'}
+			<details class="px-2 text-xs opacity-50">
+				<summary class="cursor-pointer select-none">
+					<ChevronDown size={12} class="inline" /> thinking
+				</summary>
+				<div class="pt-1"><Markdown source={block.thinking} /></div>
+			</details>
+		{:else if isAskTool(block)}
+			<AskQuestion
+				{block}
+				answered={answeredQuestions.has(block.id)}
+				answer={answeredQuestions.get(block.id)}
+				onanswer={(text, answers) => answerQuestion(block.id, text, answers)}
+			/>
+		{:else}
+			<ToolCall {block} result={resultsById.get(block.id)} />
+		{/if}
+	{:else if event.type === 'deck.user'}
+		<MessageBubble side="end" text={event.text ?? ''} bubbleClass="bg-base-300 text-base-content">
+			{#if event.images?.length}
+				<div class="mb-2 flex flex-wrap gap-2">
+					{#each event.images as img, k (k)}
+						<img
+							src={img.file ? `/api/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(img.file)}` : `data:${img.media_type};base64,${img.data}`}
+							loading="lazy"
+							alt="attachment"
+							class="max-h-40 rounded-box border border-base-300"
+						/>
+					{/each}
+				</div>
+			{/if}
+		</MessageBubble>
+	{:else if event.type === 'deck.error'}
+		<div class="alert alert-error py-2 text-sm whitespace-pre-wrap wrap-anywhere">{event.text}</div>
+	{:else if event.type === 'deck.model'}
+		<div class="px-2 text-center text-xs opacity-50">model → {modelLabel(event.model)}</div>
+	{:else if event.type === 'deck.effort'}
+		<div class="px-2 text-center text-xs opacity-50">effort → {effortLabel(event.effort)}</div>
+	{:else if event.type === 'result'}
+		<div class="px-2 text-center text-xs opacity-50">{fmtCost(event)}</div>
+	{/if}
+{/snippet}
 
 <div
 	class="relative flex h-full min-h-0 flex-col"
@@ -571,59 +752,23 @@
 				<span class="loading loading-spinner loading-xs opacity-60"></span>
 			</div>
 		{/if}
-		<!-- Unhandled event types (including deck.* markers from removed features, e.g.
-		     old workflow transcripts) fall through and render nothing. -->
-		{#each visibleEvents as event, i (baseIndex + start + i)}
-			{#if event.type === 'deck.user'}
-				<MessageBubble side="end" text={event.text ?? ''} bubbleClass="bg-base-300 text-base-content">
-					{#if event.images?.length}
-						<div class="mb-2 flex flex-wrap gap-2">
-							{#each event.images as img, k (k)}
-								<img
-									src={img.file ? `/api/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(img.file)}` : `data:${img.media_type};base64,${img.data}`}
-									loading="lazy"
-									alt="attachment"
-									class="max-h-40 rounded-box border border-base-300"
-								/>
-							{/each}
-						</div>
+		{#each chunks as chunk (chunk.key)}
+			{#if chunk.kind === 'run'}
+				<div data-k={openRuns.has(chunk.key) ? undefined : chunk.key} class="space-y-3">
+					<ToolRun
+						count={chunk.count}
+						tools={chunk.tools}
+						open={openRuns.has(chunk.key)}
+						ontoggle={() => toggleRun(chunk.key)}
+					/>
+					{#if openRuns.has(chunk.key)}
+						{#each chunk.rows as row (row.key)}
+							<div data-k={row.key}>{@render transcriptRow(row)}</div>
+						{/each}
 					{/if}
-				</MessageBubble>
-			{:else if event.type === 'deck.error'}
-				<div class="alert alert-error py-2 text-sm whitespace-pre-wrap wrap-anywhere">{event.text}</div>
-			{:else if event.type === 'deck.model'}
-				<div class="px-2 text-center text-xs opacity-50">model → {modelLabel(event.model)}</div>
-			{:else if event.type === 'deck.effort'}
-				<div class="px-2 text-center text-xs opacity-50">effort → {effortLabel(event.effort)}</div>
-			{:else if event.type === 'assistant'}
-				{#each contentBlocks(event) as block, j (j)}
-					{#if block.type === 'text' && block.text?.trim()}
-						<MessageBubble
-							side="start"
-							text={block.text}
-							markdown
-							bubbleClass="bg-base-100 text-base-content"
-						/>
-					{:else if block.type === 'thinking' && block.thinking?.trim()}
-						<details class="px-2 text-xs opacity-50">
-							<summary class="cursor-pointer select-none">
-								<ChevronDown size={12} class="inline" /> thinking
-							</summary>
-							<div class="pt-1"><Markdown source={block.thinking} /></div>
-						</details>
-					{:else if block.type === 'tool_use' && isAskTool(block)}
-						<AskQuestion
-							{block}
-							answered={answeredQuestions.has(block.id)}
-							answer={answeredQuestions.get(block.id)}
-							onanswer={(text, answers) => answerQuestion(block.id, text, answers)}
-						/>
-					{:else if block.type === 'tool_use'}
-						<ToolCall {block} result={resultsById.get(block.id)} />
-					{/if}
-				{/each}
-			{:else if event.type === 'result'}
-				<div class="px-2 text-center text-xs opacity-50">{fmtCost(event)}</div>
+				</div>
+			{:else}
+				<div data-k={chunk.key}>{@render transcriptRow(chunk.row)}</div>
 			{/if}
 		{/each}
 

@@ -4,21 +4,8 @@
 	import { lineDiff, addedLines, looksLikeDiff, parseUnified } from '$lib/diff';
 	import { shortPath } from '$lib/time';
 	import { toolOutput } from '$lib/toolOutput.svelte';
-	import {
-		Wrench,
-		Terminal,
-		FileText,
-		FilePen,
-		FilePlus,
-		Search,
-		FolderSearch,
-		ListChecks,
-		Globe,
-		Bot,
-		Circle,
-		CircleDot,
-		CircleCheck
-	} from '@lucide/svelte';
+	import { toolIcon } from '$lib/tool-icons';
+	import { Circle, CircleDot, CircleCheck } from '@lucide/svelte';
 
 	type AnyBlock = Record<string, any>;
 	let { block, result }: { block: AnyBlock; result?: AnyBlock } = $props();
@@ -26,21 +13,7 @@
 	const name = $derived(block.name as string);
 	const input = $derived((block.input ?? {}) as AnyBlock);
 
-	const icons: Record<string, typeof Wrench> = {
-		Bash: Terminal,
-		Read: FileText,
-		Edit: FilePen,
-		MultiEdit: FilePen,
-		NotebookEdit: FilePen,
-		Write: FilePlus,
-		Grep: Search,
-		Glob: FolderSearch,
-		TodoWrite: ListChecks,
-		WebFetch: Globe,
-		WebSearch: Search,
-		Task: Bot
-	};
-	const Icon = $derived(icons[name] ?? Wrench);
+	const Icon = $derived(toolIcon(name));
 
 	const fileTools = new Set(['Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
 
