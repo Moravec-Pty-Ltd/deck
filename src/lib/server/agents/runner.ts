@@ -11,6 +11,7 @@ import type { AgentDriver, TurnContext } from './types';
 import { piDriver } from './pi';
 import { codexDriver } from './codex';
 import { opencodeDriver } from './opencode';
+import { describeLimit, silenceLimitMs, startSilenceWatchdog } from './watchdog-core';
 
 // Per-turn agents (pi, codex, opencode): each user message spawns a fresh CLI
 // process that streams JSONL to completion, parsed by a driver into deck's
@@ -84,8 +85,37 @@ export async function runTurn(session: DeckSession, text: string) {
 		setAgentSessionId: (agentId) => updateSession(session.id, { agentSessionId: agentId })
 	};
 
+	// A CLI that hangs without exiting never reaches the exit handler below, so
+	// the crash path has to be driven by silence instead (see watchdog-core).
+	const limitMs = silenceLimitMs(process.env);
+	const watchdog = startSilenceWatchdog(limitMs, () => {
+		// Superseded: a newer turn owns the session now, and runTurn already
+		// signalled this child, so it has nothing left to say.
+		if (procs.get(session.id) !== child) return;
+		// Drop the registry entry here rather than waiting for an exit that may
+		// never come: while it is present `turnRunning` re-derives the session as
+		// running and masks the status set below.
+		procs.delete(session.id);
+		child.kill('SIGTERM');
+		if (sawResult) {
+			// The turn itself finished and only the process is wedged. `isCrash`
+			// treats a seen result as authoritative; so does this.
+			setStatus(session.id, 'idle');
+			notifyTurnEnd(session.id, Date.now() - started, false);
+			return;
+		}
+		const why = `no output from ${session.kind} for ${describeLimit(limitMs)}; stopped the stalled turn`;
+		const tail = stderrTail.trim();
+		reportCrash(session.id, session.kind, tail ? `${tail}\n${why}` : why);
+	});
+
 	let buf = '';
 	child.stdout!.on('data', (chunk: Buffer) => {
+		// Bytes already in flight when a child is superseded or killed still drain
+		// to us. Dropping them here is what keeps a dead turn's trailing events,
+		// footer, and agent session id out of the turn that replaced it.
+		if (procs.get(session.id) !== child) return;
+		watchdog.bump();
 		buf += chunk.toString();
 		let nl: number;
 		while ((nl = buf.indexOf('\n')) >= 0) {
@@ -95,16 +125,26 @@ export async function runTurn(session: DeckSession, text: string) {
 		}
 	});
 	child.stderr!.on('data', (chunk: Buffer) => {
+		if (procs.get(session.id) !== child) return;
+		// stderr counts as liveness too: an agent that logs progress there and
+		// nothing to stdout is working, not stalled.
+		watchdog.bump();
 		stderrTail = (stderrTail + chunk.toString()).slice(-4000);
 	});
 
 	child.on('error', (err) => {
+		watchdog.stop();
+		if (procs.get(session.id) !== child) return;
 		procs.delete(session.id);
 		appendEvent(session.id, deckError(`failed to start ${session.kind}: ${err.message}`));
 		setStatus(session.id, 'error');
 	});
 
 	child.on('exit', (code, signal) => {
+		watchdog.stop();
+		// A superseded child can exit long after the message that replaced it; it
+		// must not report a footer or a status over the top of the live turn.
+		if (procs.get(session.id) !== child) return;
 		procs.delete(session.id);
 		if (isCrash(sawResult, code, signal)) {
 			reportCrash(session.id, session.kind, stderrTail.trim() || `${session.kind} exited (${code})`);

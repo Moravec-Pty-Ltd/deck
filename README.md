@@ -91,6 +91,7 @@ Dev server: `pnpm dev`.
 | `DECK_NO_AUTH_PUBLIC` | unset | Set to `1` to force `DECK_NO_AUTH` even when the host looks public, acknowledging the app is served unauthenticated to anyone with the URL. Don't use this with a raw public tunnel; carry the token instead. |
 | `DECK_DEMO` | unset | Set to `1` to serve a fixed, sanitized demo dataset instead of `~/.deck` (used for the README screenshots). Skips auth and the host tmux scan, so it never shows real sessions or paths. |
 | `DECK_PUSH_SUBJECT` | `mailto:info@moravec.tech` | VAPID contact for web push (Apple rejects a localhost mailto) |
+| `DECK_TURN_SILENCE_MS` | `1800000` | How long a pi/codex/opencode turn may produce no output on either stdout or stderr before deck kills it and marks the session errored. These agents emit on completed items rather than streaming deltas, so a slow tool call is legitimately silent; raise this if a healthy turn is being cut off. |
 | `DECK_MORABOT_STATUS` | unset | Absolute path to morabot's `status.json` (enables the morabot integration, review verdicts, and notifications). |
 | `DECK_SECRETS_FILE` | unset | Set to `1` to store issue-source API keys in `~/.deck/secrets.json` (**plaintext**, mode `0600`) instead of the OS keyring. See [Issue-source API keys](#issue-source-api-keys). |
 
