@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { isFlagSafe } from './args';
 import { AGENT_BINARIES } from './binaries';
 import type { AgentDriver, TurnContext } from './types';
@@ -6,9 +7,10 @@ import { assistantBlocks, assistantText, deckError, resultEvent, toolResultEvent
 type AnyObj = Record<string, any>;
 
 // opencode runs per turn: `opencode run --format json ... -- <message>`, resumed
-// across turns with `--session <id>`. Verified shape (opencode 1.17): every line
-// is { type, timestamp, sessionID, part }; observed types: step_start / tool_use
-// / text / step_finish. `text` parts arrive complete (no streaming deltas).
+// across turns with `--session <id>`. Flags verified on opencode 1.18.5. Event
+// shape verified on 1.17: every line is { type, timestamp, sessionID, part };
+// observed types: step_start / tool_use / text / step_finish. `text` parts
+// arrive complete (no streaming deltas).
 // step_finish reason 'tool-calls' means the turn continues; anything else ends it.
 // reasoning and error events are also handled, mapped by analogy with the
 // observed shape rather than captured live.
@@ -16,10 +18,14 @@ export const opencodeDriver: AgentDriver = {
 	kind: 'opencode',
 
 	buildTurn(session, message, resumeId) {
-		// Auto-approve permissions: a per-turn run that paused on a permission prompt
-		// would hang the turn with no way to answer (deck's `ask` is Claude-only).
-		// Explicit denies in the user's opencode config are still honoured.
-		const args = ['run', '--format', 'json', '--dangerously-skip-permissions'];
+		// `--auto` auto-approves permissions: a per-turn run that paused on a
+		// permission prompt would hang the turn with no way to answer (deck's `ask`
+		// is Claude-only). Explicit denies in the user's opencode config are still
+		// honoured. `--dir` states the working directory rather than leaving it to
+		// opencode's own resolution. Always absolute, so it can't be flag-shaped.
+		// It binds when opencode creates the session; a resumed session keeps the
+		// directory it was created with, whatever `--dir` says.
+		const args = ['run', '--format', 'json', '--auto', '--dir', path.resolve(session.cwd)];
 		if (isFlagSafe(session.model)) args.push('--model', session.model!);
 		if (isFlagSafe(resumeId)) args.push('--session', resumeId!);
 		// `--` stops opencode parsing the prompt as a flag.

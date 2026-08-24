@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { DeckSession } from '$lib/types';
 import type { DeckEvent, TurnContext } from './types';
@@ -36,10 +37,33 @@ describe('opencodeDriver.buildTurn', () => {
 			'run',
 			'--format',
 			'json',
-			'--dangerously-skip-permissions',
+			'--auto',
+			'--dir',
+			'/tmp',
 			'--',
 			'-hello'
 		]);
+	});
+
+	it('passes --dir alongside --session on a resumed turn', () => {
+		const turn = opencodeDriver.buildTurn(session({ cwd: '/tmp/project' }), 'hi', 'ses_abc');
+		expect(turn.args).toEqual([
+			'run',
+			'--format',
+			'json',
+			'--auto',
+			'--dir',
+			'/tmp/project',
+			'--session',
+			'ses_abc',
+			'--',
+			'hi'
+		]);
+	});
+
+	it('passes --dir as an absolute path', () => {
+		const turn = opencodeDriver.buildTurn(session({ cwd: 'relative/project' }), 'hi', undefined);
+		expect(path.isAbsolute(turn.args[turn.args.indexOf('--dir') + 1])).toBe(true);
 	});
 
 	it('adds --model and --session when safe', () => {

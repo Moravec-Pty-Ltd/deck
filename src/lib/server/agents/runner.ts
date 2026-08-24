@@ -68,7 +68,7 @@ export async function runTurn(session: DeckSession, text: string) {
 	const turn = driver.buildTurn(session, text, session.agentSessionId);
 	const child = spawn(turn.cmd, turn.args, {
 		cwd: session.cwd,
-		env: agentEnv(session.id),
+		env: agentEnv(session.id, session.cwd),
 		stdio: ['pipe', 'pipe', 'pipe']
 	});
 	procs.set(session.id, child);

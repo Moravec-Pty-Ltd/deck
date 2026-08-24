@@ -22,11 +22,11 @@ afterAll(() => {
 
 describe('agentEnv', () => {
 	it('stamps the deck session id', () => {
-		expect(agentEnv('c_abc123').DECK_SESSION_ID).toBe('c_abc123');
+		expect(agentEnv('c_abc123', '/tmp').DECK_SESSION_ID).toBe('c_abc123');
 	});
 
 	it('stamps the API credentials, base URL trailing slash stripped', () => {
-		const env = agentEnv('c_abc123');
+		const env = agentEnv('c_abc123', '/tmp');
 		expect(env.DECK_TOKEN).toBe('test-token');
 		expect(env.DECK_BASE_URL).toBe('http://example.test:4818');
 	});
@@ -34,15 +34,23 @@ describe('agentEnv', () => {
 	it('inherits the parent environment', () => {
 		const restore = pinEnv({ DECK_TEST_MARKER: 'present' });
 		try {
-			expect(agentEnv('p_1').DECK_TEST_MARKER).toBe('present');
+			expect(agentEnv('p_1', '/tmp').DECK_TEST_MARKER).toBe('present');
 		} finally {
 			restore();
 		}
 	});
 
+	it('points PWD at the spawn cwd rather than deck own', () => {
+		expect(agentEnv('c_1', '/tmp/project').PWD).toBe('/tmp/project');
+	});
+
+	it('absolutises a relative cwd', () => {
+		expect(path.isAbsolute(agentEnv('c_1', 'relative/project').PWD!)).toBe(true);
+	});
+
 	it('does not mutate process.env', () => {
 		const before = process.env.DECK_SESSION_ID;
-		agentEnv('x_1');
+		agentEnv('x_1', '/tmp');
 		expect(process.env.DECK_SESSION_ID).toBe(before);
 	});
 });

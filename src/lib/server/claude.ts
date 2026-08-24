@@ -189,7 +189,7 @@ function startProcess(id: string): Proc {
 
 	const child = spawn(AGENT_BINARIES.claude, args, {
 		cwd: session.cwd,
-		env: agentEnv(id),
+		env: agentEnv(id, session.cwd),
 		stdio: ['pipe', 'pipe', 'pipe']
 	});
 	const proc: Proc = { child, running: false, buf: '', stderrTail: '', reqSeq: 0 };
