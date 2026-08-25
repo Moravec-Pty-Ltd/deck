@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { CLAUDE_MODELS, claudeModelOptions, isExpensiveModel, shouldReseedModel } from './models';
+import {
+	CLAUDE_MODELS,
+	claudeModelOptions,
+	isExpensiveModel,
+	isListableKind,
+	piModelOptions,
+	piProviderOptions,
+	shouldReseedModel
+} from './models';
 
 describe('isExpensiveModel', () => {
 	it('flags the seeded expensive models by name', () => {
@@ -100,5 +108,43 @@ describe('claudeModelOptions', () => {
 	it('falls back to the id when a profile has no label', () => {
 		const opts = claudeModelOptions({ modelProfiles: [{ id: 'bare', env: {} }] });
 		expect(opts.at(-1)).toEqual({ value: 'bare', label: 'bare' });
+	});
+});
+
+describe('pi picker options', () => {
+	const detected = [
+		{ model: 'sonnet', provider: 'anthropic' },
+		{ model: 'opus', provider: 'anthropic' },
+		{ model: 'gemini-pro', provider: 'google' },
+		{ model: 'bare' }
+	];
+
+	it('lists each detected provider once, skipping models with none', () => {
+		expect(piProviderOptions(detected)).toEqual(['anthropic', 'google']);
+	});
+
+	it('offers every model when no provider is picked', () => {
+		expect(piModelOptions(detected, '')).toEqual(['sonnet', 'opus', 'gemini-pro', 'bare']);
+	});
+
+	it('narrows the models to the picked provider', () => {
+		expect(piModelOptions(detected, 'anthropic')).toEqual(['sonnet', 'opus']);
+	});
+
+	it('offers nothing for a provider that reported no models', () => {
+		expect(piModelOptions(detected, 'typo')).toEqual([]);
+	});
+});
+
+describe('isListableKind', () => {
+	it('accepts the kinds whose CLI enumerates models', () => {
+		expect(isListableKind('pi')).toBe(true);
+		expect(isListableKind('opencode')).toBe(true);
+	});
+
+	it('rejects the kinds that do not, and junk', () => {
+		expect(isListableKind('codex')).toBe(false);
+		expect(isListableKind('claude')).toBe(false);
+		expect(isListableKind('../etc')).toBe(false);
 	});
 });

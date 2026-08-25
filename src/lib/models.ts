@@ -26,6 +26,26 @@ export function claudeModelOptions(
 	return [...builtin, ...profiles];
 }
 
+// The kinds whose CLI can enumerate models. Shared by the listing endpoint and
+// the client-side cache so a third one can't gain a lister while its picker
+// stays empty.
+const LISTABLE_KINDS = ['pi', 'opencode'] as const satisfies readonly AgentKind[];
+
+export function isListableKind(kind: string): kind is (typeof LISTABLE_KINDS)[number] {
+	return (LISTABLE_KINDS as readonly string[]).includes(kind);
+}
+
+// The provider and model suggestion lists for a pi picker, from whatever the CLI
+// reported. Detection can leave a model without a provider, and pi's list spans
+// every provider, so narrow the models to the chosen one when there is one.
+export function piProviderOptions(detected: ModelChoice[]): string[] {
+	return [...new Set(detected.map((m) => m.provider).filter((p): p is string => !!p))];
+}
+
+export function piModelOptions(detected: ModelChoice[], provider: string): string[] {
+	return (provider ? detected.filter((m) => m.provider === provider) : detected).map((m) => m.model);
+}
+
 // Fallback model when neither the project nor the user's global settings
 // remember a pick for this kind (issue #51). Claude gets a real default now the
 // blank "default model" option is gone; the other kinds fall through to the

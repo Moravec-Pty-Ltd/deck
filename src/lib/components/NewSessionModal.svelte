@@ -14,10 +14,13 @@
 	import {
 		claudeModelOptions,
 		isExpensiveModel,
+		piModelOptions,
+		piProviderOptions,
 		resolveModelChoice,
 		shouldReseedModel
 	} from '$lib/models';
 	import { EFFORT_LEVELS, effortLabel, resolveEffort } from '$lib/effort';
+	import { agentModels, loadAgentModels } from '$lib/agent-models-store.svelte';
 	import { shortIssueId } from '$lib/issues';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import {
@@ -69,9 +72,6 @@
 	let effort = $state<DeckEffort | ''>('');
 	let modelDirty = $state(false);
 	let settings = $state<DeckSettings>({});
-	// Detected model lists per agent kind, fetched once per session and reused
-	// (issue #51). Missing key = not fetched yet; empty array = CLI reported none.
-	let modelCache = $state<Record<string, ModelChoice[]>>({});
 	// The kind and project the model/provider fields were last seeded for; a
 	// change to either means the prior pick belongs to a different agent or
 	// project and must be re-seeded.
@@ -335,17 +335,9 @@
 
 	// Models the CLI reports for the active agent kind (empty until fetched or if
 	// detection failed — the fields then stay plain free-text).
-	const detectedModels = $derived<ModelChoice[]>(modelCache[kind] ?? []);
-	const piProviders = $derived([
-		...new Set(detectedModels.map((m) => m.provider).filter((p): p is string => !!p))
-	]);
-	// pi's model list, narrowed to the typed provider when one is set so the
-	// suggestions stay relevant.
-	const piModels = $derived(
-		(provider ? detectedModels.filter((m) => m.provider === provider) : detectedModels).map(
-			(m) => m.model
-		)
-	);
+	const detectedModels = $derived<ModelChoice[]>(isAgentKind(kind) ? agentModels(kind) : []);
+	const piProviders = $derived(piProviderOptions(detectedModels));
+	const piModels = $derived(piModelOptions(detectedModels, provider));
 	const opencodeModels = $derived(detectedModels.map((m) => m.model));
 	// The picked model as the expensive-model warning/confirm should name it: pi
 	// keeps provider and model separate (an expensive match can come from either),
@@ -412,16 +404,10 @@
 	});
 
 	// Fetch the detected model list once per agent kind while the modal is open;
-	// fail-soft to an empty list so the picker degrades to free-text.
+	// the shared cache (issue #51) fails soft to an empty list, so the picker
+	// degrades to free text.
 	$effect(() => {
-		if (!open || (kind !== 'pi' && kind !== 'opencode') || modelCache[kind]) return;
-		const k = kind;
-		fetch(`/api/agents/${k}/models`)
-			.then((r) => r.json())
-			.then((list: ModelChoice[]) => {
-				modelCache = { ...modelCache, [k]: Array.isArray(list) ? list : [] };
-			})
-			.catch(() => (modelCache = { ...modelCache, [k]: [] }));
+		if (open && isAgentKind(kind)) loadAgentModels(kind);
 	});
 
 	$effect(() => {
@@ -979,12 +965,14 @@
 											bind:value={provider}
 											options={piProviders}
 											placeholder="provider (optional, e.g. anthropic, google)"
+											ariaLabel="Provider"
 											oninput={() => (modelDirty = true)}
 										/>
 										<ComboInput
 											bind:value={model}
 											options={piModels}
 											placeholder="model (optional, pi pattern or id)"
+											ariaLabel="Model"
 											oninput={() => (modelDirty = true)}
 										/>
 									{:else if kind === 'opencode'}
@@ -992,6 +980,7 @@
 											bind:value={model}
 											options={opencodeModels}
 											placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
+											ariaLabel="Model"
 											oninput={() => (modelDirty = true)}
 										/>
 									{:else}

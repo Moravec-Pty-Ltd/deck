@@ -7,8 +7,15 @@
 	import type { DeckSettings } from '$lib/types';
 	import { AGENT_KINDS } from '$lib/types';
 	import { forKind, type AgentRow } from '$lib/automation-form-core';
-	import { claudeModelOptions } from '$lib/models';
+	import {
+		claudeModelOptions,
+		isListableKind,
+		piModelOptions,
+		piProviderOptions
+	} from '$lib/models';
 	import { EFFORT_LEVELS } from '$lib/effort';
+	import { agentModels, loadAgentModels } from '$lib/agent-models-store.svelte';
+	import ComboInput from './ComboInput.svelte';
 
 	let {
 		agent = $bindable(),
@@ -24,6 +31,17 @@
 		if (!agent.model || options.some((o) => o.value === agent.model)) return options;
 		return [...options, { value: agent.model, label: `${agent.model} (not configured)` }];
 	});
+
+	// pi and opencode enumerate their models, so offer what this machine reports
+	// while the fields stay free text. The listing is cached per kind for the whole
+	// page, so several lanes on several projects share one shell-out each.
+	$effect(() => loadAgentModels(agent.kind));
+	const detected = $derived(agentModels(agent.kind));
+	const piProviders = $derived(piProviderOptions(detected));
+	// opencode reports one flat list of `provider/model` ids, so only pi narrows.
+	const modelChoices = $derived(
+		piModelOptions(detected, agent.kind === 'pi' ? agent.provider : '')
+	);
 
 	// Switching kind drops the fields the new one has no use for, so a pi provider
 	// or a claude effort can't linger and be rejected on save.
@@ -56,15 +74,28 @@
 				<option value={e}>{e}</option>
 			{/each}
 		</select>
-	{:else}
+	{:else if isListableKind(agent.kind)}
 		{#if agent.kind === 'pi'}
-			<input
-				class="input input-xs w-32"
-				aria-label="{lane} provider"
-				placeholder="provider"
-				bind:value={agent.provider}
-			/>
+			<div class="w-36">
+				<ComboInput
+					bind:value={agent.provider}
+					options={piProviders}
+					placeholder="provider"
+					ariaLabel="{lane} provider"
+					compact
+				/>
+			</div>
 		{/if}
+		<div class="w-52">
+			<ComboInput
+				bind:value={agent.model}
+				options={modelChoices}
+				placeholder="model"
+				ariaLabel="{lane} model"
+				compact
+			/>
+		</div>
+	{:else}
 		<input
 			class="input input-xs w-48"
 			aria-label="{lane} model"
