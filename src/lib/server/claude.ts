@@ -12,6 +12,7 @@ import { notify } from './push';
 import { transcriptPath, transcriptCostSummary } from './transcript';
 import { publishAgentEvent } from './agent-feed';
 import { agentEnv } from './agents/env';
+import { findModelProfile, resolveModelArg } from './model-profiles';
 import { isFlagSafe } from './agents/args';
 import { AGENT_BINARIES } from './agents/binaries';
 import { lastPrLink } from '../pr';
@@ -168,7 +169,12 @@ function startProcess(id: string): Proc {
 	];
 	if (session.claudeSessionId) args.push('--resume', session.claudeSessionId);
 	// Same flag-injection guard as the pi/codex spawns (see agents/args.ts).
-	if (isFlagSafe(session.model)) args.push('--model', session.model!);
+	// A model profile names a locally-configured backend rather than a claude
+	// shortname, so send its own model id (or no --model at all) and carry its
+	// env onto the child below.
+	const profile = findModelProfile(session.model);
+	const modelArg = resolveModelArg(session.model);
+	if (isFlagSafe(modelArg)) args.push('--model', modelArg!);
 	// Reasoning effort (issue #178): absent runs the CLI default. The value is one
 	// of a fixed enum, but guard it like --model so a leading dash can't inject.
 	if (isFlagSafe(session.effort)) args.push('--effort', session.effort!);
@@ -189,7 +195,7 @@ function startProcess(id: string): Proc {
 
 	const child = spawn(AGENT_BINARIES.claude, args, {
 		cwd: session.cwd,
-		env: agentEnv(id, session.cwd),
+		env: agentEnv(id, session.cwd, profile?.env),
 		stdio: ['pipe', 'pipe', 'pipe']
 	});
 	const proc: Proc = { child, running: false, buf: '', stderrTail: '', reqSeq: 0 };

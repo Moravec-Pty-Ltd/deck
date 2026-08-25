@@ -6,6 +6,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { AgentKind, ModelChoice } from '$lib/types';
+import { readSettings } from '../store';
 import { AGENT_BINARIES } from './binaries';
 import { parseOpencodeModels, parsePiModels } from './models-core';
 
@@ -21,6 +22,13 @@ const LISTERS: Partial<Record<AgentKind, { cmd: string; args: string[]; parse: (
 };
 
 export async function listAgentModels(kind: AgentKind): Promise<ModelChoice[]> {
+	// claude enumerates nothing from its CLI, but locally-configured model
+	// profiles are valid ids for it, so they are all it offers. Scoped to claude
+	// because a profile carries claude-specific env (see ModelProfile); the other
+	// kinds reach another backend through their own config instead.
+	if (kind === 'claude') {
+		return (readSettings().modelProfiles ?? []).map((p) => ({ model: p.id }));
+	}
 	const lister = LISTERS[kind];
 	if (!lister) return [];
 	try {

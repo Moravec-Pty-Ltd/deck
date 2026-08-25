@@ -1,8 +1,30 @@
-import type { AgentKind, DeckSettings, ModelChoice, Project, SessionKind } from '$lib/types';
+import type {
+	AgentKind,
+	DeckSettings,
+	ModelChoice,
+	ModelProfile,
+	Project,
+	SessionKind
+} from '$lib/types';
 
 // Claude model shortnames the CLI accepts, offered in the New Session modal and
 // the mid-session model switcher (issue #88). pi/codex take free-text ids.
 export const CLAUDE_MODELS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
+
+// Model options for a claude picker: the built-in shortnames plus any locally
+// configured profiles (a profile's id is its model value, so the rest of the
+// model plumbing treats it like any other string). Profiles come from the user's
+// ~/.deck settings, so this repo stays free of private-infra ids.
+export function claudeModelOptions(
+	settings: DeckSettings | undefined
+): { value: string; label: string }[] {
+	const builtin = CLAUDE_MODELS.map((m) => ({ value: m, label: m }));
+	const profiles = (settings?.modelProfiles ?? []).map((p: ModelProfile) => ({
+		value: p.id,
+		label: p.label || p.id
+	}));
+	return [...builtin, ...profiles];
+}
 
 // Fallback model when neither the project nor the user's global settings
 // remember a pick for this kind (issue #51). Claude gets a real default now the

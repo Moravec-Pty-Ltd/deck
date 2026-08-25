@@ -54,3 +54,18 @@ describe('agentEnv', () => {
 		expect(process.env.DECK_SESSION_ID).toBe(before);
 	});
 });
+
+describe('agentEnv extra', () => {
+	it('merges profile env over the base environment', () => {
+		const env = agentEnv('c_abc123', '/tmp', { ANTHROPIC_BASE_URL: 'http://host:1/v1' });
+		expect(env.ANTHROPIC_BASE_URL).toBe('http://host:1/v1');
+		// Base stamping still applies.
+		expect(env.DECK_SESSION_ID).toBe('c_abc123');
+	});
+
+	it('leaves the environment untouched when no profile env is given', () => {
+		expect(agentEnv('c_abc123', '/tmp').ANTHROPIC_BASE_URL).toBe(
+			process.env.ANTHROPIC_BASE_URL
+		);
+	});
+});

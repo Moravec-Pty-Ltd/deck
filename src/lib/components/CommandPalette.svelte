@@ -9,9 +9,10 @@
 		type MergeMethod,
 		type PrActionPayload
 	} from '$lib/commands';
-	import type { DeckSession, ServerRuntime } from '$lib/types';
+	import type { DeckSession, ServerRuntime, DeckSettings } from '$lib/types';
 	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
-	import { CLAUDE_MODELS, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
+	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
+	import { loadSettings } from '$lib/settings-store';
 	import { Search, CornerDownLeft, ChevronLeft, TriangleAlert } from '@lucide/svelte';
 
 	// Global Cmd+K palette. Rendered once in the layout; `open` is toggled by the
@@ -38,6 +39,13 @@
 	let modelEl = $state<HTMLInputElement>();
 	let modelListEl = $state<HTMLUListElement>();
 	let confirmBtnEl = $state<HTMLButtonElement>();
+
+	// Locally-configured model profiles (~/.deck settings), so the palette's model
+	// step offers the same options as the modal and header switcher.
+	let paletteSettings = $state<DeckSettings>({});
+	$effect(() => {
+		loadSettings().then((s) => (paletteSettings = s));
+	});
 
 	let query = $state('');
 	let selected = $state(0);
@@ -366,11 +374,11 @@
 						</div>
 					{:else if currentSession?.kind === 'claude'}
 						<ul bind:this={modelListEl} class="menu menu-sm w-full p-0">
-							{#each ['', ...CLAUDE_MODELS] as m (m)}
+							{#each [{ value: '', label: modelLabel('') }, ...claudeModelOptions(paletteSettings)] as m (m.value)}
 								<li>
-									<button onclick={() => pickModel(m)} disabled={busy}>
-										<span class="flex-1">{modelLabel(m)}</span>
-										{#if (currentSession?.model ?? '') === m}
+									<button onclick={() => pickModel(m.value)} disabled={busy}>
+										<span class="flex-1">{m.label}</span>
+										{#if (currentSession?.model ?? '') === m.value}
 											<span class="text-xs opacity-50">current</span>
 										{/if}
 									</button>

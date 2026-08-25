@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isExpensiveModel, shouldReseedModel } from './models';
+import { CLAUDE_MODELS, claudeModelOptions, isExpensiveModel, shouldReseedModel } from './models';
 
 describe('isExpensiveModel', () => {
 	it('flags the seeded expensive models by name', () => {
@@ -80,5 +80,25 @@ describe('shouldReseedModel', () => {
 				{ kind: 'claude', projectPath: undefined }
 			)
 		).toBe(false);
+	});
+});
+
+describe('claudeModelOptions', () => {
+	it('offers the built-in shortnames when no profiles are configured', () => {
+		expect(claudeModelOptions({}).map((o) => o.value)).toEqual([...CLAUDE_MODELS]);
+	});
+
+	it('appends locally configured profiles, labelled', () => {
+		const opts = claudeModelOptions({
+			modelProfiles: [{ id: 'local', label: 'Local (strix)', env: { A: '1' } }]
+		});
+		expect(opts.at(-1)).toEqual({ value: 'local', label: 'Local (strix)' });
+		// The built-ins are still first so the default pick is unchanged.
+		expect(opts[0].value).toBe(CLAUDE_MODELS[0]);
+	});
+
+	it('falls back to the id when a profile has no label', () => {
+		const opts = claudeModelOptions({ modelProfiles: [{ id: 'bare', env: {} }] });
+		expect(opts.at(-1)).toEqual({ value: 'bare', label: 'bare' });
 	});
 });

@@ -12,7 +12,7 @@
 	} from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
 	import {
-		CLAUDE_MODELS,
+		claudeModelOptions,
 		isExpensiveModel,
 		resolveModelChoice,
 		shouldReseedModel
@@ -956,8 +956,8 @@
 									<legend class="fieldset-legend">Model</legend>
 									{#if kind === 'claude'}
 										<select class="select w-full" bind:value={model} onchange={() => (modelDirty = true)}>
-											{#each CLAUDE_MODELS as m (m)}
-												<option value={m}>{m}</option>
+											{#each claudeModelOptions(settings) as m (m.value)}
+												<option value={m.value}>{m.label}</option>
 											{/each}
 										</select>
 										<select
