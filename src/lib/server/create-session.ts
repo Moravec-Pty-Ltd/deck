@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import fs from 'node:fs';
-import { isAgentKind, type AgentKind, type DeckEffort, type SessionIssue, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
+import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type SessionIssue, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
 import { createSession } from './sessions';
 import { createWorktree, fetchPullRef, isGitRepo } from './git';
 import { isFlagSafe } from './agents/args';
@@ -18,7 +18,7 @@ import { buildIssuePrompt, type IssueForFetch, type IssuePromptContext } from '.
 // route so the agent API (POST /api/agent/sessions) can share it. Validation
 // failures throw SvelteKit error()s, which both routes surface as-is.
 
-const KINDS: SessionKind[] = ['claude', 'pi', 'codex', 'opencode', 'shell'];
+const KINDS: SessionKind[] = [...AGENT_KINDS, 'shell'];
 const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
 
 type WorktreeReq = { branch?: string; newBranch?: boolean; base?: string; fromPr?: unknown };
@@ -297,10 +297,34 @@ async function maybeDispatch(
 	await agentSend(session, expandPlaceholders(promptText, ctx));
 }
 
+// Record this create's model/effort as the project's (and globally, the
+// last-used) pick, so the next manual create defaults to it.
+function rememberPicks(
+	startCwd: string,
+	kind: SessionKind,
+	model: unknown,
+	provider: unknown,
+	effort: DeckEffort | undefined
+): void {
+	if (isAgentKind(kind)) rememberPickedModel(startCwd, kind, model, provider);
+	rememberPickedEffort(startCwd, kind, effort);
+}
+
+// Set by automation, never by the HTTP routes. An automatic session reads the
+// remembered model/effort as its default (issue #223), so writing it back would
+// make the manual picker's next default whatever automation last ran: a review
+// lane pointed at a cheap local model would quietly capture the picker. Covers
+// the model/effort pick only; the base branch is still remembered, since
+// workBody echoes the project's own `lastBase` rather than choosing one.
+export interface CreateOptions {
+	remember?: boolean;
+}
+
 // The whole POST /api/sessions pipeline for one untyped JSON body: validate,
 // resolve the worktree, create the session, and fire the first turn.
 export async function createSessionFromRequest(
-	body: Record<string, unknown>
+	body: Record<string, unknown>,
+	{ remember = true }: CreateOptions = {}
 ): Promise<Awaited<ReturnType<typeof createSession>>> {
 	const { kind, title, model, provider, effort, permissionMode, command, prompt } = body as {
 		kind: SessionKind;
@@ -334,8 +358,7 @@ export async function createSessionFromRequest(
 		pr
 	});
 
-	if (isAgentKind(kind)) rememberPickedModel(startCwd, kind, model, provider);
-	rememberPickedEffort(startCwd, kind, effortLevel);
+	if (remember) rememberPicks(startCwd, kind, model, provider, effortLevel);
 
 	// Fire-and-forget, but not silent: a failed dispatch lands on the transcript
 	// so the fresh session says why nothing is happening.

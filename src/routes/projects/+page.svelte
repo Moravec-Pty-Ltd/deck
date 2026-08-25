@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Project } from '$lib/types';
+	import type { DeckSettings, Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
 	import { groupProjects, UNGROUPED } from '$lib/groups';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
@@ -7,11 +7,19 @@
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
 	import AgentSkills from '$lib/components/AgentSkills.svelte';
+	import AutomationAgentForm from '$lib/components/AutomationAgentForm.svelte';
+	import { fromRow, toRow, type AgentRow } from '$lib/automation-form-core';
+	import { loadSettings } from '$lib/settings-store';
 	import { ArrowLeft, Plus, Trash2, Check, ChevronRight, ChevronDown } from '@lucide/svelte';
 
-	// automation is always materialised (both toggles present) so the checkboxes
-	// bind cleanly; the API stores both-off as absent.
-	type ProjectRow = Project & { automation: { work: boolean; review: boolean } };
+	// automation is always materialised (both toggles and both agent picks present)
+	// so the inputs bind cleanly; the API stores the all-default shape as absent.
+	type ProjectRow = Project & {
+		automation: { work: boolean; review: boolean; workAgent: AgentRow; reviewAgent: AgentRow };
+	};
+
+	// modelProfiles for the claude model select; empty until the fetch lands.
+	let settings = $state<DeckSettings>({});
 	let projects = $state<ProjectRow[]>([]);
 	let loaded = $state(false);
 	let savedPath = $state<string | null>(null);
@@ -61,7 +69,12 @@
 		if (res.ok) {
 			projects = ((await res.json()) as Project[]).map((p) => ({
 				...p,
-				automation: { work: !!p.automation?.work, review: !!p.automation?.review }
+				automation: {
+					work: !!p.automation?.work,
+					review: !!p.automation?.review,
+					workAgent: toRow(p.automation?.workAgent),
+					reviewAgent: toRow(p.automation?.reviewAgent)
+				}
 			}));
 		}
 		rebuildLayout();
@@ -70,6 +83,7 @@
 
 	$effect(() => {
 		load();
+		loadSettings().then((s) => (settings = s));
 	});
 
 	async function save(p: ProjectRow) {
@@ -84,7 +98,12 @@
 				template: p.template,
 				reviewPrompt: p.reviewPrompt ?? '',
 				lastBase: p.lastBase,
-				automation: p.automation
+				automation: {
+					work: p.automation.work,
+					review: p.automation.review,
+					workAgent: fromRow(p.automation.workAgent),
+					reviewAgent: fromRow(p.automation.reviewAgent)
+				}
 			})
 		});
 		if (!res.ok) {
@@ -201,16 +220,22 @@
 										placeholder="default base branch (remembered automatically)"
 										bind:value={p.lastBase}
 									/>
-									<div class="mt-2 flex flex-wrap items-center gap-4">
+									<div class="mt-2">
 										<span class="text-xs font-medium opacity-70">Automation</span>
-										<label class="flex cursor-pointer items-center gap-2 text-sm">
+										<label class="mt-1 flex cursor-pointer items-center gap-2 text-sm">
 											<input type="checkbox" class="toggle toggle-sm" bind:checked={p.automation.work} />
 											<span>Auto-start work on assigned issues</span>
 										</label>
-										<label class="flex cursor-pointer items-center gap-2 text-sm">
+										{#if p.automation.work}
+											<AutomationAgentForm bind:agent={p.automation.workAgent} {settings} lane="work" />
+										{/if}
+										<label class="mt-2 flex cursor-pointer items-center gap-2 text-sm">
 											<input type="checkbox" class="toggle toggle-sm" bind:checked={p.automation.review} />
 											<span>Auto-start review on requested PRs</span>
 										</label>
+										{#if p.automation.review}
+											<AutomationAgentForm bind:agent={p.automation.reviewAgent} {settings} lane="review" />
+										{/if}
 									</div>
 									<div class="mt-1 flex items-center gap-2">
 										<span class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}; review adds {REVIEW_PLACEHOLDERS}</span>

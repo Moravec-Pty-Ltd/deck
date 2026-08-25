@@ -6,6 +6,7 @@ import type { DevConfig, Project } from '$lib/types';
 import { listProjects, addProject, removeProject } from '$lib/server/store';
 import { expandTilde } from '$lib/server/fsutil';
 import { parseDevConfig } from '$lib/server/devservers-core';
+import { parseAutomation } from '$lib/server/automation-core';
 
 // Validate the dev-server config when present; carry the existing one across an
 // edit that doesn't touch it (the form sends the whole object when it does). A
@@ -28,32 +29,15 @@ function carryStr(v: unknown, existing: string | undefined, label: string): stri
 	return v.trim() || undefined;
 }
 
-// One automation toggle: a boolean (absent reads as off); anything else is a 400.
-function autoFlag(o: Record<string, unknown>, k: 'work' | 'review'): boolean {
-	if (o[k] !== undefined && typeof o[k] !== 'boolean') error(400, `automation.${k} must be a boolean`);
-	return !!o[k];
-}
-
-// A validated automation object in stored form: both-off collapses to absent so
-// projects.json stays tidy at the default.
-function toAutomation(o: Record<string, unknown>): Project['automation'] {
-	const work = autoFlag(o, 'work');
-	const review = autoFlag(o, 'review');
-	return work || review ? { work, review } : undefined;
-}
-
-// A JSON object (not null, not an array). An array would pass a bare typeof check
-// and then normalise to both-off, silently wiping the toggles.
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
-// The two automation toggles (issue #171). Carry the existing value across a save
-// that omits the field; a bad shape is a 400, not a silent wipe.
+// The per-project automation config (issues #171, #223). Carry the existing value
+// across a save that omits the field; a bad shape is a 400, not a silent wipe.
 function resolveAutomation(v: unknown, existing: Project['automation']): Project['automation'] {
 	if (v === undefined) return existing;
-	if (!isPlainObject(v)) error(400, 'automation must be an object');
-	return toAutomation(v);
+	try {
+		return parseAutomation(v, existing);
+	} catch (e) {
+		error(400, e instanceof Error ? e.message : 'invalid automation config');
+	}
 }
 
 export const GET: RequestHandler = async () => {
@@ -88,6 +72,11 @@ function buildProject(body: Record<string, unknown>, dir: string): Project {
 		template: carryStr(body.template, existing.template, 'template'),
 		reviewPrompt: carryStr(body.reviewPrompt, existing.reviewPrompt, 'reviewPrompt'),
 		lastBase: carryStr(body.lastBase, existing.lastBase, 'lastBase'),
+		// Remembered picks are written by session creates, never by this form, and
+		// addProject replaces the record wholesale, so carry them or saving the
+		// project from the settings page wipes the fallback automation reads.
+		lastModels: existing.lastModels,
+		lastEffort: existing.lastEffort,
 		sources: existing.sources,
 		dev: resolveDev(body, existing.dev),
 		automation: resolveAutomation(body.automation, existing.automation)

@@ -14,10 +14,12 @@ import { notify, type NotifyPayload } from './push';
 import { runIdempotent } from './idempotency';
 import { loadProcessed, persist } from './automation-ledger';
 import {
+	atReviewCap,
 	migrateReviewKeys,
 	prIdentity,
 	pruneSupersededReviewKeys,
 	reviewBody,
+	reviewOrder,
 	reviewTriggerKey,
 	selectNewTriggers,
 	workBody,
@@ -41,7 +43,9 @@ async function spawn(
 	persist(processed);
 	let session: Awaited<ReturnType<typeof createSessionFromRequest>>;
 	try {
-		const { result } = runIdempotent(key, () => createSessionFromRequest(body()));
+		const { result } = runIdempotent(key, () =>
+			createSessionFromRequest(body(), { remember: false })
+		);
 		session = await result;
 	} catch (e) {
 		delete processed[key];
@@ -79,27 +83,72 @@ function sessionPrIdentities(): Set<string> {
 	return out;
 }
 
-async function runReview(project: Project, processed: ProcessedKeys): Promise<void> {
-	const { prs } = await getProjectPrs(project).catch(() => ({ prs: [] as PullRequest[] }));
+// One project's review candidates: PRs no session has already captured, minus the
+// trigger keys that already fired. Unordered here; the queue is ordered once it's
+// merged across projects.
+function reviewCandidates(prs: PullRequest[], processed: ProcessedKeys): NewTrigger<PullRequest>[] {
 	if (migrateReviewKeys(prs, processed)) persist(processed);
 	const open = sessionPrIdentities();
-	const fresh = prs.filter((pr) => !open.has(prIdentity(pr)));
-	for (const { key, candidate } of selectNewTriggers(fresh, reviewTriggerKey, processed)) {
-		if (pruneSupersededReviewKeys(processed, candidate)) persist(processed);
-		await spawn(processed, key, () => reviewBody(project, candidate), (id) => ({
-			title: 'Automation started a review session',
-			body: `${candidate.repo}#${candidate.number} · ${candidate.title}`,
-			tag: id,
-			url: `/s/${id}`
-		}));
+	return selectNewTriggers(prs.filter((pr) => !open.has(prIdentity(pr))), reviewTriggerKey, processed);
+}
+
+async function spawnReview(
+	project: Project,
+	processed: ProcessedKeys,
+	{ key, candidate }: NewTrigger<PullRequest>
+): Promise<void> {
+	if (pruneSupersededReviewKeys(processed, candidate)) persist(processed);
+	await spawn(processed, key, () => reviewBody(project, candidate), (id) => ({
+		title: 'Automation started a review session',
+		body: `${candidate.repo}#${candidate.number} · ${candidate.title}`,
+		tag: id,
+		url: `/s/${id}`
+	}));
+}
+
+// One project's candidate paired with the project it came from, so the merged
+// queue can still build the right create body.
+interface QueuedReview {
+	project: Project;
+	trigger: NewTrigger<PullRequest>;
+}
+
+// Every review-enabled project's candidates, in one queue.
+async function reviewQueue(projects: Project[], processed: ProcessedKeys): Promise<QueuedReview[]> {
+	const queue: QueuedReview[] = [];
+	for (const project of projects) {
+		const { prs } = await getProjectPrs(project).catch(() => ({ prs: [] as PullRequest[] }));
+		for (const trigger of reviewCandidates(prs, processed)) queue.push({ project, trigger });
+	}
+	return queue;
+}
+
+// Drain the queue under the cap. Both the cap and the order are global: ordering
+// inside a project would let whichever project sorts first take the single slot
+// every tick while an older PR elsewhere waits forever, which is the starvation
+// the ordering exists to prevent.
+async function runReviews(projects: Project[], processed: ProcessedKeys): Promise<void> {
+	// Cheap pre-check: at the cap the gh fan-out below buys nothing, and under a
+	// cap of one that's the common case while a review is in flight.
+	if (atReviewCap(listStoredSessions())) return;
+	const queue = await reviewQueue(projects, processed);
+	for (const { project, trigger } of reviewOrder(queue, (q) => q.trigger.candidate.updatedAt)) {
+		// Recounted per candidate, and before the key is claimed: spawn persists
+		// `processed[key]` up front, so skipping any later would mark the PR
+		// processed and never review it. Leaving it unclaimed means the next tick
+		// retries.
+		if (atReviewCap(listStoredSessions())) return;
+		await spawnReview(project, processed, trigger);
 	}
 }
 
-async function runProject(project: Project, processed: ProcessedKeys): Promise<void> {
-	const automation = project.automation;
-	if (!automation) return;
-	if (automation.work) await runWork(project, processed);
-	if (automation.review) await runReview(project, processed);
+async function runWorks(projects: Project[], processed: ProcessedKeys): Promise<void> {
+	for (const project of projects) await runWork(project, processed);
+}
+
+// The projects that opted into one automation lane.
+function enabled(projects: Project[], lane: 'work' | 'review'): Project[] {
+	return projects.filter((p) => p.automation?.[lane]);
 }
 
 // Re-entrancy guard mirroring monitor.ts / syncCapturedPrs: a slow gh fan-out
@@ -114,9 +163,9 @@ export async function pollAutomation(): Promise<void> {
 	polling = true;
 	try {
 		const processed = loadProcessed();
-		for (const project of listProjects()) {
-			await runProject(project, processed);
-		}
+		const projects = listProjects();
+		await runWorks(enabled(projects, 'work'), processed);
+		await runReviews(enabled(projects, 'review'), processed);
 	} finally {
 		polling = false;
 	}
