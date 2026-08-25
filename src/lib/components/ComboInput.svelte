@@ -10,11 +10,15 @@
 		value = $bindable(''),
 		options,
 		placeholder = '',
+		ariaLabel,
+		compact = false,
 		oninput
 	}: {
 		value?: string;
 		options: string[];
 		placeholder?: string;
+		ariaLabel: string;
+		compact?: boolean;
 		oninput?: () => void;
 	} = $props();
 
@@ -25,6 +29,13 @@
 	// collision, and duplicate rows are pointless anyway.
 	const items = $derived([...new Set(options)]);
 
+	// Typing can narrow the list to nothing (a provider with no models), which
+	// unmounts the dropdown; drop `open` with it so it doesn't spring back open
+	// when the list refills.
+	$effect(() => {
+		if (!items.length) open = false;
+	});
+
 	function pick(v: string) {
 		value = v;
 		open = false;
@@ -32,14 +43,23 @@
 	}
 </script>
 
-{#if items.length}
-	<div class="join w-full">
-		<input class="input join-item w-full" {placeholder} bind:value oninput={() => oninput?.()} />
+<!-- One input either way: a listing that lands while the field is being typed in
+must not swap the element out from under the caret (or the iOS keyboard). Only
+the chevron half appears once there is something to show. -->
+<div class="join w-full">
+	<input
+		class="input join-item w-full{compact ? ' input-xs' : ''}"
+		{placeholder}
+		aria-label={ariaLabel}
+		bind:value
+		oninput={() => oninput?.()}
+	/>
+	{#if items.length}
 		<Popover
 			bind:open
 			drawer={false}
-			summaryClass="btn btn-square join-item"
-			summaryLabel="Show detected options"
+			summaryClass="btn btn-square join-item{compact ? ' btn-xs' : ''}"
+			summaryLabel="Show detected {ariaLabel}"
 			panelClass="w-64 p-1"
 		>
 			{#snippet trigger()}
@@ -56,7 +76,5 @@
 				{/each}
 			</ul>
 		</Popover>
-	</div>
-{:else}
-	<input class="input w-full" {placeholder} bind:value oninput={() => oninput?.()} />
-{/if}
+	{/if}
+</div>
