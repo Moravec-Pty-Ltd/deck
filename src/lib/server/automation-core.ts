@@ -2,8 +2,21 @@
 // automation (issue #171), kept node-free so they unit-test without fs/gh. The
 // orchestration (feed fetch, session create, notify, durable ledger) lives in the
 // sibling automation.ts.
+import { z } from 'zod';
 import { shortIssueId } from '$lib/issues';
-import type { Issue, Project, PullRequest } from '$lib/types';
+import { EFFORT_LEVELS } from '$lib/effort';
+import { isReviewSession } from '$lib/pr';
+import { AGENT_KINDS } from '$lib/types';
+import type {
+	AgentKind,
+	AutomationAgent,
+	DeckSession,
+	Issue,
+	SessionStatus,
+	ModelChoice,
+	Project,
+	PullRequest
+} from '$lib/types';
 
 // The durable ledger of trigger keys that have already spawned a session, keyed
 // to their first-fired timestamp. An item lingering in a feed across polls and
@@ -98,6 +111,40 @@ export function selectNewTriggers<T>(
 	return out;
 }
 
+// The agent half of an automatic session's create body (issue #223): the lane's
+// configured kind/model/provider/effort, falling back to the project's own
+// remembered pick for that kind (what a manual start in this project last used),
+// and finally to the CLI's own default (undefined). Deliberately not the global
+// `settings.lastModels` the manual picker also consults: reaching for that would
+// give an automatic session a `--model` on a project that has never picked one,
+// which is the "behaviour is unchanged when nothing is configured" case.
+//
+// The two per-kind contracts are honoured on the *fallback* only: a remembered
+// provider is pi's alone and a remembered effort is claude's alone, so neither
+// leaks onto a kind that would 400 on it. A configured effort is passed through
+// as-is even for another kind, so the create boundary rejects it out loud rather
+// than dropping it silently.
+export function agentFields(project: Project, agent: AutomationAgent = {}): Record<string, unknown> {
+	const kind = agent.kind ?? 'claude';
+	const remembered = rememberedChoice(project, kind, agent);
+	return {
+		kind,
+		model: agent.model || remembered.model,
+		provider: agent.provider || remembered.provider,
+		effort: agent.effort ?? (kind === 'claude' ? project.lastEffort : undefined)
+	};
+}
+
+// The project's remembered pick to fall back on. pi's provider and model are a
+// pair (a provider hosts particular models), so a lane naming either half must not
+// inherit the other from whatever provider was last used; the other kinds carry
+// the whole id in `model` and have no provider to leak.
+function rememberedChoice(project: Project, kind: AgentKind, agent: AutomationAgent): Partial<ModelChoice> {
+	const remembered: Partial<ModelChoice> = project.lastModels?.[kind] ?? {};
+	if (kind !== 'pi') return { model: remembered.model };
+	return agent.model || agent.provider ? {} : remembered;
+}
+
 // The /api/sessions body for a work session, mirroring the New Session modal's
 // per-issue split: titled with the issue's display id and run in a fresh worktree whose
 // branch is the issue id, off the project's remembered base (repo default when
@@ -108,7 +155,7 @@ export function selectNewTriggers<T>(
 // the claim rather than clobbering it.
 export function workBody(project: Project, issue: Issue): Record<string, unknown> {
 	return {
-		kind: 'claude',
+		...agentFields(project, project.automation?.workAgent),
 		cwd: project.path,
 		title: shortIssueId(issue.sourceType, issue.id),
 		prompt: project.template ?? '',
@@ -122,11 +169,119 @@ export function workBody(project: Project, issue: Issue): Record<string, unknown
 // for the Changes diff, seeded with the project's `reviewPrompt`.
 export function reviewBody(project: Project, pr: PullRequest): Record<string, unknown> {
 	return {
-		kind: 'claude',
+		...agentFields(project, project.automation?.reviewAgent),
 		cwd: project.path,
 		title: pr.title,
 		prompt: project.reviewPrompt ?? '',
 		pr: { repo: pr.repo, number: pr.number, url: pr.url, title: pr.title },
 		worktree: { fromPr: pr.number, base: pr.baseRefName }
 	};
+}
+
+// How many automatic review sessions may run at once, across every project (issue
+// #224). Several PRs landing together shouldn't put N agents on one machine, and
+// against a local model they'd contend for the same GPU. Fixed at one; if it ever
+// needs to be a dial it belongs next to the other per-project automation settings.
+const REVIEW_SESSION_CAP = 1;
+
+// A session in one of these can never free the slot: retirement needs the session
+// to reach idle with a verdict (server/pr.ts), and a session whose agent died on
+// its first turn never will. Counting it would wedge automatic review across every
+// project until you noticed and deleted the session by hand. ('error' is the one
+// that actually happens; 'dead' is only ever derived for a shell.)
+const STUCK: SessionStatus[] = ['dead', 'error'];
+
+// Whether the cap is reached, counted fresh from the session store so a restart, a
+// manual delete, or a retirement can't desync it. Counts *review* sessions only
+// (isReviewSession: a captured PR parked on that PR's `pr/<n>` ref), so a work
+// session that happens to have captured its own PR link doesn't hold the slot.
+// Manually-started reviews do count: the point is one review on the machine.
+export function atReviewCap(sessions: Pick<DeckSession, 'status' | 'worktree' | 'pr'>[]): boolean {
+	const held = sessions.filter((s) => !STUCK.includes(s.status) && isReviewSession(s));
+	return held.length >= REVIEW_SESSION_CAP;
+}
+
+// Review candidates in drain order: oldest-updated first. The feed arrives
+// newest-first, which under a cap of one and a steady stream of pushes would let
+// an older PR wait indefinitely. Takes the timestamp by getter because the queue
+// that gets ordered is merged across projects, not a bare feed.
+export function reviewOrder<T>(items: T[], updatedAt: (item: T) => number): T[] {
+	return [...items].sort((a, b) => updatedAt(a) - updatedAt(b));
+}
+
+// --- Per-project automation config (issue #223) ---
+
+function blankToUndefined(v: string | undefined): string | undefined {
+	return v || undefined;
+}
+
+// One lane's agent pick as the settings form sends it. Every field is optional,
+// and a blank string means unset rather than "the empty model".
+const agentSchema = z
+	.object({
+		kind: z.enum(AGENT_KINDS).optional(),
+		model: z.string().trim().optional().transform(blankToUndefined),
+		provider: z.string().trim().optional().transform(blankToUndefined),
+		effort: z.enum(EFFORT_LEVELS).optional()
+	})
+	// The same two per-kind contracts the create boundary enforces, checked here so
+	// a mismatch surfaces in the settings form instead of failing every later tick.
+	.refine((a) => !a.provider || (a.kind ?? 'claude') === 'pi', {
+		message: 'provider is only valid for pi sessions'
+	})
+	.refine((a) => !a.effort || (a.kind ?? 'claude') === 'claude', {
+		message: 'effort is only valid for claude sessions'
+	});
+
+const automationSchema = z.object({
+	work: z.boolean().optional(),
+	review: z.boolean().optional(),
+	workAgent: agentSchema.optional(),
+	reviewAgent: agentSchema.optional()
+});
+
+// A lane that says nothing collapses to absent, so projects.json stays tidy for a
+// project that only ever ticked the toggle.
+function toAgent(agent: AutomationAgent | undefined): AutomationAgent | undefined {
+	if (!agent) return undefined;
+	return Object.values(agent).some((v) => v !== undefined) ? agent : undefined;
+}
+
+// The first schema problem as one line, e.g. `reviewAgent: effort is only valid
+// for claude sessions`. zod's own `.message` is a JSON blob, which is no use in a
+// settings form.
+function problem(err: z.ZodError): string {
+	const issue = err.issues[0];
+	if (!issue) return 'invalid automation config';
+	return [['automation', ...issue.path].join('.'), issue.message].join(': ');
+}
+
+// A lane's pick, carrying the stored one when the body doesn't mention the field
+// at all. A stale client (an old tab, a cached PWA bundle) posts the pre-#223
+// shape, and that must not silently wipe a configured lane; a field that *is*
+// present and blank still clears.
+function resolveAgent(
+	raw: Record<string, unknown>,
+	key: 'workAgent' | 'reviewAgent',
+	parsed: AutomationAgent | undefined,
+	existing: AutomationAgent | undefined
+): AutomationAgent | undefined {
+	return key in raw ? toAgent(parsed) : existing;
+}
+
+// The per-project automation config from an untyped request body, merged over
+// what's stored. Throws with a one-line message on a bad shape; the all-default
+// shape collapses to absent. An agent pick is kept even when its lane is off, so
+// toggling the lane back on doesn't lose it.
+export function parseAutomation(raw: unknown, existing?: Project['automation']): Project['automation'] {
+	const parsed = automationSchema.safeParse(raw);
+	if (!parsed.success) throw new Error(problem(parsed.error));
+	const body = raw as Record<string, unknown>;
+	const automation = {
+		work: !!parsed.data.work,
+		review: !!parsed.data.review,
+		workAgent: resolveAgent(body, 'workAgent', parsed.data.workAgent, existing?.workAgent),
+		reviewAgent: resolveAgent(body, 'reviewAgent', parsed.data.reviewAgent, existing?.reviewAgent)
+	};
+	return Object.values(automation).some(Boolean) ? automation : undefined;
 }

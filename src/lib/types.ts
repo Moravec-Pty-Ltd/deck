@@ -3,6 +3,12 @@ export type SessionStatus = 'running' | 'idle' | 'error' | 'dead';
 
 // Agent kinds drive an LLM coding agent (chat view); 'shell' is a tmux terminal.
 export type AgentKind = Exclude<SessionKind, 'shell'>;
+export const AGENT_KINDS = ['claude', 'pi', 'codex', 'opencode'] as const satisfies readonly AgentKind[];
+// `satisfies` only proves every entry is an AgentKind. This proves the reverse:
+// adding a kind to SessionKind without listing it above stops type-checking, so it
+// can't silently go missing from the create validator, the automation config
+// schema, and the pickers that all read AGENT_KINDS.
+const _agentKindsExhaustive: (typeof AGENT_KINDS)[number] = null as unknown as AgentKind;
 export function isAgentKind(kind: SessionKind): kind is AgentKind {
 	return kind !== 'shell';
 }
@@ -165,6 +171,18 @@ export interface QuickMessage {
 	text: string;
 }
 
+// What one automation lane spawns with (issue #223), so automatic reviews can run
+// on a local model while automatic work runs on something else. Every field is
+// optional: an unset one falls back to the project's remembered pick for `kind`
+// (`lastModels`/`lastEffort`), then to the CLI's own default. `provider` is pi-only
+// and `effort` is claude-only, the same contract the manual create enforces.
+export interface AutomationAgent {
+	kind?: AgentKind;
+	model?: string;
+	provider?: string;
+	effort?: DeckEffort;
+}
+
 export interface Project {
 	name: string;
 	path: string;
@@ -194,8 +212,14 @@ export interface Project {
 	// auto-spawns a session for each new matching feed item — `work` for issues
 	// assigned to me in a todo-ish state, `review` for PRs awaiting my review. Both
 	// default off; a given issue/PR fires at most once ever (durable dedupe in
-	// ~/.deck/automation.json).
-	automation?: { work?: boolean; review?: boolean };
+	// ~/.deck/automation.json). `workAgent`/`reviewAgent` pick what each lane
+	// spawns with (issue #223); unset falls back to the project's remembered pick.
+	automation?: {
+		work?: boolean;
+		review?: boolean;
+		workAgent?: AutomationAgent;
+		reviewAgent?: AutomationAgent;
+	};
 }
 
 // A port a dev server listens on. `primary` marks which one the preview link
