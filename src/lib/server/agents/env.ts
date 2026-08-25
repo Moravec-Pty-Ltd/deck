@@ -10,12 +10,20 @@ import { authToken, baseUrl } from '../config';
 // in deck's checkout instead of the session's project. opencode does exactly
 // that; it's now told explicitly via `--dir`, but the other drivers pass no
 // such flag and inherit this env.
-export function agentEnv(id: string, cwd: string): NodeJS.ProcessEnv {
+// `extra` is merged last so a model profile can point the agent at another
+// backend (ANTHROPIC_BASE_URL and friends) for this session only, without
+// leaking that choice into deck's own process env.
+export function agentEnv(
+	id: string,
+	cwd: string,
+	extra?: Record<string, string>
+): NodeJS.ProcessEnv {
 	return {
 		...process.env,
 		PWD: path.resolve(cwd),
 		DECK_SESSION_ID: id,
 		DECK_BASE_URL: baseUrl,
-		DECK_TOKEN: authToken
+		DECK_TOKEN: authToken,
+		...extra
 	};
 }

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { SessionKind } from '$lib/types';
-	import { CLAUDE_MODELS, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
+	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
+	import { loadSettings } from '$lib/settings-store';
+	import type { DeckSettings } from '$lib/types';
 	import { haptic } from '$lib/haptics';
 	import { Cpu, Check, TriangleAlert } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
@@ -26,6 +28,12 @@
 	} = $props();
 
 	let open = $state(false);
+	// Model profiles live in ~/.deck settings, so the switcher offers the same
+	// locally-configured backends as the New Session modal (cached read-through).
+	let settings = $state<DeckSettings>({});
+	$effect(() => {
+		if (open) loadSettings().then((s) => (settings = s));
+	});
 	let busy = $state(false);
 	let err = $state('');
 	let text = $state('');
@@ -106,11 +114,11 @@
 		{/snippet}
 		{#if kind === 'claude'}
 			<ul class="menu menu-sm w-full p-0">
-				{#each ['', ...CLAUDE_MODELS] as m (m)}
+				{#each [{ value: '', label: modelLabel('') }, ...claudeModelOptions(settings)] as m (m.value)}
 					<li>
-						<button onclick={() => switchTo(m)} disabled={busy}>
-							{modelLabel(m)}
-							{#if (model ?? '') === m}<Check size={14} class="ml-auto" />{/if}
+						<button onclick={() => switchTo(m.value)} disabled={busy}>
+							{m.label}
+							{#if (model ?? '') === m.value}<Check size={14} class="ml-auto" />{/if}
 						</button>
 					</li>
 				{/each}

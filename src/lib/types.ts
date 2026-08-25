@@ -15,6 +15,28 @@ export interface ModelChoice {
 	model: string;
 }
 
+// A locally-configured model endpoint, offered in the model picker alongside the
+// built-in claude shortnames. The claude CLI only understands its own shortnames
+// for --model, so pointing a session at another backend means setting env
+// (ANTHROPIC_BASE_URL and friends) for that session's process.
+//
+// `id` doubles as the stored model value, so a profile flows through every path
+// a normal model does: session create, the mid-session switch API, remembered
+// `lastModels`, and the agent API — no parallel field to thread.
+//
+// Defined only in the user's ~/.deck/settings.json, never in this repo, so a
+// private inference host stays out of the public source (see readSettings).
+export interface ModelProfile {
+	id: string;
+	// Shown in the picker. Falls back to `id`.
+	label?: string;
+	// Passed to --model. Omitted means let the backend pick (no --model flag),
+	// which is what a single-model server like llama.cpp wants.
+	model?: string;
+	// Merged over the agent process env.
+	env: Record<string, string>;
+}
+
 // Reasoning-effort levels the claude CLI accepts via `--effort` (issue #178).
 // claude-only; the other kinds have no equivalent. Absent means the CLI default.
 export type DeckEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -360,6 +382,10 @@ export interface SkillStatus {
 // anywhere. This is where a private-infra default (e.g. a local LLM id) lives,
 // off the public repo.
 export interface DeckSettings {
+	// Locally-configured model endpoints offered in the claude model picker.
+	// Lives here (local settings) rather than in source so private infra stays
+	// out of the public repo.
+	modelProfiles?: ModelProfile[];
 	lastModels?: Partial<Record<AgentKind, ModelChoice>>;
 	// Global fallback for the new-session modal's effort default (issue #178): the
 	// effort last picked for a claude session anywhere, used when the project has none.
