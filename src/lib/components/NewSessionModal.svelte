@@ -338,7 +338,8 @@
 	const detectedModels = $derived<ModelChoice[]>(isAgentKind(kind) ? agentModels(kind) : []);
 	const piProviders = $derived(piProviderOptions(detectedModels));
 	const piModels = $derived(piModelOptions(detectedModels, provider));
-	const opencodeModels = $derived(detectedModels.map((m) => m.model));
+	// opencode and codex both carry the whole id in `model` (no provider column).
+	const modelIds = $derived(detectedModels.map((m) => m.model));
 	// The picked model as the expensive-model warning/confirm should name it: pi
 	// keeps provider and model separate (an expensive match can come from either),
 	// so show `provider/model`; the other kinds carry the whole id in `model`.
@@ -978,8 +979,16 @@
 									{:else if kind === 'opencode'}
 										<ComboInput
 											bind:value={model}
-											options={opencodeModels}
+											options={modelIds}
 											placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
+											ariaLabel="Model"
+											oninput={() => (modelDirty = true)}
+										/>
+									{:else if kind === 'codex'}
+										<ComboInput
+											bind:value={model}
+											options={modelIds}
+											placeholder="model (optional, e.g. gpt-6-astra)"
 											ariaLabel="Model"
 											oninput={() => (modelDirty = true)}
 										/>

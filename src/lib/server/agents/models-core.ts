@@ -19,6 +19,22 @@ export function parsePiModels(stdout: string): ModelChoice[] {
 	return out;
 }
 
+// codex has no non-interactive list command (`codex models` needs a TTY), but
+// the CLI maintains ~/.codex/models_cache.json: { models: [{ slug, visibility,
+// ... }] }, refreshed on every run. Offer the slugs codex itself would list
+// (visibility "list"); "hide" entries are internal (auto-review etc).
+export function parseCodexModels(raw: string): ModelChoice[] {
+	try {
+		const models = (JSON.parse(raw) as { models?: { slug?: string; visibility?: string }[] }).models;
+		if (!Array.isArray(models)) return [];
+		return models
+			.filter((m) => m.visibility === 'list' && typeof m.slug === 'string' && m.slug)
+			.map((m) => ({ model: m.slug! }));
+	} catch {
+		return [];
+	}
+}
+
 // `opencode models` prints one `provider/model` id per line (no header). The id
 // is passed whole to `--model`, so keep it combined; drop any decorative line
 // (banner/blank) by requiring a single whitespace-free token.

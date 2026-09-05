@@ -4,11 +4,14 @@
 // degrades to free-text instead of blocking session creation. The parsing lives
 // in models-core.ts.
 import { execFile } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import type { AgentKind, ModelChoice } from '$lib/types';
 import { readSettings } from '../store';
 import { AGENT_BINARIES } from './binaries';
-import { parseOpencodeModels, parsePiModels } from './models-core';
+import { parseCodexModels, parseOpencodeModels, parsePiModels } from './models-core';
 
 const exec = promisify(execFile);
 
@@ -28,6 +31,16 @@ export async function listAgentModels(kind: AgentKind): Promise<ModelChoice[]> {
 	// kinds reach another backend through their own config instead.
 	if (kind === 'claude') {
 		return (readSettings().modelProfiles ?? []).map((p) => ({ model: p.id }));
+	}
+	// codex lists models only interactively, but keeps its fetched catalogue in
+	// a cache file the CLI refreshes on every run; read that instead of shelling.
+	if (kind === 'codex') {
+		try {
+			const raw = await fs.readFile(path.join(os.homedir(), '.codex', 'models_cache.json'), 'utf8');
+			return parseCodexModels(raw);
+		} catch {
+			return [];
+		}
 	}
 	const lister = LISTERS[kind];
 	if (!lister) return [];

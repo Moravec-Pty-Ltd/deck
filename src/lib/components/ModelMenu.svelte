@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import type { SessionKind } from '$lib/types';
+	import { isAgentKind, type SessionKind } from '$lib/types';
 	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
+	import { agentModels, loadAgentModels } from '$lib/agent-models-store.svelte';
 	import { loadSettings } from '$lib/settings-store';
 	import type { DeckSettings } from '$lib/types';
 	import { haptic } from '$lib/haptics';
@@ -9,10 +10,11 @@
 	import Popover from './Popover.svelte';
 
 	// Header chip showing the session's current model, opening a switcher (issue
-	// #88). claude picks from the same shortnames as the New Session modal;
-	// pi/codex take a free-text id. Disabled while a turn runs (the model applies
-	// on the next turn, so switching mid-turn would only mislead); the server 409s
-	// on that race anyway.
+	// #88). claude picks from the same shortnames as the New Session modal; the
+	// other kinds list whatever their CLI enumerates (GET /api/agents/:kind/models)
+	// above a free-text id for anything unlisted. Disabled while a turn runs (the
+	// model applies on the next turn, so switching mid-turn would only mislead);
+	// the server 409s on that race anyway.
 	let {
 		id,
 		kind,
@@ -37,6 +39,21 @@
 	let busy = $state(false);
 	let err = $state('');
 	let text = $state('');
+	// Detected models for the listable kinds, via the shared read-through cache
+	// (agent-models-store); empty leaves the menu free-text only. Only `value` is
+	// applied — a session's provider (pi) stays whatever it was created with, so
+	// the label carries the provider purely as context.
+	$effect(() => {
+		if (open && kind !== 'claude' && isAgentKind(kind)) loadAgentModels(kind);
+	});
+	const detected = $derived(
+		kind === 'claude' || !isAgentKind(kind)
+			? []
+			: agentModels(kind).map((m) => ({
+					value: m.model,
+					label: [m.provider, m.model].filter(Boolean).join('/')
+				}))
+	);
 	// The model awaiting an expensive-model confirm, or null when none is pending.
 	let pendingModel = $state<string | null>(null);
 
@@ -125,6 +142,18 @@
 			</ul>
 		{:else}
 			<div class="flex flex-col gap-2">
+				{#if detected.length}
+					<ul class="menu menu-sm max-h-64 w-full flex-nowrap overflow-y-auto p-0">
+						{#each detected as m (m.label)}
+							<li>
+								<button onclick={() => switchTo(m.value)} disabled={busy}>
+									{m.label}
+									{#if (model ?? '') === m.value}<Check size={14} class="ml-auto" />{/if}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 				<input
 					class="input input-sm w-full"
 					placeholder="model id (empty for default)"
