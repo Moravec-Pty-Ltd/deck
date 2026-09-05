@@ -140,10 +140,10 @@ describe('isListableKind', () => {
 	it('accepts the kinds whose CLI enumerates models', () => {
 		expect(isListableKind('pi')).toBe(true);
 		expect(isListableKind('opencode')).toBe(true);
+		expect(isListableKind('codex')).toBe(true);
 	});
 
 	it('rejects the kinds that do not, and junk', () => {
-		expect(isListableKind('codex')).toBe(false);
 		expect(isListableKind('claude')).toBe(false);
 		expect(isListableKind('../etc')).toBe(false);
 	});

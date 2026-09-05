@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseOpencodeModels, parsePiModels } from './models-core';
+import { parseCodexModels, parseOpencodeModels, parsePiModels } from './models-core';
 
 describe('parsePiModels', () => {
 	it('parses the provider + model columns, skipping the header', () => {
@@ -39,5 +39,27 @@ acme/model-pro
 
 	it('returns [] for empty output', () => {
 		expect(parseOpencodeModels('')).toEqual([]);
+	});
+});
+
+describe('parseCodexModels', () => {
+	it('lists visible slugs and drops hidden ones', () => {
+		const raw = JSON.stringify({
+			fetched_at: '2026-09-05T00:00:00Z',
+			models: [
+				{ slug: 'gpt-6-astra', visibility: 'list' },
+				{ slug: 'gpt-reserve', visibility: 'hide' },
+				{ slug: 'gpt-5.5', visibility: 'list' },
+				{ visibility: 'list' },
+				{ slug: '', visibility: 'list' }
+			]
+		});
+		expect(parseCodexModels(raw)).toEqual([{ model: 'gpt-6-astra' }, { model: 'gpt-5.5' }]);
+	});
+
+	it('returns [] for malformed or empty cache', () => {
+		expect(parseCodexModels('not json')).toEqual([]);
+		expect(parseCodexModels('{}')).toEqual([]);
+		expect(parseCodexModels('{"models": "nope"}')).toEqual([]);
 	});
 });

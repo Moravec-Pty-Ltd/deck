@@ -29,7 +29,7 @@ export function claudeModelOptions(
 // The kinds whose CLI can enumerate models. Shared by the listing endpoint and
 // the client-side cache so a third one can't gain a lister while its picker
 // stays empty.
-const LISTABLE_KINDS = ['pi', 'opencode'] as const satisfies readonly AgentKind[];
+const LISTABLE_KINDS = ['pi', 'opencode', 'codex'] as const satisfies readonly AgentKind[];
 
 export function isListableKind(kind: string): kind is (typeof LISTABLE_KINDS)[number] {
 	return (LISTABLE_KINDS as readonly string[]).includes(kind);
@@ -93,7 +93,7 @@ export function modelLabel(model: string | undefined): string {
 // Premium models worth a confirm before you select one, so an accidental pick
 // doesn't run costly work on a top-tier model (issue #134). Extend by editing
 // the list.
-const EXPENSIVE_MODELS = ['fable', 'sol'] as const;
+const EXPENSIVE_MODELS = ['fable', 'sol', 'astra'] as const;
 
 // Whether choosing this model should prompt a cost confirm. Case-insensitive
 // substring match against the model id (and provider, for pi's separate
