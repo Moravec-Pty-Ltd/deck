@@ -21,7 +21,11 @@ export const codexDriver: AgentDriver = {
 	kind: 'codex',
 
 	buildTurn(session, message, resumeId) {
-		const flags = ['--json', '--sandbox', 'workspace-write', '--skip-git-repo-check'];
+		// danger-full-access, not workspace-write: codex's own sandbox blocks all
+		// network (gh, package installs) and non-workspace writes, which breaks
+		// normal dev work. deck's claude sessions already default to bypassed
+		// permissions, so codex gets the same trust level.
+		const flags = ['--json', '--sandbox', 'danger-full-access', '--skip-git-repo-check'];
 		if (isFlagSafe(session.model)) flags.push('-m', session.model!);
 		// exec's flags must precede the `resume` subcommand: `codex exec resume`
 		// rejects them after it (exit 2). `--` stops codex parsing the prompt as

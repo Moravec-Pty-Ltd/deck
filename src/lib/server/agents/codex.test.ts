@@ -36,7 +36,7 @@ describe('codexDriver.buildTurn', () => {
 			'exec',
 			'--json',
 			'--sandbox',
-			'workspace-write',
+			'danger-full-access',
 			'--skip-git-repo-check',
 			'--',
 			'-hello'
@@ -51,7 +51,7 @@ describe('codexDriver.buildTurn', () => {
 			'exec',
 			'--json',
 			'--sandbox',
-			'workspace-write',
+			'danger-full-access',
 			'--skip-git-repo-check',
 			'resume',
 			'thread_abc',
