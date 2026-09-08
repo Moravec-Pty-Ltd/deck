@@ -9,7 +9,7 @@
 	import { Cpu, Check, TriangleAlert } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
 
-	// Header chip showing the session's current model, opening a switcher (issue
+	// Composer control showing the session's current model, opening a switcher (issue
 	// #88). claude picks from the same shortnames as the New Session modal; the
 	// other kinds list whatever their CLI enumerates (GET /api/agents/:kind/models)
 	// above a free-text id for anything unlisted. Disabled while a turn runs (the
@@ -116,18 +116,19 @@
 {#if disabled}
 	<span class="badge badge-outline badge-sm header-chip shrink-0 gap-1 opacity-50" title="Model switches apply between turns">
 		<Cpu size={12} />
-		<span class="hidden sm:inline">{modelLabel(model)}</span>
+		<span class="max-w-32 truncate">{modelLabel(model)}</span>
 	</span>
 {:else}
 	<Popover
 		bind:open
+		direction="top"
 		summaryClass="badge badge-outline badge-sm header-chip gap-1"
 		summaryTitle="Model: {modelLabel(model)} (click to change)"
 		panelClass="p-2 sm:w-48"
 	>
 		{#snippet trigger()}
 			<Cpu size={12} />
-			<span class="hidden sm:inline">{modelLabel(model)}</span>
+			<span class="max-w-32 truncate">{modelLabel(model)}</span>
 		{/snippet}
 		{#if kind === 'claude'}
 			<ul class="menu menu-sm w-full p-0">

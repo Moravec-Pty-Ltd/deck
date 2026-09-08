@@ -1,6 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 // cross-spawn so pi/codex resolve when installed as Windows .cmd/.bat shims.
 import spawn from 'cross-spawn';
+import { handoffPrompt } from '../session-agent-core';
 import type { DeckSession } from '$lib/types';
 import { appendEvent, setStatus, bus } from '../claude';
 import { getStoredSession, updateSession } from '../store';
@@ -66,7 +67,7 @@ export async function runTurn(session: DeckSession, text: string) {
 	setStatus(session.id, 'running');
 
 	const started = Date.now();
-	const turn = driver.buildTurn(session, text, session.agentSessionId);
+	const turn = driver.buildTurn(session, handoffPrompt(session.pendingHandoff, text), session.agentSessionId);
 	const child = spawn(turn.cmd, turn.args, {
 		cwd: session.cwd,
 		env: agentEnv(session.id, session.cwd),
@@ -82,7 +83,7 @@ export async function runTurn(session: DeckSession, text: string) {
 			appendEvent(session.id, event);
 		},
 		emit: (event) => bus.emit(`event:${session.id}`, event),
-		setAgentSessionId: (agentId) => updateSession(session.id, { agentSessionId: agentId })
+		setAgentSessionId: (agentId) => updateSession(session.id, { agentSessionId: agentId, pendingHandoff: undefined })
 	};
 
 	// A CLI that hangs without exiting never reaches the exit handler below, so

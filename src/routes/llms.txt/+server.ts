@@ -190,6 +190,13 @@ from it and watch for this session's \`turn-finished\` to know the turn is done.
 
 Interrupt the in-flight turn (empty body). Returns \`{ "ok": true }\`.
 
+### POST /api/agent/sessions/{id}/agent
+Switch coding agents between turns. Body: { "kind": "claude" | "codex" | "pi" | "opencode" }.
+Keeps the deck session, working directory, and transcript. Starts a fresh native
+runtime and resets model/provider/effort settings. Recent conversation text is
+passed with the next message; older context, tool output, and images may be omitted.
+Returns 409 while a turn is running, or 400 if the agent is not installed.
+
 ### POST /api/agent/sessions/{id}/model
 
 \`{ "model"?: "..." }\` — switch the session's model. Absent or empty resets to

@@ -5,7 +5,7 @@
 	import { Gauge, Check } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
 
-	// Header chip showing a claude session's reasoning effort, opening a switcher
+	// Composer control showing a claude session's reasoning effort, opening a switcher
 	// (issue #178). Sits beside ModelMenu and mirrors it, minus the expensive-model
 	// gate (the effort levels carry no cost warning). Disabled while a turn runs
 	// (the effort applies on the next turn, so switching mid-turn would only
@@ -45,18 +45,19 @@
 {#if disabled}
 	<span class="badge badge-outline badge-sm header-chip shrink-0 gap-1 opacity-50" title="Effort switches apply between turns">
 		<Gauge size={12} />
-		<span class="hidden sm:inline">{effortLabel(effort)}</span>
+		<span class="max-w-32 truncate">{effortLabel(effort)}</span>
 	</span>
 {:else}
 	<Popover
 		bind:open
+		direction="top"
 		summaryClass="badge badge-outline badge-sm header-chip gap-1"
 		summaryTitle="Effort: {effortLabel(effort)} (click to change)"
 		panelClass="p-2 sm:w-48"
 	>
 		{#snippet trigger()}
 			<Gauge size={12} />
-			<span class="hidden sm:inline">{effortLabel(effort)}</span>
+			<span class="max-w-32 truncate">{effortLabel(effort)}</span>
 		{/snippet}
 		<ul class="menu menu-sm w-full p-0">
 			{#each ['', ...EFFORT_LEVELS] as e (e)}

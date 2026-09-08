@@ -1,3 +1,4 @@
+import { handoffPrompt } from './session-agent-core';
 import { type ChildProcess } from 'node:child_process';
 // cross-spawn so the `claude` CLI also resolves when installed as a Windows
 // .cmd/.bat shim, which node:child_process.spawn can't launch directly.
@@ -202,6 +203,7 @@ function startProcess(id: string): Proc {
 	procs.set(id, proc);
 
 	child.stdout!.on('data', (chunk: Buffer) => {
+		if (procs.get(id) !== proc) return;
 		proc.buf += chunk.toString();
 		let nl;
 		while ((nl = proc.buf.indexOf('\n')) >= 0) {
@@ -223,10 +225,9 @@ function startProcess(id: string): Proc {
 		// A stop-then-respawn (model switch, idle teardown) can register a new proc
 		// before the old child's exit fires; only clean up if we're still current,
 		// or we'd deregister the live proc and reject its pending asks.
-		if (procs.get(id) === proc) {
-			procs.delete(id);
-			rejectAsk(id, 'process exited');
-		}
+		if (procs.get(id) !== proc) return;
+		procs.delete(id);
+		rejectAsk(id, 'process exited');
 		if (!proc.running) return;
 		if (code === 0) setStatus(id, 'idle');
 		else reportCrash(id, proc, code);
@@ -355,18 +356,20 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 	});
 	proc.running = true;
 	setStatus(id, 'running');
+	const prompt = handoffPrompt(session.pendingHandoff, text);
 	const content: unknown = hasImages
 		? [
-				...(text ? [{ type: 'text', text }] : []),
+				...(prompt ? [{ type: 'text', text: prompt }] : []),
 				...images!.map((im) => ({
 					type: 'image',
 					source: { type: 'base64', media_type: im.media_type, data: im.data }
 				}))
 			]
-		: text;
+		: prompt;
 	proc.child.stdin!.write(
 		JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n'
 	);
+	if (session.pendingHandoff) updateSession(id, { pendingHandoff: undefined });
 }
 
 // Stop the current turn but keep the session alive (control_request interrupt).
@@ -386,5 +389,10 @@ export function interrupt(id: string) {
 
 // Hard-stop the process entirely (used on session deletion).
 export function stopProcess(id: string) {
-	procs.get(id)?.child.kill('SIGTERM');
+	const proc = procs.get(id);
+	if (!proc) return;
+	clearTimeout(proc.idleTimer);
+	procs.delete(id);
+	rejectAsk(id, 'process stopped');
+	proc.child.kill('SIGTERM');
 }
