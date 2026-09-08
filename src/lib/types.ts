@@ -64,6 +64,9 @@ export interface DeckSession {
 	// resume handle for pi/codex/opencode (pi session-file path, codex thread id,
 	// opencode session id)
 	agentSessionId?: string;
+	// Fresh native runtime after an agent handoff; keeps pi history isolated.
+	agentRuntimeId?: string;
+	pendingHandoff?: string;
 	model?: string;
 	provider?: string;
 	// Reasoning effort for claude sessions (issue #178). Absent runs the CLI's own

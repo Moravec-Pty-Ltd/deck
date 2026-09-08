@@ -12,6 +12,7 @@
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import PrMenu from '$lib/components/PrMenu.svelte';
 	import IssueMenu from '$lib/components/IssueMenu.svelte';
+	import AgentMenu from '$lib/components/AgentMenu.svelte';
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
 	import EffortMenu from '$lib/components/EffortMenu.svelte';
 	import ZedButton from '$lib/components/ZedButton.svelte';
@@ -60,6 +61,7 @@
 	}
 	let gitRepo = $state(false);
 	let changedCount = $state<number | null>(null);
+	const liveKind = $derived(sessions.find((s) => s.id === session.id)?.kind ?? session.kind);
 	const liveStatus = $derived(
 		sessions.find((s) => s.id === session.id)?.status ?? session.status
 	);
@@ -80,7 +82,7 @@
 	// the single `issue`, so read them together.
 	const issueChips = $derived(session.issues ?? (session.issue ? [session.issue] : []));
 
-	// Current model for the header switcher. Like livePr, trust the polled session
+	// Current model for the composer switcher. Like livePr, trust the polled session
 	// once loaded (a switch persists server-side); the model can legitimately be
 	// undefined, so don't ??-coalesce back to the page-load value.
 	const liveModel = $derived.by(() => {
@@ -88,7 +90,7 @@
 		return live ? live.model : session.model;
 	});
 
-	// Current reasoning effort for the header switcher (issue #178), same trust
+	// Current reasoning effort for the composer switcher (issue #178), same trust
 	// order as liveModel. claude-only; undefined means the CLI default.
 	const liveEffort = $derived.by(() => {
 		const live = sessions.find((s) => s.id === session.id);
@@ -354,8 +356,8 @@
 			>
 				<Menu size={16} />
 			</button>
-			{#if session.kind !== 'claude' && session.kind !== 'shell'}
-				<span class="badge badge-ghost badge-sm header-chip shrink-0">{session.kind}</span>
+			{#if liveKind !== 'claude' && liveKind !== 'shell'}
+				<span class="badge badge-ghost badge-sm header-chip shrink-0">{liveKind}</span>
 			{/if}
 			<div class="flex min-w-0 flex-1 items-center gap-2">
 				<span class="truncate font-medium">{session.title}</span>
@@ -402,7 +404,7 @@
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
 			<div class="flex items-center gap-2">
-				{#if session.kind !== 'shell' && data.zedCommand}
+				{#if liveKind !== 'shell' && data.zedCommand}
 					<ZedButton command={data.zedCommand} />
 				{/if}
 				{#if serverChip}
@@ -411,24 +413,7 @@
 					     so the standalone chip is sm+ only. -->
 					<span class="hidden sm:contents"><ServerChip state={serverChip} count={myServers.length} /></span>
 				{/if}
-				{#if session.kind !== 'shell'}
-					<ModelMenu
-						id={session.id}
-						kind={session.kind}
-						model={liveModel}
-						disabled={liveStatus === 'running'}
-						onChange={refresh}
-					/>
-				{/if}
-				{#if session.kind === 'claude'}
-					<EffortMenu
-						id={session.id}
-						effort={liveEffort}
-						disabled={liveStatus === 'running'}
-						onChange={refresh}
-					/>
-				{/if}
-				{#if session.kind === 'claude' && session.permissionMode === 'bypassPermissions'}
+				{#if liveKind === 'claude' && session.permissionMode === 'bypassPermissions'}
 					<span
 						class="badge badge-outline badge-sm header-chip hidden shrink-0 sm:inline-flex"
 						title="yolo (bypassPermissions)"
@@ -439,9 +424,9 @@
 			</div>
 		</div>
 
-		{#if session.kind !== 'shell' || gitRepo || hasServers}
+		{#if liveKind !== 'shell' || gitRepo || hasServers}
 			<div class="join mb-2 shrink-0 self-start">
-				{#if session.kind === 'shell'}
+				{#if liveKind === 'shell'}
 					<button
 						class="btn join-item btn-sm {tab === 'main' ? 'btn-active' : 'btn-ghost'}"
 						onclick={() => (tab = 'main')}
@@ -492,7 +477,7 @@
 			<!-- Thread and Chat are one mounted transcript in two modes, so switching
 			     between them keeps the subscription, the window, and the scroller. -->
 			<div class="h-full" class:hidden={tab !== 'main' && tab !== 'chat'}>
-				{#if session.kind === 'shell'}
+				{#if liveKind === 'shell'}
 					<ShellView {session} visible={tab === 'main'} />
 				{:else}
 					<ClaudeView
@@ -500,7 +485,28 @@
 						{sessions}
 						visible={tab === 'main' || tab === 'chat'}
 						condensed={transcriptTab === 'chat'}
-					/>
+					>
+						{#snippet controls()}
+							{#key `${session.id}:${liveKind}`}
+							<AgentMenu id={session.id} kind={liveKind} disabled={liveStatus === 'running'} onChange={refresh} />
+								<ModelMenu
+									id={session.id}
+									kind={liveKind}
+									model={liveModel}
+									disabled={liveStatus === 'running'}
+									onChange={refresh}
+								/>
+							{#if liveKind === 'claude'}
+								<EffortMenu
+									id={session.id}
+									effort={liveEffort}
+									disabled={liveStatus === 'running'}
+									onChange={refresh}
+								/>
+							{/if}
+							{/key}
+						{/snippet}
+					</ClaudeView>
 				{/if}
 			</div>
 			{#if tab === 'changes'}

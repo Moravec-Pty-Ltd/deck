@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { DeckSession } from '$lib/types';
 	import { indexForward, indexOlderBatch, type Answer } from '$lib/transcript-index';
@@ -45,12 +45,14 @@
 		session,
 		sessions = [],
 		visible = true,
-		condensed = false
+		condensed = false,
+		controls
 	}: {
 		session: DeckSession;
 		sessions?: DeckSession[];
 		visible?: boolean;
 		condensed?: boolean;
+		controls?: Snippet;
 	} = $props();
 
 	// A single global composer draft, persisted so a cold reload / iOS PWA relaunch
@@ -712,6 +714,8 @@
 		<div class="alert alert-error py-2 text-sm whitespace-pre-wrap wrap-anywhere">{event.text}</div>
 	{:else if event.type === 'deck.model'}
 		<div class="px-2 text-center text-xs opacity-50">model → {modelLabel(event.model)}</div>
+	{:else if event.type === 'deck.agent'}
+		<div class="px-2 text-center text-xs opacity-50">agent {event.from} → {event.kind} · recent conversation handed off</div>
 	{:else if event.type === 'deck.effort'}
 		<div class="px-2 text-center text-xs opacity-50">effort → {effortLabel(event.effort)}</div>
 	{:else if event.type === 'result'}
@@ -833,42 +837,47 @@
 				{/each}
 			</div>
 		{/if}
-		<div class="flex items-end gap-1.5 sm:gap-2">
-			<input
-				bind:this={fileInput}
-				type="file"
-				accept="image/*"
-				multiple
-				class="hidden"
-				onchange={onPick}
-			/>
-			<button
-				class="btn btn-ghost btn-square"
-				onclick={() => fileInput?.click()}
-				aria-label="Attach image"
-				title="Attach image"
-			>
-				<Paperclip size={16} />
-			</button>
-			<textarea
-				class="textarea min-h-12 flex-1"
-				rows="2"
-				placeholder={status === 'running'
-					? 'queue a follow-up (ctrl/cmd+enter)'
-					: 'message (ctrl/cmd+enter, paste images)'}
-				bind:value={input}
-				onkeydown={onKeydown}
-				onpaste={onPaste}
-			></textarea>
-			{#if status === 'running'}
-				<button class="btn btn-error" onclick={interrupt} aria-label="Interrupt">
-					<Square size={16} /> <span class="hidden sm:inline">Interrupt</span>
+		<textarea
+			class="textarea block min-h-18 w-full"
+			rows="3"
+			style="height: calc(4.5em + 1.5rem + 3px)"
+			placeholder={status === 'running'
+				? 'queue a follow-up (ctrl/cmd+enter)'
+				: 'message (ctrl/cmd+enter, paste images)'}
+			bind:value={input}
+			onkeydown={onKeydown}
+			onpaste={onPaste}
+		></textarea>
+		<div class="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
+			{@render controls?.()}
+			<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+				<input
+					bind:this={fileInput}
+					type="file"
+					accept="image/*"
+					multiple
+					class="hidden"
+					onchange={onPick}
+				/>
+				<button
+					class="btn btn-ghost btn-square"
+					onclick={() => fileInput?.click()}
+					aria-label="Attach image"
+					title="Attach image"
+				>
+					<Paperclip size={16} />
 				</button>
-			{/if}
-			<QuickMessages onpick={sendQuickMessage} />
-			<button class="btn btn-primary" onclick={send} disabled={!canSend} aria-label="Send">
-				<Send size={16} /> <span class="hidden sm:inline">Send</span>
-			</button>
+
+				{#if status === 'running'}
+					<button class="btn btn-error" onclick={interrupt} aria-label="Interrupt">
+						<Square size={16} /> <span class="hidden sm:inline">Interrupt</span>
+					</button>
+				{/if}
+				<QuickMessages onpick={sendQuickMessage} />
+				<button class="btn btn-primary" onclick={send} disabled={!canSend} aria-label="Send">
+					<Send size={16} /> <span class="hidden sm:inline">Send</span>
+				</button>
+			</div>
 		</div>
 	</div>
 

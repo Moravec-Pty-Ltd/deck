@@ -188,3 +188,16 @@ describe('runTurn supersede', () => {
 		expect(runner.turnRunning(id)).toBe(true);
 	});
 });
+
+
+describe('agent handoff context', () => {
+	it('sends context to the new runtime without duplicating it in the visible transcript', async () => {
+		const child = new FakeChild();
+		spawn.mockReturnValueOnce(child);
+		const current = { ...session(`handoff_${seq}`), pendingHandoff: 'Previous conversation context' };
+		await runner.runTurn(current, 'Continue');
+		expect(spawn.mock.calls.at(-1)?.[1].at(-1)).toBe('Previous conversation context\n\nCurrent user request:\nContinue');
+		expect(appended('deck.user')[0][1]).toMatchObject({ text: 'Continue' });
+		child.emit('exit', 0, null);
+	});
+});

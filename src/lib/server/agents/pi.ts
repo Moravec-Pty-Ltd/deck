@@ -23,7 +23,7 @@ export const piDriver: AgentDriver = {
 	kind: 'pi',
 
 	buildTurn(session, message) {
-		const sessionFile = path.join(agentSessionsDir, `pi-${session.id}.jsonl`);
+		const sessionFile = path.join(agentSessionsDir, `pi-${session.agentRuntimeId ?? session.id}.jsonl`);
 		const args = ['-p', '--mode', 'json', '--session', sessionFile];
 		// Drop provider/model that could smuggle a leading-dash flag (pi has no `--`).
 		if (isFlagSafe(session.provider)) args.push('--provider', session.provider!);
