@@ -809,12 +809,14 @@
 	{#if cost.results > 0}
 		<!-- Running session total, pinned above the composer so it stays in view
 		     regardless of scroll (per-turn footers still render inline above). -->
-		<div class="border-t border-base-300 px-3 py-1 text-center text-xs opacity-60">
+		<div class="-mx-2 border-t border-base-300 px-3 py-1 text-center text-xs opacity-60">
 			{formatCostSummary(cost)}
 		</div>
 	{/if}
 
-	<div class="border-t border-base-300 bg-base-100 p-2 sm:p-3">
+	<!-- -mx-2 cancels the session pane's side padding so the composer and its
+	     top border run edge to edge. -->
+	<div class="-mx-2 border-t border-base-300 bg-base-100 p-2 sm:p-3">
 		{#if crossSession}
 			<div class="mb-2 flex items-center gap-1 text-xs opacity-70">
 				<ArrowLeftRight size={12} />
