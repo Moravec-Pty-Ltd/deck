@@ -335,7 +335,7 @@
 		</div>
 	</div>
 
-	<div class="flex h-full min-w-0 flex-1 flex-col pt-1">
+	<div class="flex h-full min-w-0 flex-1 flex-col px-2 pt-2">
 		{#if del.error}
 			<div class="alert alert-error mb-2 py-2 text-sm" role="alert">
 				<span class="flex-1 break-words">{del.error}</span>

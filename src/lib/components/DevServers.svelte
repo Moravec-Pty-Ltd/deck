@@ -206,7 +206,9 @@
 									{:else if stepIcon(step) === 'failed'}
 										<X size={13} class="text-error" />
 									{:else if stepIcon(step) === 'running'}
-										<Loader size={13} class="animate-spin text-info" />
+										<!-- Spin a 14px box rather than the 13px svg: rotating about a
+										     half-pixel centre makes the spokes visibly wobble. -->
+										<span class="block size-3.5 animate-spin"><Loader size={14} class="text-info" /></span>
 									{:else}
 										<span class="inline-block size-3 rounded-full border border-base-content/30"></span>
 									{/if}
