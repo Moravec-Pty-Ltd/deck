@@ -1,7 +1,7 @@
 ---
 name: deck
 description: Drive and monitor deck (the local Claude Code session manager) through its agent API. Use when asked to start deck work sessions or PR-review sessions, send prompts to or stop running deck sessions, check what deck sessions need attention or have finished, answer a blocking deck question, or review/merge a PR through deck.
-version: 3.0.0
+version: 3.1.0
 ---
 
 # deck agent API
@@ -30,6 +30,7 @@ GET /api/agent/projects              # [{ path, name, group }] — every valid c
 GET /api/agent/kinds                 # installed agent CLIs + models
 GET /api/agent/issues?project=<path> # open issues → create's issue {source,id,url}
 GET /api/agent/prs?project=<path>    # open PRs → review's pr {repo,number}
+GET /api/agent/defaults?project=<path> # what a new session starts with by default (model/effort per kind, base, prompts)
 ```
 
 ## Common operations
@@ -66,7 +67,7 @@ GET  /api/agent/sessions/<id>             # digest + lastResult (the latest repl
 GET  /api/agent/sessions/<id>/transcript  # readable messages + lastResult + cost
 POST /api/agent/sessions/<id>/stop
 GET  /api/agent/asks                      # what's blocking, with the options
-POST /api/agent/sessions/<id>/answer      {"text":"..."}
+POST /api/agent/sessions/<id>/answer      {"text":"...","askId"?:"...","answers"?:[{"header","labels"}]}
 POST /api/agent/sessions/<id>/review      {"decision":"approve|request-changes|comment","body":"..."}
 POST /api/agent/sessions/<id>/merge       {"method":"squash|merge|rebase","deleteBranch":true}
 DELETE /api/agent/sessions/<id>           {"deleteWorktree":true,"deleteBranch":true}

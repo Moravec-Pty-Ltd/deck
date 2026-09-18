@@ -16,10 +16,10 @@
 		isExpensiveModel,
 		piModelOptions,
 		piProviderOptions,
-		resolveModelChoice,
 		shouldReseedModel
 	} from '$lib/models';
-	import { EFFORT_LEVELS, effortLabel, resolveEffort } from '$lib/effort';
+	import { EFFORT_LEVELS, effortLabel } from '$lib/effort';
+	import { DEFAULT_CLAUDE_PERMISSION_MODE, kindStartDefaults } from '$lib/start-defaults-core';
 	import { agentModels, loadAgentModels } from '$lib/agent-models-store.svelte';
 	import { shortIssueId } from '$lib/issues';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
@@ -84,7 +84,7 @@
 	// Bumped on each init() so a slow availability response from a prior open can't
 	// land after a reopen and clobber the current one with stale data.
 	let availabilitySeq = 0;
-	let yolo = $state(true);
+	let yolo = $state(DEFAULT_CLAUDE_PERMISSION_MODE === 'bypassPermissions');
 	let worktreeMode = $state<WorktreeMode>('new');
 	let worktreeModeDirty = $state(false);
 	let branch = $state('');
@@ -383,11 +383,13 @@
 		}
 	});
 
-	// Model/provider default to the project's last pick for this kind, then the
-	// global last-used, then the built-in default (claude -> opus, others blank).
-	// Re-seed on a kind change (prior text belongs to a different agent) or a
-	// genuine project switch (the pick is project-scoped, like issue/PR/base),
-	// but never clobber a hand-edited value within the same kind+project.
+	// Model/provider/effort default to what the shared start-defaults resolver
+	// says for this kind (the project's last pick, then the global last-used, then
+	// the built-in default: claude -> opus, others blank), the same rules the
+	// agent API publishes to native clients. Re-seed on a kind change (prior text
+	// belongs to a different agent) or a genuine project switch (the pick is
+	// project-scoped, like issue/PR/base), but never clobber a hand-edited value
+	// within the same kind+project.
 	$effect(() => {
 		const projectPath = selectedProject?.path;
 		if (shouldReseedModel({ kind: seededKind, projectPath: seededProjectPath }, { kind, projectPath }))
@@ -395,13 +397,11 @@
 		seededKind = kind;
 		seededProjectPath = projectPath;
 		if (modelDirty) return;
-		const choice = isAgentKind(kind)
-			? resolveModelChoice(kind, selectedProject, settings)
-			: { model: '', provider: undefined };
-		model = choice.model;
-		provider = choice.provider ?? '';
+		const defaults = isAgentKind(kind) ? kindStartDefaults(kind, selectedProject, settings) : { model: '' };
+		model = defaults.model;
+		provider = defaults.provider ?? '';
 		// Effort is claude-only; other kinds always seed blank.
-		effort = kind === 'claude' ? (resolveEffort(selectedProject, settings) ?? '') : '';
+		effort = defaults.effort ?? '';
 	});
 
 	// Fetch the detected model list once per agent kind while the modal is open;

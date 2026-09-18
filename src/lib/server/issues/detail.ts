@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import type { SessionIssue } from '$lib/types';
 import { gh } from './github';
 import { graphql as linearGraphql } from './linear';
-import { cu, seg } from './clickup';
+import { clickupComments, cu, seg } from './clickup';
 import {
 	imageUrls,
 	isSafeImageUrl,
@@ -45,9 +45,14 @@ function assemble(issue: SessionIssue, parsed: ParsedDetail): IssueDetail {
 	return { ref: issue.id, source: issue.source, url: issue.url, ...parsed, images };
 }
 
-async function githubDetail(issue: SessionIssue): Promise<IssueDetail | null> {
+// A fetch that produced no detail, with the reason the session should show
+// (issue #67 follow-up): a silent empty [issue_body] reads the same as an issue
+// with no description, so the reason is what lets a user tell them apart.
+class DetailUnavailable extends Error {}
+
+async function githubDetail(issue: SessionIssue): Promise<IssueDetail> {
 	const ref = parseGithubRef(issue.id);
-	if (!ref) return null;
+	if (!ref) throw new DetailUnavailable(`unrecognised GitHub issue id ${issue.id}`);
 	const out = await gh(['issue', 'view', ref.number, '-R', ref.repo, '--json', 'title,body,comments']);
 	return assemble(issue, parseGithubDetail(JSON.parse(out)));
 }
@@ -56,38 +61,53 @@ const LINEAR_DETAIL_QUERY = `query($id: String!) {
 	issue(id: $id) { title description url comments(first: 50) { nodes { body } } }
 }`;
 
-async function linearDetail(issue: SessionIssue, apiKey: string): Promise<IssueDetail | null> {
+async function linearDetail(issue: SessionIssue, apiKey: string): Promise<IssueDetail> {
 	const data = await linearGraphql<{ issue: LinearDetailJson | null }>(apiKey, LINEAR_DETAIL_QUERY, {
 		id: issue.id
 	});
-	if (!data.issue) return null;
+	if (!data.issue) throw new DetailUnavailable(`Linear issue ${issue.id} not found`);
 	return assemble(issue, parseLinearDetail(data.issue));
 }
 
-async function clickupDetail(issue: SessionIssue, apiKey: string): Promise<IssueDetail | null> {
+async function clickupDetail(issue: SessionIssue, apiKey: string): Promise<IssueDetail> {
 	// The stored id carries a leading `#` (see fetchClickupIssues); the API wants
 	// the bare task id.
 	const taskId = issue.id.replace(/^#/, '');
-	const data = await cu<ClickupDetailJson>(
-		apiKey,
-		`/task/${seg(taskId)}?include_markdown_description=true`
-	);
-	return assemble(issue, parseClickupDetail(data));
+	// Comments are a second request; a failure there loses the comments only,
+	// never the body.
+	const [data, comments] = await Promise.all([
+		cu<ClickupDetailJson>(apiKey, `/task/${seg(taskId)}?include_markdown_description=true`),
+		clickupComments(apiKey, taskId).catch(() => [])
+	]);
+	return assemble(issue, parseClickupDetail(data, comments));
 }
 
-// Pick the source fetcher; null when a keyed source has no key.
-function routeDetail(issue: SessionIssue, apiKey?: string): Promise<IssueDetail | null> {
+// Pick the source fetcher; a keyed source with no key is unavailable.
+function routeDetail(issue: SessionIssue, apiKey?: string): Promise<IssueDetail> {
 	if (issue.source === 'github') return githubDetail(issue);
-	if (!apiKey) return Promise.resolve(null);
+	if (!apiKey) return Promise.reject(new DetailUnavailable(`no ${issue.source} API key for ${issue.id}`));
 	if (issue.source === 'linear') return linearDetail(issue, apiKey);
 	return clickupDetail(issue, apiKey);
 }
 
-// Best-effort per-source fetch. Never throws: any failure (missing key, dead
-// network, unknown id shape) resolves to null so the first prompt still has
-// [issue_id]/[issue_url] from the session.
-function fetchIssueDetail(issue: SessionIssue, apiKey?: string): Promise<IssueDetail | null> {
-	return routeDetail(issue, apiKey).catch(() => null);
+// A fetch outcome: the detail, or the one-line reason it is missing. Never
+// rejects, so the caller's Promise.all over several issues can't lose the rest.
+type FetchOutcome = { detail: IssueDetail } | { detail: null; reason: string };
+
+function fetchReason(issue: SessionIssue, e: unknown): string {
+	if (e instanceof DetailUnavailable) return e.message;
+	const why = e instanceof Error ? e.message : String(e);
+	return `${issue.source} ${issue.id}: ${why.split('\n')[0].slice(0, 200)}`;
+}
+
+// Best-effort per-source fetch: a failure (missing key, dead network, unknown id
+// shape) resolves to a reason so the first prompt still has [issue_id]/
+// [issue_url] from the session and the transcript can say what went missing.
+function fetchIssueDetail(issue: SessionIssue, apiKey?: string): Promise<FetchOutcome> {
+	return routeDetail(issue, apiKey).then(
+		(detail) => ({ detail }),
+		(e) => ({ detail: null, reason: fetchReason(issue, e) })
+	);
 }
 
 // --- Image download into the worktree scratch dir ---
@@ -238,33 +258,42 @@ export interface IssuePromptContext {
 	issueTitle: string;
 	issueBody: string;
 	issueComments: string;
+	// One line per attached issue whose context could not be fetched, so the
+	// session can say so instead of quietly rendering empty blocks.
+	warnings: string[];
 }
 
-const EMPTY: IssuePromptContext = { issueTitle: '', issueBody: '', issueComments: '' };
 const hasImages = (d: IssueDetail) => d.images.length > 0;
 
-// Fetch every attached issue's detail in parallel (best-effort; failures drop
-// out), so total latency is the slowest source rather than the sum. fetchIssueDetail
-// never rejects, so Promise.all is safe here.
-async function fetchAll(items: IssueForFetch[]): Promise<{ detail: IssueDetail; apiKey?: string }[]> {
+// Fetch every attached issue's detail in parallel, so total latency is the
+// slowest source rather than the sum. fetchIssueDetail never rejects, so
+// Promise.all is safe here; failures come back as reasons alongside the kept
+// details.
+async function fetchAll(
+	items: IssueForFetch[]
+): Promise<{ kept: { detail: IssueDetail; apiKey?: string }[]; warnings: string[] }> {
 	const results = await Promise.all(
-		items.map(async ({ issue, apiKey }) => ({ detail: await fetchIssueDetail(issue, apiKey), apiKey }))
+		items.map(async ({ issue, apiKey }) => ({ ...(await fetchIssueDetail(issue, apiKey)), apiKey }))
 	);
-	return results.filter(
-		(r): r is { detail: IssueDetail; apiKey: string | undefined } => r.detail !== null
-	);
+	const kept: { detail: IssueDetail; apiKey?: string }[] = [];
+	const warnings: string[] = [];
+	for (const r of results) {
+		if (r.detail) kept.push({ detail: r.detail, apiKey: r.apiKey });
+		else warnings.push(r.reason);
+	}
+	return { kept, warnings };
 }
 
 // Fetch every attached issue's detail, download its images into the worktree
 // scratch dir, and render the combined [issue_*] blocks. Best-effort as a whole:
-// failed issues drop out; if all fail the blocks are empty and the caller falls
-// back to the [issue_id]/[issue_url] tokens.
+// failed issues drop out (and are reported in `warnings`); if all fail the
+// blocks are empty and the caller falls back to the [issue_id]/[issue_url]
+// tokens.
 export async function buildIssuePrompt(
 	worktree: string,
 	items: IssueForFetch[]
 ): Promise<IssuePromptContext> {
-	const kept = await fetchAll(items);
-	if (!kept.length) return EMPTY;
+	const { kept, warnings } = await fetchAll(items);
 
 	const details: IssueDetail[] = [];
 	for (const { detail, apiKey } of kept) {
@@ -275,6 +304,7 @@ export async function buildIssuePrompt(
 	return {
 		issueTitle: renderIssueTitle(details),
 		issueBody: renderIssueBody(details),
-		issueComments: renderIssueComments(details)
+		issueComments: renderIssueComments(details),
+		warnings
 	};
 }

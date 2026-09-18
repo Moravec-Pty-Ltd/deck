@@ -3,6 +3,8 @@ import path from 'node:path';
 import { transcriptsDir } from './config';
 import { emptyCostSummary, foldResult, type CostSummary } from '$lib/session-cost-core';
 import { projectTranscript, type TranscriptMessage } from '$lib/agent-transcript-core';
+import { isAskTool } from '$lib/transcript-groups';
+import { whenDrained } from './transcript-writer';
 
 // Transcript files are append-only JSONL: one JSON event per line, written by
 // appendEvent. The live view only ever needs the tail (initial snapshot) or a
@@ -222,6 +224,28 @@ export function agentTranscriptView(id: string): {
 	const tail = readTranscriptTail(id);
 	const projected = projectTranscript(tail.events);
 	return { messages: projected.messages, lastResult: projected.lastResult, cost: tail.cost };
+}
+
+// The tool_use id of the newest ask call on the transcript tail (deck's MCP
+// `ask` tool, or claude's built-in AskUserQuestion), so a pending ask can be
+// keyed to the call it answers and a structured answer recorded against it.
+// The CLI emits the assistant message holding the call before it invokes the
+// tool, so waiting for queued appends to land makes the call visible here. Null
+// when the tail holds none.
+export async function latestAskToolUseId(id: string): Promise<string | null> {
+	await whenDrained(transcriptPath(id));
+	const events = readTranscriptTail(id).events as Record<string, unknown>[];
+	for (let i = events.length - 1; i >= 0; i--) {
+		const event = events[i];
+		if (event?.type !== 'assistant') continue;
+		const content = (event.message as { content?: unknown } | undefined)?.content;
+		if (!Array.isArray(content)) continue;
+		for (let j = content.length - 1; j >= 0; j--) {
+			const block = content[j] as { type?: string; id?: string; name?: string };
+			if (block.type === 'tool_use' && typeof block.id === 'string' && isAskTool(block)) return block.id;
+		}
+	}
+	return null;
 }
 
 // Running cost/turns/duration total over the whole transcript, kept per session

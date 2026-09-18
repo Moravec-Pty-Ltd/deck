@@ -24,26 +24,49 @@ async function sourceIdFor(picked: PickedIssue, project?: Project): Promise<stri
 	return ids.size === 1 ? matches[0].sourceId : undefined;
 }
 
-export async function issuePromptContext(
-	cwd: string,
-	picked: PickedIssue[]
-): Promise<Partial<IssuePromptContext>> {
+// The context fetched for a prompt's [issue_*] tokens. Every field is optional
+// because the fetch is best effort; `warnings` names each issue whose context
+// is missing and why, for the transcript to show.
+export type IssueContext = Partial<IssuePromptContext>;
+
+// Resolve the credential an issue's context needs. GitHub uses gh's own auth; a
+// keyed tracker needs the source id, which the picker sends and older clients
+// leave for the project to disambiguate.
+async function itemFor(picked: PickedIssue, project?: Project): Promise<IssueForFetch> {
+	const { issue } = picked;
+	if (issue.source === 'github') return { issue };
+	try {
+		const sourceId = await sourceIdFor(picked, project);
+		return { issue, apiKey: sourceId ? readSecret(sourceId) : undefined };
+	} catch {
+		return { issue };
+	}
+}
+
+export async function issuePromptContext(cwd: string, picked: PickedIssue[]): Promise<IssueContext> {
 	if (!picked.length) return {};
 	const root = resolveWithinProjects(cwd);
-	if (!root) return {};
+	if (!root) return { warnings: ['issue context skipped: the session directory is outside the registered projects'] };
 	const projectPath = projectForPath(cwd);
 	const project = listProjects().find((project) => project.path === projectPath);
-	const items = await Promise.all(picked.map(async (picked): Promise<IssueForFetch> => {
-		try {
-			const sourceId = picked.issue.source === 'github' ? undefined : await sourceIdFor(picked, project);
-			return { issue: picked.issue, apiKey: sourceId ? readSecret(sourceId) : undefined };
-		} catch {
-			return { issue: picked.issue };
-		}
-	}));
+	const items = await Promise.all(picked.map((picked) => itemFor(picked, project)));
 	try {
 		return await buildIssuePrompt(root, items);
-	} catch {
-		return {};
+	} catch (e) {
+		return { warnings: [`issue context unavailable: ${e instanceof Error ? e.message : String(e)}`] };
 	}
+}
+
+// Whether a prompt reads the fetched context at all; a prompt that only uses
+// [issue_id]/[issue_url] loses nothing when the fetch fails, so it gets no warning.
+export function wantsIssueContext(text: string): boolean {
+	return /\[issue_(?:title|body|comments)\]/.test(text);
+}
+
+// The one transcript line summarising missing context, or null when everything
+// the prompt asked for arrived.
+export function issueContextWarning(text: string, context: IssueContext): string | null {
+	const warnings = context.warnings ?? [];
+	if (!warnings.length || !wantsIssueContext(text)) return null;
+	return `Issue context could not be fetched, so [issue_title]/[issue_body]/[issue_comments] may be incomplete:\n- ${warnings.join('\n- ')}`;
 }

@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import fs from 'node:fs';
-import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type SessionIssue, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
+import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
 import { createSession } from './sessions';
 import { createWorktree, fetchPullRef, isGitRepo } from './git';
 import { isFlagSafe } from './agents/args';
@@ -12,7 +12,7 @@ import { parseEffort } from './session-effort-core';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
-import { issuePromptContext, type PickedIssue } from './issues/prompt';
+import { issueContextWarning, issuePromptContext, type PickedIssue } from './issues/prompt';
 
 // The create-session request pipeline, extracted from the POST /api/sessions
 // route so the agent API (POST /api/agent/sessions) can share it. Validation
@@ -250,7 +250,8 @@ async function resolveWorktree(
 // Kick off the agent's first turn if a non-empty prompt was supplied, expanding
 // its [tokens] against the freshly-created session. When issues are attached,
 // their body/title/images are fetched server-side first (best-effort) so the
-// prompt starts grounded. Fire-and-forget: the fetch must not delay the 201.
+// prompt starts grounded; context that could not be fetched is noted on the
+// transcript before the turn. Fire-and-forget: the fetch must not delay the 201.
 async function maybeDispatch(
 	session: Awaited<ReturnType<typeof createSession>>,
 	kind: SessionKind,
@@ -259,7 +260,10 @@ async function maybeDispatch(
 ): Promise<void> {
 	if (!isAgentKind(kind)) return;
 	if (!promptText) return;
-	const ctx = { ...contextFromSession(session), ...(await issuePromptContext(session.cwd, picked)) };
+	const issueContext = await issuePromptContext(session.cwd, picked);
+	const warning = issueContextWarning(promptText, issueContext);
+	if (warning) appendEvent(session.id, { type: 'deck.warning', text: warning, ts: Date.now() });
+	const ctx = { ...contextFromSession(session), ...issueContext };
 	await agentSend(session, expandPlaceholders(promptText, ctx));
 }
 

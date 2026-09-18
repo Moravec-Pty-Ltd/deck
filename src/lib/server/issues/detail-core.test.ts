@@ -34,11 +34,14 @@ describe('per-source parsing', () => {
 		).toEqual({ title: 'Ship it', body: 'Do the thing.', comments: ['ok'] });
 	});
 
-	it('prefers ClickUp markdown_description and has no comments', () => {
+	it('prefers ClickUp markdown_description and reads separately fetched comments', () => {
 		expect(
 			parseClickupDetail({ name: 'Task', markdown_description: ' **md** ', description: 'plain' })
 		).toEqual({ title: 'Task', body: '**md**', comments: [] });
 		expect(parseClickupDetail({ name: 'Task', description: 'plain' }).body).toBe('plain');
+		expect(
+			parseClickupDetail({ name: 'Task' }, [{ comment_text: ' first ' }, { comment_text: '' }, {}, { comment_text: 'second' }]).comments
+		).toEqual(['first', 'second']);
 	});
 
 	it('tolerates missing fields across sources', () => {

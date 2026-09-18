@@ -4,14 +4,19 @@ import { contextFromSession, expandPlaceholders } from '$lib/placeholders';
 import { agentSend } from './agents/dispatch';
 import { appendEvent } from './claude';
 import { updateSession } from './store';
-import { issuePromptContext } from './issues/prompt';
+import { issueContextWarning, issuePromptContext, wantsIssueContext } from './issues/prompt';
 import { parseImages } from './message-core';
 
+// Expand a template's [tokens]. Rich issue tokens fetch the attached issues'
+// context first; when that fetch comes back short, the transcript says so
+// before the message goes out.
 async function expandMessage(session: DeckSession, text: string): Promise<string> {
 	const issues = session.issues ?? (session.issue ? [session.issue] : []);
-	const detail = /\[issue_(?:title|body|comments)\]/.test(text)
+	const detail = wantsIssueContext(text)
 		? await issuePromptContext(session.cwd, issues.map((issue) => ({ issue, sourceId: issue.sourceId ?? '' })))
 		: {};
+	const warning = issueContextWarning(text, detail);
+	if (warning) appendEvent(session.id, { type: 'deck.warning', text: warning, ts: Date.now() });
 	return expandPlaceholders(text, { ...contextFromSession(session), ...detail });
 }
 

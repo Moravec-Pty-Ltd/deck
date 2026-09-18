@@ -8,7 +8,7 @@ import path from 'node:path';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-transcript-test-'));
 process.env.DECK_DATA = dataDir;
 
-const { transcriptPath, snapshotFrames, readTranscriptRange, transcriptCostSummary } =
+const { transcriptPath, snapshotFrames, readTranscriptRange, transcriptCostSummary, latestAskToolUseId } =
 	await import('./transcript');
 
 afterAll(() => fs.rmSync(dataDir, { recursive: true, force: true }));
@@ -234,5 +234,23 @@ describe('transcriptCostSummary', () => {
 		const id = 'cost-none';
 		seed(id, [ev(0), ev(1), ev(2)]);
 		expect(transcriptCostSummary(id)).toEqual({ costUsd: 0, turns: 0, durationMs: 0, results: 0 });
+	});
+});
+
+describe('latestAskToolUseId', () => {
+	const ask = (id: string, name = 'mcp__deck__ask') => ({
+		type: 'assistant',
+		message: { content: [{ type: 'text', text: 'hm' }, { type: 'tool_use', id, name, input: { questions: [] } }] }
+	});
+	it('finds the newest ask call on the tail', async () => {
+		const id = 'asks';
+		seed(id, [ask('toolu_old'), { type: 'user', message: { content: [] } }, ask('toolu_new', 'AskUserQuestion'), ev(9)]);
+		expect(await latestAskToolUseId(id)).toBe('toolu_new');
+	});
+	it('ignores other tool calls and missing transcripts', async () => {
+		const id = 'no-asks';
+		seed(id, [{ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'toolu_bash', name: 'Bash' }] } }]);
+		expect(await latestAskToolUseId(id)).toBeNull();
+		expect(await latestAskToolUseId('never-written')).toBeNull();
 	});
 });

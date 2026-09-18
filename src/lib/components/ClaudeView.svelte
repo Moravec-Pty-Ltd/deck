@@ -712,6 +712,8 @@
 		</MessageBubble>
 	{:else if event.type === 'deck.error'}
 		<div class="alert alert-error py-2 text-sm whitespace-pre-wrap wrap-anywhere">{event.text}</div>
+	{:else if event.type === 'deck.warning'}
+		<div class="alert alert-warning py-2 text-sm whitespace-pre-wrap wrap-anywhere">{event.text}</div>
 	{:else if event.type === 'deck.model'}
 		<div class="px-2 text-center text-xs opacity-50">model → {modelLabel(event.model)}</div>
 	{:else if event.type === 'deck.agent'}

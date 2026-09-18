@@ -6,7 +6,7 @@ vi.mock('../confine', () => ({ resolveWithinProjects: mocks.root, projectForPath
 vi.mock('../store', () => ({ listProjects: mocks.projects, readSecret: mocks.secret }));
 vi.mock('./index', () => ({ getProjectIssues: mocks.issues }));
 vi.mock('./detail', () => ({ buildIssuePrompt: mocks.build }));
-const { issuePromptContext } = await import('./prompt');
+const { issuePromptContext, issueContextWarning } = await import('./prompt');
 
 const picked: PickedIssue = { issue: { source: 'linear', id: 'EX-1', url: '' }, sourceId: '' };
 const source = { id: 'source-a', type: 'linear' };
@@ -51,11 +51,33 @@ describe('shared issue prompt context', () => {
 	});
 	it('never fetches or writes assets outside registered projects', async () => {
 		mocks.root.mockReturnValue(null);
-		expect(await issuePromptContext('/path/to/other', [picked])).toEqual({});
+		const context = await issuePromptContext('/path/to/other', [picked]);
+		expect(context.issueBody).toBeUndefined();
+		expect(context.warnings).toEqual([expect.stringContaining('outside the registered projects')]);
 		expect(mocks.build).not.toHaveBeenCalled();
 	});
-	it('keeps context failures best effort', async () => {
+	it('keeps context failures best effort but reports them', async () => {
 		mocks.build.mockRejectedValue(new Error('offline'));
-		expect(await issuePromptContext('/path/to/project', [picked])).toEqual({});
+		const context = await issuePromptContext('/path/to/project', [picked]);
+		expect(context.issueBody).toBeUndefined();
+		expect(context.warnings).toEqual(['issue context unavailable: offline']);
+	});
+	it('passes per-issue fetch warnings through', async () => {
+		mocks.build.mockResolvedValue({ issueTitle: '', issueBody: '', issueComments: '', warnings: ['no linear API key for EX-1'] });
+		expect((await issuePromptContext('/path/to/project', [picked])).warnings).toEqual(['no linear API key for EX-1']);
+	});
+});
+
+describe('issue context warning', () => {
+	const missing = { warnings: ['no linear API key for EX-1'] };
+	it('warns only when the prompt reads rich issue tokens', () => {
+		expect(issueContextWarning('Work on [issue_id] [issue_url]', missing)).toBeNull();
+		expect(issueContextWarning('[issue_body]', missing)).toContain('no linear API key for EX-1');
+		expect(issueContextWarning('[issue_body]', { warnings: [] })).toBeNull();
+		expect(issueContextWarning('[issue_body]', {})).toBeNull();
+	});
+	it('lists every missing issue', () => {
+		const text = issueContextWarning('[issue_comments]', { warnings: ['a', 'b'] });
+		expect(text).toContain('- a\n- b');
 	});
 });

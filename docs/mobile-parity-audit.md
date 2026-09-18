@@ -47,11 +47,26 @@ asset writes remain confined to registered projects and worktrees.
 | Agent switching | Server supported handoffs; native client had no control | Phone can select an installed agent while idle, refreshes session state, and renders the handoff marker |
 | Chat/Thread | Native displayed only the full transcript | Device-local mode selection; Chat collapses consecutive tool calls and intervening thinking, preserving prose and questions |
 | Multi-question answers | Phone submitted an entire ask after selecting an answer to one question; selections shared one set | Collect selections/replies per question and submit all together; inbox quick-answer shortcuts apply only to single, single-select questions |
+| Missing context was silent | `issues/detail.ts` dropped failed fetches, so an empty `[issue_body]` read like an empty issue | Each failed issue yields a reason (no credential, not found, request error); the create and message paths record one `deck.warning` on the transcript when the prompt reads rich tokens. Web and native render it as a warning row |
+| Older native history | The phone kept only the recent snapshot and reset it on reconnect | The stream keeps the snapshot's `start`; the phone loads earlier slices from the transcript range endpoint on back-scroll (or a Load earlier button), holds the reader's place, and merges a reconnect's tail over already loaded pages. Row ids derive from absolute indexes |
+| Watch answers | `AskDetailView` answered only the first question | The watch steps through every question with the shared `AskAnswerDraft`; a lone single-choice question still answers on one tap |
+| Creation defaults | Native `StartDefaults.resolve` mirrored the web selection rules | `GET /api/agent/defaults?project=` publishes the resolved model/provider/effort/permission mode per kind, base branch, and prompt templates from one `start-defaults-core.ts` the web modal also uses. Phone, watch, and Siri read it; only the keyboardless fallback prompt stays native |
+| ClickUp comments | `detail-core.ts` returned `comments: []` | The adapter fetches `/task/{id}/comment` alongside the task; a comment failure loses the comments only |
+| Structured answers | Agent `/answer` resolved text only; the web route recorded picks by `toolUseId` | Both routes share `answer.ts`. `registerAsk` looks up the ask's tool-call id, lists it as `askId`, and the routes record `answers` against it (falling back to the pending id). Phone, watch, and inbox shortcuts send the same text and picks as the web card |
+| Transcript rendering | Native rows lacked attachment thumbnails, turn footers, answered questions, and `message_start` resets | Attachments render through the authenticated image endpoint; `result` events print duration/turns/cost; ask calls render as question cards with recorded picks; `deck.agent` shows the handoff source; a new turn clears streamed text |
+| Native workflows | `DeckClient.workflows` called an endpoint the server removed | Workflow models, picker, and `workflowId` plumbing are gone |
+| Auto-scroll | Native followed output on every item change | Only offset changes update the near-bottom state, so content growth never moves a reader who scrolled up; the first load still lands at the bottom |
+| Existing worktrees | Phone offered new branch or none | The start sheet lists a project's existing worktrees (starting there as the session's cwd) and picks the base branch from the repo's branches |
+| Changes view | Web-only | The session menu opens a Changes sheet: per-file summary from the diff endpoint, then each file's patch parsed by `DiffPatch` |
+| Dev servers | Web-only | A Dev servers sheet lists configured servers with state, ports, preview link, setup progress, start/stop/restart/re-run setup, and a polling log pane, on the existing session server routes |
+| Automation config | Web-only | Settings lists projects; each opens the automation toggles and lane agents, saved through the projects route while preserving the project name |
 
 The native client continues to use the browser send route for images and quick
 messages, preserving compatibility with older servers. Those routes now share
-the same business logic as the agent message route. The new multi-issue and
-handoff features require a server with the corresponding support.
+the same business logic as the agent message route. The multi-issue, handoff,
+defaults, structured-answer, diff, server, and automation features need a
+server with the corresponding routes; on an older server the phone falls back
+to CLI defaults and hides nothing it can't fetch.
 
 ## Existing native support confirmed
 
@@ -61,36 +76,34 @@ PR review and merge, and bulk session deletion. These did not need to be rebuilt
 Watch and Siri share `DeckKit`, so source-identity and review-base fixes apply
 there too. The watch remains a smaller interface with Claude-only quick starts.
 
-## Remaining differences and recommended next work
+## Remaining differences
 
-| Priority | Finding | Evidence and next step |
+| Priority | Finding | Note |
 | --- | --- | --- |
-| High | Rich-context failures remain best effort and can be silent | `issues/detail.ts` returns empty results on fetch failure. Expose context readiness/warnings in session events so users can distinguish missing context from an empty issue |
-| High | Older native transcript history is unavailable | `SessionStream.swift` discards snapshot pagination metadata; `SessionDetailViewModel` replaces history on reconnect. Preserve cursors and add back-scroll via the existing transcript range endpoint |
-| High | Watch answers show only the first question | `Apps/DeckWatch/Views/AskDetailView.swift` uses `questions.first`. Port the complete-question flow with an appropriate watch layout |
-| Medium | Defaults are still implemented in two places | Native `StartDefaults.resolve` mirrors web selection rules and adds watch/Siri fallback prompts. Publish creation defaults/capabilities from a shared server resolver, retaining explicit choices and intentional idle creation |
-| Medium | ClickUp comments are never fetched | `issues/detail-core.ts` returns `comments: []`; the adapter only requests task detail. Add the separate comment request in the shared tracker adapter |
-| Medium | Structured answer persistence differs | Web `/answer` can call `recordAnswer` with a tool-use ID; agent `/answer` only resolves text. Expose a stable question identifier and share recording/resolution behavior |
-| Medium | Transcript rendering still differs | Native rows do not render attached image thumbnails and omit some result/runtime events; tool streaming only extracts text deltas. Define a normalized display contract or maintain fixtures for each supported runtime |
-| Medium | Native workflows refer to an absent API | `DeckClient.workflows` calls `/api/agent/workflows`, which this server checkout does not implement; failures are swallowed. Remove obsolete UI/models or implement a real supported contract rather than silently offering nothing |
-| Medium | Some web surfaces have no native equivalent | Development servers/logs, diff viewing, automation configuration, and existing-worktree selection remain web-only. Prioritize these separately from request consistency |
-| Low | Transcript auto-scroll can disrupt reading | Native view scrolls whenever item count changes. Track whether the reader is near the bottom before following output |
+| Low | The watch shows a session's last reply, not its transcript | Deliberate: the watch is a glanceable surface with quick starts and answers; the phone carries the full transcript |
+| Low | Native has no project registration or issue-source setup | Both need local filesystem paths and API keys, which belong on the machine running deck. Configure them on the web; the phone reads the result |
+| Low | Native shells are read-only | Shell (tmux) sessions appear in the list but have no terminal view; the agent API cannot drive them either |
 
-There is no need to make every automation-oriented endpoint return the full web
-state. Share business services, keep route adapters compatible, and expose
-explicit capabilities/defaults where native UI needs them. Avoid adding a third
-set of behavioral rules to the phone.
+Share business services, keep route adapters compatible, and expose explicit
+capabilities/defaults where native UI needs them. Avoid adding a third set of
+behavioral rules to the phone.
 
 ## Validation
 
 Server regressions cover discovery source identity, legacy credential resolution,
 worktree project matching, multiple/ambiguous accounts, GitHub authentication,
-confinement, fetch failures, multi-issue creation, and identical message behavior
-through both routes. Native request tests cover raw templates, source identity,
-multiple issues, retry headers, literal image messages, quick-message expansion,
-review bases, and agent switching. Transcript tests cover grouping and handoff
-markers.
+confinement, per-issue fetch reasons and the warning they produce, ClickUp
+comment fetching, multi-issue creation, identical message behavior through both
+routes, shared answer recording through both answer routes, the ask-id lookup,
+and the start-defaults resolver and route. Native request tests cover raw
+templates, source identity, multiple issues, retry headers, literal image
+messages, quick-message expansion, review bases, agent switching, structured
+answers, server defaults, existing-worktree starts, and automation saves.
+Transcript tests cover grouping, handoff markers, stable ids across prepended
+history, attachments, turn footers, warnings, answered questions, the answer
+draft, and the diff parser.
 
-Validation uses unit/request tests and an unsigned iOS simulator build (including
-the embedded watch app). Live tracker integration, interactive simulator flows,
-physical-device testing, and TestFlight publication remain unperformed.
+Validation uses unit/request tests, an unsigned iOS simulator build (including
+the embedded watch app), and the transcript UI test against a live deck server
+(opens at the bottom, loads older history on back-scroll). Live tracker
+integration and physical-device testing of the new sheets remain unperformed.

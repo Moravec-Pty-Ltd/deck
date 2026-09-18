@@ -75,6 +75,19 @@ export function clickupStatuses(apiKey: string, listId: string): Promise<CuStatu
 	return cu<{ statuses: CuStatus[] }>(apiKey, `/list/${seg(listId)}`).then((d) => d.statuses ?? []);
 }
 
+export interface CuComment {
+	comment_text?: string;
+}
+
+// A task's comments, oldest first (the API returns newest first). The task
+// detail payload never includes them, so this is the second call the first
+// prompt's [issue_comments] needs. Takes the bare task id (no leading `#`).
+export function clickupComments(apiKey: string, taskId: string): Promise<CuComment[]> {
+	return cu<{ comments: CuComment[] }>(apiKey, `/task/${seg(taskId)}/comment`).then((d) =>
+		[...(d.comments ?? [])].reverse()
+	);
+}
+
 interface CuTask {
 	id: string;
 	name: string;

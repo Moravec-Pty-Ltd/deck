@@ -26,7 +26,7 @@ export function isAskTool(block: AnyEvent): boolean {
 	return block.name === 'mcp__deck__ask' || block.name === 'AskUserQuestion';
 }
 
-const EVENT_ROWS = new Set(['deck.user', 'deck.error', 'deck.model', 'deck.effort', 'deck.agent', 'result']);
+const EVENT_ROWS = new Set(['deck.user', 'deck.error', 'deck.warning', 'deck.model', 'deck.effort', 'deck.agent', 'result']);
 
 // The row an assistant content block paints, or null when it paints nothing (an
 // empty text or thinking block).

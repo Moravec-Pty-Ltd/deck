@@ -1,6 +1,7 @@
 import { getStoredSession } from './store';
 import { notify } from './push';
 import { publishAgentEvent } from './agent-feed';
+import { latestAskToolUseId } from './transcript';
 
 // One outstanding "ask the user" call per claude session. The MCP `ask` tool
 // handler registers a pending entry and awaits it; the UI resolves it when the
@@ -9,6 +10,9 @@ interface Pending {
 	// kept so /api/agent/asks can list what's blocking without a transcript parse
 	questions: AskQuestion[];
 	askedAt: number;
+	// The tool_use id of the ask call, once the transcript lookup lands. Lets an
+	// answer carry structured picks that persist against the call (recordAnswer).
+	askId?: string;
 	resolve: (text: string) => void;
 	reject: (err: Error) => void;
 }
@@ -21,16 +25,31 @@ export interface AskQuestion {
 }
 
 // A pending ask as the agent API lists it: the MCP `ask` tool, answered by text
-// alone.
+// (optionally with the structured picks, keyed by `askId`).
 export interface PendingAsk {
 	sessionId: string;
 	source: 'mcp';
+	askId?: string;
 	questions: AskQuestion[];
 	askedAt: number;
 }
 
 const g = globalThis as { __deckAsks?: Map<string, Pending> };
 const pending = (g.__deckAsks ??= new Map());
+
+// Announce the ask on the agent feed once its tool_use id is known (or the
+// lookup gave up), unless the ask was already settled or replaced meanwhile.
+async function announce(sessionId: string, entry: Pending): Promise<void> {
+	const askId = await latestAskToolUseId(sessionId).catch(() => null);
+	if (pending.get(sessionId) !== entry) return;
+	if (askId) entry.askId = askId;
+	publishAgentEvent(sessionId, 'awaiting-input', {
+		awaitingInput: true,
+		source: 'mcp',
+		...(askId ? { askId } : {}),
+		questions: entry.questions
+	});
+}
 
 export function registerAsk(
 	sessionId: string,
@@ -47,7 +66,6 @@ export function registerAsk(
 		tag: sessionId,
 		url: `/s/${sessionId}`
 	});
-	publishAgentEvent(sessionId, 'awaiting-input', { awaitingInput: true, source: 'mcp', questions });
 
 	return new Promise<string>((resolve, reject) => {
 		const settle = () => {
@@ -69,6 +87,7 @@ export function registerAsk(
 			}
 		};
 		pending.set(sessionId, entry);
+		void announce(sessionId, entry);
 		if (signal) {
 			if (signal.aborted) entry.reject(new Error('aborted'));
 			else signal.addEventListener('abort', () => entry.reject(new Error('aborted')), { once: true });
@@ -87,9 +106,15 @@ export function listPendingAsks(): PendingAsk[] {
 	return [...pending.entries()].map(([sessionId, p]) => ({
 		sessionId,
 		source: 'mcp',
+		...(p.askId ? { askId: p.askId } : {}),
 		questions: p.questions,
 		askedAt: p.askedAt
 	}));
+}
+
+// The tool_use id of a session's pending ask, when known.
+export function pendingAskId(sessionId: string): string | undefined {
+	return pending.get(sessionId)?.askId;
 }
 
 // Resolve the pending ask for a session with the user's answer text. Returns

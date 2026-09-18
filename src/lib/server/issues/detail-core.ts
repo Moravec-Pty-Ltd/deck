@@ -60,18 +60,26 @@ export function parseLinearDetail(j: LinearDetailJson): ParsedDetail {
 	};
 }
 
-// ClickUp: `GET /task/{id}?include_markdown_description=true`. Prefer the
-// markdown body; comments need a separate call, so they stay opt-out here.
+// ClickUp: `GET /task/{id}?include_markdown_description=true` for the task
+// (prefer the markdown body) plus `GET /task/{id}/comment` for its comments,
+// which the task payload never carries. A comment's `comment_text` is the
+// flattened plain text; the structured `comment` array is ignored.
 export interface ClickupDetailJson {
 	name?: string;
 	markdown_description?: string;
 	description?: string;
 }
-export function parseClickupDetail(j: ClickupDetailJson): ParsedDetail {
+export interface ClickupCommentJson {
+	comment_text?: string;
+}
+export function parseClickupDetail(
+	j: ClickupDetailJson,
+	comments: ClickupCommentJson[] = []
+): ParsedDetail {
 	return {
 		title: j.name ?? '',
 		body: (j.markdown_description ?? j.description ?? '').trim(),
-		comments: []
+		comments: comments.map((c) => (c.comment_text ?? '').trim()).filter(Boolean)
 	};
 }
 

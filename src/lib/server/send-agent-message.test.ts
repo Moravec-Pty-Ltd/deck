@@ -5,7 +5,12 @@ const mocks = vi.hoisted(() => ({ send: vi.fn(), update: vi.fn(), append: vi.fn(
 vi.mock('./agents/dispatch', () => ({ agentSend: mocks.send, agentInterrupt: vi.fn() }));
 vi.mock('./store', () => ({ updateSession: mocks.update }));
 vi.mock('./claude', () => ({ appendEvent: mocks.append }));
-vi.mock('./issues/prompt', () => ({ issuePromptContext: mocks.context }));
+vi.mock('./issues/prompt', () => ({
+	issuePromptContext: mocks.context,
+	wantsIssueContext: (text: string) => /\[issue_(?:title|body|comments)\]/.test(text),
+	issueContextWarning: (_text: string, context: { warnings?: string[] }) =>
+		context.warnings?.length ? `missing: ${context.warnings.join(', ')}` : null
+}));
 vi.mock('./sessions', () => ({ getSession: mocks.session }));
 vi.mock('./http', () => ({ agentSessionOr404: mocks.session, objectBody: (request: Request) => request.json() }));
 vi.mock('./tmux', () => ({ sendKeys: vi.fn(), sendRawKey: vi.fn() }));
@@ -35,6 +40,12 @@ for (const [name, route] of [['web', web], ['agent', agent]] as const) {
 			await send({ text: '[title]: [issue_body] / [issue_comments]', expand: true });
 			expect(mocks.send).toHaveBeenCalledWith(expect.anything(), 'Fix: Details / Discussion', undefined, undefined);
 			expect(mocks.context).toHaveBeenCalledWith('/path/to/project', [expect.objectContaining({ sourceId: 'source-a' })]);
+		});
+		it('notes missing issue context on the transcript before sending', async () => {
+			mocks.context.mockResolvedValue({ warnings: ['no linear API key for EX-1'] });
+			await send({ text: 'Context: [issue_body]', expand: true });
+			expect(mocks.append).toHaveBeenCalledWith('example', expect.objectContaining({ type: 'deck.warning', text: 'missing: no linear API key for EX-1' }));
+			expect(mocks.send).toHaveBeenCalledWith(expect.anything(), 'Context:', undefined, undefined);
 		});
 		it('rejects a prompt that becomes empty', async () => {
 			await expect(send({ text: '[pr_title]', expand: true })).rejects.toMatchObject({ status: 400 });

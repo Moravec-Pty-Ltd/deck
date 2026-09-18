@@ -96,6 +96,23 @@ Open PRs awaiting your review for a project. Each row carries \`review\`'s
   "errors": [] }
 \`\`\`
 
+### GET /api/agent/defaults?project=<path>
+
+What a new session in a project starts with when you pick nothing: the same
+defaults the web new-session modal preselects.
+
+\`\`\`json
+{ "path": "/path/to/project", "base": "main",
+  "prompts": { "work": "...", "review": "..." },
+  "kinds": { "claude": { "model": "opus", "effort": "high", "permissionMode": "bypassPermissions" },
+             "pi": { "model": "...", "provider": "..." }, "codex": { "model": "" }, "opencode": { "model": "" } } }
+\`\`\`
+
+\`base\` and each \`prompts\` entry are absent when the project has none
+configured; an empty \`model\` means the CLI picks. Send these values on create
+to start exactly what the web modal would, or override any of them. 404 for a
+path that isn't a registered project.
+
 ## Sessions
 
 A session is the unit of work: one agent (kind: claude|pi|codex|opencode) or
@@ -251,15 +268,23 @@ proceed:
 Every MCP \`ask\` waiting on a human answer, oldest first:
 
 \`\`\`json
-[{ "sessionId": "c_abc123", "source": "mcp", "askedAt": 0,
+[{ "sessionId": "c_abc123", "source": "mcp", "askId": "toolu_...", "askedAt": 0,
 	"questions": [{ "question": "...", "header": "...", "multiSelect": false,
 		"options": [{ "label": "...", "description": "..." }] }] }]
 \`\`\`
 
+\`askId\` is the ask's tool-call id (absent in the rare case deck couldn't
+match the call on the transcript). Pass it back with a structured answer so
+the picks persist on the session's transcript.
+
 ### POST /api/agent/sessions/{id}/answer
 
-\`{ "text": "..." }\` resolves the pending ask by text. On success
-\`{ "ok": true, "seq": <n> }\` (\`seq\` correlates the resulting turn). On failure
+\`{ "text": "...", "askId"?: "toolu_...", "answers"?: [{ "header": "...", "labels": ["..."] }] }\`
+resolves the pending ask. \`text\` is what the agent receives and is required;
+\`answers\` (one entry per question, in order) records the picks on the
+transcript the same way the web ask card does, so every client shows the
+question as answered with those labels. On success \`{ "ok": true, "seq": <n> }\`
+(\`seq\` correlates the resulting turn). On failure
 \`{ "ok": false, "reason": "no-pending-ask" }\` means nothing was waiting (already
 answered, or a race).
 
@@ -305,7 +330,7 @@ follow by name (\`tail -F\`) or re-read from your last \`seq\`.
 Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 
 - \`status\` — { status: running|idle|error|dead }
-- \`awaiting-input\`: { awaitingInput, source: mcp, questions? }
+- \`awaiting-input\`: { awaitingInput, source: mcp, askId?, questions? }
 - \`turn-finished\` — { subtype, cost } (subtype "success" = clean turn end)
 - \`pr\` — { pr } (captured PR seen or its GitHub state changed)
 - \`session-created\` — { session: <digest> }
