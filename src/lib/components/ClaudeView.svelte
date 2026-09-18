@@ -43,18 +43,22 @@
 	// so we pause scroll bookkeeping and re-pin once it's shown again.
 	// `condensed` is the Chat tab: the same transcript with each run of tool calls
 	// collapsed to one line. Thread passes false and renders every row.
+	// `focusIndex` is an absolute event index to open at (a search hit): older
+	// history is pulled in until it is loaded, then it is scrolled to once.
 	let {
 		session,
 		sessions = [],
 		visible = true,
 		condensed = false,
-		controls
+		controls,
+		focusIndex = null
 	}: {
 		session: DeckSession;
 		sessions?: DeckSession[];
 		visible?: boolean;
 		condensed?: boolean;
 		controls?: Snippet;
+		focusIndex?: number | null;
 	} = $props();
 
 	// A single global composer draft, persisted so a cold reload / iOS PWA relaunch
@@ -290,6 +294,7 @@
 				// self-defers while hidden.
 				if (visible) forceScroll();
 				hydrateRest();
+				if (focusIndex !== null && !focused) void focusEvent(focusIndex);
 			});
 			es.addEventListener('transcript', (e) => {
 				const ev = JSON.parse((e as MessageEvent).data);
@@ -492,6 +497,30 @@
 			growWindow(HYDRATE_CHUNK).then(() => idle(step));
 		};
 		idle(step);
+	}
+
+	// Bring a deep-linked event into view: load older history until it is
+	// present, widen the window over it, then scroll it to the top and flash it.
+	// Bounded so a bad index can't loop forever.
+	let focused = false;
+	async function focusEvent(index: number) {
+		focused = true;
+		for (let pulls = 0; baseIndex > index && pulls < 40; pulls++) {
+			const before = baseIndex;
+			await loadOlder();
+			if (baseIndex === before) break;
+		}
+		if (index < baseIndex || index >= baseIndex + events.length) return;
+		limit = Math.max(limit, events.length - (index - baseIndex));
+		await tick();
+		const el =
+			scroller?.querySelector<HTMLElement>(`[data-k="${index}"]`) ??
+			scroller?.querySelector<HTMLElement>(`[data-k^="${index}:"]`);
+		if (!el || !scroller) return;
+		atBottom = false;
+		scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+		el.classList.add('deck-focus');
+		setTimeout(() => el.classList.remove('deck-focus'), 2500);
 	}
 
 	// Fetch the slice of history just before what's loaded and prepend it,
@@ -724,6 +753,7 @@
 				text={block.text}
 				markdown
 				bubbleClass="bg-base-100 text-base-content"
+				onread={voiceAvailable ? (t) => void voice.readAloud(t) : undefined}
 			/>
 		{:else if block.type === 'thinking'}
 			<details class="px-2 text-xs opacity-50">
@@ -967,3 +997,12 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* A deep-linked row (search hit) flashes so the eye lands on it. */
+	:global(.deck-focus) {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 4px;
+		border-radius: var(--radius-box, 0.5rem);
+	}
+</style>

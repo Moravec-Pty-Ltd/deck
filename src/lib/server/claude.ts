@@ -73,6 +73,9 @@ export function appendEvent(id: string, event: Record<string, unknown>) {
 		.catch((err) => console.error(`[deck] transcript append failed for ${id}:`, err))
 		.finally(() => {
 			emit(`event:${id}`, event);
+			// The same event on one shared channel, for listeners that span every
+			// session (the Live Activity updater) without subscribing per id.
+			emit('event', { id, event });
 			// A result footer ends a turn; surface it (with the refreshed session
 			// cost total) on the global agent feed. Published after the write
 			// settles so transcriptCostSummary already folds this result in.

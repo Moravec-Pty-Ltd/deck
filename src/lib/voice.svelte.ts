@@ -190,6 +190,20 @@ export class VoiceSession {
 		if (!this.playing) void this.drain();
 	}
 
+	// Read one message on request, with voice mode on or off. Off, the audio is
+	// unlocked by this click and only this message plays; nothing else changes.
+	async readAloud(text: string): Promise<void> {
+		if (!this.enabled) {
+			await this.unlockAudio();
+			this.playToken += 1;
+			this.queue = [];
+		}
+		const segments = await this.fetchSegments(text);
+		if (!segments.length) return;
+		this.queue.push({ segments });
+		if (!this.playing) void this.drain(true);
+	}
+
 	private async fetchSegments(text: string): Promise<SpeechSegment[]> {
 		try {
 			return (await postJson<{ segments: SpeechSegment[] }>('/api/speech/segments', { text })).segments;
@@ -222,10 +236,11 @@ export class VoiceSession {
 		if (this.status === 'speaking') this.restAfterTake();
 	}
 
-	private async drain(): Promise<void> {
+	// `standalone` keeps playing with voice mode off (a one-off read-aloud).
+	private async drain(standalone = false): Promise<void> {
 		this.playing = true;
 		try {
-			while (this.enabled && this.queue.length) await this.playHead();
+			while ((this.enabled || standalone) && this.queue.length) await this.playHead();
 		} finally {
 			this.playing = false;
 			this.settleAfterPlayback();

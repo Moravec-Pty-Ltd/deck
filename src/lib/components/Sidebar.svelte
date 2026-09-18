@@ -20,7 +20,8 @@
 		type RecentError,
 		type ReviewDecision
 	} from '$lib/morabot-core';
-	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff } from '@lucide/svelte';
+	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search } from '@lucide/svelte';
+	import { searchUi } from '$lib/search-ui.svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
 	// what the session is attached to, colour still says PR state.
@@ -305,6 +306,14 @@
 	<span class="text-sm font-semibold">Sessions</span>
 	<button
 		class="btn btn-ghost btn-xs ml-auto"
+		onclick={() => (searchUi.open = true)}
+		aria-label="Search transcripts"
+		title="Search transcripts (⇧⌘F)"
+	>
+		<Search size={14} />
+	</button>
+	<button
+		class="btn btn-ghost btn-xs"
 		onclick={viewMode.toggle}
 		aria-label={viewModeLabel(viewMode.current)}
 		title={viewModeLabel(viewMode.current)}

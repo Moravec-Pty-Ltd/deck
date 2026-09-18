@@ -4,6 +4,7 @@ import { PUBLIC_PATHS, noAuth, printAccessUrl, requestIsAuthed, setAuthCookie, t
 import { ensureMcp } from '$lib/server/mcp';
 import { initSecrets } from '$lib/server/secrets';
 import '$lib/server/monitor';
+import '$lib/server/live-activity';
 
 // Start the localhost MCP server (blocking `ask` tool) and shell monitor at boot
 // so the MCP port is ready before any claude session spawns.

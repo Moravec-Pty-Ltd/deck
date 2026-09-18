@@ -51,29 +51,93 @@ self.addEventListener('fetch', (event) => {
 	event.respondWith(fetch(request).catch(() => caches.match(request)));
 });
 
+function pushData(event) {
+	try {
+		return event.data ? event.data.json() : {};
+	} catch {
+		return { title: 'deck', body: event.data ? event.data.text() : '' };
+	}
+}
+
+// A single-choice question offers its options as notification actions, so it
+// can be answered without opening deck (where the platform shows them).
+function askActions(ask) {
+	const maxActions = (self.Notification && self.Notification.maxActions) || 0;
+	return ask.options.slice(0, maxActions).map((label, i) => ({ action: `option:${i}`, title: label }));
+}
+
+const str = (value, fallback) => (typeof value === 'string' ? value : fallback);
+
+// Option actions only fit an ask with one question; a multi-question ask is
+// opened in deck like any other notification.
+function singleQuestionAsk(data) {
+	const ask = data.ask;
+	return ask && ask.questions === 1 ? ask : undefined;
+}
+
+function notificationOptions(data) {
+	const ask = singleQuestionAsk(data);
+	return {
+		body: str(data.body, ''),
+		tag: data.tag,
+		data: { url: str(data.url, '/'), ask },
+		icon: '/icon-192.png',
+		badge: '/icon-192.png',
+		renotify: Boolean(data.tag),
+		actions: ask ? askActions(ask) : []
+	};
+}
+
 // Web Push: show the notification deck sent (question asked, turn ended, crash).
 self.addEventListener('push', (event) => {
-	let data = {};
-	try {
-		data = event.data ? event.data.json() : {};
-	} catch {
-		data = { title: 'deck', body: event.data ? event.data.text() : '' };
-	}
-	event.waitUntil(
-		self.registration.showNotification(data.title || 'deck', {
-			body: data.body || '',
-			tag: data.tag,
-			data: { url: data.url || '/' },
-			icon: '/icon-192.png',
-			badge: '/icon-192.png',
-			renotify: !!data.tag
-		})
-	);
+	const data = pushData(event);
+	event.waitUntil(self.registration.showNotification(data.title || 'deck', notificationOptions(data)));
 });
 
-// Focus an existing window for the session if one is open, else open it.
+// Post the picked option as the ask's answer: the same text and structured
+// pick the ask card sends, so the transcript shows it answered.
+function answerFromNotification(ask, label) {
+	const header = ask.header || 'Answer';
+	return fetch(`/api/sessions/${encodeURIComponent(ask.sessionId)}/answer`, {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({
+			text: `Answering your question:\n- ${header}: ${label}`,
+			toolUseId: ask.askId,
+			answers: [{ header, labels: [label] }]
+		})
+	}).catch(() => {});
+}
+
+// The index an option action names, or -1 for a plain click.
+function optionIndex(event) {
+	const match = /^option:(\d+)$/.exec(str(event.action, ''));
+	return match ? Number(match[1]) : -1;
+}
+
+function askOf(event) {
+	const data = event.notification.data;
+	return data ? data.ask : undefined;
+}
+
+// The option label an action click picked, or null for a plain click.
+function pickedOption(event) {
+	const ask = askOf(event);
+	if (!ask) return null;
+	const label = ask.options[optionIndex(event)];
+	return label ? { ask, label } : null;
+}
+
+// An option action answers in place; a plain click focuses an existing window
+// for the session if one is open, else opens it.
 self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
+	const picked = pickedOption(event);
+	if (picked) {
+		event.waitUntil(answerFromNotification(picked.ask, picked.label));
+		return;
+	}
 	const target = event.notification.data?.url || '/';
 	event.waitUntil(
 		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {

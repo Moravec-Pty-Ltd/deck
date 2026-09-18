@@ -13,6 +13,7 @@
 	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
 	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
 	import { loadSettings } from '$lib/settings-store';
+	import { searchUi } from '$lib/search-ui.svelte';
 	import { Search, CornerDownLeft, ChevronLeft, TriangleAlert } from '@lucide/svelte';
 
 	// Global Cmd+K palette. Rendered once in the layout; `open` is toggled by the
@@ -104,6 +105,7 @@
 			cycleTheme,
 			notificationsSupported,
 			toggleNotifications,
+			openSearch: () => (searchUi.open = true),
 			prAction: prPost,
 			dismissPr: prDismiss,
 			setModel: async (next) => {

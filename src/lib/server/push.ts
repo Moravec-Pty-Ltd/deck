@@ -1,6 +1,7 @@
 import webpush, { type PushSubscription } from 'web-push';
 import { readJson, writeJson } from './config';
 import { apnsNotify } from './apns';
+import type { PushAsk } from './apns-core';
 
 // Web Push so the installed PWA gets notified (question asked, turn ended,
 // session crashed/exited) even when it's backgrounded on a phone. VAPID keys and
@@ -75,6 +76,8 @@ export interface NotifyPayload {
 	body?: string;
 	url?: string;
 	tag?: string;
+	// A blocking question the notification can answer directly (see apns-core).
+	ask?: PushAsk;
 }
 
 // A push endpoint's trailing path segment is a secret that can act like a

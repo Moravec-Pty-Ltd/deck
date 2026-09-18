@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Copy, Check } from '@lucide/svelte';
+	import { Copy, Check, Volume2 } from '@lucide/svelte';
 	import Linked from './Linked.svelte';
 	import Markdown from './Markdown.svelte';
 	import { haptic } from '$lib/haptics';
@@ -14,6 +14,7 @@
 	// of plain text + URL autolinks; `streaming`/`streamId` are forwarded to the
 	// renderer for the live block, which receives partial Markdown as it streams.
 	// (Thinking blocks render Markdown directly via the Markdown component.)
+	// `onread`, when given, adds a hover button that reads the message aloud.
 	let {
 		text = '',
 		side,
@@ -21,7 +22,8 @@
 		markdown = false,
 		streaming = false,
 		streamId,
-		children
+		children,
+		onread
 	}: {
 		text?: string;
 		side: 'start' | 'end';
@@ -30,6 +32,7 @@
 		streaming?: boolean;
 		streamId?: string | number;
 		children?: Snippet;
+		onread?: (text: string) => void;
 	} = $props();
 
 	const copyable = $derived(!!text.trim());
@@ -104,17 +107,30 @@
 				{text}
 			/>{/if}
 		{#if copyable}
-			<button
-				type="button"
-				class="copy-btn btn btn-ghost btn-xs absolute top-1 right-1 transition-opacity {copied
-					? 'opacity-100'
-					: 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'}"
-				onclick={doCopy}
-				aria-label="Copy message"
-				title="Copy message"
-			>
-				{#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
-			</button>
+			<div class="absolute top-1 right-1 flex gap-0.5">
+				{#if onread}
+					<button
+						type="button"
+						class="copy-btn btn btn-ghost btn-xs pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
+						onclick={() => onread?.(text)}
+						aria-label="Read aloud"
+						title="Read aloud"
+					>
+						<Volume2 size={14} />
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="copy-btn btn btn-ghost btn-xs transition-opacity {copied
+						? 'opacity-100'
+						: 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'}"
+					onclick={doCopy}
+					aria-label="Copy message"
+					title="Copy message"
+				>
+					{#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
+				</button>
+			</div>
 		{/if}
 	</div>
 </div>

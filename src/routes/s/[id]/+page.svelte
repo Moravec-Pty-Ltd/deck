@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import type { DeckSession, NewSessionPreset, Project, ServerState } from '$lib/types';
 	import type { ReviewsPayload } from '$lib/morabot-core';
@@ -281,6 +282,14 @@
 		e.preventDefault();
 		persistWidth();
 	}
+
+	// A search hit deep-links to an event by absolute index (/s/{id}?at=N); the
+	// transcript loads back to it and scrolls there once.
+	const focusIndex = $derived.by(() => {
+		const raw = page.url.searchParams.get('at');
+		const n = raw === null ? NaN : Number(raw);
+		return Number.isInteger(n) && n >= 0 ? n : null;
+	});
 </script>
 
 <svelte:head>
@@ -485,6 +494,7 @@
 						{sessions}
 						visible={tab === 'main' || tab === 'chat'}
 						condensed={transcriptTab === 'chat'}
+						focusIndex={focusIndex}
 					>
 						{#snippet controls()}
 							{#key `${session.id}:${liveKind}`}

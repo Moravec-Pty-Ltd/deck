@@ -191,3 +191,44 @@ describe('registerDeviceSchema', () => {
 		).toThrow();
 	});
 });
+
+describe('ask notifications', () => {
+	it('sets the answer category and carries the ask', async () => {
+		const { askNotificationBody, ASK_CATEGORY } = await import('./apns-core');
+		const ask = { sessionId: 's', askId: 'toolu_1', options: ['Red', 'Blue'], questions: 1 };
+		const payload = toApnsPayload({ title: 'Q', body: 'b', ask });
+		expect(payload.aps.category).toBe(ASK_CATEGORY);
+		expect(payload.ask).toEqual(ask);
+		expect(toApnsPayload({ title: 'Q' }).aps.category).toBeUndefined();
+		expect(askNotificationBody('Which colour?', ['Red', 'Blue'])).toBe('Which colour?\n1 Red · 2 Blue');
+		expect(askNotificationBody('Continue?', [])).toBe('Continue?');
+	});
+});
+
+describe('live activity pushes', () => {
+	it('registers and prunes activity tokens', async () => {
+		const { upsertActivity, removeActivityToken, registerActivitySchema } = await import('./apns-core');
+		const a = { sessionId: 's1', token: 'aa', env: 'production' as const, addedAt: 1 };
+		const list = upsertActivity(upsertActivity([], a), { ...a, sessionId: 's2' });
+		expect(list).toHaveLength(1);
+		expect(list[0].sessionId).toBe('s2');
+		expect(removeActivityToken(list, 'aa')).toEqual([]);
+		expect(() => registerActivitySchema.parse({ sessionId: 's', token: 'zz', env: 'production' })).toThrow();
+	});
+	it('builds update and end pushes with stale and dismissal dates', async () => {
+		const { toActivityPush, activityText, shouldPushText, activityTopic, ACTIVITY_TEXT_INTERVAL_MS } = await import('./apns-core');
+		const state = { status: 'running', awaitingInput: false, lastText: 'x', costUsd: 0.1, turns: 2, updatedAt: 0 };
+		const running = toActivityPush(state, 'update', 10_000);
+		expect(running.aps).toEqual({ timestamp: 10, event: 'update', 'content-state': state });
+		const idle = toActivityPush({ ...state, status: 'idle' }, 'update', 10_000);
+		expect(idle.aps['stale-date']).toBe(10 + 30 * 60);
+		const end = toActivityPush(state, 'end', 10_000);
+		expect(end.aps['dismissal-date']).toBe(70);
+		expect(activityText('  a  \n b ' + 'c'.repeat(300))).toHaveLength(160);
+		expect(activityText(null)).toBe('');
+		expect(shouldPushText(undefined, 0)).toBe(true);
+		expect(shouldPushText(0, ACTIVITY_TEXT_INTERVAL_MS - 1)).toBe(false);
+		expect(shouldPushText(0, ACTIVITY_TEXT_INTERVAL_MS)).toBe(true);
+		expect(activityTopic('tech.example.app')).toBe('tech.example.app.push-type.liveactivity');
+	});
+});

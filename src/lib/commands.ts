@@ -31,6 +31,8 @@ export interface CommandContext {
 	cycleTheme: () => void;
 	notificationsSupported: boolean;
 	toggleNotifications: () => void;
+	// Open the transcript search dialog.
+	openSearch: () => void;
 	// PR review/merge; rejects with gh's message on failure so the palette shows it.
 	prAction: (payload: PrActionPayload) => Promise<void>;
 	dismissPr: () => Promise<void>;
@@ -224,6 +226,13 @@ function globalCommands(ctx: CommandContext): Command[] {
 			title: 'Switch theme',
 			keywords: ['theme', 'dark', 'light', 'eink', 'appearance'],
 			run: () => ctx.cycleTheme()
+		},
+		{
+			id: 'search-transcripts',
+			title: 'Search transcripts',
+			keywords: ['find', 'grep', 'history', 'said'],
+			hint: '⇧⌘F',
+			run: () => ctx.openSearch()
 		}
 	];
 	if (ctx.notificationsSupported) {

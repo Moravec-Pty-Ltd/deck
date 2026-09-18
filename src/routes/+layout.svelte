@@ -7,6 +7,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import TranscriptSearch from '$lib/components/TranscriptSearch.svelte';
+	import { searchUi } from '$lib/search-ui.svelte';
 
 	let { children } = $props();
 
@@ -24,10 +26,15 @@
 	// chat/terminal inputs keep it) and never override a handler that already
 	// claimed the event; Cmd+K carries no text-edit meaning, so it still opens the
 	// palette even from an input.
+	// Cmd/Ctrl+Shift+F opens transcript search from any page.
 	function onWindowKeydown(e: KeyboardEvent) {
+		if (e.defaultPrevented || (!e.metaKey && !e.ctrlKey)) return;
+		if ((e.key === 'f' || e.key === 'F') && e.shiftKey) {
+			e.preventDefault();
+			searchUi.open = true;
+			return;
+		}
 		if (e.key !== 'k' && e.key !== 'K') return;
-		if (!e.metaKey && !e.ctrlKey) return;
-		if (e.defaultPrevented) return;
 		if (!e.metaKey && isEditable(e.target)) return;
 		e.preventDefault();
 		paletteOpen = !paletteOpen;
@@ -187,6 +194,7 @@
 	notificationsSupported={pushSupported}
 	toggleNotifications={togglePush}
 />
+<TranscriptSearch />
 
 <div class="flex h-[100dvh] flex-col overflow-hidden bg-base-200">
 	<header class="navbar min-h-12 shrink-0 gap-2 border-b border-base-300 bg-base-100 px-3 sm:px-4">

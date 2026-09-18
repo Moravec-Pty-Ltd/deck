@@ -1,7 +1,8 @@
 import { getStoredSession } from './store';
-import { notify } from './push';
+import { notify, type NotifyPayload } from './push';
 import { publishAgentEvent } from './agent-feed';
 import { latestAskToolUseId } from './transcript';
+import { ASK_ACTION_SLOTS, askNotificationBody } from './apns-core';
 
 // One outstanding "ask the user" call per claude session. The MCP `ask` tool
 // handler registers a pending entry and awaits it; the UI resolves it when the
@@ -37,8 +38,10 @@ export interface PendingAsk {
 const g = globalThis as { __deckAsks?: Map<string, Pending> };
 const pending = (g.__deckAsks ??= new Map());
 
-// Announce the ask on the agent feed once its tool_use id is known (or the
-// lookup gave up), unless the ask was already settled or replaced meanwhile.
+// Announce the ask on the agent feed and to devices once its tool_use id is
+// known (or the lookup gave up), unless the ask was already settled or
+// replaced meanwhile. The notification carries the first question's options
+// so a phone can answer it from the notification's actions.
 async function announce(sessionId: string, entry: Pending): Promise<void> {
 	const askId = await latestAskToolUseId(sessionId).catch(() => null);
 	if (pending.get(sessionId) !== entry) return;
@@ -49,6 +52,25 @@ async function announce(sessionId: string, entry: Pending): Promise<void> {
 		...(askId ? { askId } : {}),
 		questions: entry.questions
 	});
+	notify(askNotification(sessionId, entry.questions, askId ?? undefined));
+}
+
+// The push for a new ask: the first question and its numbered options in the
+// body, and the ask itself for a client's answer actions.
+function askNotification(sessionId: string, questions: AskQuestion[], askId: string | undefined) {
+	const first = questions[0];
+	const options = (first?.options ?? []).map((o) => o.label).slice(0, ASK_ACTION_SLOTS);
+	const title = getStoredSession(sessionId)?.title ?? 'session';
+	const ask: NotifyPayload['ask'] = { sessionId, options, questions: questions.length };
+	if (askId) ask.askId = askId;
+	if (first?.header) ask.header = first.header;
+	return {
+		title: `Needs your answer · ${title}`,
+		body: first ? askNotificationBody(first.question, options) : 'Claude is asking a question',
+		tag: sessionId,
+		url: `/s/${sessionId}`,
+		ask
+	};
 }
 
 export function registerAsk(
@@ -58,14 +80,6 @@ export function registerAsk(
 ): Promise<string> {
 	// Replace any earlier pending ask for this session (shouldn't normally happen).
 	pending.get(sessionId)?.reject(new Error('superseded'));
-
-	const title = getStoredSession(sessionId)?.title ?? 'session';
-	notify({
-		title: `Needs your answer · ${title}`,
-		body: questions[0]?.question ?? 'Claude is asking a question',
-		tag: sessionId,
-		url: `/s/${sessionId}`
-	});
 
 	return new Promise<string>((resolve, reject) => {
 		const settle = () => {

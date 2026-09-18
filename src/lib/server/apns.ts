@@ -132,17 +132,11 @@ function sessionFor(env: core.ApnsEnv): http2.ClientHttp2Session {
 	return session;
 }
 
-// A 410, or a 4xx reason saying the token is dead, means the device will
-// never accept another push - prune it. Anything else is logged (no token in
-// the log; the token itself is the secret).
-function handleFailureStatus(device: core.ApnsDevice, status: number, reason: string | undefined) {
-	if (status === 410 || reason === 'BadDeviceToken' || reason === 'Unregistered') {
-		unregisterDevice(device.token);
-		return;
-	}
-	console.error(
-		`[deck] APNs send failed (status ${status}${reason ? `, reason ${reason}` : ''}) for a ${device.platform}/${device.env} device`
-	);
+// A 410, or a 4xx reason saying the token is dead, means the target will
+// never accept another push - the caller prunes it. Anything else is logged
+// (no token in the log; the token itself is the secret).
+function isDeadToken(status: number, reason: string | undefined): boolean {
+	return status === 410 || reason === 'BadDeviceToken' || reason === 'Unregistered';
 }
 
 function parseReason(body: string): string | undefined {
@@ -153,37 +147,56 @@ function parseReason(body: string): string | undefined {
 	}
 }
 
-// A stream/session-level throw (e.g. the session died between the health
-// check in sessionFor and this call) is caught here rather than propagating,
-// so one device's connection trouble can't take down the whole notify fan-out.
-function sendToDevice(device: core.ApnsDevice, payload: core.ApnsPayload): Promise<void> {
+interface Target {
+	token: string;
+	env: core.ApnsEnv;
+	// For the log line only.
+	label: string;
+}
+
+interface SendHeaders {
+	topic: string;
+	pushType: 'alert' | 'liveactivity';
+	priority: '10' | '5';
+}
+
+// One push to one token. Resolves with whether the token is dead (so the
+// caller can prune it). A stream/session-level throw (e.g. the session died
+// between the health check in sessionFor and this call) is caught here rather
+// than propagating, so one device's connection trouble can't take down the
+// whole fan-out.
+function send(target: Target, headers: SendHeaders, payload: unknown): Promise<boolean> {
 	const jwt = currentJwt();
-	if (!jwt) return Promise.resolve();
+	if (!jwt) return Promise.resolve(false);
 	return new Promise((resolve) => {
 		const fail = (err: unknown) => {
-			console.error(`[deck] APNs send failed for a ${device.platform}/${device.env} device:`, err);
-			resolve();
+			console.error(`[deck] APNs send failed for ${target.label}:`, err);
+			resolve(false);
 		};
 		try {
-			const req = sessionFor(device.env).request({
+			const req = sessionFor(target.env).request({
 				':method': 'POST',
-				':path': `/3/device/${device.token}`,
+				':path': `/3/device/${target.token}`,
 				authorization: `bearer ${jwt}`,
-				'apns-topic': core.deriveTopic(config.topic, device.platform),
-				'apns-push-type': 'alert',
-				'apns-priority': '10',
+				'apns-topic': headers.topic,
+				'apns-push-type': headers.pushType,
+				'apns-priority': headers.priority,
 				'apns-expiration': '0'
 			});
 			let status = 0;
 			let body = '';
-			req.on('response', (headers) => {
-				status = Number(headers[':status']) || 0;
+			req.on('response', (h) => {
+				status = Number(h[':status']) || 0;
 			});
 			req.setEncoding('utf8');
 			req.on('data', (chunk: string) => (body += chunk));
 			req.on('end', () => {
-				if (status >= 400) handleFailureStatus(device, status, parseReason(body));
-				resolve();
+				const reason = status >= 400 ? parseReason(body) : undefined;
+				const dead = status >= 400 && isDeadToken(status, reason);
+				if (status >= 400 && !dead) {
+					console.error(`[deck] APNs send failed (status ${status}${reason ? `, reason ${reason}` : ''}) for ${target.label}`);
+				}
+				resolve(dead);
 			});
 			req.on('error', fail);
 			req.end(JSON.stringify(payload));
@@ -191,6 +204,15 @@ function sendToDevice(device: core.ApnsDevice, payload: core.ApnsPayload): Promi
 			fail(err);
 		}
 	});
+}
+
+async function sendToDevice(device: core.ApnsDevice, payload: core.ApnsPayload): Promise<void> {
+	const dead = await send(
+		{ token: device.token, env: device.env, label: `a ${device.platform}/${device.env} device` },
+		{ topic: core.deriveTopic(config.topic, device.platform), pushType: 'alert', priority: '10' },
+		payload
+	);
+	if (dead) unregisterDevice(device.token);
 }
 
 // Fire-and-forget push to every registered device; never throws, mirroring
@@ -205,5 +227,54 @@ export async function apnsNotify(payload: core.DeckPushPayload): Promise<void> {
 		await Promise.all(devices.map((d) => sendToDevice(d, apnsPayload)));
 	} catch (err) {
 		console.error('[deck] apnsNotify failed:', err);
+	}
+}
+
+// ---- Live Activity tokens ----
+
+const ACTIVITIES_FILE = 'apns-activities.json';
+
+function loadActivities(): core.ActivityToken[] {
+	return readJson<core.ActivityToken[]>(ACTIVITIES_FILE, []);
+}
+
+function saveActivities(list: core.ActivityToken[]) {
+	writeJson(ACTIVITIES_FILE, list, 0o600);
+}
+
+// Throws (a ZodError) on invalid input; the route catches it and returns 400.
+export function registerActivity(raw: unknown): void {
+	const input = core.registerActivitySchema.parse(raw);
+	saveActivities(core.upsertActivity(loadActivities(), { ...input, addedAt: Date.now() }));
+}
+
+export function unregisterActivity(token: string): void {
+	saveActivities(core.removeActivityToken(loadActivities(), token));
+}
+
+export function activitiesFor(sessionId: string): core.ActivityToken[] {
+	return loadActivities().filter((a) => a.sessionId === sessionId);
+}
+
+// Push a Live Activity update (or end) to every activity a session has. An
+// ended activity's tokens are forgotten; a dead token is pruned. Never throws.
+export async function apnsActivity(sessionId: string, push: core.ActivityPush): Promise<void> {
+	if (!apnsEnabled) return;
+	try {
+		const targets = activitiesFor(sessionId);
+		if (!targets.length) return;
+		const priority = push.aps.event === 'end' || push.aps['content-state'].status !== 'running' ? '10' : '5';
+		await Promise.all(
+			targets.map(async (t) => {
+				const dead = await send(
+					{ token: t.token, env: t.env, label: `a ${t.env} live activity` },
+					{ topic: core.activityTopic(config.topic), pushType: 'liveactivity', priority },
+					push
+				);
+				if (dead || push.aps.event === 'end') unregisterActivity(t.token);
+			})
+		);
+	} catch (err) {
+		console.error('[deck] apnsActivity failed:', err);
 	}
 }
