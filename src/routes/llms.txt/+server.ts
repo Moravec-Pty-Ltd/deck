@@ -79,11 +79,11 @@ Open issues for a project (\`project\` = a discovery \`path\`; \`&refresh=1\`
 bypasses the 60s cache). Each row maps onto \`create\`'s \`issue\`:
 
 \`\`\`json
-{ "issues": [{ "source": "github", "id": "owner/repo#1", "title": "...", "url": "..." }],
+{ "issues": [{ "source": "github", "sourceId": "...", "id": "owner/repo#1", "title": "...", "url": "..." }],
   "errors": [{ "sourceId": "...", "message": "..." }] }
 \`\`\`
 
-Pass \`{ source, id, url }\` straight through as \`create\`'s \`issue\`.
+Pass \`{ source, sourceId, id, url }\` straight through as \`create\`'s \`issue\`.
 
 ### GET /api/agent/prs?project=<path>
 
@@ -174,6 +174,12 @@ default the web new-session modal prefills, so the session's first turn still
 starts. A supplied \`prompt\` always wins; there's no default when the project
 has none configured.
 
+Work mode also accepts an \`issues\` array (up to 10), which takes precedence
+over the legacy single \`issue\`. Pass raw prompt templates: the server expands
+placeholders and fetches attached issue titles, bodies, comments, and images.
+Preserve discovery's \`sourceId\` so keyed trackers use the correct credential.
+Older clients without it use the project's matching source where unambiguous.
+
 **Idempotency**: send \`Idempotency-Key: <key>\` (or body \`"idempotencyKey"\`)
 so a retried create — after a lost 201 — returns the same session (200) instead
 of spawning a second one + worktree. Retry a failed/timed-out create under the
@@ -181,10 +187,13 @@ same key.
 
 ### POST /api/agent/sessions/{id}/message
 
-\`{ "text": "..." }\` — send a prompt / steer. Mid-turn messages queue (claude)
+\`{ "text": "...", "expand"?: true, "images"?: [{ "media_type": "image/png", "data": "base64" }] }\` — send a prompt / steer. Mid-turn messages queue (claude)
 or restart the turn (other kinds). Returns \`{ "ok": true, "status": "running",
 "seq": <n> }\`. \`seq\` is the event-log cursor at send time: poll the event log
 from it and watch for this session's \`turn-finished\` to know the turn is done.
+Text is literal unless \`expand: true\` is supplied. Expansion can fetch rich
+issue context for attached issues. Images currently require a Claude session;
+other runtimes return 400 rather than silently discarding attachments.
 
 ### POST /api/agent/sessions/{id}/stop
 

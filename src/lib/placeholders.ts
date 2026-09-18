@@ -11,7 +11,7 @@ export interface PlaceholderContext {
 	issueId?: string;
 	issueUrl?: string;
 	// Fetched at session-create time (server/issues/detail.ts) and injected into
-	// the first prompt; blank elsewhere since deck doesn't persist issue bodies.
+	// the first prompt or a quick message that requests rich issue context.
 	issueTitle?: string;
 	issueBody?: string;
 	issueComments?: string;

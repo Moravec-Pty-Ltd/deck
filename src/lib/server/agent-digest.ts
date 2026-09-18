@@ -79,16 +79,17 @@ export function projectDigest(p: Project): AgentProject {
 	return { path: p.path, name: p.name, group: p.group };
 }
 
-// Maps onto create's `issue { source, id, url }`.
+// Maps onto create's `issue { source, sourceId, id, url }`.
 export interface AgentIssue {
 	source: SessionIssue['source'];
+	sourceId: string;
 	id: string;
 	title: string;
 	url: string;
 }
 
 export function issueDigest(i: Issue): AgentIssue {
-	return { source: i.sourceType, id: i.id, title: i.title, url: i.url };
+	return { source: i.sourceType, sourceId: i.sourceId, id: i.id, title: i.title, url: i.url };
 }
 
 // Maps onto review's `pr { repo, number }`; the rest is context for picking one.

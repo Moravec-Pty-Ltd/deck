@@ -80,7 +80,7 @@ function reviewBody(body: Record<string, unknown>): Record<string, unknown> {
 
 // 'work': start a session on an issue/prompt, optionally in a fresh worktree.
 function workBody(body: Record<string, unknown>): Record<string, unknown> {
-	const issues = body.issue ? [body.issue] : undefined;
+	const issues = Array.isArray(body.issues) ? body.issues : body.issue ? [body.issue] : undefined;
 	const fields = commonFields(body);
 	if (!hasPrompt(body)) fields.prompt = defaultPrompt(body.cwd, false);
 	return { ...fields, issues, worktree: body.worktree };

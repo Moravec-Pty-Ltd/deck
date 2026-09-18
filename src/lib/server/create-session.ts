@@ -7,12 +7,12 @@ import { isFlagSafe } from './agents/args';
 import { slugifyBranch } from './branch-core';
 import { agentSend } from './agents/dispatch';
 import { appendEvent } from './claude';
-import { listProjects, updateProject, rememberModel, rememberEffort, readSecret } from './store';
+import { listProjects, updateProject, rememberModel, rememberEffort } from './store';
 import { parseEffort } from './session-effort-core';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
-import { buildIssuePrompt, type IssueForFetch, type IssuePromptContext } from './issues/detail';
+import { issuePromptContext, type PickedIssue } from './issues/prompt';
 
 // The create-session request pipeline, extracted from the POST /api/sessions
 // route so the agent API (POST /api/agent/sessions) can share it. Validation
@@ -45,13 +45,6 @@ function safeHttpUrl(url: unknown): string {
 // Cap on issues attached to one session — the picker is a shortlist, and this
 // bounds the create-time detail fan-out.
 const ISSUE_CAP = 10;
-
-// One issue as the picker attaches it: the persisted `SessionIssue` plus the
-// transient `sourceId`, kept only to look up the API key for the detail fetch.
-interface PickedIssue {
-	issue: SessionIssue;
-	sourceId: string;
-}
 
 function parseIssue(raw: unknown): PickedIssue | undefined {
 	const o = (raw ?? {}) as Record<string, unknown>;
@@ -254,33 +247,6 @@ async function resolveWorktree(
 	return { cwd: made.cwd, worktree: made.worktree, branch: made.worktree.branch };
 }
 
-// Which API key (if any) the detail fetch needs: GitHub rides on `gh`; Linear /
-// ClickUp read the source's stored key. Trusted single-user endpoint, so a key
-// that isn't found just yields a best-effort empty detail.
-function issuesForFetch(picked: PickedIssue[]): IssueForFetch[] {
-	return picked.map((p) => ({
-		issue: p.issue,
-		apiKey: p.issue.source === 'github' ? undefined : readSecret(p.sourceId)
-	}));
-}
-
-// The fetched [issue_title]/[issue_body]/[issue_comments] block for the first
-// prompt, or empty when no issues are attached / the fetch fails (best-effort;
-// the guard is belt-and-braces since buildIssuePrompt already swallows).
-async function issueContext(cwd: string, picked: PickedIssue[]): Promise<Partial<IssuePromptContext>> {
-	if (!picked.length) return {};
-	// buildIssuePrompt writes assets + touches git under the cwd; confine that sink
-	// to the registered project set (worktree or project), never an arbitrary
-	// custom cwd, and write to the canonical (symlink-free) path it returns.
-	const root = resolveWithinProjects(cwd);
-	if (!root) return {};
-	try {
-		return await buildIssuePrompt(root, issuesForFetch(picked));
-	} catch {
-		return {};
-	}
-}
-
 // Kick off the agent's first turn if a non-empty prompt was supplied, expanding
 // its [tokens] against the freshly-created session. When issues are attached,
 // their body/title/images are fetched server-side first (best-effort) so the
@@ -293,7 +259,7 @@ async function maybeDispatch(
 ): Promise<void> {
 	if (!isAgentKind(kind)) return;
 	if (!promptText) return;
-	const ctx = { ...contextFromSession(session), ...(await issueContext(session.cwd, picked)) };
+	const ctx = { ...contextFromSession(session), ...(await issuePromptContext(session.cwd, picked)) };
 	await agentSend(session, expandPlaceholders(promptText, ctx));
 }
 
@@ -354,7 +320,7 @@ export async function createSessionFromRequest(
 		permissionMode,
 		command,
 		worktree,
-		issues: picked.map((p) => p.issue),
+		issues: picked.map((p) => ({ ...p.issue, ...(p.sourceId ? { sourceId: p.sourceId } : {}) })),
 		pr
 	});
 

@@ -102,6 +102,7 @@ describe('discovery projections', () => {
 		};
 		expect(issueDigest(issue)).toEqual({
 			source: 'github',
+			sourceId: 's1',
 			id: 'acme/web#12',
 			title: 'Fix it',
 			url: 'https://github.com/acme/web/issues/12'

@@ -5,7 +5,7 @@ import { projectFromQuery } from '$lib/server/project-query';
 import { issueDigest } from '$lib/server/agent-digest';
 
 // Agent projection of a project's open issues (issue #144): each row maps onto
-// create's `issue { source, id, url }`. GET /api/agent/issues?project=<path>
+// create's `issue { source, sourceId, id, url }`. GET /api/agent/issues?project=<path>
 // (path from GET /api/agent/projects); ?refresh=1 bypasses the 60s cache. A
 // per-source failure surfaces in `errors`, not by sinking the list.
 export const GET: RequestHandler = async ({ url }) => {

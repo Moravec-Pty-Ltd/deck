@@ -159,6 +159,7 @@ export interface SessionPR {
 // back to the original ticket. deck is read-only on sources: this is metadata,
 // not a live handle.
 export interface SessionIssue {
+	sourceId?: string;
 	source: IssueSourceType;
 	id: string;
 	url: string;
