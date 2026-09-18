@@ -137,6 +137,17 @@ VAPID keys are generated on first run and stored in `~/.deck/vapid.json`; subscr
 
 Prefer your agent harness's own notifications? deck stamps `DECK_SESSION_ID` into every agent it spawns, so a claude/pi/codex/opencode stop hook can push a notification that deep-links straight back to the session. See [docs/hooks.md](docs/hooks.md).
 
+## Voice mode
+
+Turn on the waveform toggle in a session's composer and deck reads each new reply aloud and lets you talk back. It needs a speech server that speaks the OpenAI audio shapes: `POST /v1/audio/speech` for reading and `POST /v1/audio/transcriptions` for push-to-talk. Point deck at yours under **Projects > Voice mode** (or the `speech` block in `~/.deck/settings.json`); **Detect local server** fills the fields when one is running on `127.0.0.1:17496`. deck proxies both, caches synthesised sentences in `~/.deck/speech/`, and hides the feature when nothing is configured.
+
+What it does:
+
+- reads every assistant text block as it lands (or only the final reply, per the bar's settings), skipping code blocks and tables with a short spoken marker
+- reads blocking questions with numbered options; say an option, its number, or a free-text reply
+- hold the button (or the space bar on desktop) to talk; release sends, drag off cancels; Stop halts reading and interrupts the turn
+- hands-free (experimental): an open mic with an energy detector, sensitivity adjustable, that can interrupt a reply mid-sentence
+
 ## Issue-source API keys
 
 Linear and ClickUp sources need an API key (GitHub rides on `gh`'s own auth). deck keeps those keys in the **OS keyring**, not in a file: macOS **Keychain**, Windows **Credential Manager**, and the **Secret Service** (GNOME Keyring, KWallet) on Linux, under the service name `deck`, one entry per source. macOS and Windows work out of the box; on Linux it needs a running Secret Service, which a headless box, a container, or a bare tty session usually doesn't have.

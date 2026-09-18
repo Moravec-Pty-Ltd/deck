@@ -17,7 +17,9 @@
 	import ToolRun from './ToolRun.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
-	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight } from '@lucide/svelte';
+	import VoiceBar from './VoiceBar.svelte';
+	import { VoiceSession } from '$lib/voice.svelte';
+	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight, AudioLines } from '@lucide/svelte';
 	import {
 		isCrossSession,
 		isEmptyDraft,
@@ -179,6 +181,49 @@
 		});
 	}
 
+	// Voice mode: reads new replies and questions aloud and sends what you say,
+	// through deck's speech proxies. One controller per mounted view; it follows
+	// the session switch below (a reply from the previous session must not be
+	// read into this one) and hides itself when no speech server is configured.
+	const voice = new VoiceSession({
+		send: async (text) => {
+			atBottom = true;
+			await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ text })
+			});
+		},
+		answer: answerQuestion,
+		interrupt: () => interrupt()
+	});
+	$effect(() => {
+		void voice.loadCapabilities();
+		return () => voice.destroy();
+	});
+	const voiceAvailable = $derived(!!voice.capabilities?.tts);
+
+	function toggleVoice() {
+		if (voice.enabled) voice.disable();
+		else void voice.enable();
+	}
+
+	// What a live event means for the reader: each assistant text block (or the
+	// question it asks), the turn's end, and an answer that closes a question.
+	function voiceHear(ev: AnyEvent) {
+		if (!voice.enabled) return;
+		if (ev.type === 'assistant') {
+			for (const block of ev.message?.content ?? []) {
+				if (block.type === 'text' && block.text?.trim()) voice.onAssistantText(block.text);
+				else if (block.type === 'tool_use' && isAskTool(block)) voice.onAsk(block.id, block.input?.questions ?? []);
+			}
+		} else if (ev.type === 'result') {
+			voice.onTurnFinished();
+		} else if (ev.answersFor) {
+			voice.onAskAnswered(ev.answersFor);
+		}
+	}
+
 	// One subscription per session. The body depends only on session.id, so it
 	// re-runs exactly when the viewed session changes — never on its own writes.
 	$effect(() => {
@@ -186,6 +231,7 @@
 
 		// Clear the previous session synchronously so its history and live stream
 		// can't bleed into this one while the new snapshot is in flight.
+		untrack(() => voice.disable());
 		events = [];
 		cost = emptyCostSummary();
 		clearIndex();
@@ -256,6 +302,7 @@
 				events.push(ev); // in-place: a full re-spread is O(n) on every event
 				indexForward(index, ev);
 				limit += 1; // keep the new event in view without dropping a tail row
+				voiceHear(ev);
 				maybeScroll();
 			});
 			es.addEventListener('status', (e) => {
@@ -816,6 +863,10 @@
 		</div>
 	{/if}
 
+	{#if voice.enabled}
+		<VoiceBar {voice} />
+	{/if}
+
 	<!-- -mx-2 cancels the session pane's side padding so the composer and its
 	     top border run edge to edge. -->
 	<div class="-mx-2 border-t border-base-300 bg-base-100 p-2 sm:p-3">
@@ -854,6 +905,17 @@
 		></textarea>
 		<div class="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
 			{@render controls?.()}
+			{#if voiceAvailable}
+				<button
+					class="btn btn-square btn-sm {voice.enabled ? 'btn-primary' : 'btn-ghost'}"
+					onclick={toggleVoice}
+					aria-pressed={voice.enabled}
+					aria-label={voice.enabled ? 'Turn voice mode off' : 'Turn voice mode on'}
+					title="Voice mode: read replies aloud, talk back"
+				>
+					<AudioLines size={16} />
+				</button>
+			{/if}
 			<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
 				<input
 					bind:this={fileInput}

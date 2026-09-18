@@ -14,6 +14,8 @@ export const transcriptsDir = path.join(dataDir, 'transcripts');
 export const agentSessionsDir = path.join(dataDir, 'agent-sessions');
 // User image attachments, stored out-of-band so the transcript JSONL stays small.
 export const imagesDir = path.join(dataDir, 'images');
+// Synthesised speech segments for voice mode, content-addressed by (voice, text).
+export const speechDir = path.join(dataDir, 'speech');
 // Durable, monotonically-sequenced agent event log (issue #143): append-only
 // JSONL a consumer tails or reads via the /api/agent/events cursor.
 export const eventLogFile = path.join(dataDir, 'events.jsonl');
@@ -21,6 +23,7 @@ export const eventLogFile = path.join(dataDir, 'events.jsonl');
 fs.mkdirSync(transcriptsDir, { recursive: true });
 fs.mkdirSync(agentSessionsDir, { recursive: true });
 fs.mkdirSync(imagesDir, { recursive: true });
+fs.mkdirSync(speechDir, { recursive: true });
 
 // Absolute path to morabot's status.json (issue #188); unset disables the
 // integration entirely (no sidebar section, no file reads, no notifications).
