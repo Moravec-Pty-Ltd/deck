@@ -28,6 +28,12 @@ export { snapshotFrames, readTranscriptRange } from './transcript';
 const ASK_PROMPT =
 	'To ask the user a question, call the `mcp__deck__ask` tool (same schema as AskUserQuestion: a `questions` array of { question, header, multiSelect, options:[{label, description}] }). It blocks until the user answers in the deck UI. The built-in AskUserQuestion tool is disabled here.';
 
+// deck only shows a mentioned file when it sits inside the project (see
+// server/files.ts), so the agent is told where files for the user go: a
+// self-ignored folder in its cwd, never /tmp.
+const FILES_PROMPT =
+	'When you make a file for the user to look at (a screenshot, an export, a report), save it under `.deck/out/` in your working directory (create the folder with a `.gitignore` containing `*` if it is missing), not under /tmp, and give its absolute path in your reply: deck shows images inline and other files as downloads, but only for paths inside the project.';
+
 interface Proc {
 	child: ChildProcess;
 	running: boolean;
@@ -193,7 +199,7 @@ function startProcess(id: string): Proc {
 	args.push(
 		'--disallowedTools', 'AskUserQuestion',
 		'--allowedTools', 'mcp__deck__ask',
-		'--append-system-prompt', ASK_PROMPT,
+		'--append-system-prompt', `${ASK_PROMPT}\n\n${FILES_PROMPT}`,
 		'--mcp-config', JSON.stringify({ mcpServers: { deck: { type: 'http', url: mcpUrl(id) } } })
 	);
 
