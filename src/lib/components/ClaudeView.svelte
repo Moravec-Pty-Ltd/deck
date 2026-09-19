@@ -753,6 +753,7 @@
 				text={block.text}
 				markdown
 				bubbleClass="bg-base-100 text-base-content"
+				sessionId={session.id}
 				onread={voiceAvailable ? (t) => void voice.readAloud(t) : undefined}
 			/>
 		{:else if block.type === 'thinking'}
@@ -773,7 +774,7 @@
 			<ToolCall {block} result={resultsById.get(block.id)} />
 		{/if}
 	{:else if event.type === 'deck.user'}
-		<MessageBubble side="end" text={event.text ?? ''} bubbleClass="bg-base-300 text-base-content">
+		<MessageBubble side="end" text={event.text ?? ''} bubbleClass="bg-base-300 text-base-content" sessionId={session.id}>
 			{#if event.images?.length}
 				<div class="mb-2 flex flex-wrap gap-2">
 					{#each event.images as img, k (k)}

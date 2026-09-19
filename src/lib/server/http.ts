@@ -15,6 +15,13 @@ export async function objectBody(request: Request): Promise<Record<string, unkno
 	return body;
 }
 
+// The session a per-session route targets, of any kind, or a 404.
+export async function sessionOr404(id: string): Promise<DeckSession> {
+	const session = await getSession(id);
+	if (!session) error(404, 'session not found');
+	return session;
+}
+
 // The agent session a per-session action route targets, or a 404. Shells (and
 // unknown ids) have no asks or turns to act on.
 export async function agentSessionOr404(id: string): Promise<DeckSession> {

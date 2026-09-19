@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { Copy, Check, Volume2 } from '@lucide/svelte';
+	import FileAttachments from './FileAttachments.svelte';
 	import Linked from './Linked.svelte';
 	import Markdown from './Markdown.svelte';
 	import { haptic } from '$lib/haptics';
@@ -15,6 +16,8 @@
 	// renderer for the live block, which receives partial Markdown as it streams.
 	// (Thinking blocks render Markdown directly via the Markdown component.)
 	// `onread`, when given, adds a hover button that reads the message aloud.
+	// `sessionId`, when given, shows the local files the text mentions under
+	// it (image previews, download chips) once the text has finished streaming.
 	let {
 		text = '',
 		side,
@@ -22,6 +25,7 @@
 		markdown = false,
 		streaming = false,
 		streamId,
+		sessionId,
 		children,
 		onread
 	}: {
@@ -31,6 +35,7 @@
 		markdown?: boolean;
 		streaming?: boolean;
 		streamId?: string | number;
+		sessionId?: string;
 		children?: Snippet;
 		onread?: (text: string) => void;
 	} = $props();
@@ -106,6 +111,7 @@
 		{#if markdown}<Markdown source={text} {streaming} {streamId} />{:else if text}<Linked
 				{text}
 			/>{/if}
+		{#if sessionId && text && !streaming}<FileAttachments {text} {sessionId} />{/if}
 		{#if copyable}
 			<div class="absolute top-1 right-1 flex gap-0.5">
 				{#if onread}
