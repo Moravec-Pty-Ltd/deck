@@ -12,6 +12,7 @@
 	import type { DeckSession, ServerRuntime, DeckSettings } from '$lib/types';
 	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
 	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
+	import { restartSession } from '$lib/session-restart';
 	import { loadSettings } from '$lib/settings-store';
 	import { searchUi } from '$lib/search-ui.svelte';
 	import { Search, CornerDownLeft, ChevronLeft, TriangleAlert } from '@lucide/svelte';
@@ -112,6 +113,10 @@
 				if (!currentSession) throw new Error('no session');
 				await switchModel(currentSession.id, next);
 				await loadData();
+			},
+			restartSession: async () => {
+				if (!currentSession) throw new Error('no session');
+				await restartSession(currentSession.id);
 			},
 			serverAction: async (name, action) => {
 				if (!currentSession) return;

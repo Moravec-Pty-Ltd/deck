@@ -40,6 +40,8 @@ export interface CommandContext {
 	serverAction: (name: string, action: ServerAction) => Promise<void>;
 	// Switch the current session's model (POST /api/sessions/[id]/model).
 	setModel: (model: string) => Promise<void>;
+	// Restart the current claude session's process (POST /api/sessions/[id]/restart).
+	restartSession: () => Promise<void>;
 }
 
 // A command awaiting a second step before it runs: 'text' collects a message,
@@ -212,6 +214,21 @@ function modelCommands(ctx: CommandContext, s: DeckSession): Command[] {
 	];
 }
 
+// Restart a claude session's process (see server/session-restart.ts). Idle-only
+// and claude-only, absent otherwise like the model switch.
+function restartCommands(ctx: CommandContext, s: DeckSession): Command[] {
+	if (s.kind !== 'claude' || s.status === 'running') return [];
+	return [
+		{
+			id: 'restart-claude',
+			title: 'Restart claude',
+			keywords: ['restart', 'reload', 'config', 'claude.md', 'settings', 'skills', 'mcp'],
+			hint: 'reload config',
+			run: () => ctx.restartSession()
+		}
+	];
+}
+
 // Always-available actions, independent of any session.
 function globalCommands(ctx: CommandContext): Command[] {
 	const cmds: Command[] = [
@@ -269,6 +286,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
 		...(s ? issueCommands(ctx, s) : []),
 		...(s ? serverCommands(ctx) : []),
 		...(s ? modelCommands(ctx, s) : []),
+		...(s ? restartCommands(ctx, s) : []),
 		...globalCommands(ctx),
 		...jumpCommands(ctx)
 	];

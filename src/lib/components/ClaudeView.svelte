@@ -798,6 +798,8 @@
 		<div class="px-2 text-center text-xs opacity-50">agent {event.from} → {event.kind} · recent conversation handed off</div>
 	{:else if event.type === 'deck.effort'}
 		<div class="px-2 text-center text-xs opacity-50">effort → {effortLabel(event.effort)}</div>
+	{:else if event.type === 'deck.restart'}
+		<div class="px-2 text-center text-xs opacity-50">restart → fresh claude config from the next message</div>
 	{:else if event.type === 'result'}
 		<div class="px-2 text-center text-xs opacity-50">{fmtCost(event)}</div>
 	{/if}

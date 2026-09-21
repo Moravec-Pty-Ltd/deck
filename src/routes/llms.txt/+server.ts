@@ -236,6 +236,13 @@ reasoning effort. Absent or empty resets to the CLI default; an unknown value or
 a non-claude session is a 400. Idle-only (409 if a turn is running); applies on
 the next turn. Returns \`{ "ok": true }\`.
 
+### POST /api/agent/sessions/{id}/restart
+
+Empty body. Drop a claude session's process so the next message respawns it
+with the current CLI config (CLAUDE.md, settings, skills, MCP) and resumes the
+same conversation. Idle-only (409 if a turn is running); a non-claude session is
+a 400 (those kinds spawn per turn and need no restart). Returns \`{ "ok": true }\`.
+
 ### POST /api/agent/sessions/{id}/review
 
 \`{ "decision": "approve" | "request-changes" | "comment", "body": "..." }\` —

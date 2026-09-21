@@ -39,6 +39,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
 		dismissPr: vi.fn().mockResolvedValue(undefined),
 		serverAction: vi.fn().mockResolvedValue(undefined),
 		setModel: vi.fn().mockResolvedValue(undefined),
+		restartSession: vi.fn().mockResolvedValue(undefined),
 		...over
 	};
 }
@@ -131,6 +132,14 @@ describe('buildCommands', () => {
 		expect(ids(ctx({ session: session({ kind: 'shell' }) }))).not.toContain('change-model');
 		expect(ids(ctx({ session: session({ status: 'running' }) }))).not.toContain('change-model');
 		expect(ids(ctx())).not.toContain('change-model');
+	});
+
+	it('offers Restart claude for an idle claude session only', () => {
+		expect(ids(ctx({ session: session() }))).toContain('restart-claude');
+		expect(ids(ctx({ session: session({ kind: 'pi' }) }))).not.toContain('restart-claude');
+		expect(ids(ctx({ session: session({ kind: 'shell' }) }))).not.toContain('restart-claude');
+		expect(ids(ctx({ session: session({ status: 'running' }) }))).not.toContain('restart-claude');
+		expect(ids(ctx())).not.toContain('restart-claude');
 	});
 
 	it('offers a jump command for every other session, not the current one', () => {

@@ -79,6 +79,7 @@ describe('groupRuns', () => {
 			{ type: 'deck.error', text: 'boom' },
 			{ type: 'deck.model', model: 'opus' },
 			{ type: 'deck.effort', effort: 'high' },
+			{ type: 'deck.restart' },
 			{ type: 'result', total_cost_usd: 1 },
 			assistant(text('a word'))
 		]) {
