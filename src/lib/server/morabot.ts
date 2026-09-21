@@ -55,16 +55,32 @@ if (morabotStatusPath !== null && statusPath === null) {
 }
 
 const UNCONFIGURED: ReviewsPayload = { status: 'unconfigured', inFlight: null, recent: [], recentErrors: [] };
+const offline = (): ReviewsPayload => ({ status: 'offline', inFlight: null, recent: [], recentErrors: [] });
 
-let lastMtimeMs: number | null = null;
-let lastParsed: MorabotStatus | null = null;
-let snapshot: ReviewsPayload =
-	statusPath === null ? UNCONFIGURED : { status: 'offline', inFlight: null, recent: [], recentErrors: [] };
-let ledger: Ledger | null = null;
+// Poll state lives on globalThis, like monitor.ts's __deckMonitor: the 10 s poll
+// keeps calling the pollMorabot it captured at startup, and after a Vite HMR
+// reload of this module a route importing cachedReviews would otherwise read a
+// fresh instance's snapshot that nothing ever writes, reporting morabot offline
+// until the process restarts. One object shared by every instance avoids that;
+// the ledger is on it too so the dedupe set is not split either.
+interface MorabotState {
+	lastMtimeMs: number | null;
+	lastParsed: MorabotStatus | null;
+	snapshot: ReviewsPayload;
+	ledger: Ledger | null;
+}
+
+const g = globalThis as { __deckMorabot?: MorabotState };
+const state: MorabotState = (g.__deckMorabot ??= {
+	lastMtimeMs: null,
+	lastParsed: null,
+	snapshot: statusPath === null ? UNCONFIGURED : offline(),
+	ledger: null
+});
 
 function getLedger(): Ledger {
-	if (!ledger) ledger = readJson<Ledger>(LEDGER_FILE, { initialized: false, notified: {} });
-	return ledger;
+	if (!state.ledger) state.ledger = readJson<Ledger>(LEDGER_FILE, { initialized: false, notified: {} });
+	return state.ledger;
 }
 
 // Record a review as seen and, if it lands on a session's captured PR, push one
@@ -109,16 +125,16 @@ function refreshParsed(path: string): boolean {
 	try {
 		mtimeMs = fs.statSync(path).mtimeMs;
 	} catch {
-		lastMtimeMs = null;
-		lastParsed = null;
+		state.lastMtimeMs = null;
+		state.lastParsed = null;
 		return false;
 	}
-	if (mtimeMs !== lastMtimeMs) {
-		lastMtimeMs = mtimeMs;
+	if (mtimeMs !== state.lastMtimeMs) {
+		state.lastMtimeMs = mtimeMs;
 		try {
-			lastParsed = parseMorabotStatus(JSON.parse(fs.readFileSync(path, 'utf8')));
+			state.lastParsed = parseMorabotStatus(JSON.parse(fs.readFileSync(path, 'utf8')));
 		} catch {
-			lastParsed = null;
+			state.lastParsed = null;
 		}
 	}
 	return true;
@@ -130,14 +146,14 @@ export function pollMorabot(sessions: DeckSession[]): void {
 	if (statusPath === null) return;
 	const now = Date.now();
 	if (!refreshParsed(statusPath)) {
-		snapshot = { status: 'offline', inFlight: null, recent: [], recentErrors: [] };
+		state.snapshot = offline();
 		return;
 	}
-	snapshot = deriveReviewsPayload(lastParsed, now);
-	notifyNewVerdicts(recentOf(lastParsed), sessions, now);
+	state.snapshot = deriveReviewsPayload(state.lastParsed, now);
+	notifyNewVerdicts(recentOf(state.lastParsed), sessions, now);
 }
 
 // The cached client payload for GET /api/reviews.
 export function cachedReviews(): ReviewsPayload {
-	return snapshot;
+	return state.snapshot;
 }
