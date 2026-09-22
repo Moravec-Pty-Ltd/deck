@@ -13,6 +13,7 @@ import {
 	parseSkillFrontmatter,
 	pickOption,
 	promptSessions,
+	skillInvocation,
 	spokenText,
 	statusAnnouncement,
 	summaryMessages,
@@ -268,11 +269,12 @@ function userTurnCount(): number {
 	return loadTurns().filter((t) => t.role === 'user').length;
 }
 
-// True once the user has spoken since the model proposed this same start.
+// True once the user has spoken since the model proposed a start in this
+// project. The prompt is not compared: the model rewords it between the
+// proposal and the go-ahead, and matching it exactly asked the user twice.
 function startAgreed(project: string, prompt: string): boolean {
 	const pending = state.pendingStart;
-	const same = pending && pending.project === project && pending.prompt === prompt;
-	if (same && pending.userTurns < userTurnCount()) {
+	if (pending && pending.project === project && pending.userTurns < userTurnCount()) {
 		state.pendingStart = null;
 		return true;
 	}
@@ -284,7 +286,7 @@ async function startSession(args: Record<string, unknown>): Promise<string> {
 	const name = String(args.project ?? '').toLowerCase();
 	const project = listProjects().find((p) => p.name.toLowerCase() === name);
 	if (!project) throw new Error(`No project named "${args.project}". Projects: ${listProjects().map((p) => p.name).join(', ')}.`);
-	const prompt = String(args.prompt ?? '').trim();
+	const prompt = skillInvocation(String(args.prompt ?? ''), skillCatalogue());
 	if (!prompt) throw new Error('A first prompt is required.');
 	if (!startAgreed(project.name, prompt)) {
 		return 'Not started: tell the user the project and the prompt and wait for their yes, then call start_session again with confirmed=true.';
@@ -311,8 +313,9 @@ async function latestReply(args: Record<string, unknown>): Promise<string> {
 
 async function sendMessage(args: Record<string, unknown>): Promise<string> {
 	const session = await agentSessionArg(args);
-	await sendAgentMessage(session, { text: String(args.text ?? '') });
-	return `Sent to ${session.title}.`;
+	const text = skillInvocation(String(args.text ?? ''), skillCatalogue());
+	await sendAgentMessage(session, { text });
+	return `Sent to ${session.title}: ${text.slice(0, 80)}`;
 }
 
 async function answerQuestion(args: Record<string, unknown>): Promise<string> {

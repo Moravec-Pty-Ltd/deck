@@ -10,6 +10,7 @@ import {
 	pickOption,
 	promptSessions,
 	shortDescription,
+	skillInvocation,
 	spokenText,
 	statusAnnouncement,
 	summaryMessages,
@@ -136,6 +137,25 @@ describe('announcements', () => {
 		expect(messages[0].content).toContain('one short spoken sentence');
 		expect(messages[1].content).toContain('The session "Auth token refresh" replied:');
 		expect(messages[1].content.length).toBeLessThan(6200);
+	});
+});
+
+describe('skillInvocation', () => {
+	const skills = [
+		{ name: 'dev-workflow', description: '', scope: 'global' },
+		{ name: 'release', description: '', scope: 'deck' },
+		{ name: 'dev', description: '', scope: 'global' }
+	];
+	it('turns a spoken skill request into its slash command', () => {
+		expect(skillInvocation('run dev-workflow SKO-136', skills)).toBe('/dev-workflow SKO-136');
+		expect(skillInvocation('Please kick off the dev-workflow skill on SKO-136', skills)).toBe('/dev-workflow SKO-136');
+		expect(skillInvocation('release', skills)).toBe('/release');
+		expect(skillInvocation('/dev-workflow ENG-1', skills)).toBe('/dev-workflow ENG-1');
+	});
+	it('leaves other prompts alone and prefers the longest skill name', () => {
+		expect(skillInvocation('Fix the flaky test and report back', skills)).toBe('Fix the flaky test and report back');
+		expect(skillInvocation('development is slow', skills)).toBe('development is slow');
+		expect(skillInvocation('dev-workflow ENG-2', skills)).toBe('/dev-workflow ENG-2');
 	});
 });
 

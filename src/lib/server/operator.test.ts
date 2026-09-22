@@ -124,7 +124,7 @@ describe('operatorChat', () => {
 		});
 		expect(interrupted).toHaveBeenCalledWith('c_auth');
 		expect(reply.actions.map((a) => a.result)).toEqual([
-			'Sent to Auth token refresh.',
+			'Sent to Auth token refresh: Rerun the suite.',
 			'Answered Foldable layout.',
 			'Stopped Auth token refresh.',
 			'Error: dev server is a shell, not an agent session.'
@@ -142,8 +142,10 @@ describe('operatorChat', () => {
 		expect(reply.actions[0].result).toContain('Not started');
 		expect(reply.text).toContain('Shall I?');
 
+		// The go-ahead comes reworded and in the user's words; the skill still
+		// runs as its slash command.
 		script = [
-			{ tool_calls: [toolCall('2', 'start_session', { project: 'Deck', prompt: '/dev-workflow ENG-1', title: 'dev workflow ENG-1', confirmed: true })] },
+			{ tool_calls: [toolCall('2', 'start_session', { project: 'Deck', prompt: 'run dev-workflow on ENG-1', title: 'dev workflow ENG-1', confirmed: true })] },
 			{ content: 'Started.' }
 		];
 		reply = await operatorChat('Yes.');

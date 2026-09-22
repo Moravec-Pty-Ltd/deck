@@ -172,6 +172,22 @@ export function summaryMessages(session: OperatorSession, reply: string): { role
 	];
 }
 
+// A prompt or message that names a skill in words ("run dev-workflow
+// SKO-136", "the release skill") becomes the slash command that runs it;
+// anything else passes through. The model tends to hand over the user's
+// wording rather than the invocation.
+export function skillInvocation(text: string, skills: SkillInfo[]): string {
+	const trimmed = text.trim();
+	if (trimmed.startsWith('/')) return trimmed;
+	const names = skills.map((s) => s.name).sort((a, b) => b.length - a.length);
+	for (const name of names) {
+		const pattern = new RegExp(`^(?:please\\s+)?(?:run|start|use|do|kick off)?\\s*(?:the\\s+)?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+skill)?(?:\\s+(?:on|for|with|against))?\\b\\s*(.*)$`, 'i');
+		const m = pattern.exec(trimmed);
+		if (m) return `/${name}${m[1] ? ` ${m[1].trim()}` : ''}`;
+	}
+	return trimmed;
+}
+
 // Qwen-style thinking that a server did not strip, and a reply that is empty
 // once it is gone.
 export function spokenText(content: string | null | undefined): string {
