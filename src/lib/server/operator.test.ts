@@ -171,6 +171,19 @@ describe('operatorChat', () => {
 	});
 });
 
+describe('resetOperator', () => {
+	it('archives a conversation rather than wiping it, and skips an empty one', async () => {
+		expect(resetOperator()).toBeNull();
+		script = [{ content: 'Quiet.' }];
+		await operatorChat('Anything?');
+		const archived = resetOperator();
+		expect(archived).toMatch(/operator-archive\/.*\.jsonl$/);
+		expect(fs.readFileSync(archived!, 'utf8')).toContain('Anything?');
+		expect(operatorHistory()).toEqual([]);
+		expect(fs.existsSync(path.join(dataDir, 'operator.jsonl'))).toBe(false);
+	});
+});
+
 describe('announcements', () => {
 	it('speaks questions, summarised turns and errors only while someone listens', async () => {
 		const heard: string[] = [];

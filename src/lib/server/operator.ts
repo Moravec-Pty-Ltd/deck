@@ -149,12 +149,23 @@ export function operatorHistory(limit = 50): OperatorTurn[] {
 	return loadTurns().filter((t) => t.role !== 'tool').slice(-limit);
 }
 
-export function resetOperator(): void {
+// Clearing starts a new conversation but keeps the old one: the log is the
+// only record of what the operator did, so it moves to
+// ~/.deck/operator-archive/<timestamp>.jsonl rather than being wiped. An
+// empty log is simply left as it is.
+export function resetOperator(): string | null {
 	state.turns = [];
+	state.pendingStart = null;
 	try {
-		fs.writeFileSync(logPath(), '');
+		if (!fs.existsSync(logPath()) || fs.statSync(logPath()).size === 0) return null;
+		const dir = path.join(dataDir, 'operator-archive');
+		fs.mkdirSync(dir, { recursive: true });
+		const archived = path.join(dir, `${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
+		fs.renameSync(logPath(), archived);
+		return archived;
 	} catch (err) {
-		console.error('[deck] operator log reset failed:', err);
+		console.error('[deck] operator log archive failed:', err);
+		return null;
 	}
 }
 
