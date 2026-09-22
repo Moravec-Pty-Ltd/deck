@@ -8,6 +8,7 @@ import {
 	matchSessions,
 	parseSkillFrontmatter,
 	pickOption,
+	promptSessions,
 	shortDescription,
 	spokenText,
 	statusAnnouncement,
@@ -60,6 +61,21 @@ describe('systemPrompt', () => {
 		]);
 		const start = OPERATOR_TOOLS.find((t) => t.function.name === 'start_session')!;
 		expect(start.function.parameters.required).toContain('confirmed');
+	});
+});
+
+describe('promptSessions', () => {
+	it('keeps live and recent sessions, live first then newest, capped, without the timestamp', () => {
+		const now = 10_000_000_000;
+		const many = Array.from({ length: 30 }, (_, i) => ({ id: `c_${i}`, title: `S${i}`, kind: 'claude', status: 'idle', lastActiveAt: now - i * 60_000 }));
+		const stale = { id: 'old', title: 'Old', kind: 'shell', status: 'idle', lastActiveAt: now - 2 * 24 * 60 * 60 * 1000 };
+		const waiting = { id: 'w', title: 'Waiting', kind: 'claude', status: 'idle', awaitingInput: true, lastActiveAt: now - 3 * 24 * 60 * 60 * 1000 };
+		const picked = promptSessions([stale, ...many, waiting], now);
+		expect(picked).toHaveLength(20);
+		expect(picked[0].id).toBe('w');
+		expect(picked[1].id).toBe('c_0');
+		expect(picked.some((s) => s.id === 'old')).toBe(false);
+		expect('lastActiveAt' in picked[0]).toBe(false);
 	});
 });
 

@@ -12,6 +12,7 @@ import {
 	matchSessions,
 	parseSkillFrontmatter,
 	pickOption,
+	promptSessions,
 	spokenText,
 	statusAnnouncement,
 	summaryMessages,
@@ -148,21 +149,23 @@ function projectName(cwd: string | undefined): string | undefined {
 	return p ? listProjects().find((x) => x.path === p)?.name : undefined;
 }
 
-function operatorSession(s: DeckSession): OperatorSession {
+function operatorSession(s: DeckSession): OperatorSession & { lastActiveAt?: number } {
 	const ask = listPendingAsks().find((a) => a.sessionId === s.id)?.questions[0];
+	const project = projectName(s.cwd);
 	return {
 		id: s.id,
 		title: s.title || s.id,
 		kind: s.kind,
 		status: s.status,
-		project: projectName(s.cwd),
-		awaitingInput: !!s.awaitingInput,
-		...(ask ? { ask: { question: ask.question, options: ask.options.map((o) => o.label) } } : {})
+		...(project ? { project } : {}),
+		...(s.awaitingInput ? { awaitingInput: true } : {}),
+		...(ask ? { ask: { question: ask.question, options: ask.options.map((o) => o.label) } } : {}),
+		lastActiveAt: s.lastActiveAt
 	};
 }
 
 async function currentSessions(): Promise<OperatorSession[]> {
-	return (await listSessions()).map(operatorSession);
+	return promptSessions((await listSessions()).map(operatorSession), Date.now());
 }
 
 // Every SKILL.md under ~/.claude/skills and each registered project's
@@ -294,7 +297,7 @@ async function stopSession(args: Record<string, unknown>): Promise<string> {
 }
 
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
-	list_sessions: async () => JSON.stringify(await currentSessions()),
+	list_sessions: async () => JSON.stringify((await listSessions()).map(operatorSession).map(({ lastActiveAt: _drop, ...rest }) => rest)),
 	latest_reply: latestReply,
 	send_message: sendMessage,
 	answer_ask: answerQuestion,

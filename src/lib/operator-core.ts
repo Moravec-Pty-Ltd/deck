@@ -43,6 +43,21 @@ export interface ToolCall {
 
 export const HISTORY_TURNS = 20;
 export const IDLE_RESET_MS = 30 * 60 * 1000;
+// Sessions the prompt carries every turn: the ones needing attention or
+// touched in the last day, newest first, capped. The rest are one
+// list_sessions call away; a long list of stale shells in every prompt cost
+// more time per turn than the reply.
+const PROMPT_SESSIONS = 20;
+const RECENT_MS = 24 * 60 * 60 * 1000;
+
+export function promptSessions(sessions: (OperatorSession & { lastActiveAt?: number })[], now: number): OperatorSession[] {
+	const live = (s: OperatorSession) => s.status === 'running' || s.awaitingInput === true;
+	return sessions
+		.filter((s) => live(s) || (s.lastActiveAt ?? 0) > now - RECENT_MS)
+		.sort((a, b) => Number(live(b)) - Number(live(a)) || (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0))
+		.slice(0, PROMPT_SESSIONS)
+		.map(({ lastActiveAt: _drop, ...rest }) => rest);
+}
 
 const fn = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
 	type: 'function' as const,
