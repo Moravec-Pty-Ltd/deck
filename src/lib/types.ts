@@ -420,8 +420,17 @@ export interface SpeechSettings {
 	voice?: string;
 }
 
+// The voice operator's model (see server/operator.ts): any OpenAI-compatible
+// chat endpoint, local by default. Also settings-only, for the same reason.
+export interface OperatorSettings {
+	url?: string;
+	model?: string;
+	apiKey?: string;
+}
+
 export interface DeckSettings {
 	speech?: SpeechSettings;
+	operator?: OperatorSettings;
 	// Locally-configured model endpoints offered in the claude model picker.
 	// Lives here (local settings) rather than in source so private infra stays
 	// out of the public repo.

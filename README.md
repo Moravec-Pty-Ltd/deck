@@ -148,6 +148,16 @@ What it does:
 - hold the button (or the space bar on desktop) to talk; release sends, drag off cancels; Stop halts reading and interrupts the turn
 - hands-free (experimental): an open mic with an energy detector, sensitivity adjustable, that can interrupt a reply mid-sentence
 
+## Operator
+
+The operator is voice mode for all of deck rather than one session: a small model that talks with you and drives sessions through deck's own functions. Open it with the waveform button in the header, ⇧⌘O, or the command palette, then speak (hold to talk, or the open-mic mode) or type. It can say what is going on, read or summarise a session's latest reply, send a session an instruction, answer the question a session is waiting on, stop a turn, and start a new session in a project on its own branch (it asks before starting one, since that creates a worktree). It knows the skills in `~/.claude/skills` and each project's `.claude/skills` by name and description, reads a skill's full text when you ask about it, and runs one as `/skill-name arguments` in a message or a first prompt.
+
+While the operator is open it also speaks up on its own: a session's new question with its numbered options (your next words answer it), a finished turn as a one-sentence summary (ask to hear it all), and errors, for agent sessions that ran a turn since it came on or that you named. The conversation is one thread shared by every device (`~/.deck/operator.jsonl`), the model sees the last 20 turns, and it starts fresh after 30 minutes of silence.
+
+It needs any OpenAI-compatible chat endpoint with tool calling, set under **Projects > Operator** or as the `operator` block (`url`, `model`, optional `apiKey`) in `~/.deck/settings.json`. Local by default: `mlx_lm.server` with `mlx-community/Qwen3.5-35B-A3B-4bit` on an Apple Silicon Mac answers in about a second with every action right (keep its thinking on; without it the model narrates tool calls instead of making them). Put the stable parts of your setup first if you write your own prompt: deck orders the prompt so the skill catalogue is a cacheable prefix.
+
+The API: `POST /api/operator { text }` returns `{ text, actions }`, `GET /api/operator/events` streams what it says on its own (and holding that stream open is what turns the proactive side on), `GET /api/operator/history` and `POST /api/operator/reset` manage the thread.
+
 ## Issue-source API keys
 
 Linear and ClickUp sources need an API key (GitHub rides on `gh`'s own auth). deck keeps those keys in the **OS keyring**, not in a file: macOS **Keychain**, Windows **Credential Manager**, and the **Secret Service** (GNOME Keyring, KWallet) on Linux, under the service name `deck`, one entry per source. macOS and Windows work out of the box; on Linux it needs a running Secret Service, which a headless box, a container, or a bare tty session usually doesn't have.

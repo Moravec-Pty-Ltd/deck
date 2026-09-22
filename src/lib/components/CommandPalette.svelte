@@ -15,6 +15,7 @@
 	import { restartSession } from '$lib/session-restart';
 	import { loadSettings } from '$lib/settings-store';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import { operatorUi } from '$lib/operator-ui.svelte';
 	import { Search, CornerDownLeft, ChevronLeft, TriangleAlert } from '@lucide/svelte';
 
 	// Global Cmd+K palette. Rendered once in the layout; `open` is toggled by the
@@ -107,6 +108,7 @@
 			notificationsSupported,
 			toggleNotifications,
 			openSearch: () => (searchUi.open = true),
+			openOperator: () => (operatorUi.open = true),
 			prAction: prPost,
 			dismissPr: prDismiss,
 			setModel: async (next) => {

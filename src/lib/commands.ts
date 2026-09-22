@@ -33,6 +33,8 @@ export interface CommandContext {
 	toggleNotifications: () => void;
 	// Open the transcript search dialog.
 	openSearch: () => void;
+	// Open the voice operator drawer.
+	openOperator: () => void;
 	// PR review/merge; rejects with gh's message on failure so the palette shows it.
 	prAction: (payload: PrActionPayload) => Promise<void>;
 	dismissPr: () => Promise<void>;
@@ -250,6 +252,13 @@ function globalCommands(ctx: CommandContext): Command[] {
 			keywords: ['find', 'grep', 'history', 'said'],
 			hint: '⇧⌘F',
 			run: () => ctx.openSearch()
+		},
+		{
+			id: 'operator',
+			title: 'Talk to the operator',
+			keywords: ['voice', 'operator', 'assistant', 'hands-free', 'speak'],
+			hint: '⇧⌘O',
+			run: () => ctx.openOperator()
 		}
 	];
 	if (ctx.notificationsSupported) {
