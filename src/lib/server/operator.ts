@@ -81,6 +81,10 @@ interface OperatorState {
 	listeners: EventEmitter;
 	listenerCount: number;
 	wired: boolean;
+	// The feed handler in use. The subscription is made once per process, but
+	// each evaluation of this module (a dev-server reload) points it at its own
+	// functions, so a reload does not leave the feed on stale code.
+	onFeedEvent: ((event: AgentFeedEvent) => Promise<void>) | null;
 }
 
 // On globalThis so a dev-server HMR reload keeps the one conversation and
@@ -92,7 +96,8 @@ const state: OperatorState = (g.__deckOperator ??= {
 	followed: new Set(),
 	listeners: new EventEmitter(),
 	listenerCount: 0,
-	wired: false
+	wired: false,
+	onFeedEvent: null
 });
 state.listeners.setMaxListeners(50);
 
@@ -508,9 +513,10 @@ async function onFeedEvent(event: AgentFeedEvent): Promise<void> {
 	else if (event.type === 'status') onStatus(session, event);
 }
 
+state.onFeedEvent = onFeedEvent;
 if (!state.wired) {
 	state.wired = true;
 	agentFeed.on('event', (event: AgentFeedEvent) => {
-		onFeedEvent(event).catch((err) => console.error('[deck] operator feed handler failed:', err));
+		state.onFeedEvent?.(event).catch((err) => console.error('[deck] operator feed handler failed:', err));
 	});
 }

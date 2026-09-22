@@ -134,7 +134,7 @@ describe('announcements', () => {
 	it('asks for a one-sentence summary that names the session', () => {
 		const messages = summaryMessages(sessions[0], 'x'.repeat(10_000));
 		expect(messages[0].content).toContain('one short spoken sentence');
-		expect(messages[1].content).toContain('Session title: Auth token refresh');
+		expect(messages[1].content).toContain('The session "Auth token refresh" replied:');
 		expect(messages[1].content.length).toBeLessThan(6200);
 	});
 });

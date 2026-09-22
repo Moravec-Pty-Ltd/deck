@@ -167,8 +167,8 @@ export function statusAnnouncement(session: OperatorSession, status: string): st
 // The message asking the model for the one-sentence summary of a finished turn.
 export function summaryMessages(session: OperatorSession, reply: string): { role: 'system' | 'user'; content: string }[] {
 	return [
-		{ role: 'system', content: 'Summarise the coding agent reply below in one short spoken sentence for a hands-free user, starting with the session title. Plain text, no markdown.' },
-		{ role: 'user', content: `Session title: ${session.title}\n\nReply:\n${reply.slice(0, 6000)}` }
+		{ role: 'system', content: "Summarise the coding agent's reply below in one short spoken sentence for a hands-free user, naming the session. Plain text, no markdown, no preamble." },
+		{ role: 'user', content: `The session "${session.title}" replied:\n${reply.slice(0, 6000)}` }
 	];
 }
 
