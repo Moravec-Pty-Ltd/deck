@@ -64,8 +64,17 @@ const LOG_FILE = 'operator.jsonl';
 const MAX_ROUNDS = 4;
 const TOOL_RESULT_CHARS = 6000;
 
+// A start the model has proposed; it goes ahead only once the user has
+// spoken again since, whatever the model claims about confirmation.
+interface PendingStart {
+	project: string;
+	prompt: string;
+	userTurns: number;
+}
+
 interface OperatorState {
 	turns: OperatorTurn[] | null;
+	pendingStart: PendingStart | null;
 	// Agent sessions that ran a turn, or were acted on, since a client started
 	// listening; the only ones announced. Reset when the last listener leaves.
 	followed: Set<string>;
@@ -79,6 +88,7 @@ interface OperatorState {
 const g = globalThis as { __deckOperator?: OperatorState };
 const state: OperatorState = (g.__deckOperator ??= {
 	turns: null,
+	pendingStart: null,
 	followed: new Set(),
 	listeners: new EventEmitter(),
 	listenerCount: 0,
@@ -249,15 +259,31 @@ function answerBody(session: DeckSession, answer: string): Record<string, unknow
 	return body;
 }
 
-async function startSession(args: Record<string, unknown>): Promise<string> {
-	if (args.confirmed !== true) {
-		return 'Not started: tell the user the project and the prompt and wait for their yes, then call start_session again with confirmed=true.';
+function userTurnCount(): number {
+	return loadTurns().filter((t) => t.role === 'user').length;
+}
+
+// True once the user has spoken since the model proposed this same start.
+function startAgreed(project: string, prompt: string): boolean {
+	const pending = state.pendingStart;
+	const same = pending && pending.project === project && pending.prompt === prompt;
+	if (same && pending.userTurns < userTurnCount()) {
+		state.pendingStart = null;
+		return true;
 	}
+	state.pendingStart = { project, prompt, userTurns: userTurnCount() };
+	return false;
+}
+
+async function startSession(args: Record<string, unknown>): Promise<string> {
 	const name = String(args.project ?? '').toLowerCase();
 	const project = listProjects().find((p) => p.name.toLowerCase() === name);
 	if (!project) throw new Error(`No project named "${args.project}". Projects: ${listProjects().map((p) => p.name).join(', ')}.`);
 	const prompt = String(args.prompt ?? '').trim();
 	if (!prompt) throw new Error('A first prompt is required.');
+	if (!startAgreed(project.name, prompt)) {
+		return 'Not started: tell the user the project and the prompt and wait for their yes, then call start_session again with confirmed=true.';
+	}
 	const title = String(args.title ?? '').trim() || prompt.split(/\s+/).slice(0, 6).join(' ');
 	const session = await createSessionFromRequest({
 		kind: 'claude',
@@ -326,22 +352,37 @@ interface ModelChoice {
 	message: { content?: string | null; tool_calls?: ToolCall[] };
 }
 
+// A tool-calling turn keeps the model's thinking on (without it Qwen narrates
+// tool calls instead of making them); a plain summary turns it off, since a
+// thinking model can spend its whole budget deliberating over one word. The
+// switch is mlx_lm.server's `chat_template_kwargs`; an endpoint that rejects
+// the unknown field gets the request again without it.
+function modelBody(model: string, messages: ModelMessage[], tools: boolean): Record<string, unknown> {
+	const body: Record<string, unknown> = { model, messages, temperature: 0.2, max_tokens: tools ? 900 : 300 };
+	if (tools) return { ...body, tools: OPERATOR_TOOLS, tool_choice: 'auto' };
+	return { ...body, chat_template_kwargs: { enable_thinking: false } };
+}
+
 async function callModel(messages: ModelMessage[], tools: boolean): Promise<ModelChoice['message']> {
 	const c = operatorConfig();
 	if (!c.url || !c.model) error(503, 'operator model not configured');
-	const headers: Record<string, string> = { 'content-type': 'application/json' };
-	if (c.apiKey) headers.authorization = `Bearer ${c.apiKey}`;
-	const body: Record<string, unknown> = { model: c.model, messages, temperature: 0.2, max_tokens: 900 };
-	if (tools) {
-		body.tools = OPERATOR_TOOLS;
-		body.tool_choice = 'auto';
+	const body = modelBody(c.model, messages, tools);
+	let res = await postModel(c, body);
+	if (res.status === 400 && body.chat_template_kwargs) {
+		delete body.chat_template_kwargs;
+		res = await postModel(c, body);
 	}
-	const res = await fetch(`${c.url.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body) }).catch((err) => {
-		error(502, `operator model unreachable: ${err instanceof Error ? err.message : String(err)}`);
-	});
 	if (!res.ok) error(502, `operator model replied ${res.status}`);
 	const data = (await res.json()) as { choices?: ModelChoice[] };
 	return data.choices?.[0]?.message ?? { content: '' };
+}
+
+async function postModel(c: OperatorSettings, body: Record<string, unknown>): Promise<Response> {
+	const headers: Record<string, string> = { 'content-type': 'application/json' };
+	if (c.apiKey) headers.authorization = `Bearer ${c.apiKey}`;
+	return fetch(`${c.url!.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body) }).catch((err) => {
+		error(502, `operator model unreachable: ${err instanceof Error ? err.message : String(err)}`);
+	});
 }
 
 function toModelMessage(turn: OperatorTurn): ModelMessage {

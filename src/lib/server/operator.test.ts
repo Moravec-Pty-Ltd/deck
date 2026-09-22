@@ -131,9 +131,10 @@ describe('operatorChat', () => {
 		]);
 	});
 
-	it('will not start a session until the model confirms, then starts it on a new branch', async () => {
+	it('will not start a session until the user has answered the proposal, then starts it on a new branch', async () => {
+		// Even a model that claims confirmation on the first ask gets a no.
 		script = [
-			{ tool_calls: [toolCall('1', 'start_session', { project: 'deck', prompt: '/dev-workflow ENG-1', confirmed: false })] },
+			{ tool_calls: [toolCall('1', 'start_session', { project: 'deck', prompt: '/dev-workflow ENG-1', confirmed: true })] },
 			{ content: 'I would start a deck session running dev workflow on ENG-1. Shall I?' }
 		];
 		let reply = await operatorChat('Run dev workflow on ENG-1 in deck.');
@@ -191,6 +192,7 @@ describe('announcements', () => {
 			'status: Auth token refresh hit an error.'
 		]);
 		expect(requests.at(-1)?.tools).toBeUndefined();
+		expect((requests.at(-1) as { chat_template_kwargs?: unknown }).chat_template_kwargs).toEqual({ enable_thinking: false });
 		// What it said is part of the conversation, so "yes, the first one" can follow.
 		expect(operatorHistory().map((t) => t.content)).toContain('Foldable layout is asking: Which sidebar width? Options: 1, Half. 2, Fixed.');
 	});
