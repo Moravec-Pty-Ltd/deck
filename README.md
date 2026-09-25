@@ -158,7 +158,7 @@ It needs a chat endpoint with tool calling, set under **Projects > Operator** or
 
 | Where the model runs | Settings | Cost on the deck machine |
 |---|---|---|
-| This machine, local | `http://127.0.0.1:17498/v1` with `mlx_lm.server` | 3.6 GB for Qwen3.5-9B (4.5 to 14.5 s a reply), 19 GB for Qwen3.5-35B-A3B (about 1.3 s) |
+| This machine, local | `http://127.0.0.1:17498/v1` with `mlx_lm.server` | 5.3 GB resident for Qwen3.5-9B (about 3.6 s a reply once warm, 15 s on the first), 19 GB for Qwen3.5-35B-A3B (about 1.3 s) |
 | Another machine on your network | that host's `/v1` | nothing |
 | Claude | `https://api.anthropic.com/v1`, `provider: "anthropic"`, `model: "claude-haiku-4-5-20251001"`, `apiKeyFile` | nothing, billed per turn |
 
