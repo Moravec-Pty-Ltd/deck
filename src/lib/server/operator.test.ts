@@ -26,9 +26,12 @@ const answered = vi.fn((..._args: unknown[]) => true);
 const interrupted = vi.fn();
 const created = vi.fn(async (body: Record<string, unknown>) => ({ id: 'c_new', title: body.title, kind: 'claude', cwd: projDir, status: 'running' }));
 
+let settings: Record<string, unknown> = { operator: { url: 'http://model.test/v1', model: 'test-model' } };
+let anthropic = false;
+
 vi.mock('./store', () => ({
 	listProjects: () => [{ name: 'deck', path: projDir }],
-	readSettings: () => ({ operator: { url: 'http://model.test/v1', model: 'test-model' } })
+	readSettings: () => settings
 }));
 vi.mock('./sessions', () => ({
 	listSessions: async () => sessions,
@@ -51,18 +54,33 @@ const { operatorChat, operatorHistory, resetOperator, skillCatalogue, subscribeA
 
 // The fake model: each call pops the next scripted message; the requests are
 // kept so a test can check what the model was shown.
-const requests: { messages: { role: string; content: string }[]; tools?: unknown }[] = [];
+const requests: Record<string, any>[] = [];
 let script: { content?: string; tool_calls?: unknown[] }[] = [];
 const toolCall = (id: string, name: string, args: Record<string, unknown>) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
 
 beforeEach(() => {
+	settings = { operator: { url: 'http://model.test/v1', model: 'test-model' } };
+	anthropic = false;
 	resetOperator();
 	requests.length = 0;
 	vi.stubGlobal(
 		'fetch',
-		vi.fn(async (_url: string, init: RequestInit) => {
-			requests.push(JSON.parse(String(init.body)));
+		vi.fn(async (url: string, init: RequestInit) => {
+			const body = JSON.parse(String(init.body));
+			requests.push({ ...body, url, headers: init.headers as Record<string, string> });
 			const message = script.shift() ?? { content: 'Done.' };
+			if (anthropic) {
+				const blocks = [
+					...(message.content ? [{ type: 'text', text: message.content }] : []),
+					...((message.tool_calls ?? []) as { id: string; function: { name: string; arguments: string } }[]).map((c) => ({
+						type: 'tool_use',
+						id: c.id,
+						name: c.function.name,
+						input: JSON.parse(c.function.arguments)
+					}))
+				];
+				return new Response(JSON.stringify({ content: blocks }), { status: 200 });
+			}
 			return new Response(JSON.stringify({ choices: [{ message }] }), { status: 200 });
 		})
 	);
@@ -168,6 +186,22 @@ describe('operatorChat', () => {
 		const reply = await operatorChat('Loop.');
 		expect(reply.actions).toHaveLength(4);
 		expect(reply.text).toContain('kept going');
+	});
+});
+
+describe('providers', () => {
+	it('talks to Claude when the settings say so, and reads the key from a file', async () => {
+		const keyFile = path.join(dataDir, 'operator-key');
+		fs.writeFileSync(keyFile, 'ANTHROPIC_API_KEY=sk-test-123\n');
+		settings = { operator: { url: 'https://api.anthropic.com/v1', model: 'claude-haiku-4-5-20251001', provider: 'anthropic', apiKeyFile: keyFile } };
+		anthropic = true;
+		script = [{ content: 'All quiet.' }];
+		const reply = await operatorChat('Anything?');
+		expect(reply.text).toBe('All quiet.');
+		const request = requests.at(-1) as { url?: string; headers?: Record<string, string>; system?: string };
+		expect(request.url).toBe('https://api.anthropic.com/v1/messages');
+		expect(request.headers?.['x-api-key']).toBe('sk-test-123');
+		expect(request.system).toContain("deck's voice operator");
 	});
 });
 

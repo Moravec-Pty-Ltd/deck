@@ -425,7 +425,13 @@ export interface SpeechSettings {
 export interface OperatorSettings {
 	url?: string;
 	model?: string;
+	/// 'openai' (mlx_lm.server, llama-server, a tailnet server, most hosted
+	/// models) or 'anthropic' (Claude). Absent means it is read from the URL.
+	provider?: 'openai' | 'anthropic';
 	apiKey?: string;
+	/// A file holding the key instead, so a hosted model's credential lives in
+	/// ~/.secrets rather than in this file.
+	apiKeyFile?: string;
 }
 
 export interface DeckSettings {

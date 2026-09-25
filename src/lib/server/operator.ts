@@ -6,7 +6,6 @@ import { error } from '@sveltejs/kit';
 import type { DeckSession, OperatorSettings } from '$lib/types';
 import { isAgentKind } from '$lib/types';
 import {
-	OPERATOR_TOOLS,
 	askAnnouncement,
 	conversationWindow,
 	matchSessions,
@@ -23,6 +22,14 @@ import {
 	type SkillInfo,
 	type ToolCall
 } from '$lib/operator-core';
+import {
+	buildRequest,
+	parseReply,
+	providerError,
+	providerFor,
+	type ModelMessage,
+	type ModelReply
+} from '$lib/operator-providers';
 import { dataDir } from './config';
 import { listProjects, readSettings } from './store';
 import { getSession, listSessions } from './sessions';
@@ -359,47 +366,45 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<str
 
 // ---- The model ----
 
-interface ModelMessage {
-	role: 'system' | 'user' | 'assistant' | 'tool';
-	content: string;
-	tool_calls?: ToolCall[];
-	tool_call_id?: string;
-	name?: string;
-}
-
-interface ModelChoice {
-	message: { content?: string | null; tool_calls?: ToolCall[] };
-}
-
 // A tool-calling turn keeps the model's thinking on (without it Qwen narrates
 // tool calls instead of making them); a plain summary turns it off, since a
 // thinking model can spend its whole budget deliberating over one word. The
 // switch is mlx_lm.server's `chat_template_kwargs`; an endpoint that rejects
 // the unknown field gets the request again without it.
-function modelBody(model: string, messages: ModelMessage[], tools: boolean): Record<string, unknown> {
-	const body: Record<string, unknown> = { model, messages, temperature: 0.2, max_tokens: tools ? 900 : 300 };
-	if (tools) return { ...body, tools: OPERATOR_TOOLS, tool_choice: 'auto' };
-	return { ...body, chat_template_kwargs: { enable_thinking: false } };
+// The key for a hosted model: from the settings, or from the file they name
+// (a key belongs in ~/.secrets, not in settings.json).
+function operatorKey(c: OperatorSettings): string | undefined {
+	if (c.apiKey) return c.apiKey;
+	if (!c.apiKeyFile) return undefined;
+	try {
+		const raw = fs.readFileSync(c.apiKeyFile.replace(/^~(?=$|\/)/, os.homedir()), 'utf8');
+		// A bare key, or a KEY=value line from an env file.
+		const match = /^(?:[A-Z0-9_]+=)?\s*["']?([^"'\s]+)["']?\s*$/m.exec(raw.trim());
+		return match?.[1];
+	} catch (err) {
+		console.error('[deck] operator apiKeyFile unreadable:', err);
+		return undefined;
+	}
 }
 
-async function callModel(messages: ModelMessage[], tools: boolean): Promise<ModelChoice['message']> {
+async function callModel(messages: ModelMessage[], tools: boolean): Promise<ModelReply> {
 	const c = operatorConfig();
 	if (!c.url || !c.model) error(503, 'operator model not configured');
-	const body = modelBody(c.model, messages, tools);
-	let res = await postModel(c, body);
-	if (res.status === 400 && body.chat_template_kwargs) {
-		delete body.chat_template_kwargs;
-		res = await postModel(c, body);
+	const provider = providerFor(c);
+	const request = buildRequest(provider, { url: c.url, model: c.model, apiKey: operatorKey(c) }, messages, tools);
+	let res = await postModel(request.url, request.headers, request.body);
+	// A server that does not know the thinking switch (llama-server, a hosted
+	// model) rejects the request; send it again without the field.
+	if (res.status === 400 && request.body.chat_template_kwargs) {
+		delete request.body.chat_template_kwargs;
+		res = await postModel(request.url, request.headers, request.body);
 	}
-	if (!res.ok) error(502, `operator model replied ${res.status}`);
-	const data = (await res.json()) as { choices?: ModelChoice[] };
-	return data.choices?.[0]?.message ?? { content: '' };
+	if (!res.ok) error(502, providerError(provider, res.status));
+	return parseReply(provider, await res.json());
 }
 
-async function postModel(c: OperatorSettings, body: Record<string, unknown>): Promise<Response> {
-	const headers: Record<string, string> = { 'content-type': 'application/json' };
-	if (c.apiKey) headers.authorization = `Bearer ${c.apiKey}`;
-	return fetch(`${c.url!.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body) }).catch((err) => {
+async function postModel(url: string, headers: Record<string, string>, body: Record<string, unknown>): Promise<Response> {
+	return fetch(url, { method: 'POST', headers, body: JSON.stringify(body) }).catch((err) => {
 		error(502, `operator model unreachable: ${err instanceof Error ? err.message : String(err)}`);
 	});
 }
@@ -445,9 +450,9 @@ export async function operatorChat(text: string, source = 'voice'): Promise<Oper
 	const actions: OperatorAction[] = [];
 	for (let round = 0; round < MAX_ROUNDS; round++) {
 		const messages = [system, ...conversationWindow(loadTurns(), Date.now()).map(toModelMessage)];
-		const message = await callModel(messages, true);
-		const said = spokenText(message.content);
-		const calls = message.tool_calls ?? [];
+		const reply = await callModel(messages, true);
+		const said = spokenText(reply.content);
+		const calls = reply.toolCalls;
 		if (calls.length === 0) {
 			const reply = said || "I didn't catch that.";
 			record({ role: 'assistant', content: reply, at: Date.now() });

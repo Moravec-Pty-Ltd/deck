@@ -154,7 +154,15 @@ The operator is voice mode for all of deck rather than one session: a small mode
 
 While the operator is open it also speaks up on its own: a session's new question with its numbered options (your next words answer it), a finished turn as a one-sentence summary (ask to hear it all), and errors, for agent sessions that ran a turn since it came on or that you named. The conversation is one thread shared by every device (`~/.deck/operator.jsonl`), the model sees the last 20 turns, and it starts fresh after 30 minutes of silence.
 
-It needs any OpenAI-compatible chat endpoint with tool calling, set under **Projects > Operator** or as the `operator` block (`url`, `model`, optional `apiKey`) in `~/.deck/settings.json`. Local by default: `mlx_lm.server` with `mlx-community/Qwen3.5-35B-A3B-4bit` on an Apple Silicon Mac answers in about a second with every action right (keep its thinking on; without it the model narrates tool calls instead of making them). Put the stable parts of your setup first if you write your own prompt: deck orders the prompt so the skill catalogue is a cacheable prefix.
+It needs a chat endpoint with tool calling, set under **Projects > Operator** or as the `operator` block in `~/.deck/settings.json`: `url`, `model`, an optional `provider` (`openai` or `anthropic`, otherwise read from the URL), and for a hosted model either `apiKeyFile` (a path, so the key lives in `~/.secrets`) or `apiKey`. Three shapes work:
+
+| Where the model runs | Settings | Cost on the deck machine |
+|---|---|---|
+| This machine, local | `http://127.0.0.1:17498/v1` with `mlx_lm.server` | 3.6 GB for Qwen3.5-9B (4.5 to 14.5 s a reply), 19 GB for Qwen3.5-35B-A3B (about 1.3 s) |
+| Another machine on your network | that host's `/v1` | nothing |
+| Claude | `https://api.anthropic.com/v1`, `provider: "anthropic"`, `model: "claude-haiku-4-5-20251001"`, `apiKeyFile` | nothing, billed per turn |
+
+Keep a local model's thinking on; without it Qwen narrates tool calls instead of making them (deck only turns it off for the one-sentence summaries). Put the stable parts of your setup first if you write your own prompt: deck orders the prompt so the skill catalogue is a cacheable prefix.
 
 The API: `POST /api/operator { text }` returns `{ text, actions }`, `GET /api/operator/events` streams what it says on its own (and holding that stream open is what turns the proactive side on), `GET /api/operator/history` and `POST /api/operator/reset` manage the thread.
 
