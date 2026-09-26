@@ -3,6 +3,9 @@
 // and the wording of what it says on its own. Node-free; server/operator.ts
 // wires these to deck's session functions and the model endpoint.
 
+import type { SkillInfo } from '$lib/skills-core';
+export { parseSkillFrontmatter, skillInvocation, type SkillInfo } from '$lib/skills-core';
+
 export interface OperatorSession {
 	id: string;
 	title: string;
@@ -11,13 +14,6 @@ export interface OperatorSession {
 	project?: string;
 	awaitingInput?: boolean;
 	ask?: { question: string; options: string[] };
-}
-
-export interface SkillInfo {
-	name: string;
-	description: string;
-	// 'global' for ~/.claude/skills, else the project the skill belongs to.
-	scope: string;
 }
 
 // One line of the operator's conversation, in the shape the model API wants
@@ -127,18 +123,6 @@ export function conversationWindow(turns: OperatorTurn[], now: number): Operator
 	return window;
 }
 
-// `name` and `description` from a SKILL.md's frontmatter.
-export function parseSkillFrontmatter(markdown: string): { name?: string; description?: string } {
-	const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown);
-	if (!match) return {};
-	const out: { name?: string; description?: string } = {};
-	for (const line of match[1].split(/\r?\n/)) {
-		const m = /^(name|description):\s*(.*)$/.exec(line);
-		if (m) out[m[1] as 'name' | 'description'] = m[2].trim().replace(/^["']|["']$/g, '');
-	}
-	return out;
-}
-
 // Sessions a spoken reference could mean: an exact id, else every session
 // whose title contains all the words said.
 export function matchSessions(reference: string, sessions: OperatorSession[]): OperatorSession[] {
@@ -176,17 +160,6 @@ export function summaryMessages(session: OperatorSession, reply: string): { role
 // SKO-136", "the release skill") becomes the slash command that runs it;
 // anything else passes through. The model tends to hand over the user's
 // wording rather than the invocation.
-export function skillInvocation(text: string, skills: SkillInfo[]): string {
-	const trimmed = text.trim();
-	if (trimmed.startsWith('/')) return trimmed;
-	const names = skills.map((s) => s.name).sort((a, b) => b.length - a.length);
-	for (const name of names) {
-		const pattern = new RegExp(`^(?:please\\s+)?(?:run|start|use|do|kick off)?\\s*(?:the\\s+)?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+skill)?(?:\\s+(?:on|for|with|against))?\\b\\s*(.*)$`, 'i');
-		const m = pattern.exec(trimmed);
-		if (m) return `/${name}${m[1] ? ` ${m[1].trim()}` : ''}`;
-	}
-	return trimmed;
-}
 
 // Qwen-style thinking that a server did not strip, and a reply that is empty
 // once it is gone.

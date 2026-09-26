@@ -6,6 +6,8 @@ import { appendEvent } from './claude';
 import { updateSession } from './store';
 import { issueContextWarning, issuePromptContext, wantsIssueContext } from './issues/prompt';
 import { parseImages } from './message-core';
+import { skillInvocation } from '$lib/skills-core';
+import { skillCatalogue } from './skills-catalogue';
 
 // Expand a template's [tokens]. Rich issue tokens fetch the attached issues'
 // context first; when that fetch comes back short, the transcript says so
@@ -24,7 +26,12 @@ export async function sendAgentMessage(session: DeckSession, body: Record<string
 	if (typeof body.text !== 'string' && body.text != null) error(400, 'text must be a string');
 	const text = (body.text ?? '') as string;
 	const images = parseImages(body.images);
-	const prompt = body.expand === true ? await expandMessage(session, text) : text;
+	const expanded = body.expand === true ? await expandMessage(session, text) : text;
+	// `skills: true` turns spoken phrasing into the slash command that actually
+	// runs a skill ("run dev-workflow on ENG-1" -> "/dev-workflow ENG-1"). The
+	// rewrite stays here, against this machine's installed skills, so a voice
+	// client doesn't have to carry its own copy of the matching.
+	const prompt = body.skills === true ? skillInvocation(expanded, skillCatalogue()) : expanded;
 	if (!prompt.trim() && images.length === 0) error(400, 'empty prompt');
 	// The per-turn runners currently accept text only. Never silently drop an attachment.
 	if (images.length && session.kind !== 'claude') error(400, 'image attachments require a claude session');

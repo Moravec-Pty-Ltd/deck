@@ -50,7 +50,8 @@ vi.mock('./agents/dispatch', () => ({ agentInterrupt: (...a: unknown[]) => inter
 vi.mock('./create-session', () => ({ createSessionFromRequest: (body: Record<string, unknown>) => created(body) }));
 
 const { agentFeed } = await import('./agent-feed');
-const { operatorChat, operatorHistory, resetOperator, skillCatalogue, subscribeAnnouncements } = await import('./operator');
+const { operatorChat, operatorHistory, resetOperator, subscribeAnnouncements } = await import('./operator');
+const { skillCatalogue } = await import('./skills-catalogue');
 
 // The fake model: each call pops the next scripted message; the requests are
 // kept so a test can check what the model was shown.

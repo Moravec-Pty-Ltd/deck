@@ -5,11 +5,11 @@ import { EventEmitter } from 'node:events';
 import { error } from '@sveltejs/kit';
 import type { DeckSession, OperatorSettings } from '$lib/types';
 import { isAgentKind } from '$lib/types';
+import { skillBody, skillCatalogue } from './skills-catalogue';
 import {
 	askAnnouncement,
 	conversationWindow,
 	matchSessions,
-	parseSkillFrontmatter,
 	pickOption,
 	promptSessions,
 	skillInvocation,
@@ -19,7 +19,6 @@ import {
 	systemPrompt,
 	type OperatorSession,
 	type OperatorTurn,
-	type SkillInfo,
 	type ToolCall
 } from '$lib/operator-core';
 import {
@@ -200,51 +199,6 @@ function operatorSession(s: DeckSession): OperatorSession & { lastActiveAt?: num
 
 async function currentSessions(): Promise<OperatorSession[]> {
 	return promptSessions((await listSessions()).map(operatorSession), Date.now());
-}
-
-// Every SKILL.md under ~/.claude/skills and each registered project's
-// .claude/skills, by name with its description.
-function skillDirs(): { dir: string; scope: string }[] {
-	const dirs = [{ dir: path.join(os.homedir(), '.claude', 'skills'), scope: 'global' }];
-	for (const p of listProjects()) dirs.push({ dir: path.join(p.path, '.claude', 'skills'), scope: p.name });
-	return dirs;
-}
-
-function readSkill(file: string, scope: string, fallbackName: string): SkillInfo | null {
-	try {
-		const meta = parseSkillFrontmatter(fs.readFileSync(file, 'utf8'));
-		return { name: meta.name || fallbackName, description: meta.description || '', scope };
-	} catch {
-		return null;
-	}
-}
-
-export function skillCatalogue(): SkillInfo[] {
-	const skills: SkillInfo[] = [];
-	for (const { dir, scope } of skillDirs()) {
-		let entries: string[] = [];
-		try {
-			entries = fs.readdirSync(dir);
-		} catch {
-			continue;
-		}
-		for (const name of entries) {
-			const skill = readSkill(path.join(dir, name, 'SKILL.md'), scope, name);
-			if (skill) skills.push(skill);
-		}
-	}
-	return skills;
-}
-
-function skillBody(name: string): string | null {
-	for (const { dir } of skillDirs()) {
-		try {
-			return fs.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8').slice(0, TOOL_RESULT_CHARS);
-		} catch {
-			// Not in this dir.
-		}
-	}
-	return null;
 }
 
 async function buildSystemPrompt(): Promise<string> {
