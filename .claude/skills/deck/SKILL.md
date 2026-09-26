@@ -1,7 +1,7 @@
 ---
 name: deck
 description: Drive and monitor deck (the local Claude Code session manager) through its agent API. Use when asked to start deck work sessions or PR-review sessions, send prompts to or stop running deck sessions, check what deck sessions need attention or have finished, answer a blocking deck question, or review/merge a PR through deck.
-version: 3.1.0
+version: 3.3.0
 ---
 
 # deck agent API
@@ -31,11 +31,12 @@ GET /api/agent/kinds                 # installed agent CLIs + models
 GET /api/agent/issues?project=<path> # open issues → create's issue {source,id,url}
 GET /api/agent/prs?project=<path>    # open PRs → review's pr {repo,number}
 GET /api/agent/defaults?project=<path> # what a new session starts with by default (model/effort per kind, base, prompts)
+GET /api/agent/skills                # installed skills [{ name, description, scope }]; /skills/<name> for one's text
 ```
 
 ## Common operations
 
-Check every session (status, awaitingInput, cost, pr):
+Check every session (status, awaitingInput, cost, context, pr):
 
 ```sh
 curl -s -H "Authorization: Bearer $DECK_TOKEN" "$DECK_BASE_URL/api/agent/sessions"
@@ -62,10 +63,12 @@ curl -s -X POST -H "Authorization: Bearer $DECK_TOKEN" -H 'content-type: applica
 Steer, read output, answer, tear down:
 
 ```sh
-POST /api/agent/sessions/<id>/message     {"text":"..."}   # -> { ok, status, seq }
+POST /api/agent/sessions/<id>/message     {"text":"...","skills"?:true}  # -> { ok, status, seq }; skills rewrites "run dev-workflow on X" to "/dev-workflow X"
 GET  /api/agent/sessions/<id>             # digest + lastResult (the latest reply)
 GET  /api/agent/sessions/<id>/transcript  # readable messages + lastResult + cost
 POST /api/agent/sessions/<id>/stop
+POST /api/agent/sessions/<id>/title       {"title":"..."}  # rename; read `id` back, a tmux terminal's moves
+POST /api/agent/sessions/<id>/compact                      # free the context window; idle-only, claude only
 GET  /api/agent/asks                      # what's blocking, with the options
 POST /api/agent/sessions/<id>/answer      {"text":"...","askId"?:"...","answers"?:[{"header","labels"}]}
 POST /api/agent/sessions/<id>/review      {"decision":"approve|request-changes|comment","body":"..."}
