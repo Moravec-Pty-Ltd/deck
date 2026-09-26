@@ -4,6 +4,7 @@ import { objectBody } from './http';
 import { publishAgentEvent } from './agent-feed';
 import { listTmuxSessions, renameTmuxSession } from './tmux';
 import { invalidateSessionList } from './sessions';
+import { SERVER_TMUX_PREFIX } from './devservers-core';
 import { parseTitle } from '$lib/session-title';
 import { adhocId, adhocTmuxName, isAdhocId, tmuxSessionName } from './session-title-core';
 
@@ -23,6 +24,10 @@ async function renameAdhoc(id: string, title: string): Promise<Response> {
 	if (!live.some((t) => t.name === from)) error(404, 'session not found');
 	if (to === from) return json({ ok: true, id, title: to });
 	if (live.some((t) => t.name === to)) error(409, 'a terminal with that name already exists');
+	// Dev-server panes are filtered out of the session list, so a terminal that
+	// took one of their names would drop off the list still running, with no way
+	// back: there would be no row left to rename.
+	if (to.startsWith(SERVER_TMUX_PREFIX)) error(400, `a name cannot start with ${SERVER_TMUX_PREFIX}`);
 	try {
 		await renameTmuxSession(from, to);
 	} catch (err) {

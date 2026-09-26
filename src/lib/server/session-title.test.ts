@@ -111,6 +111,11 @@ describe('renameSession, adhoc terminals', () => {
 		expect(renamed).not.toHaveBeenCalled();
 	});
 
+	it('refuses a dev-server name, which the session list filters out', async () => {
+		expect(await status(rename('t_7', { title: 'deck-srv-web' }))).toBe(400);
+		expect(renamed).not.toHaveBeenCalled();
+	});
+
 	it('404s a terminal that is no longer running', async () => {
 		expect(await status(rename('t_ghost', { title: 'anything' }))).toBe(404);
 	});
