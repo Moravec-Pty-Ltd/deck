@@ -449,4 +449,11 @@ export interface DeckSettings {
 	// target differs from the HTTP host the browser reached deck on / the deck
 	// server's own user. Unset means default to those.
 	zedSshTarget?: string;
+	// Compact a claude session once its context window passes `percent` full,
+	// rather than waiting for claude's own auto-compaction, which only fires at
+	// the very limit and costs the best part of a minute off the end of a turn
+	// you were waiting on. Off unless `enabled`; `percent` defaults to
+	// DEFAULT_COMPACT_PERCENT and is clamped to a sane range (see
+	// $lib/context-core).
+	autoCompact?: { enabled?: boolean; percent?: number };
 }

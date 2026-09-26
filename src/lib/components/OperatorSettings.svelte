@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Check, MessageSquareText } from '@lucide/svelte';
-	import type { DeckSettings } from '$lib/types';
+	import { fetchSettings, patchSettings } from '$lib/settings-patch';
 
 	// Somewhere to start from: the local model that fits a small machine, the
 	// bigger local one, a tailnet server, and Claude.
@@ -27,7 +27,7 @@
 
 	async function load() {
 		try {
-			const settings: DeckSettings = await fetch('/api/settings').then((r) => (r.ok ? r.json() : {}));
+			const settings = await fetchSettings();
 			url = settings.operator?.url ?? '';
 			model = settings.operator?.model ?? '';
 			provider = settings.operator?.provider ?? '';
@@ -49,7 +49,6 @@
 		message = '';
 		saved = false;
 		try {
-			const current: DeckSettings = await fetch('/api/settings').then((r) => (r.ok ? r.json() : {}));
 			const operator = {
 				url: url.trim() || undefined,
 				model: model.trim() || undefined,
@@ -57,12 +56,7 @@
 				apiKey: apiKey.trim() || undefined,
 				apiKeyFile: apiKeyFile.trim() || undefined
 			};
-			const res = await fetch('/api/settings', {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ ...current, operator })
-			});
-			if (!res.ok) throw new Error('save failed');
+			await patchSettings('operator', operator);
 			saved = true;
 			await load();
 		} catch (e) {

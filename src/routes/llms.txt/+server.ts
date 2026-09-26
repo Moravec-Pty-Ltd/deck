@@ -136,7 +136,8 @@ Digest of every session:
 	"issues": [{ "source": "github", "id": "owner/repo#1", "url": "..." }],
 	"pr": { "repo": "owner/repo", "number": 42, "url": "...", "state": "open",
 		"reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "approvals": 1, "changesRequested": 0 },
-	"cost": { "costUsd": 0.42, "turns": 12, "durationMs": 258000, "results": 12 }
+	"cost": { "costUsd": 0.42, "turns": 12, "durationMs": 258000, "results": 12 },
+	"context": { "used": 702516, "window": 1000000 }
 }]
 \`\`\`
 
@@ -235,6 +236,21 @@ turn. Returns \`{ "ok": true }\`.
 reasoning effort. Absent or empty resets to the CLI default; an unknown value or
 a non-claude session is a 400. Idle-only (409 if a turn is running); applies on
 the next turn. Returns \`{ "ok": true }\`.
+
+\`context\` is how full the session's context window is: \`used\` tokens of
+\`window\`. Absent until a turn has reported both. Watch it to decide when to
+compact (below) or to hand work to a fresh session.
+
+### POST /api/agent/sessions/{id}/compact
+
+Empty body. Summarise the session's history and free the context window, the
+same as typing \`/compact\`, keeping what a handoff keeps: goal, what is done
+and in progress, next steps, blockers, key files, decisions, git state. Idle-only
+(409 if a turn is running); a non-claude session is a 400. It runs as a turn of
+its own, so the usual \`turn-finished\` follows. Returns \`{ "ok": true }\`.
+
+deck can also do this by itself once \`context.used / context.window\` passes a
+threshold, if the \`autoCompact\` block in ~/.deck/settings.json is on.
 
 ### POST /api/agent/sessions/{id}/title
 

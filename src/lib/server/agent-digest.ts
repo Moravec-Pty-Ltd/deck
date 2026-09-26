@@ -11,7 +11,8 @@ import type {
 } from '$lib/types';
 import { isAgentKind } from '$lib/types';
 import { baseUrl } from './config';
-import { sessionLastResult, transcriptCostSummary } from './transcript';
+import { sessionLastResult, transcriptContext, transcriptCostSummary } from './transcript';
+import type { ContextUsage } from '$lib/context-core';
 
 // The monitor-facing view of one session, served by /api/agent/sessions and as
 // the /api/agent/events snapshot. A projection of DeckSession plus the cost
@@ -34,10 +35,20 @@ export interface AgentSessionDigest {
 	issues?: SessionIssue[];
 	pr?: SessionPR;
 	cost?: CostSummary;
+	// How full the context window is. Omitted for a session that has not reported
+	// a window yet (nothing to show a percentage against).
+	context?: ContextUsage;
 	// The session's most recent assistant reply, attached only when requested (the
 	// single-session GET), since it reads the transcript. Omitted on the list/feed
 	// digests, which stay cheap. null means "no text produced yet".
 	lastResult?: string | null;
+}
+
+// A session that has produced no figures yet carries no `context` at all,
+// rather than a `{ used: 0, window: 0 }` a consumer would have to special-case.
+function definedContext(id: string): ContextUsage | undefined {
+	const context = transcriptContext(id);
+	return context.used > 0 || context.window > 0 ? context : undefined;
 }
 
 export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): AgentSessionDigest {
@@ -58,6 +69,8 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		pr: s.pr,
 		// Cheap: transcriptCostSummary is LRU-cached and extended incrementally.
 		cost: isAgentKind(s.kind) ? transcriptCostSummary(s.id) : undefined,
+		// Same: one bounded tail read, cached against the file's size and mtime.
+		context: isAgentKind(s.kind) ? definedContext(s.id) : undefined,
 		lastResult: opts?.lastResult && isAgentKind(s.kind) ? sessionLastResult(s.id) : undefined
 	};
 }

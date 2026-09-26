@@ -1,6 +1,5 @@
-import { json, error } from '@sveltejs/kit';
-import { getStoredSession } from './store';
-import { agentTurnRunning } from './agents/dispatch';
+import { json } from '@sveltejs/kit';
+import { idleClaudeSession } from './session-guards';
 import { appendEvent, stopProcess } from './claude';
 
 // Restart a claude session's process so it re-reads CLI config (CLAUDE.md,
@@ -15,10 +14,7 @@ import { appendEvent, stopProcess } from './claude';
 export async function restartSession(event: {
 	params: Partial<Record<string, string>>;
 }): Promise<Response> {
-	const session = getStoredSession(event.params.id!);
-	if (!session) error(404, 'session not found');
-	if (session.kind !== 'claude') error(400, 'only claude sessions have a process to restart');
-	if (agentTurnRunning(session.id)) error(409, 'a turn is running');
+	const session = idleClaudeSession(event.params.id, 'only claude sessions have a process to restart');
 	stopProcess(session.id);
 	// The deck.restart marker renders as a transcript line explaining on scroll-back
 	// why config changed mid-conversation. Appended even when no process was alive

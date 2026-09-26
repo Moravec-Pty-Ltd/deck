@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { transcriptsDir } from './config';
 import { emptyCostSummary, foldResult, type CostSummary } from '$lib/session-cost-core';
+import { emptyContext, foldContext, type ContextUsage } from '$lib/context-core';
 import { projectTranscript, type TranscriptMessage } from '$lib/agent-transcript-core';
 import { isAskTool } from '$lib/transcript-groups';
 import { whenDrained } from './transcript-writer';
@@ -302,6 +303,47 @@ function costSummaryFromIndex(id: string, index: TranscriptIndex): CostSummary {
 	}).summary;
 }
 
+// How full the session's context window is (see $lib/context-core for why the
+// last assistant message, and not the result footer, is the live figure).
+// Bounded: one tail read, scanned newest-first, so a session that has run for
+// hours costs the same as one that just started. Cached against the same
+// (size, mtime) pair the cost cache uses.
+//
+// The window sticks once seen: a long tool-output run can push the last result
+// out of the tail, and forgetting the window would blink the gauge off rather
+// than leave it where it was.
+interface ContextIndex {
+	size: number;
+	mtimeMs: number;
+	context: ContextUsage;
+}
+const contextCache = new Map<string, ContextIndex>();
+
+export function transcriptContext(id: string): ContextUsage {
+	const index = transcriptIndex(id);
+	if (!index) {
+		contextCache.delete(id);
+		return emptyContext();
+	}
+	const cached = contextCache.get(id);
+	if (cached && cached.size === index.size && cached.mtimeMs === index.mtimeMs) return cached.context;
+
+	const events = readTranscriptTail(id).events;
+	let used = 0;
+	let window = 0;
+	for (let i = events.length - 1; i >= 0 && (used === 0 || window === 0); i--) {
+		const folded = foldContext({ used, window }, events[i]);
+		if (used === 0) used = folded.used;
+		if (window === 0) window = folded.window;
+	}
+	// A shrinking transcript (a rewrite) is the one case where a remembered
+	// window could belong to a different session's history, so only carry it
+	// forward while the file is still growing.
+	if (window === 0 && cached && index.size >= cached.size) window = cached.context.window;
+	return lruSet(contextCache, id, { size: index.size, mtimeMs: index.mtimeMs, context: { used, window } })
+		.context;
+}
+
 // Fold the `result` events in lines [from, to) into `summary`. Reads each small
 // line individually so a huge tool-output line never pulls megabytes into
 // memory; the marker pre-filter avoids parsing lines that can't be results, and
@@ -351,6 +393,9 @@ export function snapshotFrames(id: string): { seq: number; n: number; data: stri
 		start: tail.start,
 		total: tail.total,
 		cost: tail.cost,
+		// Base figure for the context gauge; the client folds live assistant
+		// events on top of it, the same way it folds live results onto `cost`.
+		context: transcriptContext(id),
 		events: tail.events
 	});
 	const CHUNK = 32 * 1024;

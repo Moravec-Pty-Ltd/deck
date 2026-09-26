@@ -8,8 +8,14 @@ import path from 'node:path';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-transcript-test-'));
 process.env.DECK_DATA = dataDir;
 
-const { transcriptPath, snapshotFrames, readTranscriptRange, transcriptCostSummary, latestAskToolUseId } =
-	await import('./transcript');
+const {
+	transcriptPath,
+	snapshotFrames,
+	readTranscriptRange,
+	transcriptCostSummary,
+	transcriptContext,
+	latestAskToolUseId
+} = await import('./transcript');
 
 afterAll(() => fs.rmSync(dataDir, { recursive: true, force: true }));
 
@@ -252,5 +258,54 @@ describe('latestAskToolUseId', () => {
 		seed(id, [{ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'toolu_bash', name: 'Bash' }] } }]);
 		expect(await latestAskToolUseId(id)).toBeNull();
 		expect(await latestAskToolUseId('never-written')).toBeNull();
+	});
+});
+
+describe('transcriptContext', () => {
+	const assistant = (used: number) => ({ type: 'assistant', message: { usage: { cache_read_input_tokens: used } } });
+	const result = (contextWindow: number) => ({
+		type: 'result',
+		subtype: 'success',
+		modelUsage: { 'claude-opus-5': { contextWindow } }
+	});
+
+	it('reports the newest assistant usage against the reported window', () => {
+		const id = 'ctx-basic';
+		seed(id, [assistant(40_000), result(1_000_000), assistant(702_516)]);
+		expect(transcriptContext(id)).toEqual({ used: 702_516, window: 1_000_000 });
+	});
+
+	it('follows a compaction down as soon as the next message lands', () => {
+		const id = 'ctx-compact';
+		seed(id, [assistant(999_000), result(1_000_000)]);
+		expect(transcriptContext(id).used).toBe(999_000);
+		append(id, [
+			{ type: 'system', subtype: 'compact_boundary', compact_metadata: { pre_tokens: 1_000_871, post_tokens: 13_070 } },
+			assistant(13_070)
+		]);
+		expect(transcriptContext(id)).toEqual({ used: 13_070, window: 1_000_000 });
+	});
+
+	it('keeps a window that a long run of tool output pushed out of the tail', () => {
+		const id = 'ctx-window-sticks';
+		seed(id, [assistant(10_000), result(200_000)]);
+		expect(transcriptContext(id).window).toBe(200_000);
+		// 300 events is past the tail cap, so the result is no longer readable.
+		append(id, Array.from({ length: 300 }, () => ({ type: 'user', message: { content: 'x' } })));
+		append(id, [assistant(90_000)]);
+		expect(transcriptContext(id)).toEqual({ used: 90_000, window: 200_000 });
+	});
+
+	it('is empty for a session that has written nothing, or has no figures yet', () => {
+		expect(transcriptContext('ctx-never-written')).toEqual({ used: 0, window: 0 });
+		const id = 'ctx-no-usage';
+		seed(id, [{ type: 'user', message: { content: 'hi' } }]);
+		expect(transcriptContext(id)).toEqual({ used: 0, window: 0 });
+	});
+
+	it('reports the count before any turn has named a window', () => {
+		const id = 'ctx-no-window';
+		seed(id, [assistant(5_000)]);
+		expect(transcriptContext(id)).toEqual({ used: 5_000, window: 0 });
 	});
 });

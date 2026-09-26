@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { DeckSettings } from '$lib/types';
+	import { patchSettings } from '$lib/settings-patch';
 	import { AudioLines, Check, Search } from '@lucide/svelte';
 
 	// App-wide panel: where voice mode's speech servers are. Both are
@@ -65,18 +65,12 @@
 		message = '';
 		saved = false;
 		try {
-			const current: DeckSettings = await fetch('/api/settings').then((r) => (r.ok ? r.json() : {}));
 			const speech = {
 				ttsUrl: ttsUrl.trim() || undefined,
 				sttUrl: sttUrl.trim() || undefined,
 				voice: voice.trim() || undefined
 			};
-			const res = await fetch('/api/settings', {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ ...current, speech })
-			});
-			if (!res.ok) throw new Error('save failed');
+			await patchSettings('speech', speech);
 			saved = true;
 			await load();
 		} catch (e) {

@@ -5,6 +5,7 @@ import { ensureMcp } from '$lib/server/mcp';
 import { initSecrets } from '$lib/server/secrets';
 import '$lib/server/monitor';
 import '$lib/server/live-activity';
+import '$lib/server/auto-compact';
 
 // Start the localhost MCP server (blocking `ask` tool) and shell monitor at boot
 // so the MCP port is ready before any claude session spawns.
