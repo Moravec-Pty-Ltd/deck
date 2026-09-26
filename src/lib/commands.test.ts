@@ -33,7 +33,6 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
 		copy: vi.fn(),
 		cycleTheme: vi.fn(),
 		openSearch: vi.fn(),
-		openOperator: vi.fn(),
 		notificationsSupported: false,
 		toggleNotifications: vi.fn(),
 		prAction: vi.fn().mockResolvedValue(undefined),

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './layout.css';
-	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff, RefreshCw, X, AudioLines } from '@lucide/svelte';
+	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff, RefreshCw, X } from '@lucide/svelte';
 	import { urlBase64ToUint8Array } from '$lib/push';
 	import { watchForUpdate } from '$lib/pwa-update';
 	import { guardedFetch } from '$lib/api-guard';
@@ -8,8 +8,6 @@
 	import { page } from '$app/state';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import TranscriptSearch from '$lib/components/TranscriptSearch.svelte';
-	import OperatorDrawer from '$lib/components/OperatorDrawer.svelte';
-	import { operatorUi } from '$lib/operator-ui.svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
 
 	let { children } = $props();
@@ -28,18 +26,12 @@
 	// chat/terminal inputs keep it) and never override a handler that already
 	// claimed the event; Cmd+K carries no text-edit meaning, so it still opens the
 	// palette even from an input.
-	// Cmd/Ctrl+Shift+F opens transcript search from any page, Cmd/Ctrl+Shift+O
-	// the operator.
+	// Cmd/Ctrl+Shift+F opens transcript search from any page.
 	function onWindowKeydown(e: KeyboardEvent) {
 		if (e.defaultPrevented || (!e.metaKey && !e.ctrlKey)) return;
 		if ((e.key === 'f' || e.key === 'F') && e.shiftKey) {
 			e.preventDefault();
 			searchUi.open = true;
-			return;
-		}
-		if ((e.key === 'o' || e.key === 'O') && e.shiftKey) {
-			e.preventDefault();
-			operatorUi.open = !operatorUi.open;
 			return;
 		}
 		if (e.key !== 'k' && e.key !== 'K') return;
@@ -203,7 +195,6 @@
 	toggleNotifications={togglePush}
 />
 <TranscriptSearch />
-<OperatorDrawer />
 
 <div class="flex h-[100dvh] flex-col overflow-hidden bg-base-200">
 	<header class="navbar min-h-12 shrink-0 gap-2 border-b border-base-300 bg-base-100 px-3 sm:px-4">
@@ -215,14 +206,6 @@
 		</div>
 
 		<div class="flex items-center gap-1.5">
-			<button
-				class="btn btn-square btn-ghost btn-sm {operatorUi.open ? 'btn-active' : ''}"
-				onclick={() => (operatorUi.open = !operatorUi.open)}
-				title="Operator (⇧⌘O)"
-				aria-label="Toggle operator"
-			>
-				<AudioLines size={16} />
-			</button>
 			{#if installPrompt}
 				<button class="btn btn-primary btn-sm" onclick={install} aria-label="Install app">
 					<Download size={16} /> <span class="hidden sm:inline">Install</span>

@@ -11,8 +11,11 @@
 		{ label: 'Claude', url: 'https://api.anthropic.com/v1', model: 'claude-haiku-4-5-20251001', provider: 'anthropic', apiKeyFile: '~/.secrets/anthropic.env' }
 	];
 
-	// App-wide panel: the model behind the voice operator, any OpenAI-compatible
-	// chat endpoint (a local mlx_lm.server by default). Saved to
+	// The model behind the *watch* operator. The phone and the browser no longer
+	// use it: the iOS app thinks with Apple's on-device model, and the browser
+	// has no operator at all. watchOS ships FoundationModels but marks
+	// SystemLanguageModel unavailable, so a watch cannot think for itself and
+	// still asks deck. Any OpenAI-compatible or Anthropic endpoint; saved to
 	// ~/.deck/settings.json only, so a private host never lands in the repo.
 	let url = $state('');
 	let model = $state('');
@@ -70,7 +73,7 @@
 <div class="card border border-base-300 bg-base-100">
 	<div class="card-body gap-3 p-4">
 		<h2 class="m-0 flex items-center gap-2 text-base font-semibold">
-			<MessageSquareText size={16} /> Operator
+			<MessageSquareText size={16} /> Watch operator
 			{#if status}
 				<span class="badge badge-sm {status.configured ? 'badge-success' : 'badge-ghost'}">{status.configured ? 'on' : 'off'}</span>
 			{/if}

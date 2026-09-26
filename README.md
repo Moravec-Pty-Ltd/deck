@@ -150,21 +150,35 @@ What it does:
 
 ## Operator
 
-The operator is voice mode for all of deck rather than one session: a small model that talks with you and drives sessions through deck's own functions. Open it with the waveform button in the header, ⇧⌘O, or the command palette, then speak (hold to talk, or the open-mic mode) or type. It can say what is going on, read or summarise a session's latest reply, send a session an instruction, answer the question a session is waiting on, stop a turn, and start a new session in a project on its own branch (it asks before starting one, since that creates a worktree). It knows the skills in `~/.claude/skills` and each project's `.claude/skills` by name and description, reads a skill's full text when you ask about it, and runs one as `/skill-name arguments` in a message or a first prompt.
+Voice control of every session, rather than one at a time: say what you want and
+a model works out which of deck's functions to call. It can say what is going
+on, read or summarise a session's latest reply, send an instruction, answer the
+question a session is waiting on, stop a turn, and start a new session in a
+project on its own branch (it asks first, since that creates a worktree). It
+knows the skills in `~/.claude/skills` and each project's `.claude/skills`, and
+runs one as `/skill-name arguments`.
 
-While the operator is open it also speaks up on its own: a session's new question with its numbered options (your next words answer it), a finished turn as a one-sentence summary (ask to hear it all), and errors, for agent sessions that ran a turn since it came on or that you named. The conversation is one thread shared by every device (`~/.deck/operator.jsonl`), the model sees the last 20 turns, and it starts fresh after 30 minutes of silence.
+**It lives in the iOS app, not here.** The browser has no operator: there is no
+on-device model in a browser, and running one beside deck to serve one tab cost
+more than it was worth. On the phone the thinking is done by Apple's on-device
+model (iOS 26+), so nothing runs on the deck machine and the conversation never
+leaves the device. Siri covers the same ground for one-shot commands; see the
+[deck-ios README](https://github.com/Moravec-Pty-Ltd/deck-ios).
 
-It needs a chat endpoint with tool calling, set under **Projects > Operator** or as the `operator` block in `~/.deck/settings.json`: `url`, `model`, an optional `provider` (`openai` or `anthropic`, otherwise read from the URL), and for a hosted model either `apiKeyFile` (a path, so the key lives in `~/.secrets`) or `apiKey`. Three shapes work:
+An Apple Watch still asks deck to think for it: watchOS ships Apple's model
+framework but marks the model itself unavailable. That is the only thing left
+needing the `operator` block in `~/.deck/settings.json` (**Projects > Watch
+operator**): `url`, `model`, an optional `provider` (`openai` or `anthropic`,
+otherwise read from the URL), and for a hosted model either `apiKeyFile` (a
+path, so the key lives in `~/.secrets`) or `apiKey`. Pointing it at Claude costs
+nothing on the deck machine; a local `mlx_lm.server` costs 5.3 GB resident for
+Qwen3.5-9B. Leave it unset if you do not use the watch.
 
-| Where the model runs | Settings | Cost on the deck machine |
-|---|---|---|
-| This machine, local | `http://127.0.0.1:17498/v1` with `mlx_lm.server` | 5.3 GB resident for Qwen3.5-9B (about 3.6 s a reply once warm, 15 s on the first), 19 GB for Qwen3.5-35B-A3B (about 1.3 s) |
-| Another machine on your network | that host's `/v1` | nothing |
-| Claude | `https://api.anthropic.com/v1`, `provider: "anthropic"`, `model: "claude-haiku-4-5-20251001"`, `apiKeyFile` | nothing, billed per turn |
-
-Keep a local model's thinking on; without it Qwen narrates tool calls instead of making them (deck only turns it off for the one-sentence summaries). Put the stable parts of your setup first if you write your own prompt: deck orders the prompt so the skill catalogue is a cacheable prefix.
-
-The API: `POST /api/operator { text }` returns `{ text, actions }`, `GET /api/operator/events` streams what it says on its own (and holding that stream open is what turns the proactive side on), `GET /api/operator/history` and `POST /api/operator/reset` manage the thread.
+The endpoints behind it: `POST /api/operator { text }` returns `{ text, actions }`,
+`GET /api/operator/events` streams what it says on its own, and
+`GET /api/operator/history` / `POST /api/operator/reset` manage the thread.
+A client with its own model uses the agent API directly instead, including
+`GET /api/agent/skills` and `skills: true` on a message.
 
 ## Issue-source API keys
 
