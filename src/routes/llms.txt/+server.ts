@@ -96,6 +96,25 @@ Open PRs awaiting your review for a project. Each row carries \`review\`'s
   "errors": [] }
 \`\`\`
 
+### GET /api/agent/skills
+
+The skills installed on this machine (\`~/.claude/skills\` and each project's
+\`.claude/skills\`), so you can tell a session to run one and can say what one
+does:
+
+\`\`\`json
+{ "skills": [{ "name": "dev-workflow", "description": "...", "scope": "global" }] }
+\`\`\`
+
+\`scope\` is \`"global"\` or the project the skill belongs to.
+\`GET /api/agent/skills/{name}\` returns \`{ "name", "body" }\`, the SKILL.md
+truncated; 404 when no directory holds it.
+
+A session runs a skill when its message starts with \`/name arguments\`. Send
+\`"skills": true\` on a message (below) and deck rewrites spoken phrasing
+("run dev-workflow on ENG-1") into that command against this machine's skills,
+so a voice client does not need its own copy of the matching.
+
 ### GET /api/agent/defaults?project=<path>
 
 What a new session in a project starts with when you pick nothing: the same
@@ -205,12 +224,13 @@ same key.
 
 ### POST /api/agent/sessions/{id}/message
 
-\`{ "text": "...", "expand"?: true, "images"?: [{ "media_type": "image/png", "data": "base64" }] }\` — send a prompt / steer. Mid-turn messages queue (claude)
+\`{ "text": "...", "expand"?: true, "skills"?: true, "images"?: [{ "media_type": "image/png", "data": "base64" }] }\` — send a prompt / steer. Mid-turn messages queue (claude)
 or restart the turn (other kinds). Returns \`{ "ok": true, "status": "running",
 "seq": <n> }\`. \`seq\` is the event-log cursor at send time: poll the event log
 from it and watch for this session's \`turn-finished\` to know the turn is done.
 Text is literal unless \`expand: true\` is supplied. Expansion can fetch rich
-issue context for attached issues. Images currently require a Claude session;
+issue context for attached issues. \`skills: true\` additionally rewrites spoken
+skill phrasing into its \`/name arguments\` command (see Discovery). Images currently require a Claude session;
 other runtimes return 400 rather than silently discarding attachments.
 
 ### POST /api/agent/sessions/{id}/stop
