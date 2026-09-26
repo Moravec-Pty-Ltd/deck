@@ -26,6 +26,7 @@ import { removeWorktree } from './git';
 import { pickShipName } from './names';
 import { DEMO, demoSessions, demoSession } from './demo';
 import { publishAgentEvent } from './agent-feed';
+import { adhocId, adhocTmuxName, isAdhocId } from './session-title-core';
 import { sessionDigest } from './agent-digest';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
@@ -55,6 +56,14 @@ let listCache: { at: number; promise: Promise<DeckSession[]> } | null = null;
 setSessionsMutatedHook(() => {
 	listCache = null;
 });
+
+// The same drop, for a change that moves a session without writing the store:
+// killing or renaming an adhoc tmux terminal. Without it the next poll (and the
+// page load a renamed terminal's new id redirects to) can still be serving the
+// list from before the change.
+export function invalidateSessionList() {
+	listCache = null;
+}
 
 export function listSessions(): Promise<DeckSession[]> {
 	if (DEMO) return Promise.resolve(demoSessions().sort((a, b) => b.lastActiveAt - a.lastActiveAt));
@@ -97,7 +106,7 @@ function storedView(s: DeckSession, tmuxSessions: TmuxSession[]): DeckSession {
 // An unregistered tmux session surfaced as an adhoc terminal.
 function adhocView(t: TmuxSession): DeckSession {
 	return {
-		id: `t_${t.name}`,
+		id: adhocId(t.name),
 		kind: 'shell',
 		title: t.name,
 		cwd: t.cwd,
@@ -249,9 +258,9 @@ export async function deleteSession(
 	id: string,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean } = {}
 ): Promise<void> {
-	if (id.startsWith('t_')) {
+	if (isAdhocId(id)) {
 		// Adhoc tmux session: no store write, so bust the list memo by hand.
-		await killTmuxSession(id.slice(2));
+		await killTmuxSession(adhocTmuxName(id));
 		listCache = null;
 		publishAgentEvent(id, 'session-deleted');
 		return;

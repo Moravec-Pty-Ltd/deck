@@ -236,6 +236,17 @@ reasoning effort. Absent or empty resets to the CLI default; an unknown value or
 a non-claude session is a 400. Idle-only (409 if a turn is running); applies on
 the next turn. Returns \`{ "ok": true }\`.
 
+### POST /api/agent/sessions/{id}/title
+
+\`{ "title": "..." }\` — rename a session. Whitespace is collapsed to one line
+and trimmed; empty or over 80 characters is a 400. Allowed while a turn runs.
+Returns \`{ "ok": true, "id", "title" }\`.
+
+Read \`id\` back: renaming an unregistered tmux terminal (\`t_<tmux name>\`)
+renames the tmux session, so its derived id moves with it. A colon is replaced
+with \`-\` (tmux could not target the session otherwise), and a name another
+terminal already holds is a 409. A registered session keeps its id.
+
 ### POST /api/agent/sessions/{id}/restart
 
 Empty body. Drop a claude session's process so the next message respawns it
@@ -341,6 +352,8 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 - \`turn-finished\` — { subtype, cost } (subtype "success" = clean turn end)
 - \`pr\` — { pr } (captured PR seen or its GitHub state changed)
 - \`session-created\` — { session: <digest> }
+- \`session-renamed\` — { title, id } (\`id\` is where the session moved to, which
+	differs from the event's \`sessionId\` only for a renamed tmux terminal)
 - \`session-deleted\` — {}
 
 Apply deltas idempotently: after a gap re-snapshot (or bootstrap) an overlapping

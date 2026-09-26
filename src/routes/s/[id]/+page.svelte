@@ -17,6 +17,7 @@
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
 	import EffortMenu from '$lib/components/EffortMenu.svelte';
 	import ZedButton from '$lib/components/ZedButton.svelte';
+	import SessionTitle from '$lib/components/SessionTitle.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
@@ -78,6 +79,18 @@
 		const live = sessions.find((s) => s.id === session.id);
 		return live ? live.pr : session.pr;
 	});
+
+	// The session's name, same trust order as liveModel: the poll reflects a
+	// rename made on another device, the page-load value covers the first 5s.
+	const liveTitle = $derived(sessions.find((s) => s.id === session.id)?.title ?? session.title);
+
+	// Renaming an unregistered tmux terminal renames the tmux session, so deck's
+	// derived id moves with it and this page has to follow it (replaceState: the
+	// old id is gone, so Back must not return to a 404).
+	function afterRename(newId: string) {
+		if (newId !== session.id) goto(`/s/${encodeURIComponent(newId)}`, { replaceState: true });
+		else void refresh();
+	}
 
 	// One chip per attached issue. New sessions store `issues`; older ones only
 	// the single `issue`, so read them together.
@@ -293,7 +306,7 @@
 </script>
 
 <svelte:head>
-	<title>{session.title} · deck</title>
+	<title>{liveTitle} · deck</title>
 </svelte:head>
 
 {#snippet sidebar()}
@@ -369,7 +382,7 @@
 				<span class="badge badge-ghost badge-sm header-chip shrink-0">{liveKind}</span>
 			{/if}
 			<div class="flex min-w-0 flex-1 items-center gap-2">
-				<span class="truncate font-medium">{session.title}</span>
+				<SessionTitle id={session.id} title={liveTitle} onRenamed={afterRename} />
 				{#if issueChips.length === 1}
 					{@const issue = issueChips[0]}
 					{#if issue.url}

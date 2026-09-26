@@ -115,6 +115,19 @@ export async function killTmuxSession(name: string) {
 	await tmux('kill-session', '-t', `=${name}`);
 }
 
+// Rename a live tmux session, carrying its cached pane render across so the
+// next status read doesn't see a blank screen and call a running program dead.
+// Targeted by name like every other call here, so a session whose name holds a
+// `:` can't be reached (see tmuxSessionName in session-title-core.ts).
+export async function renameTmuxSession(from: string, to: string) {
+	await tmux('rename-session', '-t', `=${from}`, to);
+	const buffered = paneBuf.get(from);
+	if (buffered !== undefined) {
+		paneBuf.set(to, buffered);
+		paneBuf.delete(from);
+	}
+}
+
 export async function hasTmuxSession(name: string): Promise<boolean> {
 	try {
 		await tmux('has-session', '-t', `=${name}`);

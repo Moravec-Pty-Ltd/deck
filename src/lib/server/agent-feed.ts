@@ -20,6 +20,7 @@ export interface AgentFeedEvent {
 		| 'turn-finished'
 		| 'pr'
 		| 'session-created'
+		| 'session-renamed'
 		| 'session-deleted';
 	at: number;
 	[key: string]: unknown;
