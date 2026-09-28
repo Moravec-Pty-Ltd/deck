@@ -307,8 +307,8 @@
 	<button
 		class="btn btn-ghost btn-xs ml-auto"
 		onclick={() => (searchUi.open = true)}
-		aria-label="Search transcripts"
-		title="Search transcripts (⇧⌘F)"
+		aria-label="Search sessions"
+		title="Search sessions (⇧⌘F)"
 	>
 		<Search size={14} />
 	</button>

@@ -246,9 +246,9 @@ function globalCommands(ctx: CommandContext): Command[] {
 			run: () => ctx.cycleTheme()
 		},
 		{
-			id: 'search-transcripts',
-			title: 'Search transcripts',
-			keywords: ['find', 'grep', 'history', 'said'],
+			id: 'search-sessions',
+			title: 'Search sessions',
+			keywords: ['find', 'grep', 'history', 'said', 'transcripts', 'name'],
 			hint: '⇧⌘F',
 			run: () => ctx.openSearch()
 		}
