@@ -164,9 +164,11 @@ function reportCrash(id: string, kind: string, text: string) {
 	appendEvent(id, deckError(text));
 	setStatus(id, 'error');
 	notify({
+		reason: 'needs-you',
 		title: `Session crashed · ${agentTitle(id)}`,
 		body: text.split('\n').pop() || `${kind} exited unexpectedly`,
 		tag: id,
+		sessionId: id,
 		url: `/s/${id}`
 	});
 }
@@ -175,9 +177,11 @@ function notifyTurnEnd(id: string, durationMs: number, interrupted: boolean) {
 	if (interrupted) return;
 	if (durationMs < 12000) return;
 	notify({
+		reason: 'stopped',
 		title: `Finished · ${agentTitle(id)}`,
 		body: 'Tap to open the session',
 		tag: id,
+		sessionId: id,
 		url: `/s/${id}`
 	});
 }

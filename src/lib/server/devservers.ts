@@ -822,10 +822,11 @@ function serverStatusMap(): Map<string, ServerState> {
 	return (g.__deckServerStatus ??= new Map());
 }
 
+// Only a server that broke is worth interrupting for. Coming up and being
+// stopped are both things you already know about (you started it, or you stopped
+// it), and the Servers tab shows either the moment you look.
 function transitionNotice(rt: ServerRuntime): { title: string; body: string } | null {
 	if (rt.state === 'errored') return { title: `Server errored · ${rt.name}`, body: rt.error ?? rt.name };
-	if (rt.state === 'dead') return { title: `Server stopped · ${rt.name}`, body: rt.name };
-	if (rt.state === 'running') return { title: `Server ready · ${rt.name}`, body: rt.previewUrl ?? rt.name };
 	return null;
 }
 
@@ -833,7 +834,15 @@ function maybeNotify(session: DeckSession, rt: ServerRuntime, before: ServerStat
 	if (!before) return; // first observation (or after a restart); don't spam
 	if (before === rt.state) return;
 	const notice = transitionNotice(rt);
-	if (notice) notify({ ...notice, tag: key(session.id, rt.name), url: `/s/${session.id}` });
+	if (notice) {
+		notify({
+			...notice,
+			reason: 'needs-you',
+			tag: key(session.id, rt.name),
+			sessionId: session.id,
+			url: `/s/${session.id}`
+		});
+	}
 }
 
 async function pollSession(session: DeckSession, prev: Map<string, ServerState>, seen: Set<string>) {

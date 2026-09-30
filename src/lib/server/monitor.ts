@@ -30,7 +30,14 @@ function onShellTransition(s: { id: string; status: string; title: string; cwd: 
 	publishAgentEvent(s.id, 'status', { status: s.status });
 	// before !== status is guaranteed above, so this fires once per death.
 	if (s.status === 'dead') {
-		notify({ title: `Shell exited · ${s.title}`, body: s.cwd, tag: s.id, url: `/s/${s.id}` });
+		notify({
+			reason: 'stopped',
+			title: `Shell exited · ${s.title}`,
+			body: s.cwd,
+			tag: s.id,
+			sessionId: s.id,
+			url: `/s/${s.id}`
+		});
 	}
 }
 

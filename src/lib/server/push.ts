@@ -1,7 +1,8 @@
 import webpush, { type PushSubscription } from 'web-push';
 import { readJson, writeJson } from './config';
 import { apnsNotify } from './apns';
-import type { PushAsk } from './apns-core';
+import { isSessionHidden } from './hidden';
+import type { DeckPushPayload, PushAsk } from './apns-core';
 
 // Web Push so the installed PWA gets notified (question asked, turn ended,
 // session crashed/exited) even when it's backgrounded on a phone. VAPID keys and
@@ -71,11 +72,24 @@ export function removeSub(endpoint: string) {
 	);
 }
 
+// Why a notification is worth interrupting for. deck pushes for these two
+// things and nothing else: a run that has stopped, and something waiting on
+// you. Anything else (a session starting, a dev server coming up, a tidy-up
+// finishing) is news you can read when you next look, and is not pushed.
+//
+// Required rather than optional, so adding a notification means deciding which
+// of the two it is instead of quietly introducing a third kind.
+export type NotifyReason = 'stopped' | 'needs-you';
+
 export interface NotifyPayload {
+	reason: NotifyReason;
 	title: string;
 	body?: string;
 	url?: string;
 	tag?: string;
+	// The session this is about, when there is one. A hidden session doesn't
+	// notify: hiding it says you don't want to hear from it.
+	sessionId?: string;
 	// A blocking question the notification can answer directly (see apns-core).
 	ask?: PushAsk;
 }
@@ -96,10 +110,20 @@ function redactEndpoint(endpoint: string): string {
 // expired (404/410). Also fans out to any registered APNs devices (native
 // iOS/watchOS), independent of whether any web push subscription exists.
 export function notify(payload: NotifyPayload): void {
+	if (payload.sessionId && isSessionHidden(payload.sessionId)) return;
 	void apnsNotify(payload);
 	const subs = listSubs();
 	if (!subs.length) return;
-	const data = JSON.stringify(payload);
+	// Only the documented wire shape goes out: `reason` and `sessionId` are for
+	// deciding whether to send, not for the client to read.
+	const wire: DeckPushPayload = {
+		title: payload.title,
+		body: payload.body,
+		url: payload.url,
+		tag: payload.tag,
+		ask: payload.ask
+	};
+	const data = JSON.stringify(wire);
 	for (const sub of subs) {
 		webpush.sendNotification(sub, data).catch((e: { statusCode?: number; body?: string }) => {
 			if (e?.statusCode === 404 || e?.statusCode === 410) removeSub(sub.endpoint);

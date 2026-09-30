@@ -20,7 +20,6 @@ import {
 import type { SessionPR } from '$lib/types';
 import { listStoredSessions, getStoredSession, updateSession } from './store';
 import { publishAgentEvent } from './agent-feed';
-import { notify } from './push';
 import { deleteSession } from './sessions';
 
 const exec = promisify(execFile);
@@ -146,15 +145,9 @@ async function retire(id: string, refresh: boolean): Promise<void> {
 	const stored = getStoredSession(id);
 	const pr = stored?.pr;
 	if (!stored || !pr || !shouldRetireReviewSession(stored)) return;
+	// Silent: the review already notified when it finished its turn, and clearing
+	// up after it is not something that wants you (see push.ts).
 	await deleteSession(id, { deleteWorktree: true, deleteBranch: true });
-	const verdict = pr.myReview === 'APPROVED' ? 'approved' : 'requested changes';
-	// The session is gone, so this can't deep-link to it; link the PR instead.
-	notify({
-		title: 'Review session retired',
-		body: `${pr.repo}#${pr.number} · ${verdict}`,
-		tag: id,
-		url: pr.url
-	});
 }
 
 // Fetch one chunk's PR states in a single aliased GraphQL request and write each

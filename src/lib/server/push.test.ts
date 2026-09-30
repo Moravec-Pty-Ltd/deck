@@ -81,10 +81,33 @@ describe('notify', () => {
 		rejectWith(410);
 		const errLog = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		notify({ title: 'hi' });
+		notify({ reason: 'stopped', title: 'hi' });
 
 		await vi.waitFor(() => expect(readSubs()).toHaveLength(0));
 		expect(errLog).not.toHaveBeenCalled();
+	});
+
+	it('says nothing about a hidden session', async () => {
+		fs.writeFileSync(path.join(tmpDir, 'hidden-sessions.json'), JSON.stringify(['c_quiet']));
+		addSub(sub('https://push.example/ok'));
+		const send = vi.spyOn(webpush, 'sendNotification').mockResolvedValue({} as never);
+
+		notify({ reason: 'stopped', title: 'hi', sessionId: 'c_quiet' });
+		expect(send).not.toHaveBeenCalled();
+
+		notify({ reason: 'stopped', title: 'hi', sessionId: 'c_loud' });
+		expect(send).toHaveBeenCalledTimes(1);
+		fs.rmSync(path.join(tmpDir, 'hidden-sessions.json'), { force: true });
+	});
+
+	it('sends only the documented wire fields, not the routing ones', async () => {
+		addSub(sub('https://push.example/ok'));
+		const send = vi.spyOn(webpush, 'sendNotification').mockResolvedValue({} as never);
+
+		notify({ reason: 'needs-you', title: 'hi', sessionId: 'c_loud', tag: 'c_loud' });
+
+		const body = JSON.parse(String(send.mock.calls[0][1]));
+		expect(body).toEqual({ title: 'hi', tag: 'c_loud' });
 	});
 
 	it('logs other non-2xx failures once, with a redacted endpoint, without pruning', async () => {
@@ -92,7 +115,7 @@ describe('notify', () => {
 		rejectWith(403);
 		const errLog = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		notify({ title: 'hi' });
+		notify({ reason: 'stopped', title: 'hi' });
 
 		await vi.waitFor(() => expect(errLog).toHaveBeenCalledTimes(1));
 		const msg = String(errLog.mock.calls[0][0]);

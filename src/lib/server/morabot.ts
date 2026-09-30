@@ -90,9 +90,13 @@ function markAndNotify(l: Ledger, r: RecentReview, sessions: DeckSession[], now:
 	const session = matchSessionForReview(r, sessions);
 	if (!session) return;
 	notify({
+		// A verdict on a PR you have a session for is the next thing waiting on
+		// you: merge it, or answer what the review asked.
+		reason: 'needs-you',
 		title: `${decisionLabel(r.decision)} · ${r.repo}#${r.pr}`,
 		body: session.title,
 		tag: `morabot:${r.reviewId}`,
+		sessionId: session.id,
 		url: `/s/${session.id}`
 	});
 }

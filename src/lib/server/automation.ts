@@ -4,13 +4,11 @@
 // independently. Idempotence is durable: a given issue/PR fires at most once ever,
 // across polls and restarts, tracked in ~/.deck/automation.json. The pure
 // key/dedupe logic and request bodies live in automation-core.ts.
-import { shortIssueId } from '$lib/issues';
 import type { Issue, Project, PullRequest } from '$lib/types';
 import { listProjects, listStoredSessions } from './store';
 import { getProjectIssues } from './issues';
 import { getProjectPrs } from './prs';
 import { createSessionFromRequest } from './create-session';
-import { notify, type NotifyPayload } from './push';
 import { runIdempotent } from './idempotency';
 import { loadProcessed, persist } from './automation-ledger';
 import {
@@ -33,44 +31,33 @@ import {
 // the claim so a later tick retries; an uncaught crash leaves it claimed (safe: no
 // duplicate). runIdempotent is a second, in-process guard against an overlapping
 // tick racing the same key within its window.
+//
+// A spawn is deliberately silent. deck only pushes when a run has stopped or
+// something is waiting on you (see push.ts), and an automatic session starting is
+// neither: it turns up in the session list, and it will notify when it finishes.
 async function spawn(
 	processed: ProcessedKeys,
 	key: string,
-	body: () => Record<string, unknown>,
-	describe: (sessionId: string) => NotifyPayload
+	body: () => Record<string, unknown>
 ): Promise<void> {
 	processed[key] = Date.now();
 	persist(processed);
-	let session: Awaited<ReturnType<typeof createSessionFromRequest>>;
 	try {
 		const { result } = runIdempotent(key, () =>
 			createSessionFromRequest(body(), { remember: false })
 		);
-		session = await result;
+		await result;
 	} catch (e) {
 		delete processed[key];
 		persist(processed);
 		console.error(`[deck] automation spawn failed for ${key}:`, e);
-		return;
-	}
-	// The session exists now, so the claim stays put even if notify fails —
-	// releasing it would let the next poll respawn, breaking at-most-once.
-	try {
-		notify(describe(session.id));
-	} catch (e) {
-		console.error(`[deck] automation notification failed for ${key}:`, e);
 	}
 }
 
 async function runWork(project: Project, processed: ProcessedKeys): Promise<void> {
 	const { issues } = await getProjectIssues(project).catch(() => ({ issues: [] as Issue[] }));
 	for (const { key, candidate } of selectNewTriggers(issues, workTriggerKey, processed)) {
-		await spawn(processed, key, () => workBody(project, candidate), (id) => ({
-			title: 'Automation started a work session',
-			body: `${shortIssueId(candidate.sourceType, candidate.id)} · ${candidate.title}`,
-			tag: id,
-			url: `/s/${id}`
-		}));
+		await spawn(processed, key, () => workBody(project, candidate));
 	}
 }
 
@@ -98,12 +85,7 @@ async function spawnReview(
 	{ key, candidate }: NewTrigger<PullRequest>
 ): Promise<void> {
 	if (pruneSupersededReviewKeys(processed, candidate)) persist(processed);
-	await spawn(processed, key, () => reviewBody(project, candidate), (id) => ({
-		title: 'Automation started a review session',
-		body: `${candidate.repo}#${candidate.number} · ${candidate.title}`,
-		tag: id,
-		url: `/s/${id}`
-	}));
+	await spawn(processed, key, () => reviewBody(project, candidate));
 }
 
 // One project's candidate paired with the project it came from, so the merged

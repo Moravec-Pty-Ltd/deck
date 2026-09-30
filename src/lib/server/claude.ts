@@ -141,12 +141,14 @@ function notifyTurnEnd(id: string, event: Record<string, unknown>) {
 	const title = getStoredSession(id)?.title ?? id;
 	const subtype = event.subtype as string | undefined;
 	notify({
+		reason: 'stopped',
 		title:
 			subtype && subtype !== 'success'
 				? `Turn ended (${subtype}) · ${title}`
 				: `Claude finished · ${title}`,
 		body: 'Tap to open the session',
 		tag: id,
+		sessionId: id,
 		url: `/s/${id}`
 	});
 }
@@ -158,9 +160,11 @@ function reportCrash(id: string, proc: Proc, code: number | null) {
 	appendEvent(id, { type: 'deck.error', text, ts: Date.now() });
 	setStatus(id, 'error');
 	notify({
+		reason: 'needs-you',
 		title: `Session crashed · ${getStoredSession(id)?.title ?? id}`,
 		body: text.split('\n').pop() || 'claude exited unexpectedly',
 		tag: id,
+		sessionId: id,
 		url: `/s/${id}`
 	});
 }

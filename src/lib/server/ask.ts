@@ -65,9 +65,11 @@ function askNotification(sessionId: string, questions: AskQuestion[], askId: str
 	if (askId) ask.askId = askId;
 	if (first?.header) ask.header = first.header;
 	return {
+		reason: 'needs-you' as const,
 		title: `Needs your answer · ${title}`,
 		body: first ? askNotificationBody(first.question, options) : 'Claude is asking a question',
 		tag: sessionId,
+		sessionId,
 		url: `/s/${sessionId}`,
 		ask
 	};

@@ -59,6 +59,7 @@ export function requestPairing(): PairingRequest {
 	if (now - lastPushAt > PUSH_COOLDOWN_MS) {
 		lastPushAt = now;
 		notify({
+			reason: 'needs-you',
 			title: 'deck: device wants access',
 			body: `Approve code ${code}? Open deck to allow or deny.`,
 			url: '/',
