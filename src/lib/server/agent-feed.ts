@@ -21,6 +21,7 @@ export interface AgentFeedEvent {
 		| 'pr'
 		| 'session-created'
 		| 'session-renamed'
+		| 'session-hidden'
 		| 'session-deleted';
 	at: number;
 	[key: string]: unknown;

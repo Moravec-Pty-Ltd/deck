@@ -417,6 +417,11 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 - \`session-created\` — { session: <digest> }
 - \`session-renamed\` — { title, id } (\`id\` is where the session moved to, which
 	differs from the event's \`sessionId\` only for a renamed tmux terminal)
+- \`session-hidden\` — { hidden, project?, projectHidden? } (\`hidden\` is the
+	session's effective state, so one hidden on its own stays hidden when its
+	project comes back. A project's hide sends one event per session it owns,
+	naming the \`project\` and its own \`projectHidden\`, which cannot be read back
+	off the sessions for that same reason)
 - \`session-deleted\` — {}
 
 Apply deltas idempotently: after a gap re-snapshot (or bootstrap) an overlapping

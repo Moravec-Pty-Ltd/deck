@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { objectBody } from './http';
 import { setSessionHidden } from './hidden';
 import { invalidateSessionList } from './sessions';
+import { publishAgentEvent } from './agent-feed';
 
 // Hide or unhide one session. Shared verbatim by /api/sessions/[id]/hidden
 // (browser) and /api/agent/sessions/[id]/hidden (agent API), the way
@@ -22,5 +23,8 @@ export async function setHidden(event: {
 	// Nothing was written to the store, so the list memo would keep serving the
 	// old flag for its whole window.
 	invalidateSessionList();
+	// The apps hold their session list from the event feed, not from polling, so
+	// without this the change only ever reaches the device that made it.
+	publishAgentEvent(id, 'session-hidden', { hidden: body.hidden });
 	return json({ ok: true, id, hidden: body.hidden });
 }

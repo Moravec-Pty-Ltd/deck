@@ -1,7 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import { objectBody } from './http';
 import { listProjects, updateProject } from './store';
-import { invalidateSessionList } from './sessions';
+import { invalidateSessionList, listSessions } from './sessions';
+import { publishAgentEvent } from './agent-feed';
+import { deriveGroup } from '$lib/time';
 
 // Hide or unhide a project, which takes its sessions with it (see
 // hidden-core.ts). Its own endpoint rather than a field on POST /api/projects:
@@ -16,6 +18,25 @@ function hideRequest(body: Record<string, unknown>): { path: string; hidden: boo
 	return { path, hidden: body.hidden };
 }
 
+// Tell the feed what changed, one event per session the project owns. The apps
+// hold their session list from the feed rather than polling, so without this the
+// change only ever reaches the device that made it.
+//
+// `hidden` is each session's *effective* state, so one hidden on its own stays
+// hidden when its project comes back. The project's own state is sent separately
+// for exactly that reason: it cannot be read back off the sessions.
+async function announce(path: string, projectHidden: boolean): Promise<void> {
+	const projects = listProjects();
+	for (const session of await listSessions()) {
+		if (deriveGroup(session.cwd, projects).key !== path) continue;
+		publishAgentEvent(session.id, 'session-hidden', {
+			hidden: !!session.hidden,
+			project: path,
+			projectHidden
+		});
+	}
+}
+
 export async function setProjectHidden(event: { request: Request }): Promise<Response> {
 	const { path, hidden } = hideRequest(await objectBody(event.request));
 	if (!listProjects().some((p) => p.path === path)) error(404, 'project not found');
@@ -25,5 +46,6 @@ export async function setProjectHidden(event: { request: Request }): Promise<Res
 	// The sessions under it just changed their hidden flag, and the list memo
 	// would otherwise keep serving the old one.
 	invalidateSessionList();
+	await announce(path, hidden);
 	return json({ ok: true, path, hidden });
 }
