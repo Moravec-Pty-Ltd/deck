@@ -157,7 +157,7 @@ export function summaryMessages(session: OperatorSession, reply: string): { role
 }
 
 // A prompt or message that names a skill in words ("run dev-workflow
-// SKO-136", "the release skill") becomes the slash command that runs it;
+// ACM-12", "the release skill") becomes the slash command that runs it;
 // anything else passes through. The model tends to hand over the user's
 // wording rather than the invocation.
 

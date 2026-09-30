@@ -32,11 +32,11 @@ describe('systemPrompt', () => {
 		const text = systemPrompt({
 			sessions,
 			skills: [{ name: 'dev-workflow', description: 'Work an issue to a PR', scope: 'global' }],
-			projects: ['deck', 'skorre'],
+			projects: ['deck', 'acme'],
 			now: '2026-09-22T10:00:00Z'
 		});
 		expect(text).toContain('"id":"c_auth"');
-		expect(text).toContain('Projects: deck, skorre.');
+		expect(text).toContain('Projects: deck, acme.');
 		expect(text).toContain('dev-workflow (global): Work an issue to a PR');
 		expect(text).toContain('no markdown');
 		// Changing parts last, so a cached prompt prefix survives between turns.
@@ -147,10 +147,10 @@ describe('skillInvocation', () => {
 		{ name: 'dev', description: '', scope: 'global' }
 	];
 	it('turns a spoken skill request into its slash command', () => {
-		expect(skillInvocation('run dev-workflow SKO-136', skills)).toBe('/dev-workflow SKO-136');
-		expect(skillInvocation('Please kick off the dev-workflow skill on SKO-136', skills)).toBe('/dev-workflow SKO-136');
+		expect(skillInvocation('run dev-workflow ACM-12', skills)).toBe('/dev-workflow ACM-12');
+		expect(skillInvocation('Please kick off the dev-workflow skill on ACM-12', skills)).toBe('/dev-workflow ACM-12');
 		expect(skillInvocation('release', skills)).toBe('/release');
-		expect(skillInvocation('/dev-workflow ENG-1', skills)).toBe('/dev-workflow ENG-1');
+		expect(skillInvocation('/dev-workflow ACM-1', skills)).toBe('/dev-workflow ACM-1');
 	});
 	it('leaves other prompts alone and prefers the longest skill name', () => {
 		expect(skillInvocation('Fix the flaky test and report back', skills)).toBe('Fix the flaky test and report back');
