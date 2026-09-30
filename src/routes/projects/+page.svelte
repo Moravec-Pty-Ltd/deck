@@ -13,7 +13,8 @@
 	import AutomationAgentForm from '$lib/components/AutomationAgentForm.svelte';
 	import { fromRow, toRow, type AgentRow } from '$lib/automation-form-core';
 	import { loadSettings } from '$lib/settings-store';
-	import { ArrowLeft, Plus, Trash2, Check, ChevronRight, ChevronDown } from '@lucide/svelte';
+	import { hideProject } from '$lib/hidden';
+	import { ArrowLeft, Plus, Trash2, Check, ChevronRight, ChevronDown, Eye, EyeOff } from '@lucide/svelte';
 
 	// automation is always materialised (both toggles and both agent picks present)
 	// so the inputs bind cleanly; the API stores the all-default shape as absent.
@@ -125,6 +126,20 @@
 		addModalOpen = true;
 	}
 
+	// A hidden project moves to the "Hidden" section here and takes its sessions
+	// out of the session lists, so reload to let it re-settle, the same as a group
+	// change does.
+	async function toggleHidden(p: Project) {
+		errorMsg = '';
+		try {
+			await hideProject(p.path, !p.hidden);
+		} catch (e) {
+			errorMsg = e instanceof Error ? e.message : 'failed to save';
+			return;
+		}
+		await load();
+	}
+
 	async function remove(p: Project) {
 		if (!confirm(`Remove project "${p.name}"? (does not touch files)`)) return;
 		await fetch(`/api/projects?path=${encodeURIComponent(p.path)}`, { method: 'DELETE' });
@@ -201,6 +216,14 @@
 											list="project-groups"
 											bind:value={p.group}
 										/>
+										<button
+											class="btn btn-ghost btn-sm"
+											onclick={() => toggleHidden(p)}
+											aria-label={p.hidden ? 'Unhide' : 'Hide'}
+											title={p.hidden ? 'Unhide this project' : 'Hide this project and its sessions'}
+										>
+											{#if p.hidden}<Eye size={15} />{:else}<EyeOff size={15} />{/if}
+										</button>
 										<button class="btn btn-ghost btn-sm" onclick={() => remove(p)} aria-label="Remove">
 											<Trash2 size={15} />
 										</button>

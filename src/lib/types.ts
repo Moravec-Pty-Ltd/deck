@@ -95,6 +95,11 @@ export interface DeckSession {
 	// doesn't repeat on every open and a dismissed `pr` isn't resurrected from the
 	// transcript on reload (see getSession backfill).
 	prBackfilled?: boolean;
+	// Kept out of the ordinary lists and shown in their "Hidden" section instead.
+	// Never stored on the record: the server derives it per read from the hidden
+	// ids and the hidden projects (see server/hidden.ts), so every client reads
+	// one flag rather than re-deriving the rule.
+	hidden?: boolean;
 }
 
 // Live GitHub state of a captured PR, mapped from a PR's state + isDraft (see
@@ -194,6 +199,10 @@ export interface Project {
 	// together in the lists/pickers; absent falls into the "Ungrouped" bucket.
 	// Single group per project, no separate entity, no migration.
 	group?: string;
+	// Moves the project and every session under it into the "Hidden" section at
+	// the bottom of the lists. A view preference only: nothing stops running and
+	// nothing is deleted.
+	hidden?: boolean;
 	template?: string;
 	// First-prompt template for Review-mode sessions (started on a PR awaiting
 	// review). Empty means an empty prompt field, exactly like `template`.

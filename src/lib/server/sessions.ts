@@ -5,11 +5,14 @@ import { lastPrLink, ownsWorktreeBranch } from '$lib/pr';
 import {
 	listStoredSessions,
 	getStoredSession,
+	listProjects,
 	saveSession,
 	updateSession,
 	removeSession,
 	setSessionsMutatedHook
 } from './store';
+import { hiddenSessionIds, setSessionHidden } from './hidden';
+import { stampHidden } from '$lib/hidden-core';
 import { readTranscriptTailText } from './transcript';
 import {
 	listTmuxSessions,
@@ -132,7 +135,12 @@ async function computeSessions(): Promise<DeckSession[]> {
 		result.push(adhocView(t));
 	}
 
-	return result.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+	// Fold the hidden ids and the hidden projects into the one flag every client
+	// reads. Done here so the browser, the agent API and the apps all agree on
+	// what is hidden without each deriving it.
+	return stampHidden(result, hiddenSessionIds(), listProjects()).sort(
+		(a, b) => b.lastActiveAt - a.lastActiveAt
+	);
 }
 
 // One-time best-effort PR backfill for sessions whose links predate capture (or
@@ -258,6 +266,8 @@ export async function deleteSession(
 	id: string,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean } = {}
 ): Promise<void> {
+	// A deleted session's hide would otherwise sit in hidden-sessions.json forever.
+	setSessionHidden(id, false);
 	if (isAdhocId(id)) {
 		// Adhoc tmux session: no store write, so bust the list memo by hand.
 		await killTmuxSession(adhocTmuxName(id));

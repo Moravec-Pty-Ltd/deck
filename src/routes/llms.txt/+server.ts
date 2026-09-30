@@ -54,11 +54,22 @@ to form valid create/review calls without any out-of-band values.
 Registered projects, the source of every \`cwd\`:
 
 \`\`\`json
-[{ "path": "/path/to/project", "name": "project", "group": "apps" }]
+[{ "path": "/path/to/project", "name": "project", "group": "apps", "hidden": true }]
 \`\`\`
 
 \`create\` and \`review\` require \`cwd\` to be one of these \`path\`s for
 worktree/issue/PR use; a plain session can run in any existing directory.
+
+\`hidden\` is present only on a hidden project (see below); it still accepts
+new sessions, it is just kept out of the lists.
+
+### POST /api/agent/projects/hidden
+
+\`{ "path": "/path/to/project", "hidden": true }\` — move a project, and every
+session working in it or in one of its worktrees, into the "Hidden" section at
+the bottom of the lists. Nothing stops running and nothing is deleted; hidden
+sessions also stop sending notifications. \`false\` brings it back. An
+unregistered path is a 404. Returns \`{ "ok": true, "path", "hidden" }\`.
 
 ### GET /api/agent/kinds
 
@@ -156,9 +167,14 @@ Digest of every session:
 	"pr": { "repo": "owner/repo", "number": 42, "url": "...", "state": "open",
 		"reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "approvals": 1, "changesRequested": 0 },
 	"cost": { "costUsd": 0.42, "turns": 12, "durationMs": 258000, "results": 12 },
-	"context": { "used": 702516, "window": 1000000 }
+	"context": { "used": 702516, "window": 1000000 },
+	"hidden": true
 }]
 \`\`\`
+
+\`hidden\` is present only on a hidden session, whether it was hidden itself or
+its project was. A client that lists sessions should keep those out of its main
+list and offer them in a "Hidden" section instead.
 
 ### GET /api/agent/sessions/{id}
 
@@ -282,6 +298,17 @@ Read \`id\` back: renaming an unregistered tmux terminal (\`t_<tmux name>\`)
 renames the tmux session, so its derived id moves with it. A colon is replaced
 with \`-\` (tmux could not target the session otherwise), and a name another
 terminal already holds is a 409. A registered session keeps its id.
+
+### POST /api/agent/sessions/{id}/hidden
+
+\`{ "hidden": true }\` — move one session into the "Hidden" section, or \`false\`
+to bring it back. A hidden session keeps running and stops notifying; it is not
+deleted. Returns \`{ "ok": true, "id", "hidden" }\`.
+
+A session is also hidden when its project is (see
+\`POST /api/agent/projects/hidden\`), and unhiding it on its own will not bring
+it back while that holds. Either way the session list reports the answer as
+\`hidden\` on the digest.
 
 ### POST /api/agent/sessions/{id}/restart
 

@@ -5,6 +5,11 @@ import { deriveGroup } from '$lib/time';
 // isn't a registered project (adhoc shells). Rendered last on every surface.
 export const UNGROUPED = 'Ungrouped';
 
+// The bucket below Ungrouped, holding what the user has hidden. Collapsed by
+// default on every surface, and the only place a hidden thing can be brought
+// back from.
+export const HIDDEN = 'Hidden';
+
 // One project's sessions within a group. `key`/`label` come from deriveGroup, so
 // worktrees still fold back under their repo. `lastActiveAt` drives the
 // activity-ordering of subgroups inside a group.
@@ -23,12 +28,12 @@ export interface SessionGroup {
 	sessionCount: number;
 }
 
-// Order group names alphanumerically, with "Ungrouped" always last (matches the
-// explicit placement on /projects and the new-session select).
+// Order group names alphanumerically, with "Ungrouped" second-last and "Hidden"
+// last (matches the explicit placement on /projects and the new-session select).
 export function compareGroupNames(a: string, b: string): number {
 	if (a === b) return 0;
-	if (a === UNGROUPED) return 1;
-	if (b === UNGROUPED) return -1;
+	const rank = (n: string) => (n === HIDDEN ? 2 : n === UNGROUPED ? 1 : 0);
+	if (rank(a) !== rank(b)) return rank(a) - rank(b);
 	return a.localeCompare(b);
 }
 
@@ -42,14 +47,10 @@ function pathGroups(projects: Project[]): Map<string, string> {
 	return map;
 }
 
-// Build the two-level structure: sessions cluster into per-project subgroups
-// (via deriveGroup), which cluster into project-groups by their project's
-// `group`. Subgroups whose project isn't registered or has no group fall under
-// "Ungrouped". Groups order alphanumerically (Ungrouped last); subgroups within a
-// group order by most-recent activity.
-export function groupSessions(sessions: DeckSession[], projects: Project[]): SessionGroup[] {
-	const toGroup = pathGroups(projects);
-
+// Cluster sessions into per-project subgroups, most-recently-active first.
+// Shared by the ordinary grouping and by the Hidden section, so a hidden session
+// still sits under the project it belongs to.
+function projectSubgroups(sessions: DeckSession[], projects: Project[]): ProjectSubgroup[] {
 	const subMap = new Map<string, ProjectSubgroup>();
 	for (const s of sessions) {
 		const { key, label } = deriveGroup(s.cwd, projects);
@@ -61,9 +62,23 @@ export function groupSessions(sessions: DeckSession[], projects: Project[]): Ses
 		sub.sessions.push(s);
 		sub.lastActiveAt = Math.max(sub.lastActiveAt, s.lastActiveAt);
 	}
+	return [...subMap.values()].sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+}
+
+// Build the two-level structure: sessions cluster into per-project subgroups
+// (via deriveGroup), which cluster into project-groups by their project's
+// `group`. Subgroups whose project isn't registered or has no group fall under
+// "Ungrouped". Groups order alphanumerically (Ungrouped last); subgroups within a
+// group order by most-recent activity.
+//
+// Callers pass the sessions they want listed, so hidden ones are filtered out
+// first (see visibleSessions) and rendered by hiddenGroup instead.
+export function groupSessions(sessions: DeckSession[], projects: Project[]): SessionGroup[] {
+	const toGroup = pathGroups(projects);
+	const subgroups = projectSubgroups(sessions, projects);
 
 	const groupMap = new Map<string, SessionGroup>();
-	for (const sub of subMap.values()) {
+	for (const sub of subgroups) {
 		const name = toGroup.get(sub.key) ?? UNGROUPED;
 		let group = groupMap.get(name);
 		if (!group) {
@@ -74,10 +89,22 @@ export function groupSessions(sessions: DeckSession[], projects: Project[]): Ses
 		group.sessionCount += sub.sessions.length;
 	}
 
-	for (const group of groupMap.values()) {
-		group.subgroups.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
-	}
+	// Subgroups keep the activity order projectSubgroups already put them in.
 	return [...groupMap.values()].sort((a, b) => compareGroupNames(a.name, b.name));
+}
+
+// The one section every hidden session lands in, whatever project or group it
+// belongs to, rendered below Ungrouped. Null when nothing is hidden, so the
+// section doesn't appear at all until it has something in it. Subgroups are kept
+// so you can see what you hid and unhide a whole project from its header.
+export function hiddenGroup(sessions: DeckSession[], projects: Project[]): SessionGroup | null {
+	const hidden = sessions.filter((s) => s.hidden);
+	if (hidden.length === 0) return null;
+	return {
+		name: HIDDEN,
+		subgroups: projectSubgroups(hidden, projects),
+		sessionCount: hidden.length
+	};
 }
 
 // A project-group for the surfaces that list projects (no session-activity signal,
@@ -88,12 +115,13 @@ export interface ProjectGroup {
 }
 
 // Group projects by their `group` ("Ungrouped" fallback) for /projects and the
-// new-session picker. Groups order alphanumerically (Ungrouped last); within a
-// group, projects order alphanumerically by name.
+// new-session picker. A hidden project leaves its group for "Hidden", which is
+// the point of hiding it; groups order alphanumerically (Ungrouped then Hidden
+// last), and within a group projects order alphanumerically by name.
 export function groupProjects(projects: Project[]): ProjectGroup[] {
 	const map = new Map<string, Project[]>();
 	for (const p of projects) {
-		const name = p.group?.trim() || UNGROUPED;
+		const name = p.hidden ? HIDDEN : p.group?.trim() || UNGROUPED;
 		let list = map.get(name);
 		if (!list) {
 			list = [];

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { DeckSession, Project, ServerState } from '$lib/types';
-	import { groupSessions } from '$lib/groups';
+	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
+	import { visibleSessions } from '$lib/hidden-core';
+	import { hideActions } from '$lib/hidden';
 	import { deriveGroup, relativeTime } from '$lib/time';
 	import { bucketSessions, BUCKET_DOT } from '$lib/status-groups';
 	import { viewMode } from '$lib/view-mode.svelte';
@@ -20,7 +22,7 @@
 		type RecentError,
 		type ReviewDecision
 	} from '$lib/morabot-core';
-	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search } from '@lucide/svelte';
+	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff } from '@lucide/svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
@@ -42,8 +44,11 @@
 		onQuickAdd: (path: string) => void;
 		onShellHere: (session: DeckSession) => void;
 		onDelete: (session: DeckSession, neighbor?: DeckSession | null) => void;
+		// Re-fetch the page's sessions and projects, so a hide shows up at once
+		// rather than on the next poll.
+		onChanged: () => void;
 	}
-	let { projects, sessions, serverStates, reviews, currentId, deletingIds, onQuickAdd, onShellHere, onDelete }: Props =
+	let { projects, sessions, serverStates, reviews, currentId, deletingIds, onQuickAdd, onShellHere, onDelete, onChanged }: Props =
 		$props();
 
 	// morabot review section (issue #188). Hidden entirely unless the integration is
@@ -95,12 +100,25 @@
 		return 'bg-base-content/35';
 	}
 
+	// Everything above the Hidden section. Hiding cuts across both views, so it is
+	// applied once here rather than inside each grouping.
+	const shown = $derived(visibleSessions(sessions));
+
 	// Two-level switcher across all sessions: project-group -> per-project subgroup
 	// -> sessions, ordered per the rules in $lib/groups (issue #34).
-	const groups = $derived(groupSessions(sessions, projects));
+	const groups = $derived(groupSessions(shown, projects));
 
 	// Attention-first buckets cutting across projects, for the "By status" view.
-	const buckets = $derived(bucketSessions(sessions));
+	const buckets = $derived(bucketSessions(shown));
+
+	// The one section below both views, holding whatever is hidden. Null until
+	// something is.
+	const hidden = $derived(hiddenGroup(sessions, projects));
+
+	const hide = hideActions(
+		() => projects,
+		() => onChanged()
+	);
 
 	// Collapse state, default-collapsed and persisted independently from the
 	// homepage's (no auto-expand of the active session's group).
@@ -115,10 +133,14 @@
 
 	// The sessions actually on screen, in render order, computed on demand at
 	// delete time (only read then, so not a derived recomputed every poll).
+	// The Hidden section sits below both views, so its rows join the order
+	// whenever it is open.
 	function visibleOrder(): DeckSession[] {
-		return viewMode.current === 'status'
-			? flattenVisibleBuckets(buckets, (k) => statusCollapse.has(k))
-			: flattenVisibleGroups(groups, (name) => collapse.has(name));
+		const above =
+			viewMode.current === 'status'
+				? flattenVisibleBuckets(buckets, (k) => statusCollapse.has(k))
+				: flattenVisibleGroups(groups, (name) => collapse.has(name));
+		return [...above, ...flattenVisibleGroups(hidden ? [hidden] : [], (name) => collapse.has(name))];
 	}
 
 	// For the open session, hand the page its visible neighbour to land on once
@@ -194,6 +216,25 @@
 				<Plus size={12} class="text-primary" />
 			</button>
 		{/if}
+		{#if !s.hidden}
+			<button
+				class="btn btn-ghost btn-xs"
+				onclick={() => hide.toggleSession(s)}
+				aria-label={`Hide ${s.title}`}
+				title="Hide this session"
+			>
+				<EyeOff size={12} />
+			</button>
+		{:else if !hide.projectHides(s)}
+			<button
+				class="btn btn-ghost btn-xs"
+				onclick={() => hide.toggleSession(s)}
+				aria-label={`Unhide ${s.title}`}
+				title="Unhide this session"
+			>
+				<Eye size={12} />
+			</button>
+		{/if}
 		<button
 			class="btn btn-ghost btn-xs"
 			onclick={() => onDeleteRow(s)}
@@ -208,6 +249,42 @@
 			{/if}
 		</button>
 	</li>
+{/snippet}
+
+<!-- One project's sessions, the same in a group and in the Hidden section; only
+	the hide control flips between hiding the project and bringing it back. -->
+{#snippet subgroup(g: ProjectSubgroup)}
+	{@const isHidden = hide.isProjectHidden(g.key)}
+	<div>
+		<div class="flex items-center gap-1 pl-1 pr-0">
+			<span class="min-w-0 flex-1 truncate text-xs font-semibold opacity-70" title={g.key}>
+				{g.label}
+			</span>
+			{#if projectPaths.has(g.key)}
+				<button
+					class="btn btn-ghost btn-xs"
+					onclick={() => hide.toggleProject(g.key)}
+					aria-label={`${isHidden ? 'Unhide' : 'Hide'} ${g.label}`}
+					title={isHidden ? 'Unhide this project' : 'Hide this project and its sessions'}
+				>
+					{#if isHidden}<Eye size={13} />{:else}<EyeOff size={13} />{/if}
+				</button>
+				<button
+					class="btn btn-ghost btn-xs"
+					onclick={() => onQuickAdd(g.key)}
+					aria-label={`New session in ${g.label}`}
+					title="New session here"
+				>
+					<Plus size={14} class="text-primary" />
+				</button>
+			{/if}
+		</div>
+		<ul class="mt-0.5 space-y-0.5">
+			{#each g.sessions as s (s.id)}
+				{@render sessionRow(s)}
+			{/each}
+		</ul>
+	</div>
 {/snippet}
 
 {#if showReviews && reviews}
@@ -383,28 +460,7 @@
 				{#if isOpen}
 					<div class="mt-1 space-y-3 pl-3">
 						{#each group.subgroups as g (g.key)}
-							<div>
-								<div class="flex items-center gap-1 pl-1 pr-0">
-									<span class="min-w-0 flex-1 truncate text-xs font-semibold opacity-70" title={g.key}>
-										{g.label}
-									</span>
-									{#if projectPaths.has(g.key)}
-										<button
-											class="btn btn-ghost btn-xs"
-											onclick={() => onQuickAdd(g.key)}
-											aria-label={`New session in ${g.label}`}
-											title="New session here"
-										>
-											<Plus size={14} class="text-primary" />
-										</button>
-									{/if}
-								</div>
-								<ul class="mt-0.5 space-y-0.5">
-									{#each g.sessions as s (s.id)}
-										{@render sessionRow(s)}
-									{/each}
-								</ul>
-							</div>
+							{@render subgroup(g)}
 						{/each}
 					</div>
 				{/if}
@@ -414,5 +470,34 @@
 		{#if groups.length === 0}
 			<p class="px-2 py-1 text-xs opacity-50">No sessions yet.</p>
 		{/if}
+	{/if}
+
+	<!-- Below both views and collapsed until you open it. -->
+	{#if hidden}
+		{@const isOpen = collapse.has(HIDDEN)}
+		<div>
+			<button
+				class="flex w-full items-center gap-1 rounded-btn pl-1 pr-0 py-0.5 text-left hover:bg-base-200"
+				onclick={() => collapse.toggle(HIDDEN)}
+				aria-expanded={isOpen}
+			>
+				{#if isOpen}
+					<ChevronDown size={13} class="shrink-0 opacity-60" />
+				{:else}
+					<ChevronRight size={13} class="shrink-0 opacity-60" />
+				{/if}
+				<EyeOff size={13} class="shrink-0 opacity-50" />
+				<span class="min-w-0 truncate text-xs font-semibold opacity-70">{HIDDEN}</span>
+				<span class="badge badge-ghost badge-sm shrink-0">{hidden.sessionCount}</span>
+				<div class="flex-1"></div>
+			</button>
+			{#if isOpen}
+				<div class="mt-1 space-y-3 pl-3">
+					{#each hidden.subgroups as g (g.key)}
+						{@render subgroup(g)}
+					{/each}
+				</div>
+			{/if}
+		</div>
 	{/if}
 </nav>

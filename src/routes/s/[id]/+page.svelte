@@ -320,6 +320,7 @@
 		onQuickAdd={quickAdd}
 		onShellHere={shellHere}
 		onDelete={onDeleteSession}
+		onChanged={refresh}
 	/>
 {/snippet}
 

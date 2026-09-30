@@ -4,6 +4,7 @@ import { objectBody } from './http';
 import { publishAgentEvent } from './agent-feed';
 import { listTmuxSessions, renameTmuxSession } from './tmux';
 import { invalidateSessionList } from './sessions';
+import { moveHidden } from './hidden';
 import { SERVER_TMUX_PREFIX } from './devservers-core';
 import { parseTitle } from '$lib/session-title';
 import { adhocId, adhocTmuxName, isAdhocId, tmuxSessionName } from './session-title-core';
@@ -33,6 +34,8 @@ async function renameAdhoc(id: string, title: string): Promise<Response> {
 	} catch (err) {
 		error(400, err instanceof Error ? err.message : 'tmux refused the new name');
 	}
+	// The id moved with the name, so anything keyed by it has to move too.
+	moveHidden(id, adhocId(to));
 	// No store write happened, so the session list's memo still holds the old
 	// name. Drop it here or the redirect to the new id can land on a list that
 	// has never heard of it.

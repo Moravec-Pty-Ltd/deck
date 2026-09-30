@@ -3,8 +3,10 @@ import type { DeckSession, Project } from '$lib/types';
 import {
 	groupSessions,
 	groupProjects,
+	hiddenGroup,
 	existingGroupNames,
 	compareGroupNames,
+	HIDDEN,
 	UNGROUPED
 } from './groups';
 
@@ -25,9 +27,37 @@ function session(id: string, cwd: string, lastActiveAt: number): DeckSession {
 }
 
 describe('compareGroupNames', () => {
-	it('orders alphanumerically with Ungrouped last', () => {
-		const names = ['Work', UNGROUPED, 'Apex', 'beta'];
-		expect([...names].sort(compareGroupNames)).toEqual(['Apex', 'beta', 'Work', UNGROUPED]);
+	it('orders alphanumerically with Ungrouped then Hidden last', () => {
+		const names = ['Work', HIDDEN, UNGROUPED, 'Apex', 'beta'];
+		expect([...names].sort(compareGroupNames)).toEqual([
+			'Apex',
+			'beta',
+			'Work',
+			UNGROUPED,
+			HIDDEN
+		]);
+	});
+});
+
+describe('hiddenGroup', () => {
+	const projects = [project('acme', '/p/acme', 'Work'), project('web', '/p/web')];
+
+	it('is absent until something is hidden', () => {
+		expect(hiddenGroup([session('s1', '/p/web', 1)], projects)).toBeNull();
+	});
+
+	it('collects every hidden session under its project, whatever its group', () => {
+		const sessions = [
+			session('s1', '/p/web', 1),
+			{ ...session('s2', '/p/acme', 3), hidden: true },
+			{ ...session('s3', '/p/web', 2), hidden: true }
+		];
+		const group = hiddenGroup(sessions, projects)!;
+		expect(group.name).toBe(HIDDEN);
+		expect(group.sessionCount).toBe(2);
+		// Most recently active project first, as everywhere else.
+		expect(group.subgroups.map((g) => g.key)).toEqual(['/p/acme', '/p/web']);
+		expect(group.subgroups[0].sessions.map((s) => s.id)).toEqual(['s2']);
 	});
 });
 
@@ -39,6 +69,16 @@ describe('groupProjects', () => {
 		project('loose', '/p/loose'),
 		project('blankish', '/p/blankish', '   ')
 	];
+
+	it('moves a hidden project out of its group and into Hidden, last', () => {
+		const groups = groupProjects([...projects, { ...project('gone', '/p/gone', 'Work'), hidden: true }]);
+		expect(groups.map((g) => g.name)).toEqual(['Personal', 'Work', UNGROUPED, HIDDEN]);
+		expect(groups.at(-1)!.projects.map((p) => p.name)).toEqual(['gone']);
+		expect(groups.find((g) => g.name === 'Work')!.projects.map((p) => p.name)).toEqual([
+			'alpha',
+			'zeta'
+		]);
+	});
 
 	it('clusters by group, alphanumeric with Ungrouped last', () => {
 		const groups = groupProjects(projects);

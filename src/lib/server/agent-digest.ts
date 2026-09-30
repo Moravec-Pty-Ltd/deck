@@ -38,6 +38,9 @@ export interface AgentSessionDigest {
 	// How full the context window is. Omitted for a session that has not reported
 	// a window yet (nothing to show a percentage against).
 	context?: ContextUsage;
+	// True when the session is in the "Hidden" section, either because it was
+	// hidden itself or because its project was. Omitted when it isn't.
+	hidden?: boolean;
 	// The session's most recent assistant reply, attached only when requested (the
 	// single-session GET), since it reads the transcript. Omitted on the list/feed
 	// digests, which stay cheap. null means "no text produced yet".
@@ -67,6 +70,7 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		worktree: s.worktree,
 		issues: s.issues ?? (s.issue ? [s.issue] : undefined),
 		pr: s.pr,
+		hidden: s.hidden || undefined,
 		// Cheap: transcriptCostSummary is LRU-cached and extended incrementally.
 		cost: isAgentKind(s.kind) ? transcriptCostSummary(s.id) : undefined,
 		// Same: one bounded tail read, cached against the file's size and mtime.
@@ -85,11 +89,14 @@ export interface AgentProject {
 	path: string;
 	name: string;
 	group?: string;
+	// True when the project and its sessions are in the "Hidden" section.
+	// Omitted when it isn't.
+	hidden?: boolean;
 }
 
 // The { path, name, group } an orchestrator needs to pick a valid `cwd`.
 export function projectDigest(p: Project): AgentProject {
-	return { path: p.path, name: p.name, group: p.group };
+	return { path: p.path, name: p.name, group: p.group, hidden: p.hidden || undefined };
 }
 
 // Maps onto create's `issue { source, sourceId, id, url }`.

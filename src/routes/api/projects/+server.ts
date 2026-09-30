@@ -69,6 +69,10 @@ function buildProject(body: Record<string, unknown>, dir: string): Project {
 		name: optStr(body.name) || path.basename(dir),
 		path: dir,
 		group: carryStr(body.group, existing.group, 'group'),
+		// Owned by /api/projects/hidden, never by this form, and addProject
+		// replaces the record wholesale, so carry it or saving the settings page
+		// would unhide the project.
+		hidden: existing.hidden,
 		template: carryStr(body.template, existing.template, 'template'),
 		reviewPrompt: carryStr(body.reviewPrompt, existing.reviewPrompt, 'reviewPrompt'),
 		lastBase: carryStr(body.lastBase, existing.lastBase, 'lastBase'),
