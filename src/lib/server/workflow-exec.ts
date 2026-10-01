@@ -204,9 +204,13 @@ export async function prReviewView(cwd: string, repo: string, number: number): P
 	};
 }
 
-let login: string | null = null;
+// Cached briefly, so a `gh auth` switch to another account is picked up within
+// minutes rather than never.
+const LOGIN_TTL_MS = 5 * 60_000;
+let login: { value: string; at: number } | null = null;
 
 export async function ghLogin(cwd: string): Promise<string> {
-	login ??= (await gh(cwd, ['api', 'user', '-q', '.login'])).trim();
-	return login;
+	if (login && Date.now() - login.at < LOGIN_TTL_MS) return login.value;
+	login = { value: (await gh(cwd, ['api', 'user', '-q', '.login'])).trim(), at: Date.now() };
+	return login.value;
 }

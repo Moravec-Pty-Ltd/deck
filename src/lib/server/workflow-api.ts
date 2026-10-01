@@ -71,6 +71,9 @@ const trees = new Map<string, { at: number; handoff: number; tree: Promise<strin
 function recentTree(run: WorkflowRun, handoff: number): Promise<string | null> {
 	const hit = trees.get(run.id);
 	if (hit && hit.handoff === handoff && Date.now() - hit.at < TREE_TTL_MS) return hit.tree;
+	// Expired entries go on every miss, so the map holds only runs viewed in
+	// the last few seconds, however many runs finish.
+	for (const [id, entry] of trees) if (Date.now() - entry.at >= TREE_TTL_MS) trees.delete(id);
 	const tree = snapshotTree(run.cwd).catch(() => null);
 	trees.set(run.id, { at: Date.now(), handoff, tree });
 	return tree;

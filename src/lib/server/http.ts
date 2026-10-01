@@ -10,16 +10,25 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 // missing, malformed, null, primitive, or array body so handlers can read
 // fields without guarding each access.
 export async function objectBody(request: Request): Promise<Record<string, unknown>> {
-	const body = await request.json().catch(() => null);
-	if (!isPlainObject(body)) error(400, 'invalid request body');
-	return body;
+	return parseObject(await request.text().catch(() => ''));
 }
 
 // Like objectBody, but an empty body reads as {} (action endpoints whose
 // fields are all optional).
 export async function optionalObjectBody(request: Request): Promise<Record<string, unknown>> {
 	const text = await request.text().catch(() => '');
-	return text.trim() ? objectBody(new Request('http://local', { method: 'POST', body: text })) : {};
+	return text.trim() ? parseObject(text) : {};
+}
+
+function parseObject(text: string): Record<string, unknown> {
+	let body: unknown = null;
+	try {
+		body = JSON.parse(text);
+	} catch {
+		// a 400 below
+	}
+	if (!isPlainObject(body)) error(400, 'invalid request body');
+	return body;
 }
 
 // The session a per-session route targets, of any kind, or a 404.
