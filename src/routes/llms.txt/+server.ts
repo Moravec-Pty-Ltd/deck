@@ -438,15 +438,17 @@ worktree works there. 409 when that worktree already has an active run.
 
 ### DELETE /api/agent/runs?finished=1
 
-Remove every done or cancelled run. Live runs are untouched, as are the
-finished runs' phase sessions and worktrees. Returns \`{ "deleted": n }\`;
-400 without \`finished=1\`. Each removed run emits \`run-deleted\`.
+Remove every done or cancelled run and their phase sessions (add
+\`keepSessions=1\` to keep the sessions). Live runs and every worktree and
+branch are untouched. Returns \`{ "deleted": n }\`; 400 without
+\`finished=1\`. Each removed run emits \`run-deleted\`.
 
 ### DELETE /api/agent/runs/{id}
 
-Remove a run from the list. A live run is stopped first (its phase session's
-turn and any verify command); a session you took over keeps running. Its phase
-sessions and worktree are kept; delete them like any other session. Returns \`{ "ok": true }\`, 404 for an unknown run.
+Remove a run and its phase sessions (\`?keepSessions=1\` keeps the sessions).
+A live run is stopped first (its phase session's turn and any verify command).
+A session you took over is never deleted or stopped. The worktree and branch
+are always kept, since the run's PR may still be open. Returns \`{ "ok": true }\`, 404 for an unknown run.
 
 ### POST /api/agent/runs/{id}/{action}
 

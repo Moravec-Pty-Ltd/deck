@@ -648,14 +648,23 @@ describe('where a run starts', () => {
 });
 
 describe('deleting a run', () => {
-	it('stops a live run, removes it, and ignores its phase session afterwards', async () => {
+	it('stops a live run and removes it with its phase sessions', async () => {
 		const run = await start();
-		runner.deleteRun(run.id);
+		await runner.deleteRun(run.id);
 		expect(fake.runs).toEqual([]);
 		expect(fake.interrupted).toEqual(['s1']);
-		await finishTurn(run);
+		expect(fake.sessions.has('s1')).toBe(false);
 		expect(fake.created).toHaveLength(1);
-		expect(fake.sessions.has('s1')).toBe(true);
+	});
+
+	it('keeps the phase sessions when asked', async () => {
+		const run = await start();
+		await finishTurn(run);
+		await runner.deleteRun(run.id, { keepSessions: true });
+		await finishTurn(run);
+		expect(fake.runs).toEqual([]);
+		expect([...fake.sessions.keys()]).toEqual(['s1', 's2']);
+		expect(fake.created).toHaveLength(2);
 	});
 
 	it('drops a phase session that was still spawning when the run was deleted', async () => {
@@ -668,9 +677,10 @@ describe('deleting a run', () => {
 		const run = await start();
 		await runner.runAction(run.id, 'takeover', {});
 		fake.interrupted = [];
-		runner.deleteRun(run.id);
+		await runner.deleteRun(run.id);
 		expect(fake.interrupted).toEqual([]);
 		expect(fake.runs).toEqual([]);
+		expect(fake.sessions.has('s1')).toBe(true);
 	});
 
 	it('clears only finished runs', async () => {
@@ -680,14 +690,15 @@ describe('deleting a run', () => {
 		done.status = 'done';
 		await runner.runAction(cancelled.id, 'cancel', {});
 		fake.interrupted = [];
-		expect(runner.clearFinishedRuns()).toBe(2);
+		expect(await runner.clearFinishedRuns()).toBe(2);
 		expect(fake.runs).toEqual([live]);
 		expect(fake.interrupted).toEqual([]);
-		expect(runner.clearFinishedRuns()).toBe(0);
+		expect([...fake.sessions.keys()]).toEqual([live.visits[0].sessionId]);
+		expect(await runner.clearFinishedRuns()).toBe(0);
 	});
 
-	it('404s an unknown run', () => {
-		expect(() => runner.deleteRun('r_nope')).toThrow(expect.objectContaining({ status: 404 }));
+	it('404s an unknown run', async () => {
+		await expect(runner.deleteRun('r_nope')).rejects.toMatchObject({ status: 404 });
 	});
 });
 
@@ -750,7 +761,7 @@ describe('fixing leftover findings', () => {
 		await expect(runner.runAction(run.id, 'pause', {})).rejects.toMatchObject({ status: 409 });
 		await expect(runner.runAction(run.id, 'cancel', {})).rejects.toMatchObject({ status: 409 });
 		expect(run.status).toBe('done');
-		runner.deleteRun(run.id);
+		await runner.deleteRun(run.id);
 		release();
 		await reopening;
 		await settle();

@@ -10,7 +10,7 @@ export const GET: RequestHandler = async ({ params }) => {
 	return json(await fullDigest(run));
 };
 
-export const DELETE: RequestHandler = async ({ params }) => {
-	deleteRun(params.id);
+export const DELETE: RequestHandler = async ({ params, url }) => {
+	await deleteRun(params.id, { keepSessions: url.searchParams.get('keepSessions') === '1' });
 	return json({ ok: true });
 };

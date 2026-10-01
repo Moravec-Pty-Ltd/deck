@@ -117,7 +117,7 @@
 
 	async function clearFinished() {
 		const n = finishedCount;
-		if (!confirm(`Delete ${n} finished run${n === 1 ? '' : 's'}? Their phase sessions and worktrees are kept.`)) return;
+		if (!confirm(`Delete ${n} finished run${n === 1 ? '' : 's'}? Their phase sessions are deleted too; worktrees and branches are kept.`)) return;
 		clearing = true;
 		try {
 			await api('/api/agent/runs?finished=1', 'DELETE');

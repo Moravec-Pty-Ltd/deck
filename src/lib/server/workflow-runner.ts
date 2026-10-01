@@ -847,33 +847,52 @@ export async function runAction(id: string, action: RunAction, body: Record<stri
 	return run;
 }
 
+export interface DeleteRunOptions {
+	// Keep the run's phase sessions in the session list.
+	keepSessions?: boolean;
+}
+
 // Remove a run from the list. A live one is stopped first, so no agent turn or
 // verify keeps working untracked; anything still in flight sees the run gone
-// and drops. A session you took over is left running for you. Phase sessions
-// and the worktree stay: they are yours to keep or delete like any other.
-export function deleteRun(id: string): void {
+// and drops. Its phase sessions go too, unless asked to keep them, except a
+// session you took over, which is yours. The worktree and branch always stay:
+// the run's PR may still be open.
+export async function deleteRun(id: string, opts: DeleteRunOptions = {}): Promise<void> {
 	const run = store.getRun(id);
 	if (!run) error(404, 'run not found');
 	const visit = openVisit(run);
 	if (visit?.humanTouched) verifying.get(run.id)?.abort();
 	else if (!core.isFinished(run)) closeOpen(run, 'deleted');
-	forget([id]);
+	await forget([run], opts);
 }
 
-function forget(ids: string[]): void {
-	store.removeRuns(ids);
-	for (const id of ids) {
-		forgetTree(id);
-		publishAgentEvent(id, 'run-deleted', { runId: id });
+// The phase sessions a delete removes: every visit's, except one being driven by hand.
+function phaseSessions(run: WorkflowRun): string[] {
+	const driven = openVisit(run)?.humanTouched ? openVisit(run)?.sessionId : undefined;
+	const ids = run.visits.map((v) => v.sessionId).filter((s): s is string => !!s && s !== driven);
+	return [...new Set(ids)];
+}
+
+// The runs leave the store before their sessions are deleted, so a session's
+// deletion event finds no run to react to.
+async function forget(runs: WorkflowRun[], opts: DeleteRunOptions): Promise<void> {
+	store.removeRuns(runs.map((r) => r.id));
+	for (const run of runs) {
+		forgetTree(run.id);
+		publishAgentEvent(run.id, 'run-deleted', { runId: run.id });
+	}
+	if (opts.keepSessions) return;
+	for (const id of runs.flatMap(phaseSessions)) {
+		await deleteSession(id).catch((e) => console.error(`[deck] phase session ${id} delete failed:`, e));
 	}
 }
 
 // Remove every done or cancelled run. Nothing is running for them, so there is
 // nothing to stop. Returns how many went.
-export function clearFinishedRuns(): number {
-	const ids = store.listRuns().filter(core.isFinished).map((r) => r.id);
-	if (ids.length) forget(ids);
-	return ids.length;
+export async function clearFinishedRuns(opts: DeleteRunOptions = {}): Promise<number> {
+	const runs = store.listRuns().filter(core.isFinished);
+	if (runs.length) await forget(runs, opts);
+	return runs.length;
 }
 
 // The answer surface the phone already uses: a blocked run is answerable

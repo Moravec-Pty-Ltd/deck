@@ -72,7 +72,7 @@
 	async function remove() {
 		if (!run) return;
 		const live = run.status !== 'done' && run.status !== 'cancelled';
-		const note = 'Its phase sessions and worktree are kept.';
+		const note = 'Its phase sessions are deleted too; the worktree and branch are kept.';
 		if (!confirm(live ? `Stop and delete this run? ${note}` : `Delete this run? ${note}`)) return;
 		busy = 'delete';
 		try {

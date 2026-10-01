@@ -19,5 +19,5 @@ export const POST: RequestHandler = async ({ request }) => {
 // collection never reads as "delete everything".
 export const DELETE: RequestHandler = async ({ url }) => {
 	if (url.searchParams.get('finished') !== '1') error(400, 'use ?finished=1 to clear done and cancelled runs');
-	return json({ deleted: clearFinishedRuns() });
+	return json({ deleted: await clearFinishedRuns({ keepSessions: url.searchParams.get('keepSessions') === '1' }) });
 };
