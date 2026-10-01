@@ -80,7 +80,8 @@ function announce(run: WorkflowRun, by?: DecisionBy): void {
 			title: `Run blocked · ${run.title}`,
 			body: run.block?.question,
 			tag: run.id,
-			url: `/runs/${run.id}`
+			url: `/runs/${run.id}`,
+			ask: { runId: run.id, header: run.title, options: [], questions: 1 }
 		});
 		if (by !== 'overseer') noteOverseer(run, 'blocked');
 	}
@@ -777,9 +778,23 @@ export function deleteRun(id: string): void {
 	const visit = openVisit(run);
 	if (visit?.humanTouched) verifying.get(run.id)?.abort();
 	else if (!core.isFinished(run)) closeOpen(run, 'deleted');
-	store.removeRun(id);
-	forgetTree(id);
-	publishAgentEvent(id, 'run-deleted', { runId: id });
+	forget([id]);
+}
+
+function forget(ids: string[]): void {
+	store.removeRuns(ids);
+	for (const id of ids) {
+		forgetTree(id);
+		publishAgentEvent(id, 'run-deleted', { runId: id });
+	}
+}
+
+// Remove every done or cancelled run. Nothing is running for them, so there is
+// nothing to stop. Returns how many went.
+export function clearFinishedRuns(): number {
+	const ids = store.listRuns().filter(core.isFinished).map((r) => r.id);
+	if (ids.length) forget(ids);
+	return ids.length;
 }
 
 // The answer surface the phone already uses: a blocked run is answerable

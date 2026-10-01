@@ -119,7 +119,7 @@ vi.mock('./workflow-store', async () => {
 		saveRun: (run: WorkflowRun) => {
 			if (!fake.runs.includes(run)) fake.runs.push(run);
 		},
-		removeRun: (id: string) => void (fake.runs = fake.runs.filter((r) => r.id !== id)),
+		removeRuns: (ids: string[]) => void (fake.runs = fake.runs.filter((r) => !ids.includes(r.id))),
 		loadWorkflows: () => resolveWorkflows({}),
 		loadProfiles: () => ({
 			acme: {
@@ -268,7 +268,10 @@ describe('a dev run end to end', () => {
 		await finishTurn(run);
 		expect(run.status).toBe('blocked');
 		expect(run.block?.question).toContain('does not close #7');
-		expect(fake.notified.at(-1)).toMatchObject({ reason: 'needs-you' });
+		expect(fake.notified.at(-1)).toMatchObject({
+			reason: 'needs-you',
+			ask: { runId: run.id, header: run.title, options: [], questions: 1 }
+		});
 	});
 
 	it('blocks a review that ends without its findings block after one retry', async () => {
@@ -663,6 +666,19 @@ describe('deleting a run', () => {
 		runner.deleteRun(run.id);
 		expect(fake.interrupted).toEqual([]);
 		expect(fake.runs).toEqual([]);
+	});
+
+	it('clears only finished runs', async () => {
+		const live = await start();
+		const done = await runner.startRun({ cwd: '/p/acme', category: 'dev', issue: { ...issue, id: 'acme/web#8' } });
+		const cancelled = await runner.startRun({ cwd: '/p/acme', category: 'dev', issue: { ...issue, id: 'acme/web#9' } });
+		done.status = 'done';
+		await runner.runAction(cancelled.id, 'cancel', {});
+		fake.interrupted = [];
+		expect(runner.clearFinishedRuns()).toBe(2);
+		expect(fake.runs).toEqual([live]);
+		expect(fake.interrupted).toEqual([]);
+		expect(runner.clearFinishedRuns()).toBe(0);
 	});
 
 	it('404s an unknown run', () => {

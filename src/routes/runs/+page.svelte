@@ -13,7 +13,7 @@
 	} from '$lib/workflow-view';
 	import { relativeTime } from '$lib/time';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Plus, X, Eye, ExternalLink, CircleHelp, GitBranch } from '@lucide/svelte';
+	import { ArrowLeft, Plus, X, Eye, ExternalLink, CircleHelp, GitBranch, Trash2 } from '@lucide/svelte';
 
 	interface AgentProject {
 		path: string;
@@ -37,6 +37,9 @@
 	let base = $state('');
 	let starting = $state(false);
 	let formError = $state('');
+
+	let clearing = $state(false);
+	const finishedCount = $derived(runs.filter((r) => r.status === 'done' || r.status === 'cancelled').length);
 
 	const groups = $derived(workflowsByCategory(workflows));
 	const workflow = $derived(workflows.find((w) => w.id === workflowId));
@@ -112,6 +115,20 @@
 		}
 	}
 
+	async function clearFinished() {
+		const n = finishedCount;
+		if (!confirm(`Delete ${n} finished run${n === 1 ? '' : 's'}? Their phase sessions and worktrees are kept.`)) return;
+		clearing = true;
+		try {
+			await api('/api/agent/runs?finished=1', 'DELETE');
+			await load();
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'clearing finished runs failed';
+		} finally {
+			clearing = false;
+		}
+	}
+
 	async function toggleOverseer() {
 		overseerBusy = true;
 		try {
@@ -135,6 +152,11 @@
 	<a href="/" class="btn btn-ghost btn-sm" aria-label="Back"><ArrowLeft size={16} /></a>
 	<h1 class="text-lg font-semibold">Runs</h1>
 	<div class="flex-1"></div>
+	{#if finishedCount > 0}
+		<button class="btn btn-sm btn-ghost" onclick={clearFinished} disabled={clearing}>
+			<Trash2 size={16} /> Clear finished ({finishedCount})
+		</button>
+	{/if}
 	<button class="btn btn-sm {formOpen ? 'btn-ghost' : 'btn-primary'}" onclick={() => (formOpen = !formOpen)}>
 		{#if formOpen}<X size={16} /> Close{:else}<Plus size={16} /> Start run{/if}
 	</button>

@@ -52,9 +52,10 @@ export function saveRun(run: WorkflowRun): void {
 	persist();
 }
 
-export function removeRun(id: string): void {
+// Remove runs by id with one write.
+export function removeRuns(ids: readonly string[]): void {
 	const s = state();
-	s.runs = s.runs.filter((r) => r.id !== id);
+	s.runs = s.runs.filter((r) => !ids.includes(r.id));
 	persist();
 }
 

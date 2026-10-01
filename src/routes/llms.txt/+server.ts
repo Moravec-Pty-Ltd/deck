@@ -436,6 +436,12 @@ default runs. A dev run started at a project root makes a worktree on the
 issue's branch; a review run checks the PR out; a run started inside a
 worktree works there. 409 when that worktree already has an active run.
 
+### DELETE /api/agent/runs?finished=1
+
+Remove every done or cancelled run. Live runs are untouched, as are the
+finished runs' phase sessions and worktrees. Returns \`{ "deleted": n }\`;
+400 without \`finished=1\`. Each removed run emits \`run-deleted\`.
+
 ### DELETE /api/agent/runs/{id}
 
 Remove a run from the list. A live run is stopped first (its phase session's

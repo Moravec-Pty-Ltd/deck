@@ -124,7 +124,10 @@ export function deriveTopic(baseTopic: string, platform: ApnsPlatform): string {
 // the first question's option labels (the actions are numbered, since native
 // notification actions are registered ahead of time with fixed titles).
 export interface PushAsk {
-	sessionId: string;
+	// Exactly one of these: a session's question, or a blocked workflow run
+	// (answered with free text through the run's answer action).
+	sessionId?: string;
+	runId?: string;
 	askId?: string;
 	header?: string;
 	options: string[];
