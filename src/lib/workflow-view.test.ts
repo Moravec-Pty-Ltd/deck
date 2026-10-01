@@ -157,6 +157,7 @@ describe('api', () => {
 		await expect(api('/x')).rejects.toThrow('cwd is required');
 		vi.stubGlobal('fetch', async () => new Response('nope', { status: 502 }));
 		await expect(api('/x')).rejects.toThrow('request failed (502)');
+		await expect(api('/x')).rejects.toMatchObject({ status: 502 });
 	});
 });
 

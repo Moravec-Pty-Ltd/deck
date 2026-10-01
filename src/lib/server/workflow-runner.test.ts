@@ -119,6 +119,7 @@ vi.mock('./workflow-store', async () => {
 		saveRun: (run: WorkflowRun) => {
 			if (!fake.runs.includes(run)) fake.runs.push(run);
 		},
+		removeRun: (id: string) => void (fake.runs = fake.runs.filter((r) => r.id !== id)),
 		loadWorkflows: () => resolveWorkflows({}),
 		loadProfiles: () => ({
 			acme: {
@@ -137,6 +138,21 @@ const runner = await import('./workflow-runner');
 const settle = async () => {
 	for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
 };
+
+// Start a run, land `control` while its first phase session is still spawning,
+// then let the spawn finish.
+async function midSpawn(control: (run: WorkflowRun) => Promise<unknown>): Promise<WorkflowRun> {
+	let release!: () => void;
+	fake.spawnGate = new Promise((r) => (release = r));
+	const starting = runner.startRun({ cwd: '/p/acme', category: 'dev', issue });
+	await settle();
+	const run = fake.runs[0];
+	await control(run);
+	release();
+	await starting;
+	await settle();
+	return run;
+}
 
 // The first prompt sent to the n-th created session (0-based; -1 for the last).
 const promptOf = (n: number) => {
@@ -356,15 +372,7 @@ describe('take over and resume', () => {
 	});
 
 	it('never starts a phase session that a pause landed on mid-spawn', async () => {
-		let release!: () => void;
-		fake.spawnGate = new Promise((r) => (release = r));
-		const starting = runner.startRun({ cwd: '/p/acme', category: 'dev', issue });
-		await settle();
-		const run = fake.runs[0];
-		await runner.runAction(run.id, 'pause', {});
-		release();
-		await starting;
-		await settle();
+		const run = await midSpawn((r) => runner.runAction(r.id, 'pause', {}));
 		expect(fake.created).toHaveLength(1);
 		expect(fake.sent).toEqual([]);
 		expect(fake.sessions.has('s1')).toBe(false);
@@ -628,5 +636,36 @@ describe('where a run starts', () => {
 		await expect(runner.startRun({ cwd: '/p/acme', category: 'review', pr: { repo: 'other/app', number: 5 } })).rejects.toMatchObject({
 			status: 400
 		});
+	});
+});
+
+describe('deleting a run', () => {
+	it('stops a live run, removes it, and ignores its phase session afterwards', async () => {
+		const run = await start();
+		runner.deleteRun(run.id);
+		expect(fake.runs).toEqual([]);
+		expect(fake.interrupted).toEqual(['s1']);
+		await finishTurn(run);
+		expect(fake.created).toHaveLength(1);
+		expect(fake.sessions.has('s1')).toBe(true);
+	});
+
+	it('drops a phase session that was still spawning when the run was deleted', async () => {
+		await midSpawn(async (r) => runner.deleteRun(r.id));
+		expect(fake.sent).toEqual([]);
+		expect(fake.sessions.size).toBe(0);
+	});
+
+	it('leaves a taken-over session running for you', async () => {
+		const run = await start();
+		await runner.runAction(run.id, 'takeover', {});
+		fake.interrupted = [];
+		runner.deleteRun(run.id);
+		expect(fake.interrupted).toEqual([]);
+		expect(fake.runs).toEqual([]);
+	});
+
+	it('404s an unknown run', () => {
+		expect(() => runner.deleteRun('r_nope')).toThrow(expect.objectContaining({ status: 404 }));
 	});
 });

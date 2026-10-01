@@ -76,6 +76,10 @@ function recentTree(run: WorkflowRun, handoff: number): Promise<string | null> {
 	return tree;
 }
 
+export function forgetTree(runId: string): void {
+	trees.delete(runId);
+}
+
 // The single-run digest, plus whether the handoff note still matches the tree.
 export async function fullDigest(run: WorkflowRun): Promise<RunDigest & { handoffStale?: boolean }> {
 	const d = digest(run);

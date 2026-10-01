@@ -172,13 +172,22 @@ export function visitLabel(phase: Pick<RunPhaseDigest, 'cap'>, visit: number): s
 
 // ---- Fetch and poll ----
 
-// JSON from a deck endpoint, throwing the server's `{ message }` on a non-2xx.
+export class ApiError extends Error {
+	constructor(
+		message: string,
+		readonly status: number
+	) {
+		super(message);
+	}
+}
+
+// JSON from a deck endpoint, throwing the server's `{ message }` and status on a non-2xx.
 export async function api<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
 	const init: RequestInit =
 		body === undefined ? { method } : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
 	const res = await fetch(url, init);
 	const data = await res.json().catch(() => ({}));
-	if (!res.ok) throw new Error(data?.message ?? `request failed (${res.status})`);
+	if (!res.ok) throw new ApiError(data?.message ?? `request failed (${res.status})`, res.status);
 	return data as T;
 }
 

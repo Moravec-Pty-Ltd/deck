@@ -11,6 +11,7 @@
 import { error } from '@sveltejs/kit';
 import { agentFeed, publishAgentEvent, type AgentFeedEvent } from './agent-feed';
 import { createSessionFromRequest } from './create-session';
+import { forgetTree } from './workflow-api';
 import { deleteSession } from './sessions';
 import { agentFields } from './automation-core';
 import { agentInterrupt, agentSend, agentTurnRunning } from './agents/dispatch';
@@ -764,6 +765,21 @@ export async function runAction(id: string, action: RunAction, body: Record<stri
 	const actor: Actor = { by: body.by === 'overseer' ? 'overseer' : 'human', reason: str(body.reason) || str(body.text) || action };
 	await HANDLERS[action](run, body, actor);
 	return run;
+}
+
+// Remove a run from the list. A live one is stopped first, so no agent turn or
+// verify keeps working untracked; anything still in flight sees the run gone
+// and drops. A session you took over is left running for you. Phase sessions
+// and the worktree stay: they are yours to keep or delete like any other.
+export function deleteRun(id: string): void {
+	const run = store.getRun(id);
+	if (!run) error(404, 'run not found');
+	const visit = openVisit(run);
+	if (visit?.humanTouched) verifying.get(run.id)?.abort();
+	else if (!core.isFinished(run)) closeOpen(run, 'deleted');
+	store.removeRun(id);
+	forgetTree(id);
+	publishAgentEvent(id, 'run-deleted', { runId: id });
 }
 
 // The answer surface the phone already uses: a blocked run is answerable

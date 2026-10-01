@@ -52,6 +52,12 @@ export function saveRun(run: WorkflowRun): void {
 	persist();
 }
 
+export function removeRun(id: string): void {
+	const s = state();
+	s.runs = s.runs.filter((r) => r.id !== id);
+	persist();
+}
+
 export function overseerId(): string | undefined {
 	return state().overseerId;
 }

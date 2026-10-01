@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { RunDigest } from '$lib/workflows';
-	import { api, allowedControls, pollWhileVisible, RUN_STATUS_VIEW, type RunControl } from '$lib/workflow-view';
+	import { api, ApiError, allowedControls, pollWhileVisible, RUN_STATUS_VIEW, type RunControl } from '$lib/workflow-view';
 	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
 	import { relativeTime } from '$lib/time';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import WorkflowGraph from '$lib/components/WorkflowGraph.svelte';
-	import { ArrowLeft, GitBranch, GitPullRequest, CircleHelp, Pause, Hand, Play, RotateCcw, Ban } from '@lucide/svelte';
+	import { ArrowLeft, GitBranch, GitPullRequest, CircleHelp, Pause, Hand, Play, RotateCcw, Ban, Trash2 } from '@lucide/svelte';
 
 	type RunView = RunDigest & { handoffStale?: boolean };
 
@@ -27,6 +28,8 @@
 			run = await api<RunView>(`/api/agent/runs/${encodeURIComponent(id)}`);
 			loadError = '';
 		} catch (e) {
+			// Deleted, here or in another tab: nothing left to show.
+			if (e instanceof ApiError && e.status === 404) return void goto('/runs');
 			loadError = e instanceof Error ? e.message : 'failed to load the run';
 		}
 	}
@@ -64,6 +67,21 @@
 
 	async function saveHandoff() {
 		if (await act('handoff', { text: handoffText.trim() })) handoffText = '';
+	}
+
+	async function remove() {
+		if (!run) return;
+		const live = run.status !== 'done' && run.status !== 'cancelled';
+		const note = 'Its phase sessions and worktree are kept.';
+		if (!confirm(live ? `Stop and delete this run? ${note}` : `Delete this run? ${note}`)) return;
+		busy = 'delete';
+		try {
+			await api(`/api/agent/runs/${encodeURIComponent(id)}`, 'DELETE');
+			await goto('/runs');
+		} catch (e) {
+			actionError = e instanceof Error ? e.message : 'delete failed';
+			busy = null;
+		}
 	}
 
 	function cancel() {
@@ -151,6 +169,9 @@
 				</button>
 				<button class="btn btn-sm btn-ghost text-error" onclick={cancel} disabled={!controls.has('cancel') || !!busy}>
 					<Ban size={14} /> Cancel
+				</button>
+				<button class="btn btn-sm btn-ghost text-error ml-auto" onclick={remove} disabled={!!busy}>
+					<Trash2 size={14} /> Delete
 				</button>
 			</div>
 			<p class="mt-2 text-xs opacity-60">Take over pauses the run and stops the phase session so you can drive it yourself.</p>

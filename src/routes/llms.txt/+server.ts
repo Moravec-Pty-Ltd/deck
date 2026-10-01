@@ -436,6 +436,12 @@ default runs. A dev run started at a project root makes a worktree on the
 issue's branch; a review run checks the PR out; a run started inside a
 worktree works there. 409 when that worktree already has an active run.
 
+### DELETE /api/agent/runs/{id}
+
+Remove a run from the list. A live run is stopped first (its phase session's
+turn and any verify command); a session you took over keeps running. Its phase
+sessions and worktree are kept; delete them like any other session. Returns \`{ "ok": true }\`, 404 for an unknown run.
+
 ### POST /api/agent/runs/{id}/{action}
 
 Body fields are optional unless noted. Every action takes \`reason\` and \`by\`
@@ -531,6 +537,7 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 - \`run-updated\`: { runId, status, phase, updatedAt } (a workflow run changed;
 	fetch \`GET /api/agent/runs/{id}\` for its digest;
 	\`sessionId\` carries the run id)
+- \`run-deleted\`: { runId } (a run was removed; drop it from your list)
 
 Apply deltas idempotently: after a gap re-snapshot (or bootstrap) an overlapping
 event may repeat state the snapshot already reflects.
