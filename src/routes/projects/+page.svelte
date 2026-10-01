@@ -19,7 +19,7 @@
 	// automation is always materialised (both toggles and both agent picks present)
 	// so the inputs bind cleanly; the API stores the all-default shape as absent.
 	type ProjectRow = Project & {
-		automation: { work: boolean; review: boolean; workAgent: AgentRow; reviewAgent: AgentRow };
+		automation: { work: boolean; review: boolean; workflows: boolean; workAgent: AgentRow; reviewAgent: AgentRow };
 	};
 
 	// modelProfiles for the claude model select; empty until the fetch lands.
@@ -76,6 +76,7 @@
 				automation: {
 					work: !!p.automation?.work,
 					review: !!p.automation?.review,
+					workflows: !!p.automation?.workflows,
 					workAgent: toRow(p.automation?.workAgent),
 					reviewAgent: toRow(p.automation?.reviewAgent)
 				}
@@ -105,6 +106,7 @@
 				automation: {
 					work: p.automation.work,
 					review: p.automation.review,
+					workflows: p.automation.workflows,
 					workAgent: fromRow(p.automation.workAgent),
 					reviewAgent: fromRow(p.automation.reviewAgent)
 				}
@@ -252,15 +254,26 @@
 											<input type="checkbox" class="toggle toggle-sm" bind:checked={p.automation.work} />
 											<span>Auto-start work on assigned issues</span>
 										</label>
-										{#if p.automation.work}
+										{#if p.automation.work && !p.automation.workflows}
 											<AutomationAgentForm bind:agent={p.automation.workAgent} {settings} lane="work" />
 										{/if}
 										<label class="mt-2 flex cursor-pointer items-center gap-2 text-sm">
 											<input type="checkbox" class="toggle toggle-sm" bind:checked={p.automation.review} />
 											<span>Auto-start review on requested PRs</span>
 										</label>
-										{#if p.automation.review}
+										{#if p.automation.review && !p.automation.workflows}
 											<AutomationAgentForm bind:agent={p.automation.reviewAgent} {settings} lane="review" />
+										{/if}
+										{#if p.automation.work || p.automation.review}
+											<label class="mt-2 flex cursor-pointer items-start gap-2 text-sm">
+												<input type="checkbox" class="checkbox checkbox-sm mt-0.5" bind:checked={p.automation.workflows} />
+												<span>
+													Run as workflows
+													<span class="block text-xs opacity-60">
+														Start the category's default workflow run (implement, verify, review, PR) instead of one session; each step picks its own agent. Off means plain template sessions, as before.
+													</span>
+												</span>
+											</label>
 										{/if}
 									</div>
 									<div class="mt-1 flex items-center gap-2">

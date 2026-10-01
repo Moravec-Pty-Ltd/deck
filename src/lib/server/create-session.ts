@@ -46,7 +46,7 @@ function safeHttpUrl(url: unknown): string {
 // bounds the create-time detail fan-out.
 const ISSUE_CAP = 10;
 
-function parseIssue(raw: unknown): PickedIssue | undefined {
+export function parseIssue(raw: unknown): PickedIssue | undefined {
 	const o = (raw ?? {}) as Record<string, unknown>;
 	const source = o.source as IssueSourceType;
 	const id = asStr(o.id);

@@ -22,7 +22,10 @@ export interface AgentFeedEvent {
 		| 'session-created'
 		| 'session-renamed'
 		| 'session-hidden'
-		| 'session-deleted';
+		| 'session-deleted'
+		// A workflow run changed (issue #233). `sessionId` carries the run id and
+		// the payload the run digest, so clients follow runs on the same cursor.
+		| 'run-updated';
 	at: number;
 	[key: string]: unknown;
 }

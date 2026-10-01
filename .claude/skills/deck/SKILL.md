@@ -1,7 +1,7 @@
 ---
 name: deck
 description: Drive and monitor deck (the local Claude Code session manager) through its agent API. Use when asked to start deck work sessions or PR-review sessions, send prompts to or stop running deck sessions, check what deck sessions need attention or have finished, answer a blocking deck question, or review/merge a PR through deck.
-version: 3.3.0
+version: 3.4.0
 ---
 
 # deck agent API
@@ -75,6 +75,23 @@ POST /api/agent/sessions/<id>/review      {"decision":"approve|request-changes|c
 POST /api/agent/sessions/<id>/merge       {"method":"squash|merge|rebase","deleteBranch":true}
 DELETE /api/agent/sessions/<id>           {"deleteWorktree":true,"deleteBranch":true}
 ```
+
+## Workflow runs
+
+deck can run the dev and review loops itself: one fresh session per phase, every
+gate computed (exit code, finding severity, `gh`), never judged. Drive runs, not
+their phase sessions:
+
+```sh
+GET  /api/agent/workflows                 # definitions + which is default per category
+GET  /api/agent/runs                      # every run's digest (phases, visits, sessions, decisions)
+POST /api/agent/runs                      {"cwd":"/path/to/project","category":"dev","issue":{"source":"github","id":"owner/repo#7"}}
+POST /api/agent/runs/<id>/<action>        # pause|takeover|resume {"phase"}|retry|cancel|answer {"text"}|block {"question"}|agent {"step","model"}|note|handoff {"text"}|message {"text"}
+```
+
+Pass `"by":"overseer"` and a one-line `"reason"` when you act as the overseer.
+Never `message` a review phase (deck refuses it), and never wait on an answer
+yourself: `block` the run with a question and move on.
 
 ## Completion
 

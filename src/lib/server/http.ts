@@ -15,6 +15,13 @@ export async function objectBody(request: Request): Promise<Record<string, unkno
 	return body;
 }
 
+// Like objectBody, but an empty body reads as {} (action endpoints whose
+// fields are all optional).
+export async function optionalObjectBody(request: Request): Promise<Record<string, unknown>> {
+	const text = await request.text().catch(() => '');
+	return text.trim() ? objectBody(new Request('http://local', { method: 'POST', body: text })) : {};
+}
+
 // The session a per-session route targets, of any kind, or a 404.
 export async function sessionOr404(id: string): Promise<DeckSession> {
 	const session = await getSession(id);

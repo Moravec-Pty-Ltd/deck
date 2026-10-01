@@ -291,6 +291,12 @@ describe('reviewOrder', () => {
 });
 
 describe('parseAutomation', () => {
+	it('keeps workflows on when an older client posts without the field, and clears it when told', () => {
+		const existing = { work: true, workflows: true };
+		expect(parseAutomation({ work: true }, existing)?.workflows).toBe(true);
+		expect(parseAutomation({ work: true, workflows: false }, existing)?.workflows).toBe(false);
+	});
+
 	it('collapses the all-default shape to absent', () => {
 		expect(parseAutomation({ work: false, review: false })).toBeUndefined();
 		expect(parseAutomation({})).toBeUndefined();

@@ -5,6 +5,7 @@ import { listSessions } from './sessions';
 import { pollServers } from './devservers';
 import { retireReviewSession, syncCapturedPrs } from './pr';
 import { pollAutomation } from './automation';
+import { pollRuns } from './workflow-runner';
 import { notify } from './push';
 import { publishAgentEvent } from './agent-feed';
 import { pollMorabot } from './morabot';
@@ -101,10 +102,12 @@ function start() {
 	// syncCapturedPrs and pollAutomation are each single-flight internally, so a slow
 	// gh call just skips the overlapping tick rather than queueing. Best-effort:
 	// swallow a stray rejection (e.g. a failed store write) so the timer keeps
-	// ticking. Automation rides this same gh cadence (issue #171).
+	// ticking. Automation rides this same gh cadence (issue #171), and so do
+	// workflow runs waiting on a PR reviewer (issue #233).
 	const prTimer = setInterval(() => {
 		void syncCapturedPrs().catch(() => {});
 		void pollAutomation().catch(() => {});
+		void pollRuns().catch(() => {});
 	}, PR_SYNC_INTERVAL_MS);
 	prTimer.unref();
 }

@@ -11,6 +11,7 @@ import { getProjectPrs } from './prs';
 import { createSessionFromRequest } from './create-session';
 import { runIdempotent } from './idempotency';
 import { loadProcessed, persist } from './automation-ledger';
+import { startRun } from './workflow-runner';
 import {
 	atReviewCap,
 	migrateReviewKeys,
@@ -19,6 +20,8 @@ import {
 	reviewBody,
 	reviewOrder,
 	reviewTriggerKey,
+	runIssue,
+	runPr,
 	selectNewTriggers,
 	workBody,
 	workTriggerKey,
@@ -38,14 +41,12 @@ import {
 async function spawn(
 	processed: ProcessedKeys,
 	key: string,
-	body: () => Record<string, unknown>
+	create: () => Promise<unknown>
 ): Promise<void> {
 	processed[key] = Date.now();
 	persist(processed);
 	try {
-		const { result } = runIdempotent(key, () =>
-			createSessionFromRequest(body(), { remember: false })
-		);
+		const { result } = runIdempotent(key, create);
 		await result;
 	} catch (e) {
 		delete processed[key];
@@ -54,10 +55,22 @@ async function spawn(
 	}
 }
 
+// With workflows on (issue #233), a trigger starts the category's default
+// workflow run; off, it spawns a plain template session exactly as before.
+function startWork(project: Project, issue: Issue): Promise<unknown> {
+	if (!project.automation?.workflows) return createSessionFromRequest(workBody(project, issue), { remember: false });
+	return startRun({ cwd: project.path, category: 'dev', issue: runIssue(issue) });
+}
+
+function startReview(project: Project, pr: PullRequest): Promise<unknown> {
+	if (!project.automation?.workflows) return createSessionFromRequest(reviewBody(project, pr), { remember: false });
+	return startRun({ cwd: project.path, category: 'review', pr: runPr(pr) });
+}
+
 async function runWork(project: Project, processed: ProcessedKeys): Promise<void> {
 	const { issues } = await getProjectIssues(project).catch(() => ({ issues: [] as Issue[] }));
 	for (const { key, candidate } of selectNewTriggers(issues, workTriggerKey, processed)) {
-		await spawn(processed, key, () => workBody(project, candidate));
+		await spawn(processed, key, () => startWork(project, candidate));
 	}
 }
 
@@ -85,7 +98,7 @@ async function spawnReview(
 	{ key, candidate }: NewTrigger<PullRequest>
 ): Promise<void> {
 	if (pruneSupersededReviewKeys(processed, candidate)) persist(processed);
-	await spawn(processed, key, () => reviewBody(project, candidate));
+	await spawn(processed, key, () => startReview(project, candidate));
 }
 
 // One project's candidate paired with the project it came from, so the merged
