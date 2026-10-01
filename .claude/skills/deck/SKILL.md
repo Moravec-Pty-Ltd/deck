@@ -87,10 +87,18 @@ GET  /api/agent/workflows                 # definitions + which is default per c
 GET  /api/agent/runs                      # every run's digest (phases, visits, sessions, decisions)
 POST /api/agent/runs                      {"cwd":"/path/to/project","category":"dev","issue":{"source":"github","id":"owner/repo#7"}}
 POST /api/agent/runs/<id>/<action>        # pause|takeover|resume {"phase"}|retry|cancel|answer {"text"}|block {"question"}|agent {"step","model"}|note|handoff {"text"}|message {"text"}
+DELETE /api/agent/runs/<id>               # remove a run; a live one is stopped first (a taken-over session keeps running)
+DELETE /api/agent/runs?finished=1         # remove every done or cancelled run -> {"deleted": n}
 ```
 
+Deleting keeps the run's phase sessions and worktree; delete those like any
+other session. Each removed run emits a `run-deleted` event with its `runId`.
+
 Pass `"by":"overseer"` and a one-line `"reason"` when you act as the overseer.
-Never `message` a review phase (deck refuses it), and never wait on an answer
+`message` only reaches the idle phase session of a paused run (pause or take
+over first), and never a review phase (deck refuses both). A run change emits
+`run-updated` with `{ runId, status, phase, updatedAt }`; fetch
+`GET /api/agent/runs/<id>` for the full digest. Never wait on an answer
 yourself: `block` the run with a question and move on.
 
 ## Completion
