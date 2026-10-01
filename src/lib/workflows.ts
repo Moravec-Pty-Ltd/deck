@@ -225,8 +225,31 @@ export interface WorkflowRun {
 	handoff?: RunHandoff;
 	decisions: RunDecision[];
 	error?: string;
+	// Set while a finished run is reopened to fix its leftover findings: the
+	// commit the branch was at, so the gate can tell a new commit was pushed.
+	followUp?: { head: string };
 	createdAt: number;
 	updatedAt: number;
+}
+
+// The git state the follow-up fix gate reads.
+export interface PushState {
+	head: string;
+	branch: string;
+	upstream: string | null;
+	// e.g. `origin/feature`
+	upstreamRef: string | null;
+	// The branch's configured remote, e.g. `origin`.
+	remote: string | null;
+	clean: boolean;
+	// HEAD still has the follow-up's starting commit in its history.
+	descends: boolean;
+}
+
+// A finished dev run with an open PR and findings the review let through
+// (nits, or blockers a closer left): one follow-up fix can address them.
+export function canFixFindings(run: { status: RunStatus; category: WorkflowCategory; pr?: RunPr; findings: Finding[] }): boolean {
+	return run.status === 'done' && run.category === 'dev' && !!run.pr && run.findings.length > 0;
 }
 
 // ---- The client-facing projection ----
@@ -275,6 +298,8 @@ export interface RunDigest {
 	block?: RunBlock;
 	handoff?: RunHandoff;
 	error?: string;
+	// A follow-up fix of leftover findings is in progress.
+	followUp: boolean;
 	createdAt: number;
 	updatedAt: number;
 }

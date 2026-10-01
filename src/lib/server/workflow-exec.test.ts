@@ -12,7 +12,7 @@ vi.mock('./confine', () => ({
 	confineRelative: (root: string, rel: string) => path.join(root, rel)
 }));
 
-const { deltaBetween, runVerify, snapshotTree, syncPullWorktree, toplevel } = await import('./workflow-exec');
+const { deltaBetween, pushState, runVerify, snapshotTree, syncPullWorktree, toplevel } = await import('./workflow-exec');
 
 const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-exec-'));
 const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
@@ -105,5 +105,39 @@ describe('runVerify', () => {
 		expect((await running).code).not.toBe(0);
 		await new Promise((r) => setTimeout(r, 50));
 		expect(() => process.kill(pid, 0)).toThrow();
+	});
+});
+
+describe('pushState', () => {
+	it('reads the branch, cleanliness, ancestry, and a missing upstream', async () => {
+		const from = git('rev-parse', 'HEAD');
+		fs.writeFileSync(path.join(repo, 'b.ts'), 'b\n');
+		git('add', '-A');
+		git('commit', '-qm', 'next');
+		const state = await pushState(repo, from);
+		expect(state).toMatchObject({ branch: git('rev-parse', '--abbrev-ref', 'HEAD'), upstream: null, upstreamRef: null, clean: true, descends: true });
+		expect(state.head).not.toBe(from);
+		fs.writeFileSync(path.join(repo, 'b.ts'), 'changed\n');
+		expect((await pushState(repo, from)).clean).toBe(false);
+		expect((await pushState(repo, '--bad')).descends).toBe(false);
+	});
+});
+
+describe('pushState with an upstream', () => {
+	it('reads the remote, the upstream ref, and whether the head is pushed', async () => {
+		const remote = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-remote-'));
+		try {
+			execFileSync('git', ['init', '-q', '--bare', remote]);
+			git('remote', 'add', 'up', remote);
+			git('add', '-A');
+			git('commit', '-qm', 'tidy', '--allow-empty');
+			const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
+			git('push', '-q', '-u', 'up', branch);
+			const from = git('rev-parse', 'HEAD~1');
+			const state = await pushState(repo, from);
+			expect(state).toMatchObject({ remote: 'up', upstreamRef: `up/${branch}`, upstream: state.head, clean: true, descends: true });
+		} finally {
+			fs.rmSync(remote, { recursive: true, force: true });
+		}
 	});
 });

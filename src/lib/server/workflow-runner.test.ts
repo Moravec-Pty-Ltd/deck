@@ -30,6 +30,8 @@ const fake = vi.hoisted(() => ({
 	},
 	runs: [] as WorkflowRun[],
 	// When set, session creation waits on it, to land a control mid-spawn.
+	// The branch head and its upstream, for the follow-up fix gate.
+	git: { head: 'c0', upstream: 'c0' as string | null },
 	spawnGate: null as Promise<void> | null,
 	viewGate: null as Promise<void> | null
 }));
@@ -97,6 +99,8 @@ vi.mock('./workflow-exec', () => ({
 		return [`src/hand.ts:L1-3`];
 	},
 	currentBranch: async () => 'feature',
+	headCommit: async () => fake.git.head,
+	pushState: async () => ({ branch: 'acme-web-7', upstreamRef: 'origin/acme-web-7', remote: 'origin', clean: true, descends: true, ...fake.git }),
 	syncPullWorktree: async (cwd: string, n: number) => void fake.synced.push([cwd, n]),
 	toplevel: async (dir: string) => (dir.startsWith('/p/acme/') ? '/p/acme' : dir),
 	verifyCommand: () => 'pnpm test',
@@ -211,6 +215,7 @@ beforeEach(() => {
 	fake.prRefCreated = true;
 	fake.synced = [];
 	fake.spawnGate = null;
+	fake.git = { head: 'c0', upstream: 'c0' };
 	fake.viewGate = null;
 	fake.view = { state: 'OPEN', reviewDecision: null, reviews: [], headRefOid: 'h', unresolvedThreads: 0 };
 	fake.pr = {
@@ -683,5 +688,93 @@ describe('deleting a run', () => {
 
 	it('404s an unknown run', () => {
 		expect(() => runner.deleteRun('r_nope')).toThrow(expect.objectContaining({ status: 404 }));
+	});
+});
+
+describe('fixing leftover findings', () => {
+	const nit = '```json\n{"findings":[{"file":"src/push.ts","line":9,"severity":"nit","defect":"a failed post is dropped","fix":"log it","keep":"the background path"}]}\n```';
+
+	// A dev run whose review passed with one nit, through to its PR: done.
+	async function doneWithNit(): Promise<WorkflowRun> {
+		const run = await start();
+		await finishTurn(run);
+		await finishTurn(run, nit);
+		await finishTurn(run);
+		expect(run).toMatchObject({ status: 'done', findings: [{ severity: 'nit' }] });
+		return run;
+	}
+
+	it('runs one fix session over the findings and finishes once git shows a pushed commit', async () => {
+		const run = await doneWithNit();
+		await runner.runAction(run.id, 'fix-findings', {});
+		expect(run).toMatchObject({ status: 'running', phase: 'fix', followUp: { head: 'c0' } });
+		expect(promptOf(-1)).toContain('src/push.ts');
+		expect(promptOf(-1)).toContain('push it to the PR branch');
+
+		fake.git = { head: 'c1', upstream: 'c1' };
+		await finishTurn(run);
+		expect(run).toMatchObject({ status: 'done', phase: 'fix', findings: [] });
+		expect(run.followUp).toBeUndefined();
+		expect(run.visits.filter((v) => v.step === 'verify')).toHaveLength(1);
+	});
+
+	it.each([
+		['no new commit', { head: 'c0', upstream: 'c0' }],
+		['the new commit is not pushed', { head: 'c1', upstream: 'c0' }],
+		['exited 1 on the pushed commit', { head: 'c1', upstream: 'c1', verify: 1 }]
+	])('blocks when there is %s', async (detail, git) => {
+		const run = await doneWithNit();
+		await runner.runAction(run.id, 'fix-findings', {});
+		fake.git = { head: git.head, upstream: git.upstream };
+		fake.verifyCode = 'verify' in git ? git.verify : 0;
+		await finishTurn(run);
+		expect(run.status).toBe('blocked');
+		expect(run.block?.question).toContain(detail);
+		expect(run.findings).toHaveLength(1);
+	});
+
+	it('reopens once when two requests race', async () => {
+		const run = await doneWithNit();
+		const [a, b] = await Promise.allSettled([runner.runAction(run.id, 'fix-findings', {}), runner.runAction(run.id, 'fix-findings', {})]);
+		expect([a.status, b.status].sort()).toEqual(['fulfilled', 'rejected']);
+		await settle();
+		expect(fake.created.filter((c) => String(c.title).includes('Fix'))).toHaveLength(1);
+	});
+
+	it('keeps the run done while its PR is checked, and reopens nothing once deleted', async () => {
+		const run = await doneWithNit();
+		let release!: () => void;
+		fake.viewGate = new Promise((r) => (release = r));
+		const reopening = runner.runAction(run.id, 'fix-findings', {});
+		await settle();
+		await expect(runner.runAction(run.id, 'pause', {})).rejects.toMatchObject({ status: 409 });
+		await expect(runner.runAction(run.id, 'cancel', {})).rejects.toMatchObject({ status: 409 });
+		expect(run.status).toBe('done');
+		runner.deleteRun(run.id);
+		release();
+		await reopening;
+		await settle();
+		expect(run.status).toBe('done');
+		expect(fake.created.filter((c) => String(c.title).includes('Fix'))).toHaveLength(0);
+	});
+
+	it('stays done when the PR is no longer open', async () => {
+		const merged = await doneWithNit();
+		fake.view.state = 'MERGED';
+		await expect(runner.runAction(merged.id, 'fix-findings', {})).rejects.toMatchObject({ status: 409 });
+		expect(merged.status).toBe('done');
+	});
+
+	it('drops the follow-up when resumed at another phase, so a later fix round is normal', async () => {
+		const run = await doneWithNit();
+		await runner.runAction(run.id, 'fix-findings', {});
+		await finishTurn(run); // no new commit: blocked
+		await runner.runAction(run.id, 'resume', { phase: 'verify' });
+		expect(run.followUp).toBeUndefined();
+	});
+
+	it('refuses a run that is not a finished dev run with leftover findings', async () => {
+		const run = await start();
+		await expect(runner.runAction(run.id, 'fix-findings', {})).rejects.toMatchObject({ status: 409 });
 	});
 });

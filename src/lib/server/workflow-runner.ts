@@ -30,6 +30,7 @@ import * as core from './workflow-core';
 import * as store from './workflow-store';
 import * as wexec from './workflow-exec';
 import { noteOverseer } from './workflow-overseer';
+import { canFixFindings } from '$lib/workflows';
 import type {
 	DecisionBy,
 	PhaseVisit,
@@ -138,12 +139,17 @@ async function startVerify(run: WorkflowRun, step: WorkflowStep, visit: PhaseVis
 	if (!command) return finish(run, epoch, { pass: true, skipped: true, detail: 'no test command found' });
 	visit.detail = command;
 	commit(run);
+	const { code, output } = await trackedVerify(run, command);
+	await finish(run, epoch, { pass: code === 0, detail: `${command} exited ${code}`, output });
+}
+
+// Run the verify command where a cancel, block, or resume can stop it.
+async function trackedVerify(run: WorkflowRun, command: string): Promise<{ code: number; output: string }> {
 	const controller = new AbortController();
 	verifying.set(run.id, controller);
-	const { code, output } = await wexec.runVerify(run.cwd, command, controller.signal).finally(() => {
+	return wexec.runVerify(run.cwd, command, controller.signal).finally(() => {
 		if (verifying.get(run.id) === controller) verifying.delete(run.id);
 	});
-	await finish(run, epoch, { pass: code === 0, detail: `${command} exited ${code}`, output });
 }
 
 // A review round's scope: everything the tree changed since the last round saw
@@ -253,11 +259,27 @@ const GATES: Record<WorkflowStep['gate'], Gate> = {
 	'pr-reviewed': reviewedGate
 };
 
+// A follow-up fix passes on git and the tests, not on what the session says:
+// a new commit on the PR branch, pushed, and green.
+const followUpGate: Gate = async (run) => {
+	const state = await wexec.pushState(run.cwd, run.followUp!.head);
+	const problem = core.followUpProblem(state, run.followUp!.head, run.branch);
+	if (problem) return { pass: false, detail: problem };
+	const command = wexec.verifyCommand(run.cwd, run.steps.find((s) => s.role === 'verify')?.command);
+	const tests = command ? await trackedVerify(run, command) : { code: 0, output: '' };
+	if (tests.code !== 0) return { pass: false, detail: `${command} exited ${tests.code} on the pushed commit` };
+	return { pass: true, detail: state.head.slice(0, 7) };
+};
+
+function gateFor(run: WorkflowRun, step: WorkflowStep): Gate {
+	return run.followUp && step.role === 'fix' ? followUpGate : GATES[step.gate];
+}
+
 async function evaluate(run: WorkflowRun, step: WorkflowStep, sessionId: string, subtype: string): Promise<core.GateResult> {
 	if (subtype === 'error') return { pass: false, error: 'the session errored' };
 	if (subtype !== 'success') return { pass: false, error: `the turn ended with ${subtype}` };
 	try {
-		return await GATES[step.gate](run, sessionLastResult(sessionId));
+		return await gateFor(run, step)(run, sessionLastResult(sessionId));
 	} catch (e) {
 		return { pass: false, error: message(e) };
 	}
@@ -541,7 +563,7 @@ export async function startRun(req: StartRunRequest): Promise<WorkflowRun> {
 
 // ---- Controls ----
 
-const RUN_ACTIONS = ['pause', 'takeover', 'resume', 'retry', 'cancel', 'answer', 'block', 'agent', 'note', 'handoff', 'message'] as const;
+const RUN_ACTIONS = ['pause', 'takeover', 'resume', 'retry', 'cancel', 'answer', 'block', 'agent', 'note', 'handoff', 'message', 'fix-findings'] as const;
 export type RunAction = (typeof RUN_ACTIONS)[number];
 
 interface Actor {
@@ -603,6 +625,8 @@ const takeover: Handler = async (run, _body, actor) => {
 
 // The open visit's turn ended while the run was paused; settle it now.
 async function settlePausedEnd(run: WorkflowRun, visit: PhaseVisit): Promise<void> {
+	// A gate's verify may still be running from before the pause.
+	verifying.get(run.id)?.abort();
 	run.status = 'running';
 	run.epoch += 1;
 	const epoch = run.epoch;
@@ -619,7 +643,12 @@ function pausedEndFor(run: WorkflowRun, phase: string): PhaseVisit | undefined {
 // output meant for an earlier fix, and every failure counter for the phase
 // (verify's red streak included), so a resume is not a fourth attempt.
 function freshStart(run: WorkflowRun, phase: string): void {
-	if (core.stepById(run, phase)?.role !== 'fix') run.verifyOutput = undefined;
+	// A follow-up lives only on the fix step; resuming anywhere else returns
+	// the run to its normal loop, so a later fix round is a normal one.
+	if (core.stepById(run, phase)?.role !== 'fix') {
+		run.verifyOutput = undefined;
+		run.followUp = undefined;
+	}
 	run.block = undefined;
 	run.error = undefined;
 	for (const key of Object.keys(run.failures)) if (key === phase || key.startsWith(`${phase}#`)) run.failures[key] = 0;
@@ -651,6 +680,7 @@ const cancel: Handler = async (run, _body, actor) => {
 	closeOpen(run, 'cancelled');
 	run.epoch += 1;
 	run.status = 'cancelled';
+	run.followUp = undefined;
 	run.block = undefined;
 	record(run, actor, 'cancel');
 	commit(run);
@@ -742,6 +772,54 @@ const sendMessage: Handler = async (run, body, actor) => {
 	void agentSend(session, text).catch((e) => console.error(`[deck] run ${run.id} message failed:`, e));
 };
 
+function fixableStep(run: WorkflowRun): WorkflowStep {
+	if (!canFixFindings(run)) error(409, 'only a finished dev run with an open PR and leftover findings can fix them');
+	const fix = run.steps.find((s) => s.role === 'fix');
+	if (!fix) error(409, 'the workflow has no fix step');
+	const other = activeIn(resolveWithinProjects(run.cwd) ?? run.cwd);
+	if (other) error(409, 'another run is active in that worktree');
+	return fix;
+}
+
+// The commit the follow-up starts from, once the PR is known to be open: an
+// approved-and-merged run has nothing left to push to.
+async function followUpStart(run: WorkflowRun): Promise<string> {
+	const view = await reviewView(run);
+	if (view.state !== 'OPEN') error(409, `the PR is ${view.state.toLowerCase()}, so there is nothing to push to`);
+	return wexec.headCommit(run.cwd);
+}
+
+// Runs with a fix-findings request checking its PR, so a second request (the
+// overseer and a person at once) gets a 409 instead of a second session.
+const reopening = new Set<string>();
+
+// Reopen a finished run for one fix session over the findings its review let
+// through; it commits and pushes to the open PR, then the run is done again.
+// The run stays `done` while the PR is checked, so no other control can act on
+// it in between; only a delete can, and then nothing is reopened.
+const fixFindings: Handler = async (run, _body, actor) => {
+	fixableStep(run);
+	if (reopening.has(run.id)) error(409, 'a follow-up fix is already starting');
+	reopening.add(run.id);
+	try {
+		await reopenForFix(run, await followUpStart(run), actor);
+	} finally {
+		reopening.delete(run.id);
+	}
+};
+
+async function reopenForFix(run: WorkflowRun, head: string, actor: Actor): Promise<void> {
+	if (store.getRun(run.id) !== run) return;
+	const fix = fixableStep(run);
+	run.status = 'running';
+	run.followUp = { head };
+	run.block = undefined;
+	run.error = undefined;
+	run.failures[fix.id] = 0;
+	record(run, actor, 'fix-findings', fix.id);
+	await enter(run, fix.id);
+}
+
 const HANDLERS: Record<RunAction, Handler> = {
 	pause,
 	takeover,
@@ -753,7 +831,8 @@ const HANDLERS: Record<RunAction, Handler> = {
 	agent: setAgent,
 	note,
 	handoff,
-	message: sendMessage
+	message: sendMessage,
+	'fix-findings': fixFindings
 };
 
 export function isRunAction(action: string): action is RunAction {

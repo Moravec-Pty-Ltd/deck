@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { RunDigest } from '$lib/workflows';
+	import { canFixFindings, type RunDigest } from '$lib/workflows';
 	import { api, ApiError, allowedControls, pollWhileVisible, RUN_STATUS_VIEW, type RunControl } from '$lib/workflow-view';
 	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
 	import { relativeTime } from '$lib/time';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import WorkflowGraph from '$lib/components/WorkflowGraph.svelte';
-	import { ArrowLeft, GitBranch, GitPullRequest, CircleHelp, Pause, Hand, Play, RotateCcw, Ban, Trash2 } from '@lucide/svelte';
+	import { ArrowLeft, GitBranch, GitPullRequest, CircleHelp, Pause, Hand, Play, RotateCcw, Ban, Trash2, Wrench } from '@lucide/svelte';
 
 	type RunView = RunDigest & { handoffStale?: boolean };
 
@@ -82,6 +82,11 @@
 			actionError = e instanceof Error ? e.message : 'delete failed';
 			busy = null;
 		}
+	}
+
+	function fixFindings() {
+		const n = run?.findings.length ?? 0;
+		if (confirm(`Start one session to fix ${n} finding${n === 1 ? '' : 's'}, commit, and push to the PR?`)) act('fix-findings');
 	}
 
 	function cancel() {
@@ -214,7 +219,14 @@
 
 	{#if run.findings.length}
 		<section class="mt-4 rounded-box border border-base-300 bg-base-100 p-4">
-			<h2 class="mb-2 text-sm font-semibold">Findings <span class="font-normal opacity-60">this round</span></h2>
+			<div class="mb-2 flex items-center gap-2">
+				<h2 class="text-sm font-semibold">Findings <span class="font-normal opacity-60">{run.status === 'done' ? 'left by the review' : 'this round'}</span></h2>
+				{#if canFixFindings({ ...run, category: run.workflow.category })}
+					<button class="btn btn-sm btn-primary ml-auto" onclick={fixFindings} disabled={!!busy}>
+						<Wrench size={14} /> Fix remaining findings
+					</button>
+				{/if}
+			</div>
 			<ul class="space-y-1.5">
 				{#each run.findings as f, i (i)}
 					<li class="flex flex-wrap items-baseline gap-2 text-sm">

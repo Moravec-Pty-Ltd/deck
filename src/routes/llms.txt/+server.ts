@@ -473,6 +473,15 @@ the run's current phase. Returns the run digest.
 - \`note\`: record a decision without acting.
 - \`handoff\` \`{ "text" }\`: leave an intent note for whoever drives next,
   stamped with the current working tree.
+- \`fix-findings\`: on a done dev run with an open PR and leftover findings (nits,
+  or blockers a closer left), start one fix session in the run's worktree. It
+  addresses every finding, gets the tests green, commits once, and pushes to the
+  PR branch. The gate is git and the tests, not the reply: a new commit on the
+  run's branch, history kept, nothing left uncommitted, pushed to that branch's
+  upstream, and the verify command green on it. The run is then done again with
+  no findings; if not, it blocks. 409 on any other run, when the PR is no longer
+  open, or when another run is active in the worktree. The digest's
+  \`followUp\` is true meanwhile.
 - \`message\` \`{ "text" }\`: send to the current phase session of a paused run
   whose session is idle (409 otherwise). 409 for a review phase: reviewers are
   never steered.

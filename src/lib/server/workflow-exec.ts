@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import { confineRelative, resolveWithinProjects } from './confine';
 import { isFlagSafe } from './agents/args';
 import { detectVerifyCommand, deltaRanges, type PrReviewView } from './workflow-core';
-import type { WorkflowRun } from '$lib/workflows';
+import type { PushState, WorkflowRun } from '$lib/workflows';
 
 const exec = promisify(execFile);
 const GH_TIMEOUT_MS = 30_000;
@@ -53,6 +53,27 @@ export async function deltaBetween(cwd: string, from: string, to: string): Promi
 // started from different subdirectories of it.
 export async function toplevel(cwd: string): Promise<string> {
 	return git(cwd, ['rev-parse', '--show-toplevel']);
+}
+
+export async function headCommit(cwd: string): Promise<string> {
+	return git(cwd, ['rev-parse', 'HEAD']);
+}
+
+// What the follow-up gate checks after the session: the branch, its upstream,
+// whether the tree is clean, and whether HEAD still descends from `from`.
+export async function pushState(cwd: string, from: string): Promise<PushState> {
+	const ok = (args: string[]) => git(cwd, args).then(() => true, () => false);
+	const or = (args: string[]) => git(cwd, args).catch(() => null);
+	const branch = await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
+	return {
+		head: await git(cwd, ['rev-parse', 'HEAD']),
+		branch,
+		remote: await or(['config', `branch.${branch}.remote`]),
+		upstream: await or(['rev-parse', '@{upstream}']),
+		upstreamRef: await or(['rev-parse', '--abbrev-ref', '@{upstream}']),
+		clean: (await git(cwd, ['status', '--porcelain'])) === '',
+		descends: isFlagSafe(from) && (await ok(['merge-base', '--is-ancestor', from, 'HEAD']))
+	};
 }
 
 export async function currentBranch(cwd: string): Promise<string> {

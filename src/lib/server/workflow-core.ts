@@ -8,6 +8,7 @@ import { EFFORT_LEVELS } from '$lib/effort';
 import { AGENT_KINDS } from '$lib/types';
 import type { SessionIssue } from '$lib/types';
 import {
+	type PushState,
 	DONE,
 	FINISHED_RUN,
 	STEP_GATES,
@@ -541,9 +542,19 @@ function onReview(run: WorkflowRun, step: WorkflowStep, result: GateResult, now:
 	return failTo(run, step, `${blockers} blockers.`, now);
 }
 
+// A follow-up fix ends the run again once its commit is pushed.
+function onFollowUp(run: WorkflowRun, step: WorkflowStep, result: GateResult, now: number): Effect {
+	if (!result.pass) return blockRun(run, step.id, `The follow-up fix did not land: ${result.detail ?? 'no pushed commit'}`, now);
+	decide(run, step.id, 'follow-up', `Leftover findings addressed in ${result.detail ?? 'a pushed commit'}.`, now);
+	run.followUp = undefined;
+	run.findings = [];
+	return goTo(run, DONE, now);
+}
+
 // A fix that would undo what an earlier round demanded goes to the arbiter once;
 // a second disagreement goes to a person.
 function onFix(run: WorkflowRun, step: WorkflowStep, result: GateResult, now: number): Effect {
+	if (run.followUp) return onFollowUp(run, step, result, now);
 	const disagreements = result.structured?.disagreements ?? [];
 	if (!disagreements.length) return passOrFail(run, step, result, now);
 	run.disagreement = disagreements.join('\n');
@@ -674,7 +685,21 @@ function reviewPrompt(run: WorkflowRun, step: WorkflowStep, ctx: PromptContext):
 	];
 }
 
+// A finished run reopened to clear what the review let through. The PR is
+// already open, so this session commits and pushes to it itself.
+function followUpPrompt(run: WorkflowRun, step: WorkflowStep): string[] {
+	return [
+		skillLine(step, issueRef(run)),
+		PHASE_NOTE,
+		`The PR for this work is open: ${run.pr?.url ?? `${run.pr?.repo}#${run.pr?.number}`}. Its review passed, but left these findings:`,
+		asJson(run.findings),
+		"Address each one in the working tree. Treat a suggested fix as a hypothesis: re-derive it from the defect, apply it at the narrowest scope, and keep what each finding's `keep` names. Get the tests green.",
+		`Then make one commit and push it to the PR branch (${run.branch}). Do not open a new PR and do not run a review.`
+	];
+}
+
 function fixPrompt(run: WorkflowRun, step: WorkflowStep): string[] {
+	if (run.followUp) return followUpPrompt(run, step);
 	// verifyOutput is set only while verify is red, and cleared when it passes.
 	const task = run.verifyOutput
 		? ['The tests or typecheck failed. Fix the cause. Output tail:', '```', run.verifyOutput!, '```']
@@ -763,6 +788,18 @@ export function phasePrompt(run: WorkflowRun, step: WorkflowStep, ctx: PromptCon
 export function repoMismatch(origin: string | null, pr: Pick<RunPr, 'repo'> | undefined): string | null {
 	if (!origin || !pr || pr.repo.toLowerCase() === origin.toLowerCase()) return null;
 	return `${pr.repo} is not this project's repo (${origin})`;
+}
+
+// Why a follow-up fix hasn't landed on the PR branch, or null when it has: the
+// session committed on the run's branch, kept history, left nothing
+// uncommitted, and pushed to that branch's own upstream.
+export function followUpProblem(state: PushState, from: string, branch: string): string | null {
+	if (state.branch !== branch) return `the worktree is on ${state.branch}, not ${branch}`;
+	if (!state.clean) return 'changes were left uncommitted';
+	if (state.head === from) return 'no new commit';
+	if (!state.descends) return 'the branch history was rewritten';
+	if (state.head !== state.upstream || state.upstreamRef !== `${state.remote}/${branch}`) return 'the new commit is not pushed to the PR branch';
+	return null;
 }
 
 // The number a closing keyword must name, for a GitHub-sourced issue
@@ -907,6 +944,7 @@ export function runDigest(run: WorkflowRun, baseUrl: string): RunDigest {
 		block: run.block,
 		handoff: run.handoff,
 		error: run.error,
+		followUp: !!run.followUp,
 		createdAt: run.createdAt,
 		updatedAt: run.updatedAt
 	};

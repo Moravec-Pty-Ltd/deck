@@ -86,10 +86,14 @@ their phase sessions:
 GET  /api/agent/workflows                 # definitions + which is default per category
 GET  /api/agent/runs                      # every run's digest (phases, visits, sessions, decisions)
 POST /api/agent/runs                      {"cwd":"/path/to/project","category":"dev","issue":{"source":"github","id":"owner/repo#7"}}
-POST /api/agent/runs/<id>/<action>        # pause|takeover|resume {"phase"}|retry|cancel|answer {"text"}|block {"question"}|agent {"step","model"}|note|handoff {"text"}|message {"text"}
+POST /api/agent/runs/<id>/<action>        # pause|takeover|resume {"phase"}|retry|cancel|answer {"text"}|block {"question"}|agent {"step","model"}|note|handoff {"text"}|message {"text"}|fix-findings
 DELETE /api/agent/runs/<id>               # remove a run; a live one is stopped first (a taken-over session keeps running)
 DELETE /api/agent/runs?finished=1         # remove every done or cancelled run -> {"deleted": n}
 ```
+
+`fix-findings` reopens a done dev run whose review passed with leftover findings
+(nits): one session fixes them, commits, and pushes to the open PR, and the run
+is done again once git shows the pushed commit. 409 on any other run.
 
 Deleting keeps the run's phase sessions and worktree; delete those like any
 other session. Each removed run emits a `run-deleted` event with its `runId`.

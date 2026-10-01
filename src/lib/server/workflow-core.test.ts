@@ -468,3 +468,31 @@ describe('normalizeRun', () => {
 		expect(normalizeRun(done, NOW).status).toBe('done');
 	});
 });
+
+describe('canFixFindings', () => {
+	const pr = { repo: 'acme/web', number: 5 };
+	const nit = { file: 'a.ts', severity: 'nit', defect: 'd' };
+	it('allows a done dev run with an open PR and leftover findings only', async () => {
+		const { canFixFindings } = await import('$lib/workflows');
+		expect(canFixFindings({ status: 'done', category: 'dev', pr, findings: [nit] })).toBe(true);
+		expect(canFixFindings({ status: 'done', category: 'dev', pr, findings: [] })).toBe(false);
+		expect(canFixFindings({ status: 'done', category: 'dev', findings: [nit] })).toBe(false);
+		expect(canFixFindings({ status: 'done', category: 'review', pr, findings: [nit] })).toBe(false);
+		expect(canFixFindings({ status: 'running', category: 'dev', pr, findings: [nit] })).toBe(false);
+	});
+});
+
+describe('followUpProblem', () => {
+	const ok = { head: 'c1', branch: 'feat', upstream: 'c1', upstreamRef: 'origin/feat', remote: 'origin', clean: true, descends: true };
+	it('passes only a clean, pushed, descending commit on the run branch', async () => {
+		const { followUpProblem } = await import('./workflow-core');
+		expect(followUpProblem(ok, 'c0', 'feat')).toBeNull();
+		expect(followUpProblem({ ...ok, branch: 'main' }, 'c0', 'feat')).toContain('not feat');
+		expect(followUpProblem({ ...ok, clean: false }, 'c0', 'feat')).toContain('uncommitted');
+		expect(followUpProblem(ok, 'c1', 'feat')).toBe('no new commit');
+		expect(followUpProblem({ ...ok, descends: false }, 'c0', 'feat')).toContain('rewritten');
+		expect(followUpProblem({ ...ok, upstream: 'c0' }, 'c0', 'feat')).toContain('not pushed');
+		expect(followUpProblem({ ...ok, upstreamRef: 'origin/main' }, 'c0', 'feat')).toContain('not pushed');
+		expect(followUpProblem({ ...ok, upstreamRef: 'origin/other/feat' }, 'c0', 'feat')).toContain('not pushed');
+	});
+});
