@@ -34,7 +34,7 @@ export interface AgentSessionDigest {
 	worktree?: DeckSession['worktree'];
 	issues?: SessionIssue[];
 	pr?: SessionPR;
-	cost?: CostSummary;
+	cost?: PublicCost;
 	// How full the context window is. Omitted for a session that has not reported
 	// a window yet (nothing to show a percentage against).
 	context?: ContextUsage;
@@ -45,6 +45,15 @@ export interface AgentSessionDigest {
 	// single-session GET), since it reads the transcript. Omitted on the list/feed
 	// digests, which stay cheap. null means "no text produced yet".
 	lastResult?: string | null;
+}
+
+// The documented shape of `cost`. CostSummary also carries `lastReportedCost`,
+// the running total claude last reported, which exists only so a fold can
+// resume; it is fold state, not a figure, so it stays off the contract.
+export type PublicCost = Omit<CostSummary, 'lastReportedCost'>;
+
+function publicCost({ costUsd, turns, durationMs, results }: CostSummary): PublicCost {
+	return { costUsd, turns, durationMs, results };
 }
 
 // A session that has produced no figures yet carries no `context` at all,
@@ -72,7 +81,7 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		pr: s.pr,
 		hidden: s.hidden || undefined,
 		// Cheap: transcriptCostSummary is LRU-cached and extended incrementally.
-		cost: isAgentKind(s.kind) ? transcriptCostSummary(s.id) : undefined,
+		cost: isAgentKind(s.kind) ? publicCost(transcriptCostSummary(s.id)) : undefined,
 		// Same: one bounded tail read, cached against the file's size and mtime.
 		context: isAgentKind(s.kind) ? definedContext(s.id) : undefined,
 		lastResult: opts?.lastResult && isAgentKind(s.kind) ? sessionLastResult(s.id) : undefined

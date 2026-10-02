@@ -1,8 +1,22 @@
-// Aggregate a session's per-turn `result` events into one running total (cost,
-// turns, duration). Every agent harness (claude/pi/codex/opencode) emits a
-// `result` per turn carrying that turn's own figures, so the session total is
-// their sum. (Verified empirically for claude's long-lived stream: successive
-// results' total_cost_usd frequently drops, so it's per-turn, not cumulative.)
+// Aggregate a session's `result` events into one running total (cost, turns,
+// duration). `num_turns` and `duration_ms` are each that result's own figures,
+// so the session total is their sum. `total_cost_usd` is not, and that is the
+// whole subtlety here.
+//
+// claude's CLI reports `total_cost_usd` as the *running total of its process*,
+// so summing it re-adds every earlier turn and the session total grows with the
+// square of its length. One real 155-result session read $48,756 against a true
+// $713. What counts is the increment between consecutive results.
+//
+// The counter restarts at zero whenever deck respawns the process. `--resume`
+// keeps the same `session_id` across a respawn, and `result_index` resets per
+// prompt, so neither marks the boundary: the value falling is the only signal
+// there is. A fall therefore means the whole value is new spend.
+//
+// The other harnesses (pi/codex/opencode) synthesize a result per turn carrying
+// that turn's own cost (see server/agents/events.ts), which is already an
+// increment, so those are summed as before. They are told apart by the usage
+// figures only claude's CLI emits.
 //
 // Node-free so the server (base over the full transcript) and the client
 // (folding live results on top of that base) share one implementation.
@@ -12,23 +26,55 @@ export interface CostSummary {
 	turns: number;
 	durationMs: number;
 	results: number;
+	// The last running total claude reported, so the next result can be folded
+	// as an increment. Part of the summary rather than a fold-local variable
+	// because the client resumes folding from a server-computed base.
+	lastReportedCost: number;
 }
 
 export function emptyCostSummary(): CostSummary {
-	return { costUsd: 0, turns: 0, durationMs: 0, results: 0 };
+	return { costUsd: 0, turns: 0, durationMs: 0, results: 0, lastReportedCost: 0 };
 }
 
 function num(v: unknown): number {
 	return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 
+interface ResultEvent {
+	type?: unknown;
+	total_cost_usd?: unknown;
+	num_turns?: unknown;
+	duration_ms?: unknown;
+	usage?: unknown;
+	modelUsage?: unknown;
+}
+
+// Whether this came from claude's CLI, whose `total_cost_usd` is cumulative.
+// Our own synthesized results carry no usage breakdown, so its presence is the
+// tell; a harness that grows one would also have to report cost the same way.
+function isCumulative(e: ResultEvent): boolean {
+	return e.usage !== undefined || e.modelUsage !== undefined;
+}
+
+// What one result adds to the session total.
+function costAdded(e: ResultEvent, lastReported: number): number {
+	const reported = num(e.total_cost_usd);
+	if (!isCumulative(e)) return reported;
+	// A rise is this turn's spend. A fall means the process restarted with its
+	// counter back at zero, so all of it is new. The one case this reads low is
+	// a restarted run whose first result already exceeds the previous run's
+	// last; undercounting there beats re-adding the whole history.
+	return reported >= lastReported ? reported - lastReported : reported;
+}
+
 // Fold one event into the running summary. Non-`result` events pass through
 // unchanged, so callers can fold a raw event stream without pre-filtering.
 export function foldResult(sum: CostSummary, event: unknown): CostSummary {
-	const e = event as { type?: unknown; total_cost_usd?: unknown; num_turns?: unknown; duration_ms?: unknown };
+	const e = event as ResultEvent;
 	if (!e || e.type !== 'result') return sum;
 	return {
-		costUsd: sum.costUsd + num(e.total_cost_usd),
+		costUsd: sum.costUsd + costAdded(e, sum.lastReportedCost),
+		lastReportedCost: isCumulative(e) ? num(e.total_cost_usd) : sum.lastReportedCost,
 		// num_turns is per-result; fall back to counting the result as one turn
 		// when it's absent or non-finite, so a bad value can't make turns NaN.
 		turns: sum.turns + (Number.isFinite(e.num_turns) ? (e.num_turns as number) : 1),

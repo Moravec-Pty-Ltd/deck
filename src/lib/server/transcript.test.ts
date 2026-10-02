@@ -203,14 +203,16 @@ describe('transcriptCostSummary', () => {
 			costUsd: 20,
 			turns: 80,
 			durationMs: 40000,
-			results: 40
+			results: 40,
+			lastReportedCost: 0
 		});
 		// And it rides along in the snapshot payload for the client to seed from.
 		expect((rawSnapshot(id) as { cost: unknown }).cost).toEqual({
 			costUsd: 20,
 			turns: 80,
 			durationMs: 40000,
-			results: 40
+			results: 40,
+			lastReportedCost: 0
 		});
 	});
 
@@ -223,7 +225,8 @@ describe('transcriptCostSummary', () => {
 			costUsd: 3,
 			turns: 4,
 			durationMs: 300,
-			results: 2
+			results: 2,
+			lastReportedCost: 0
 		});
 	});
 
@@ -239,7 +242,7 @@ describe('transcriptCostSummary', () => {
 	it('returns an empty summary for a transcript with no results (e.g. a shell session)', () => {
 		const id = 'cost-none';
 		seed(id, [ev(0), ev(1), ev(2)]);
-		expect(transcriptCostSummary(id)).toEqual({ costUsd: 0, turns: 0, durationMs: 0, results: 0 });
+		expect(transcriptCostSummary(id)).toEqual({ costUsd: 0, turns: 0, durationMs: 0, results: 0, lastReportedCost: 0 });
 	});
 });
 

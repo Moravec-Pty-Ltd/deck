@@ -8,6 +8,9 @@ import {
 } from './session-cost-core';
 
 const result = (o: Record<string, unknown>) => ({ type: 'result', ...o });
+// claude's CLI result, told apart by the usage figures only it emits. Its
+// total_cost_usd is the running total of the process, not this turn's cost.
+const claudeResult = (o: Record<string, unknown>) => result({ usage: {}, ...o });
 
 describe('sessionCostSummary', () => {
 	it('sums cost, turns and duration across every result (per-turn figures)', () => {
@@ -21,8 +24,51 @@ describe('sessionCostSummary', () => {
 			costUsd: 0.42,
 			turns: 12,
 			durationMs: 258000,
-			results: 2
+			results: 2,
+			lastReportedCost: 0
 		});
+	});
+
+	it("takes the increment of claude's running total, not the total itself", () => {
+		const events = [
+			claudeResult({ total_cost_usd: 3.75, num_turns: 50 }),
+			claudeResult({ total_cost_usd: 4.63, num_turns: 11 }),
+			claudeResult({ total_cost_usd: 6.22, num_turns: 9 })
+		];
+		// Summing the readings would give 14.60; the session actually spent 6.22.
+		expect(sessionCostSummary(events)).toMatchObject({ costUsd: 6.22, turns: 70, results: 3 });
+	});
+
+	it('counts the whole value when the counter restarts, which a fall marks', () => {
+		// deck respawns the CLI with --resume: same session_id, counter back to
+		// zero. The two runs spent 6.22 and 5.56.
+		const events = [
+			claudeResult({ total_cost_usd: 3.75 }),
+			claudeResult({ total_cost_usd: 6.22 }),
+			claudeResult({ total_cost_usd: 2.84 }),
+			claudeResult({ total_cost_usd: 5.56 })
+		];
+		expect(sessionCostSummary(events).costUsd).toBeCloseTo(11.78, 6);
+	});
+
+	it('keeps the two kinds apart within one session, after a handoff', () => {
+		// A codex session handed off to claude: the synthesized results are
+		// per-turn, the claude ones cumulative.
+		const events = [
+			result({ total_cost_usd: 0.5 }),
+			claudeResult({ total_cost_usd: 2 }),
+			claudeResult({ total_cost_usd: 3 })
+		];
+		expect(sessionCostSummary(events).costUsd).toBeCloseTo(3.5, 6);
+	});
+
+	it('lets the client resume folding from a server-computed base', () => {
+		// The server folds the transcript, the client folds live results on top.
+		// The running total has to survive that handover or the next result reads
+		// as a restart and re-adds everything.
+		const base = sessionCostSummary([claudeResult({ total_cost_usd: 6.22 })]);
+		const live = foldResult(base, claudeResult({ total_cost_usd: 6.5 }));
+		expect(live.costUsd).toBeCloseTo(6.5, 6);
 	});
 
 	it('ignores non-result events and returns an empty summary for none', () => {
@@ -43,7 +89,8 @@ describe('sessionCostSummary', () => {
 			costUsd: 0,
 			turns: 3,
 			durationMs: 0,
-			results: 2
+			results: 2,
+			lastReportedCost: 0
 		});
 	});
 
@@ -77,24 +124,24 @@ describe('formatDuration', () => {
 describe('formatCostSummary', () => {
 	it('renders cost, turns and duration', () => {
 		expect(
-			formatCostSummary({ costUsd: 0.42, turns: 12, durationMs: 258000, results: 2 })
+			formatCostSummary({ costUsd: 0.42, turns: 12, durationMs: 258000, results: 2, lastReportedCost: 0 })
 		).toBe('$0.42 · 12 turns · 4m 18s');
 	});
 
 	it('drops the $ segment when there is no cost', () => {
-		expect(formatCostSummary({ costUsd: 0, turns: 5, durationMs: 12000, results: 5 })).toBe(
+		expect(formatCostSummary({ costUsd: 0, turns: 5, durationMs: 12000, results: 5, lastReportedCost: 0 })).toBe(
 			'5 turns · 12s'
 		);
 	});
 
 	it('drops the duration segment when no result carried one', () => {
-		expect(formatCostSummary({ costUsd: 0.03, turns: 4, durationMs: 0, results: 4 })).toBe(
+		expect(formatCostSummary({ costUsd: 0.03, turns: 4, durationMs: 0, results: 4, lastReportedCost: 0 })).toBe(
 			'$0.03 · 4 turns'
 		);
 	});
 
 	it('uses the singular for a single turn', () => {
-		expect(formatCostSummary({ costUsd: 0, turns: 1, durationMs: 5000, results: 1 })).toBe(
+		expect(formatCostSummary({ costUsd: 0, turns: 1, durationMs: 5000, results: 1, lastReportedCost: 0 })).toBe(
 			'1 turn · 5s'
 		);
 	});
