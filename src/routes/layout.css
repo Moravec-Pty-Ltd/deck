@@ -274,6 +274,20 @@ h3,
 	}
 }
 
+/* A workflow run's active phase: a slow opacity breath, never a bounce. Stopped
+   by the reduced-motion and e-ink rules below. */
+.phase-pulse {
+	animation: phase-pulse 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate;
+}
+@keyframes phase-pulse {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0.45;
+	}
+}
+
 /* Quiet, themed scrollbars that read as part of the surface, not chrome. */
 * {
 	scrollbar-width: thin;

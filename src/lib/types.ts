@@ -230,6 +230,9 @@ export interface Project {
 	automation?: {
 		work?: boolean;
 		review?: boolean;
+		// Fire the category's default workflow run (issue #233) instead of a plain
+		// template session. Off restores the plain sessions exactly.
+		workflows?: boolean;
 		workAgent?: AutomationAgent;
 		reviewAgent?: AutomationAgent;
 	};

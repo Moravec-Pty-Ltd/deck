@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import type { DeckSession, Project, PullRequest } from '$lib/types';
+import type { DeckSession, Issue, Project, PullRequest } from '$lib/types';
 
 // The review drain (issue #224) is orchestration, not pure logic: the cap has to
 // be checked before `spawn` claims the trigger key, the tick has to stop rather
@@ -12,14 +12,22 @@ const fake = vi.hoisted(() => ({
 	prs: {} as Record<string, PullRequest[]>,
 	processed: {} as Record<string, number>,
 	created: [] as Record<string, unknown>[],
-	options: [] as (Record<string, unknown> | undefined)[]
+	options: [] as (Record<string, unknown> | undefined)[],
+	issues: [] as Issue[],
+	runs: [] as Record<string, unknown>[]
 }));
 
 vi.mock('./store', () => ({
 	listProjects: () => fake.projects,
 	listStoredSessions: () => fake.sessions
 }));
-vi.mock('./issues', () => ({ getProjectIssues: async () => ({ issues: [] }) }));
+vi.mock('./issues', () => ({ getProjectIssues: async () => ({ issues: fake.issues }) }));
+vi.mock('./workflow-runner', () => ({
+	startRun: async (req: Record<string, unknown>) => {
+		fake.runs.push(req);
+		return { id: `r${fake.runs.length}` };
+	}
+}));
 vi.mock('./prs', () => ({ getProjectPrs: async (p: Project) => ({ prs: fake.prs[p.path] ?? [] }) }));
 vi.mock('./push', () => ({ notify: () => {} }));
 vi.mock('./idempotency', () => ({ runIdempotent: (_k: string, run: () => unknown) => ({ result: run() }) }));
@@ -35,8 +43,8 @@ vi.mock('./create-session', () => ({
 	createSessionFromRequest: async (body: Record<string, unknown>, opts?: Record<string, unknown>) => {
 		fake.created.push(body);
 		fake.options.push(opts);
-		const pr = body.pr as { number: number };
-		fake.sessions.push(reviewSession(pr.number));
+		const pr = body.pr as { number: number } | undefined;
+		if (pr) fake.sessions.push(reviewSession(pr.number));
 		return { id: `s${fake.created.length}` };
 	}
 }));
@@ -166,5 +174,44 @@ describe('automatic review throttle', () => {
 		];
 		await pollAutomation();
 		expect(fake.created[0]).toMatchObject({ kind: 'claude', model: 'local-profile', effort: 'high' });
+	});
+});
+
+describe('automation with workflows (issue #233)', () => {
+	const issue: Issue = {
+		sourceId: 's1',
+		sourceType: 'github',
+		id: 'acme/web#7',
+		title: 'a bug',
+		url: 'https://github.com/acme/web/issues/7',
+		updatedAt: 1,
+		blockers: []
+	};
+
+	beforeEach(() => {
+		fake.sessions = [];
+		fake.prs = { '/p/acme': [pr(1, 100)] };
+		fake.issues = [issue];
+		fake.processed = {};
+		fake.created = [];
+		fake.runs = [];
+	});
+
+	it('starts the default workflow run for each lane when workflows are on', async () => {
+		fake.projects = [{ name: 'acme', path: '/p/acme', automation: { work: true, review: true, workflows: true } }];
+		await pollAutomation();
+		expect(fake.created).toEqual([]);
+		expect(fake.runs).toEqual([
+			{ cwd: '/p/acme', category: 'dev', issue: { source: 'github', id: 'acme/web#7', url: issue.url, sourceId: 's1' } },
+			{ cwd: '/p/acme', category: 'review', pr: { repo: 'acme/web', number: 1, url: 'https://example.com', title: 'pr 1', baseRefName: 'main' } }
+		]);
+		expect(Object.keys(fake.processed)).toEqual(['auto:work:github:acme/web#7', 'auto:review:acme/web#1@sha1']);
+	});
+
+	it('spawns plain template sessions with workflows off, exactly as before', async () => {
+		fake.projects = [{ name: 'acme', path: '/p/acme', template: 'go', automation: { work: true, review: true } }];
+		await pollAutomation();
+		expect(fake.runs).toEqual([]);
+		expect(fake.created.map((b) => b.prompt)).toEqual(['go', '']);
 	});
 });

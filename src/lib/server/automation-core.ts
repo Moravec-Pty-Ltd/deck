@@ -15,8 +15,10 @@ import type {
 	SessionStatus,
 	ModelChoice,
 	Project,
-	PullRequest
+	PullRequest,
+	SessionIssue
 } from '$lib/types';
+import type { RunPr } from '$lib/workflows';
 
 // The durable ledger of trigger keys that have already spawned a session, keyed
 // to their first-fired timestamp. An item lingering in a feed across polls and
@@ -178,6 +180,15 @@ export function reviewBody(project: Project, pr: PullRequest): Record<string, un
 	};
 }
 
+// The issue and PR a workflow run starts from, in the shapes the run keeps.
+export function runIssue(issue: Issue): SessionIssue {
+	return { source: issue.sourceType, id: issue.id, url: issue.url, sourceId: issue.sourceId };
+}
+
+export function runPr(pr: PullRequest): RunPr {
+	return { repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, baseRefName: pr.baseRefName };
+}
+
 // How many automatic review sessions may run at once, across every project (issue
 // #224). Several PRs landing together shouldn't put N agents on one machine, and
 // against a local model they'd contend for the same GPU. Fixed at one; if it ever
@@ -236,6 +247,7 @@ const agentSchema = z
 const automationSchema = z.object({
 	work: z.boolean().optional(),
 	review: z.boolean().optional(),
+	workflows: z.boolean().optional(),
 	workAgent: agentSchema.optional(),
 	reviewAgent: agentSchema.optional()
 });
@@ -280,6 +292,9 @@ export function parseAutomation(raw: unknown, existing?: Project['automation']):
 	const automation = {
 		work: !!parsed.data.work,
 		review: !!parsed.data.review,
+		// Carried when the body doesn't mention it, like the agent picks: a stale
+		// client posting the pre-#233 shape must not switch workflows off.
+		workflows: 'workflows' in body ? !!parsed.data.workflows : !!existing?.workflows,
 		workAgent: resolveAgent(body, 'workAgent', parsed.data.workAgent, existing?.workAgent),
 		reviewAgent: resolveAgent(body, 'reviewAgent', parsed.data.reviewAgent, existing?.reviewAgent)
 	};

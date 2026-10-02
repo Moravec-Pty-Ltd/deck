@@ -358,6 +358,12 @@ Every MCP \`ask\` waiting on a human answer, oldest first:
 match the call on the transcript). Pass it back with a structured answer so
 the picks persist on the session's transcript.
 
+A blocked workflow run is listed here too, as
+\`{ "source": "run", "runId", "sessionId"?, "questions": [{ "question", "header", "options": [] }], "askedAt" }\`.
+\`sessionId\` is the run's latest phase session; answering through that
+session's answer route (below) answers the run, or use
+\`POST /api/agent/runs/{id}/answer\`.
+
 ### POST /api/agent/sessions/{id}/answer
 
 \`{ "text": "...", "askId"?: "toolu_...", "answers"?: [{ "header": "...", "labels": ["..."] }] }\`
@@ -368,6 +374,128 @@ question as answered with those labels. On success \`{ "ok": true, "seq": <n> }\
 (\`seq\` correlates the resulting turn). On failure
 \`{ "ok": false, "reason": "no-pending-ask" }\` means nothing was waiting (already
 answered, or a race).
+
+## Workflow runs
+
+A run is a dev or review loop driven by deck itself: a state machine with one
+fresh agent session per phase, all in the run's worktree. Phases invoke skills
+(\`/dev-workflow\`, \`/dev-review\`, \`/address-feedback\`); every gate is
+computed (an exit code, a review finding's severity, or a \`gh\` query), never
+judged by a model. A run survives a deck restart. One run per worktree.
+
+### GET /api/agent/workflows
+
+\`{ "workflows": [<definition>], "problems": ["..."] }\`. Built-ins (\`dev\`,
+\`review\`) merged with \`~/.deck/workflows.json\` (\`{ "workflows": [...] }\`,
+same shape; a matching \`id\` replaces a built-in). Each definition is
+\`{ id, name, category: "dev"|"review", default, steps }\`; each step is
+\`{ id, label, role, skill?, args?, command?, agent?, repeatAgent?,
+escalateAgent?, gate, next, onFail?, retries?, cap? }\`. \`problems\` lists
+user definitions that were skipped as malformed.
+
+### GET /api/agent/runs
+
+Every run's digest, newest first. A digest is everything a client needs to
+draw the board and a run's phases, with no HTML:
+
+\`\`\`json
+{ "id": "r_...", "url": "${baseUrl}/runs/r_...",
+	"workflow": { "id": "dev", "name": "Dev workflow", "category": "dev" },
+	"title": "#7", "projectPath": "...", "cwd": "...", "branch": "...", "base": "main",
+	"issue": { "source": "github", "id": "owner/repo#7", "url": "..." },
+	"pr": { "repo": "owner/repo", "number": 9, "url": "..." },
+	"status": "running|waiting|paused|blocked|done|cancelled",
+	"phase": "review", "round": 2, "cap": 5, "loop": true, "blockers": 1,
+	"findings": [{ "file", "line", "severity", "defect", "fix", "keep" }],
+	"escalations": { "implementer": false, "disagreement": false, "cap": false },
+	"humanTouched": false,
+	"phases": [{ "id": "review", "label": "Review", "role": "review",
+		"status": "pending|active|pass|fail|skipped", "visits": 2, "cap": 5,
+		"next": "pr", "onFail": "fix",
+		"sessions": [{ "sessionId": "c_...", "visit": 1, "result": "fail", "detail": "...",
+			"startedAt": 0, "endedAt": 0, "humanTouched": false }],
+		"decisions": [{ "at": 0, "by": "overseer|human|engine", "step": "review",
+			"action": "retry", "reason": "..." }] }],
+	"block": { "question": "...", "at": 0, "by": "engine", "step": "pr" },
+	"handoff": { "text": "...", "tree": "<git tree>", "at": 0 },
+	"createdAt": 0, "updatedAt": 0 }
+\`\`\`
+
+\`waiting\` means the run is waiting on a PR reviewer (deck polls \`gh\`).
+\`phases[].sessions\` holds one entry per visit, so a review phase that ran four
+rounds lists four sessions. \`GET /api/agent/runs/{id}\` returns one digest plus
+\`handoffStale\` when the working tree has moved since the handoff was written.
+
+### POST /api/agent/runs
+
+\`{ "cwd": "<project path or one of its worktrees>", "workflow"?: "<id>",
+"category"?: "dev"|"review", "issue"?: { "source", "id", "url"? },
+"pr"?: { "repo", "number", "baseRefName"? }, "base"?: "<branch>", "title"? }\`
+starts a run and returns its digest (201). Without \`workflow\` the category's
+default runs. A dev run started at a project root makes a worktree on the
+issue's branch; a review run checks the PR out; a run started inside a
+worktree works there. 409 when that worktree already has an active run.
+
+### DELETE /api/agent/runs?finished=1
+
+Remove every done or cancelled run and their phase sessions (add
+\`keepSessions=1\` to keep the sessions). Live runs and every worktree and
+branch are untouched. Returns \`{ "deleted": n }\`; 400 without
+\`finished=1\`. Each removed run emits \`run-deleted\`.
+
+### DELETE /api/agent/runs/{id}
+
+Remove a run and its phase sessions (\`?keepSessions=1\` keeps the sessions).
+A live run is stopped first (its phase session's turn and any verify command).
+A session you took over is never deleted or stopped. The worktree and branch
+are always kept, since the run's PR may still be open. Returns \`{ "ok": true }\`, 404 for an unknown run.
+
+### POST /api/agent/runs/{id}/{action}
+
+Body fields are optional unless noted. Every action takes \`reason\` and \`by\`
+(\`"human"\`, the default, or \`"overseer"\`) and is recorded as a decision on
+the run's current phase. Returns the run digest.
+
+- \`pause\`: the engine stops reacting; the phase session keeps working. If
+  its turn ends while paused, resuming that phase settles the turn rather than
+  running the phase again. 409 on a blocked run (take it over instead).
+- \`takeover\`: pause, stop the phase session's turn so you can drive it, and
+  flag the phase as hand edited. Review scope comes from working-tree
+  snapshots, so the next review round includes your edits.
+- \`resume\` \`{ "phase"? }\`: start the given phase (default: the current one)
+  in a fresh session. Works on any run that isn't done or cancelled; on a
+  running one it stops the live phase session first.
+- \`retry\`: resume at the current phase.
+- \`cancel\`: stop the run for good.
+- \`answer\` \`{ "text" }\` (required): answer a blocked run; it resumes at its
+  phase with the answer handed to the next session.
+- \`block\` \`{ "question" }\` (required): block the run on a question and notify.
+- \`agent\` \`{ "step"?, "kind"?, "model"?, "provider"?, "effort"? }\`: change what a
+  step runs on for this run. All fields blank clears the override.
+- \`note\`: record a decision without acting.
+- \`handoff\` \`{ "text" }\`: leave an intent note for whoever drives next,
+  stamped with the current working tree.
+- \`fix-findings\`: on a done dev run with an open PR and leftover findings (nits,
+  or blockers a closer left), start one fix session in the run's worktree. It
+  addresses every finding, gets the tests green, commits once, and pushes to the
+  PR branch. The gate is git and the tests, not the reply: a new commit on the
+  run's branch, history kept, nothing left uncommitted, pushed to that branch's
+  upstream, and the verify command green on it. The run is then done again with
+  no findings; if not, it blocks. 409 on any other run, when the PR is no longer
+  open, or when another run is active in the worktree. The digest's
+  \`followUp\` is true meanwhile.
+- \`message\` \`{ "text" }\`: send to the current phase session of a paused run
+  whose session is idle (409 otherwise). 409 for a review phase: reviewers are
+  never steered.
+
+### The overseer
+
+\`GET /api/agent/overseer\` → \`{ "sessionId"?, "active", "busy" }\` (\`active\`:
+an overseer is watching; \`busy\`: it is mid-turn). \`POST\`
+(\`{ "kind"?, "model"? }\`) starts one long-lived session that deck wakes with
+a note when a run blocks, a phase errors, or a run finishes; it acts through
+the run actions above with \`"by": "overseer"\`. \`DELETE\` stops waking it.
+Runs never depend on it.
 
 ## Push notifications
 
@@ -423,6 +551,10 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 	naming the \`project\` and its own \`projectHidden\`, which cannot be read back
 	off the sessions for that same reason)
 - \`session-deleted\` — {}
+- \`run-updated\`: { runId, status, phase, updatedAt } (a workflow run changed;
+	fetch \`GET /api/agent/runs/{id}\` for its digest;
+	\`sessionId\` carries the run id)
+- \`run-deleted\`: { runId } (a run was removed; drop it from your list)
 
 Apply deltas idempotently: after a gap re-snapshot (or bootstrap) an overlapping
 event may repeat state the snapshot already reflects.
