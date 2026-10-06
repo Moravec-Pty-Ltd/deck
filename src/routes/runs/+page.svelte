@@ -11,22 +11,22 @@
 		PHASE_STATUS_VIEW,
 		RUN_STATUS_VIEW
 	} from '$lib/workflow-view';
+	import type { Issue, Project, PullRequest } from '$lib/types';
 	import { relativeTime } from '$lib/time';
+	import { shortIssueId } from '$lib/issues';
+	import IssuePicker from '$lib/components/IssuePicker.svelte';
+	import PrPicker from '$lib/components/PrPicker.svelte';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Plus, X, Eye, ExternalLink, CircleHelp, GitBranch, Trash2 } from '@lucide/svelte';
-
-	interface AgentProject {
-		path: string;
-		name: string;
-		hidden?: boolean;
-	}
 
 	let runs = $state<RunDigest[]>([]);
 	let loaded = $state(false);
 	let loadError = $state('');
 	let workflows = $state<WorkflowDef[]>([]);
 	let problems = $state<string[]>([]);
-	let projects = $state<AgentProject[]>([]);
+	// The full project records, not the agent digest: both pickers read
+	// `sources` to know which trackers to offer.
+	let projects = $state<Project[]>([]);
 	let overseer = $state<{ sessionId?: string; active: boolean; busy: boolean } | null>(null);
 	let overseerBusy = $state(false);
 
@@ -38,12 +38,47 @@
 	let starting = $state(false);
 	let formError = $state('');
 
+	// A run takes one issue or one PR, so these hold at most a single pick. The
+	// typed `ref` stays as the way in for anything the picker doesn't list (an
+	// issue assigned to someone else, a URL from elsewhere).
+	let pickedIssue = $state<Issue | null>(null);
+	let pickedPr = $state<PullRequest | null>(null);
+
 	let clearing = $state(false);
 	const finishedCount = $derived(runs.filter((r) => r.status === 'done' || r.status === 'cancelled').length);
 
 	const groups = $derived(workflowsByCategory(workflows));
 	const workflow = $derived(workflows.find((w) => w.id === workflowId));
 	const isReview = $derived(workflow?.category === 'review');
+
+	const project = $derived(projects.find((p) => p.path === cwd));
+
+	// A pick fills the reference field, so one field always says what the run
+	// will start from whether it was picked or typed. Picking the same row again
+	// clears it.
+	function pickIssue(issue: Issue) {
+		const same = pickedIssue?.sourceId === issue.sourceId && pickedIssue?.id === issue.id;
+		pickedIssue = same ? null : issue;
+		ref = pickedIssue?.id ?? '';
+		formError = '';
+	}
+
+	function pickPr(pr: PullRequest) {
+		const same = pickedPr?.sourceId === pr.sourceId && pickedPr?.number === pr.number;
+		pickedPr = same ? null : pr;
+		ref = pickedPr?.url ?? '';
+		formError = '';
+	}
+
+	// A pick from another project, or from the other kind of workflow, can't
+	// apply here (the same rule the new-session modal follows).
+	$effect(() => {
+		cwd;
+		isReview;
+		pickedIssue = null;
+		pickedPr = null;
+		ref = '';
+	});
 
 	async function load() {
 		try {
@@ -62,8 +97,8 @@
 	async function loadSetup() {
 		const [defs, list] = await Promise.all([
 			api<{ workflows: WorkflowDef[]; problems: string[] }>('/api/agent/workflows'),
-			api<AgentProject[]>('/api/agent/projects')
-		]).catch((e): [{ workflows: WorkflowDef[]; problems: string[] }, AgentProject[]] => {
+			api<Project[]>('/api/projects')
+		]).catch((e): [{ workflows: WorkflowDef[]; problems: string[] }, Project[]] => {
 			loadError = e instanceof Error ? e.message : 'failed to load workflows';
 			return [{ workflows: [], problems: [] }, []];
 		});
@@ -79,7 +114,23 @@
 		loadSetup();
 	});
 
+	// What the run starts from. A pick is already a resolved record, so it is
+	// sent as-is: it carries the `sourceId` that says which account to fetch the
+	// issue's detail with, which a typed reference cannot.
 	function reference(): Record<string, unknown> | string {
+		if (isReview && pickedPr) {
+			return { pr: { repo: pickedPr.repo, number: pickedPr.number, url: pickedPr.url, title: pickedPr.title } };
+		}
+		if (!isReview && pickedIssue) {
+			return {
+				issue: {
+					source: pickedIssue.sourceType,
+					sourceId: pickedIssue.sourceId,
+					id: pickedIssue.id,
+					url: pickedIssue.url
+				}
+			};
+		}
 		const text = ref.trim();
 		if (!text) return {};
 		if (isReview) {
@@ -206,6 +257,39 @@
 						<input class="input input-sm w-full font-mono" bind:value={base} placeholder="main" />
 					</label>
 				</div>
+
+				<!-- Pick from the project's trackers rather than typing a reference.
+					A pick also carries which account to fetch its detail with, so the
+					run can hand the issue's text to the first phase. -->
+				{#if project}
+					{@const picked = isReview ? pickedPr : pickedIssue}
+					<div class="mt-3">
+						<div class="mb-1.5 flex items-center gap-2 text-xs">
+							<span class="opacity-70">Or pick one</span>
+							{#if picked}
+								<span class="badge badge-sm badge-primary gap-1">
+									{isReview
+										? `${pickedPr!.repo}#${pickedPr!.number}`
+										: shortIssueId(pickedIssue!.sourceType, pickedIssue!.id)}
+									<button
+										type="button"
+										aria-label="Clear the pick"
+										onclick={() => (isReview ? pickPr(pickedPr!) : pickIssue(pickedIssue!))}
+									>
+										<X size={11} />
+									</button>
+								</span>
+							{/if}
+						</div>
+						<div class="max-h-72 overflow-y-auto rounded-box border border-base-300">
+							{#if isReview}
+								<PrPicker {project} picked={pickedPr ? [pickedPr] : []} onpick={pickPr} />
+							{:else}
+								<IssuePicker {project} selected={pickedIssue ? [pickedIssue] : []} onpick={pickIssue} />
+							{/if}
+						</div>
+					</div>
+				{/if}
 				{#if problems.length}
 					<ul class="mt-3 space-y-0.5 text-xs text-warning">
 						{#each problems as p (p)}<li>{p}</li>{/each}

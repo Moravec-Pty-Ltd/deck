@@ -21,6 +21,7 @@ import { sessionLastResult } from './transcript';
 import { notify } from './push';
 import { createWorktree, fetchPullRef, originRepo } from './git';
 import { projectForPath, resolveWithinProjects } from './confine';
+import { issuePromptContext } from './issues/prompt';
 import { slugifyBranch } from './branch-core';
 import { lastPrLink } from '$lib/pr';
 import { shortIssueId } from '$lib/issues';
@@ -178,9 +179,23 @@ function sessionBody(run: WorkflowRun, step: WorkflowStep, visit: PhaseVisit): R
 	};
 }
 
+// The issue's own text for the phases that act on it. deck has the credentials
+// and the issue already, so fetching here costs one request instead of a tool
+// call and a few thousand tokens in every phase that would otherwise go and
+// read it. Best effort: a failure comes back as a warning the prompt shows.
+async function issueContextFor(run: WorkflowRun, step: WorkflowStep): Promise<core.PromptContext> {
+	if (step.role !== 'implement' || !run.issue) return {};
+	const picked = { issue: run.issue, sourceId: run.issue.sourceId ?? '' };
+	return { issue: await issuePromptContext(run.cwd, [picked]) };
+}
+
 async function startSkill(run: WorkflowRun, step: WorkflowStep, visit: PhaseVisit, epoch: number): Promise<void> {
 	const ctx = step.role === 'review' ? await reviewContext(run, visit) : {};
 	if (stale(run, epoch)) return;
+	// Started beside the spawn, not before it: only the prompt needs the issue
+	// text, so the session create hides the fetch's latency, and a control
+	// landing mid-spawn still sees the same ordering it always did.
+	const issue = issueContextFor(run, step);
 	// Created idle and sent its prompt here, after the stale check, rather than
 	// by the create pipeline: a pause or cancel landing mid-spawn then leaves an
 	// idle session, never one that starts editing the worktree untracked.
@@ -196,7 +211,9 @@ async function startSkill(run: WorkflowRun, step: WorkflowStep, visit: PhaseVisi
 	commit(run);
 	// A failed dispatch leaves the session idle with no reply, which the settle
 	// poll turns into a retry.
-	void agentSend(session, core.phasePrompt(run, step, ctx)).catch((e) => console.error(`[deck] run ${run.id} dispatch failed:`, e));
+	void issue
+		.then((extra) => agentSend(session, core.phasePrompt(run, step, { ...ctx, ...extra })))
+		.catch((e) => console.error(`[deck] run ${run.id} dispatch failed:`, e));
 }
 
 // ---- Gates on a finished turn ----

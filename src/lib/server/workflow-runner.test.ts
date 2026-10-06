@@ -33,7 +33,9 @@ const fake = vi.hoisted(() => ({
 	// The branch head and its upstream, for the follow-up fix gate.
 	git: { head: 'c0', upstream: 'c0' as string | null },
 	spawnGate: null as Promise<void> | null,
-	viewGate: null as Promise<void> | null
+	viewGate: null as Promise<void> | null,
+	// What the faked issue fetch hands the implement phase.
+	issueContext: {} as Record<string, unknown>
 }));
 
 vi.mock('./agent-feed', async () => {
@@ -48,6 +50,11 @@ vi.mock('./store', () => ({
 	updateSession: (id: string, patch: Partial<DeckSession>) => Object.assign(fake.sessions.get(id)!, patch)
 }));
 vi.mock('./sessions', () => ({ deleteSession: async (id: string) => void fake.sessions.delete(id) }));
+// The implement phase is handed the issue's text rather than fetching it; the
+// real fetch shells out to gh, so stand in for it here.
+vi.mock('./issues/prompt', () => ({
+	issuePromptContext: async () => fake.issueContext
+}));
 vi.mock('./create-session', () => ({
 	createSessionFromRequest: async (body: Record<string, unknown>) => {
 		if (fake.spawnGate) await fake.spawnGate;
@@ -215,6 +222,7 @@ beforeEach(() => {
 	fake.prRefCreated = true;
 	fake.synced = [];
 	fake.spawnGate = null;
+	fake.issueContext = {};
 	fake.git = { head: 'c0', upstream: 'c0' };
 	fake.viewGate = null;
 	fake.view = { state: 'OPEN', reviewDecision: null, reviews: [], headRefOid: 'h', unresolvedThreads: 0 };
@@ -238,6 +246,9 @@ describe('a dev run end to end', () => {
 			kind: 'claude'
 		});
 		expect(promptOf(0)).toMatch(/^\/dev-workflow /);
+		// Nothing was fetched, so the prompt carries no issue block and still
+		// tells the phase to go and read it.
+		expect(promptOf(0)).toContain('read the issue');
 		// Every phase shares the worktree without owning it.
 		expect(fake.sessions.get('s1')?.worktree).toEqual({
 			repo: '/p/acme',
@@ -385,6 +396,36 @@ describe('take over and resume', () => {
 		expect(fake.sent).toEqual([]);
 		expect(fake.sessions.has('s1')).toBe(false);
 		expect(run.visits[0].sessionId).toBeUndefined();
+	});
+
+	it('hands the implement phase the issue text instead of making it fetch', async () => {
+		fake.issueContext = {
+			issueTitle: 'Rename a session',
+			issueBody: 'The title should be editable from the list.',
+			issueComments: '- jin: the app needs it too',
+			warnings: []
+		};
+		await start();
+		const prompt = promptOf(0);
+		expect(prompt).toContain('Rename a session');
+		expect(prompt).toContain('The title should be editable from the list.');
+		expect(prompt).toContain('- jin: the app needs it too');
+		expect(prompt).toContain('Do not go and read it again.');
+		// The fetched text replaces the instruction to go and read it.
+		expect(prompt).not.toContain('read the issue, implement');
+	});
+
+	it('says so when the issue could not be read, rather than looking empty', async () => {
+		fake.issueContext = { warnings: ['linear source has no key'] };
+		await start();
+		expect(promptOf(0)).toContain('linear source has no key');
+	});
+
+	it('leaves the review phase without an issue block', async () => {
+		fake.issueContext = { issueTitle: 'T', issueBody: 'B', issueComments: '', warnings: [] };
+		const run = await start();
+		await finishTurn(run); // implement -> verify -> review
+		expect(promptOf(1)).not.toContain('Do not go and read it again.');
 	});
 
 	it('cancels for good, stopping the phase session', async () => {

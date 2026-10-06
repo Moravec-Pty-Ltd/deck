@@ -630,6 +630,49 @@ export function advance(run: WorkflowRun, result: GateResult, now: number): Effe
 export interface PromptContext {
 	// Round 2+ review scope as file ranges.
 	delta?: string[];
+	// The issue's own text, fetched once when the phase starts (see
+	// server/issues/prompt.ts). Handed to the phase so it reads the issue from
+	// the prompt rather than spending a tool call and its tokens fetching what
+	// deck already has. Absent for a run with no issue, or when the fetch failed.
+	issue?: IssueText;
+}
+
+// What an issue says, as the prompt renders it. Mirrors IssuePromptContext in
+// server/issues/detail.ts, kept structural so this node-free module doesn't
+// depend on the fetcher.
+export interface IssueText {
+	issueTitle?: string;
+	issueBody?: string;
+	issueComments?: string;
+	warnings?: string[];
+}
+
+const trimmed = (v: string | undefined) => (v ?? '').trim();
+
+// Why the issue's text is missing, so a phase doesn't read an empty block as an
+// empty issue. Nothing when the fetch simply wasn't asked for.
+function issueUnreadable(issue: IssueText, run: WorkflowRun): string {
+	if (!issue.warnings?.length) return '';
+	return `Could not read ${issueRef(run)}: ${issue.warnings.join('; ')}`;
+}
+
+// The issue's text as a block the phase can read. Bounded by the fetcher, not
+// here.
+function issueBlock(ctx: PromptContext, run: WorkflowRun): string {
+	const issue = ctx.issue;
+	if (!issue) return '';
+	const title = trimmed(issue.issueTitle);
+	const body = trimmed(issue.issueBody);
+	const comments = trimmed(issue.issueComments);
+	if (!title && !body && !comments) return issueUnreadable(issue, run);
+	return [
+		`${issueRef(run)}${title ? ` — ${title}` : ''}`,
+		body,
+		comments && `Comments:\n${comments}`,
+		'That is the issue in full, already fetched. Do not go and read it again.'
+	]
+		.filter(Boolean)
+		.join('\n\n');
 }
 
 const FINDINGS_CONTRACT = [
@@ -653,11 +696,15 @@ function asJson(value: unknown): string {
 	return '```json\n' + JSON.stringify(value, null, 1) + '\n```';
 }
 
-function implementPrompt(run: WorkflowRun, step: WorkflowStep): string[] {
+function implementPrompt(run: WorkflowRun, step: WorkflowStep, ctx: PromptContext): string[] {
+	const issue = issueBlock(ctx, run);
 	return [
 		skillLine(step, `${issueRef(run)} base-branch=${run.base ?? ''}`.trim()),
 		PHASE_NOTE,
-		'Run the skill as far as tests passing and no further: read the issue, implement, add tests, get them green.',
+		issue,
+		issue
+			? 'Run the skill as far as tests passing and no further: implement what the issue above asks for, add tests, get them green.'
+			: 'Run the skill as far as tests passing and no further: read the issue, implement, add tests, get them green.',
 		'You are already on the run\'s branch and worktree; do not create another. Do not commit, do not run the review loop, and do not open a PR.'
 	];
 }
