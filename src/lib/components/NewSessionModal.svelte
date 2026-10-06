@@ -22,6 +22,15 @@
 	import { DEFAULT_CLAUDE_PERMISSION_MODE, kindStartDefaults } from '$lib/start-defaults-core';
 	import { agentModels, loadAgentModels } from '$lib/agent-models-store.svelte';
 	import { shortIssueId } from '$lib/issues';
+	import {
+		conflictMessage,
+		fixDetail,
+		fixLabel,
+		isWorktreeConflict,
+		WORKTREE_FIXES,
+		type WorktreeConflict,
+		type WorktreeFix
+	} from '$lib/worktree-conflict';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import {
 		Bot,
@@ -108,6 +117,12 @@
 	// confirm's own button, so a stray re-invoke of create() (e.g. Enter on the
 	// still-focused Create button behind the modal) can't skip the gate (issue #134).
 	let confirmingExpensive = $state(false);
+
+	// A branch an earlier session left behind, and the answer to it. `onExisting`
+	// rides along on the next create (see newWorktree) and is cleared once the
+	// modal closes, so a choice never leaks into an unrelated session.
+	let conflict = $state<{ kind: Exclude<WorktreeConflict, null>; branch: string } | null>(null);
+	let onExisting = $state<WorktreeFix | null>(null);
 	let confirmedExpensive = $state(false);
 	let showPicker = $state(false);
 	let pickedIssues = $state<Issue[]>([]);
@@ -493,7 +508,7 @@
 		});
 		const newWorktree = (b: string) =>
 			worktreeMode === 'new' && b.trim()
-				? { branch: b.trim(), newBranch, base: base || undefined }
+				? { branch: b.trim(), newBranch, base: base || undefined, onExisting: onExisting ?? undefined }
 				: undefined;
 		if (splitIssues) {
 			// One session per issue: each gets its own branch/title from the issue
@@ -525,6 +540,14 @@
 		];
 	}
 
+	// A create that hit a branch an earlier session left behind comes back as a
+	// 409 naming the branch and what is wrong with it, which the prompt below
+	// turns into a choice. Anything else is just its message.
+	class CreateError extends Error {
+		conflict: WorktreeConflict = null;
+		branch = '';
+	}
+
 	async function postCreate(body: Record<string, unknown>): Promise<string> {
 		const res = await fetch('/api/sessions', {
 			method: 'POST',
@@ -532,8 +555,13 @@
 			body: JSON.stringify(body)
 		});
 		const data = await res.json().catch(() => ({}));
-		if (!res.ok) throw new Error(data.message ?? 'failed to create session');
-		return data.id as string;
+		if (res.ok) return data.id as string;
+		const err = new CreateError(data.message ?? 'failed to create session');
+		if (res.status === 409 && isWorktreeConflict(data.code)) {
+			err.conflict = data.code;
+			err.branch = typeof data.branch === 'string' ? data.branch : '';
+		}
+		throw err;
 	}
 
 	function finishCreate(id: string) {
@@ -640,11 +668,25 @@
 		} catch (e) {
 			// The single-create path throws on failure (postCreate rejects on !ok);
 			// surface it here so the modal shows why instead of wedging silently.
+			if (e instanceof CreateError && e.conflict) {
+				// Answerable: ask rather than leaving the user to read git's output
+				// and work out which of two very different fixes they wanted.
+				conflict = { kind: e.conflict, branch: e.branch };
+				return;
+			}
 			errorMsg = e instanceof Error ? e.message : 'failed to create session';
 		} finally {
 			busy = false;
 			createProgress = '';
 		}
+	}
+
+	// Answer the conflict and try once more. The choice is cleared either way, so
+	// a later create in the same modal starts from a clean slate.
+	function resolveConflict(fix: WorktreeFix) {
+		conflict = null;
+		onExisting = fix;
+		void create().finally(() => (onExisting = null));
 	}
 </script>
 
@@ -1044,6 +1086,37 @@
 			aria-label="close"
 		></button>
 	</div>
+
+	{#if conflict}
+		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
+			<div class="modal-box max-w-md">
+				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
+					<TriangleAlert size={18} class="text-warning" /> That branch is already there
+				</h3>
+				<p class="mb-3 text-sm opacity-70">{conflictMessage(conflict.kind, conflict.branch)}</p>
+				<div class="space-y-2">
+					{#each WORKTREE_FIXES as fix (fix)}
+						<button
+							class="w-full rounded-box border border-base-300 px-3 py-2 text-left hover:border-base-content/30 {fix ===
+							'recreate'
+								? 'hover:border-error/50'
+								: ''}"
+							disabled={busy}
+							onclick={() => resolveConflict(fix)}
+						>
+							<div class="text-sm font-medium {fix === 'recreate' ? 'text-error' : ''}">
+								{fixLabel(fix)}
+							</div>
+							<div class="text-xs opacity-60">{fixDetail(fix, conflict.branch)}</div>
+						</button>
+					{/each}
+				</div>
+				<div class="modal-action">
+					<button class="btn btn-sm" onclick={() => (conflict = null)}>Cancel</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	{#if confirmingExpensive}
 		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">

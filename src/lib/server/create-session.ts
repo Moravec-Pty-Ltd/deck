@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import fs from 'node:fs';
 import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
 import { createSession } from './sessions';
-import { createWorktree, fetchPullRef, isGitRepo } from './git';
+import { clearWorktreeBranch, createWorktree, fetchPullRef, isGitRepo } from './git';
 import { isFlagSafe } from './agents/args';
 import { slugifyBranch } from './branch-core';
 import { agentSend } from './agents/dispatch';
@@ -11,6 +11,7 @@ import { listProjects, updateProject, rememberModel, rememberEffort } from './st
 import { parseEffort } from './session-effort-core';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
+import { conflictMessage, isWorktreeFix, worktreeConflict } from '$lib/worktree-conflict';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 import { issueContextWarning, issuePromptContext, type PickedIssue } from './issues/prompt';
 
@@ -21,7 +22,9 @@ import { issueContextWarning, issuePromptContext, type PickedIssue } from './iss
 const KINDS: SessionKind[] = [...AGENT_KINDS, 'shell'];
 const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
 
-type WorktreeReq = { branch?: string; newBranch?: boolean; base?: string; fromPr?: unknown };
+// `onExisting` answers a 409 from a previous attempt: what to do about a branch
+// an earlier session left behind (see $lib/worktree-conflict).
+type WorktreeReq = { branch?: string; newBranch?: boolean; base?: string; fromPr?: unknown; onExisting?: unknown };
 type Worktree = { repo: string; branch: string; createdBranch: boolean; base?: string };
 
 // owner/repo, the only shape the PR sync/actions pass to `gh -R`; validated here
@@ -199,9 +202,43 @@ async function makeWorktree(
 	assertRefsSafe(wt);
 	const requested = effectiveBranch(wt);
 	const base = wt.base || undefined;
-	const { dir, branch } = await createWorktree(repo, requested, { newBranch: wt.newBranch, base });
+	const { dir, branch } = await addWorktree(repo, requested, wt, base);
 	rememberBase(cwd, !!wt.newBranch, base);
 	return { cwd: dir, worktree: { repo: cwd, branch, createdBranch: !!wt.newBranch, base } };
+}
+
+// Create the worktree, turning the two leftovers an earlier session can strand
+// into an answerable 409 rather than a 500 full of git's own output. `onExisting`
+// is the answer coming back: clear what is in the way and try once more.
+//
+// Only one retry, and only for a conflict we recognise: if the same thing fails
+// twice the second failure is the honest one to report.
+async function addWorktree(
+	repo: string,
+	branch: string,
+	wt: WorktreeReq,
+	base: string | undefined
+): Promise<{ dir: string; branch: string }> {
+	const opts = { newBranch: wt.newBranch, base };
+	try {
+		return await createWorktree(repo, branch, opts);
+	} catch (e) {
+		const raw = e instanceof Error ? e.message : String(e);
+		const conflict = worktreeConflict(raw);
+		if (!conflict) throw e;
+		const fix = isWorktreeFix(wt.onExisting) ? wt.onExisting : null;
+		if (!fix) {
+			error(409, {
+				message: conflictMessage(conflict, branch),
+				code: conflict,
+				branch
+			});
+		}
+		await clearWorktreeBranch(repo, branch, fix);
+		// `reuse` checks the branch out as it stands, so it must not ask git for a
+		// new one; `recreate` deleted it, so it must.
+		return createWorktree(repo, branch, { ...opts, newBranch: fix === 'recreate' ? wt.newBranch : false });
+	}
 }
 
 // Fetch the PR head into a local pr/<n> branch, surfacing a fetch failure as a

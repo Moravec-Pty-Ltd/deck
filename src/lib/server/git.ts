@@ -6,6 +6,7 @@ import path from 'node:path';
 import { isFlagSafe } from './agents/args';
 import { worktreeDirName } from './branch-core';
 import type { DiffFile } from '$lib/diff';
+import type { WorktreeFix } from '$lib/worktree-conflict';
 import { type DiffStats, joinDiffFiles, diffStats, baseRefCandidates } from './diff-core';
 
 const exec = promisify(execFile);
@@ -131,6 +132,19 @@ export async function createWorktree(
 	fs.mkdirSync(path.dirname(dir), { recursive: true });
 	await git(repo, ...worktreeAddArgs(dir, branch, opts));
 	return { dir, branch };
+}
+
+// Clear what an earlier session left behind, so the same branch can be used
+// again. `reuse` only drops the registration of a worktree whose directory is
+// gone, which is always safe; `recreate` also deletes the branch, which is not,
+// so only an explicit choice in the UI asks for it (see worktree-conflict.ts).
+//
+// Both are best effort: if git has nothing to prune or no branch to delete, the
+// caller's retry is what reports the real problem.
+export async function clearWorktreeBranch(repo: string, branch: string, fix: WorktreeFix): Promise<void> {
+	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);
+	await git(repo, 'worktree', 'prune').catch(() => {});
+	if (fix === 'recreate') await git(repo, 'branch', '-D', '--', branch).catch(() => {});
 }
 
 // Fetch a PR's head into a local branch `pr/<n>` so a worktree can be checked
