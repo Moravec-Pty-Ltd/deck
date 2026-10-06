@@ -1,0 +1,12 @@
+# Transitive pins. pnpm stopped reading `pnpm.overrides` from package.json in
+# v11, so they live here.
+#
+# proxy-addr: GHSA-wf3x-273g-mvxv (critical) — IP spoofing through an
+# IPv4-mapped IPv6 trust subnet. It arrives via @modelcontextprotocol/sdk's
+# express dependency, which deck never loads: the MCP server runs on
+# StreamableHTTPServerTransport inside SvelteKit's own server, so no express
+# request ever reaches proxy-addr. Pinned anyway, because 2.0.8 is the patch
+# release for exactly this and carrying a known-bad transitive costs nothing to
+# avoid.
+overrides:
+  proxy-addr: '>=2.0.8'
