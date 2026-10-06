@@ -299,6 +299,21 @@ renames the tmux session, so its derived id moves with it. A colon is replaced
 with \`-\` (tmux could not target the session otherwise), and a name another
 terminal already holds is a 409. A registered session keeps its id.
 
+### POST /api/agent/sessions/{id}/upload
+
+\`{ "files": [{ "name": "report.pdf", "data": "<base64>" }], "text"?: "..." }\` —
+share files with a session. Up to 10 per call, 25 MB each; a bigger one is a 413
+naming its size.
+
+The files are written under deck's data dir (never into the worktree, so sharing
+cannot dirty a repo) and the session is sent a message naming their absolute
+paths, with \`text\` above it when given. The agent reads them from disk. Use the
+send endpoint's \`images\` instead for pictures you want the model to see inline.
+
+Returns \`{ "ok": true, "files": [{ "path", "name", "bytes" }] }\`. The stored
+name is sanitised, so read \`path\` back rather than rebuilding it. A session's
+uploads are deleted with the session.
+
 ### POST /api/agent/sessions/{id}/hidden
 
 \`{ "hidden": true }\` — move one session into the "Hidden" section, or \`false\`

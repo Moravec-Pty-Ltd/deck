@@ -12,6 +12,7 @@ import {
 	setSessionsMutatedHook
 } from './store';
 import { hiddenSessionIds, setSessionHidden } from './hidden';
+import { forgetUploads } from './uploads';
 import { stampHidden } from '$lib/hidden-core';
 import { readTranscriptTailText } from './transcript';
 import {
@@ -266,8 +267,10 @@ export async function deleteSession(
 	id: string,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean } = {}
 ): Promise<void> {
-	// A deleted session's hide would otherwise sit in hidden-sessions.json forever.
+	// A deleted session's hide would otherwise sit in hidden-sessions.json forever,
+	// and its shared files under the data dir with nothing left to read them.
 	setSessionHidden(id, false);
+	forgetUploads(id);
 	if (isAdhocId(id)) {
 		// Adhoc tmux session: no store write, so bust the list memo by hand.
 		await killTmuxSession(adhocTmuxName(id));
