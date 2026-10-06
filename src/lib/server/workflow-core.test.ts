@@ -9,6 +9,7 @@ import {
 	detectVerifyCommand,
 	feedbackDue,
 	feedbackSignature,
+	blockingReviewers,
 	feedbackTerminal,
 	githubIssueNumber,
 	repoMismatch,
@@ -448,6 +449,42 @@ describe('gates from outside data', () => {
 
 	it('is not settled by comments alone', () => {
 		expect(feedbackTerminal(view({ reviews: [{ author: 'ann', state: 'COMMENTED' }] }))).toBe(false);
+	});
+
+	it('names the reviewers whose latest verdict blocks, to ask them again', () => {
+		// GitHub does not re-request on a push, so a round that answered a
+		// blocker has to ask for the look itself.
+		const blocked = view({
+			reviews: [
+				{ author: 'ann', state: 'CHANGES_REQUESTED' },
+				{ author: 'bot', state: 'APPROVED' },
+				{ author: 'cal', state: 'COMMENTED' }
+			]
+		});
+		expect(blockingReviewers(blocked)).toEqual(['ann']);
+	});
+
+	it('takes only each reviewer\'s latest verdict', () => {
+		const resolved = view({
+			reviews: [
+				{ author: 'ann', state: 'CHANGES_REQUESTED' },
+				{ author: 'ann', state: 'APPROVED' }
+			]
+		});
+		expect(blockingReviewers(resolved)).toEqual([]);
+		// A comment after a block does not clear it.
+		const stillBlocked = view({
+			reviews: [
+				{ author: 'ann', state: 'CHANGES_REQUESTED' },
+				{ author: 'ann', state: 'COMMENTED' }
+			]
+		});
+		expect(blockingReviewers(stillBlocked)).toEqual(['ann']);
+	});
+
+	it('asks nobody when nothing blocks', () => {
+		expect(blockingReviewers(view({}))).toEqual([]);
+		expect(blockingReviewers(view({ reviews: [{ author: 'bot', state: 'APPROVED' }] }))).toEqual([]);
 	});
 
 	it('starts a feedback round only on new reviewer activity', () => {

@@ -935,6 +935,20 @@ export function feedbackTerminal(view: PrReviewView): boolean {
 	return verdicts.includes('APPROVED');
 }
 
+// Reviewers whose latest verdict blocks the PR.
+//
+// GitHub does not ask a reviewer to look again when the author pushes a fix, so
+// after a round answers a blocker the PR sits blocked with nobody holding it.
+// These are who to ask again. Dismissed and commented-only reviews are not
+// blockers and are left alone.
+export function blockingReviewers(view: PrReviewView): string[] {
+	const latest = new Map<string, string>();
+	for (const r of view.reviews) if (r.state !== 'COMMENTED') latest.set(r.author, r.state);
+	return [...latest]
+		.filter(([author, state]) => state === 'CHANGES_REQUESTED' && author)
+		.map(([author]) => author);
+}
+
 // The reviewer activity a feedback round answers. A new review or a change in
 // open threads is new activity; the round's own replies resolve threads, so the
 // signature is taken again when a round ends.

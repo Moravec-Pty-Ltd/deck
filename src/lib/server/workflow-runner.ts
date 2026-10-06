@@ -255,11 +255,29 @@ async function reviewView(run: WorkflowRun) {
 	return wexec.prReviewView(run.cwd, run.pr.repo, run.pr.number);
 }
 
+// Runs once when a feedback round settles, which is the moment the fix has
+// landed and been pushed. Not a pure check: a round that answered a blocking
+// review has to ask that reviewer to look again, because GitHub will not. The
+// re-request also makes them a pending reviewer, which is what stops the run
+// concluding on the approvals it already has (see feedbackTerminal).
 const feedbackGate: Gate = async (run) => {
 	const view = await reviewView(run);
 	run.feedbackSignature = core.feedbackSignature(view);
-	return { pass: core.feedbackTerminal(view), detail: `${view.unresolvedThreads} open threads` };
+	if (core.feedbackTerminal(view)) return { pass: true, detail: 'approved' };
+	const asked = await reRequestReview(run, view);
+	const detail = `${view.unresolvedThreads} open threads`;
+	return { pass: false, detail: asked.length ? `${detail}; re-requested ${asked.join(', ')}` : detail };
 };
+
+async function reRequestReview(run: WorkflowRun, view: core.PrReviewView): Promise<string[]> {
+	const blocking = core.blockingReviewers(view);
+	if (!blocking.length || !run.pr) return [];
+	// Never fail the round over this: the fix landed either way, and the next
+	// poll still sees the PR as blocked.
+	return wexec
+		.requestReview(run.cwd, run.pr.repo, run.pr.number, blocking)
+		.catch(() => [] as string[]);
+}
 
 const reviewedGate: Gate = async (run) => {
 	const view = await reviewView(run);

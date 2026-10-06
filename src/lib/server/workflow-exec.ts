@@ -217,6 +217,32 @@ export async function prReviewView(cwd: string, repo: string, number: number): P
 	};
 }
 
+// Ask reviewers to look again. Used after a round answers a blocking review,
+// because GitHub leaves the PR blocked rather than re-requesting on a push.
+//
+// Each login is asked separately and failures are swallowed on purpose: GitHub
+// refuses to request a review from the PR's own author, and a reviewer who has
+// since lost access is not worth failing a run over. One that cannot be asked
+// should not stop the others.
+export async function requestReview(
+	cwd: string,
+	repo: string,
+	number: number,
+	logins: string[]
+): Promise<string[]> {
+	const asked: string[] = [];
+	for (const login of logins) {
+		if (!isFlagSafe(login)) continue;
+		try {
+			await gh(cwd, ['pr', 'edit', String(number), '-R', repo, '--add-reviewer', login]);
+			asked.push(login);
+		} catch {
+			/* already requested, the author, or no longer has access */
+		}
+	}
+	return asked;
+}
+
 // Cached briefly, so a `gh auth` switch to another account is picked up within
 // minutes rather than never.
 const LOGIN_TTL_MS = 5 * 60_000;
