@@ -897,6 +897,9 @@ export interface PrReviewView {
 	reviews: { author: string; state: string; commit?: string }[];
 	headRefOid: string;
 	unresolvedThreads: number;
+	// Reviewers asked but not yet answered. Undercounts bot reviewers, which
+	// gh omits from reviewRequests (see workflow-exec.ts).
+	pendingReviewers: number;
 }
 
 function latestPerAuthor(reviews: PrReviewView['reviews']): string[] {
@@ -905,13 +908,31 @@ function latestPerAuthor(reviews: PrReviewView['reviews']): string[] {
 	return [...latest.values()];
 }
 
-// Whether the reviewer loop is over: the PR merged or closed, or approved with
-// no review thread left open.
+// Whether the reviewer loop is over: the PR merged or closed, or settled with
+// nothing left to answer.
+//
+// "Settled" is stricter than it was, because it used to call a PR done on one
+// approval and then a blocking review would arrive. Three things had to change:
+// an approval no longer settles a PR while a reviewer still owes one, a
+// CHANGES_REQUESTED is never overridden by the PR-wide decision, and the
+// decision is preferred over counting approvals because it is the only signal
+// that knows how many are required.
 export function feedbackTerminal(view: PrReviewView): boolean {
 	if (view.state === 'MERGED' || view.state === 'CLOSED') return true;
+	if (view.unresolvedThreads > 0) return false;
+	// Someone was asked and has not answered. Whatever has come in so far is a
+	// partial picture, which is exactly how a late blocker gets missed.
+	if (view.pendingReviewers > 0) return false;
 	const verdicts = latestPerAuthor(view.reviews);
-	const approved = view.reviewDecision === 'APPROVED' || (verdicts.includes('APPROVED') && !verdicts.includes('CHANGES_REQUESTED'));
-	return approved && view.unresolvedThreads === 0;
+	// A blocking verdict ends it whatever the PR-wide decision says. The two
+	// disagree while GitHub recomputes, and this is the direction where being
+	// wrong costs something.
+	if (verdicts.includes('CHANGES_REQUESTED')) return false;
+	// With review requirements configured, the decision knows whether enough of
+	// the right people have approved; counting approvals does not. Fall back to
+	// the tally only when there is no decision to read.
+	if (view.reviewDecision) return view.reviewDecision === 'APPROVED';
+	return verdicts.includes('APPROVED');
 }
 
 // The reviewer activity a feedback round answers. A new review or a change in

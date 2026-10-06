@@ -410,6 +410,7 @@ describe('gates from outside data', () => {
 		reviews: [],
 		headRefOid: 'h2',
 		unresolvedThreads: 0,
+		pendingReviewers: 0,
 		...patch
 	});
 
@@ -419,6 +420,34 @@ describe('gates from outside data', () => {
 		expect(feedbackTerminal(view({ reviews: [{ author: 'bot', state: 'APPROVED' }] }))).toBe(true);
 		expect(feedbackTerminal(view({ reviews: [{ author: 'bot', state: 'APPROVED' }, { author: 'ann', state: 'CHANGES_REQUESTED' }] }))).toBe(false);
 		expect(feedbackTerminal(view({ state: 'MERGED' }))).toBe(true);
+	});
+
+	// The loop used to end on the first approval, so a blocking review that
+	// landed after it was never answered.
+	it('waits for a reviewer who was asked and has not answered', () => {
+		const oneIn = { reviews: [{ author: 'bot', state: 'APPROVED' }] };
+		expect(feedbackTerminal(view({ ...oneIn, pendingReviewers: 1 }))).toBe(false);
+		expect(feedbackTerminal(view({ ...oneIn, pendingReviewers: 0 }))).toBe(true);
+		// Even a PR-wide APPROVED does not settle it while someone still owes one.
+		expect(feedbackTerminal(view({ reviewDecision: 'APPROVED', pendingReviewers: 1 }))).toBe(false);
+	});
+
+	it('never lets the PR-wide decision override a blocking review', () => {
+		const blocked = { reviews: [{ author: 'ann', state: 'CHANGES_REQUESTED' }] };
+		expect(feedbackTerminal(view({ ...blocked, reviewDecision: 'APPROVED' }))).toBe(false);
+		expect(feedbackTerminal(view({ ...blocked, reviewDecision: null }))).toBe(false);
+	});
+
+	it('trusts the decision over counting approvals when the repo has requirements', () => {
+		const approvals = { reviews: [{ author: 'bot', state: 'APPROVED' }] };
+		// One approval, but GitHub still wants more: not settled.
+		expect(feedbackTerminal(view({ ...approvals, reviewDecision: 'REVIEW_REQUIRED' }))).toBe(false);
+		// No requirements configured, so the tally is all there is.
+		expect(feedbackTerminal(view({ ...approvals, reviewDecision: null }))).toBe(true);
+	});
+
+	it('is not settled by comments alone', () => {
+		expect(feedbackTerminal(view({ reviews: [{ author: 'ann', state: 'COMMENTED' }] }))).toBe(false);
 	});
 
 	it('starts a feedback round only on new reviewer activity', () => {

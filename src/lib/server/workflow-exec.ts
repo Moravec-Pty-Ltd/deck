@@ -193,13 +193,26 @@ interface RawReview {
 
 // The review state the feedback and pr-review gates read.
 export async function prReviewView(cwd: string, repo: string, number: number): Promise<PrReviewView> {
-	const out = await gh(cwd, ['pr', 'view', String(number), '-R', repo, '--json', 'state,reviewDecision,reviews,headRefOid']);
-	const raw = JSON.parse(out) as { state: string; reviewDecision: string | null; reviews: RawReview[]; headRefOid: string };
+	const out = await gh(cwd, [
+		'pr', 'view', String(number), '-R', repo,
+		'--json', 'state,reviewDecision,reviews,headRefOid,reviewRequests'
+	]);
+	const raw = JSON.parse(out) as {
+		state: string;
+		reviewDecision: string | null;
+		reviews: RawReview[];
+		headRefOid: string;
+		reviewRequests?: unknown[];
+	};
 	return {
 		state: raw.state,
 		reviewDecision: raw.reviewDecision || null,
 		headRefOid: raw.headRefOid,
 		reviews: raw.reviews.map((r) => ({ author: r.author?.login ?? '', state: r.state, commit: r.commit?.oid })),
+		// Reviewers who were asked and have not answered. Undercounts bots: an
+		// app reviewer like Copilot is missing from `reviewRequests` here, so a
+		// pending bot alone will not hold the loop open.
+		pendingReviewers: Array.isArray(raw.reviewRequests) ? raw.reviewRequests.length : 0,
 		unresolvedThreads: await unresolvedThreads(cwd, repo, number)
 	};
 }
