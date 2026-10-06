@@ -37,6 +37,27 @@ pnpm build && PORT=4818 node build/index.js   # production build
 Run `pnpm check` and `pnpm test` before claiming a change is done. A husky
 pre-commit hook runs `fallow audit` and blocks only newly introduced findings.
 
+### Running a second server beside a live one
+
+Test against a throwaway data directory, never the real `~/.deck`:
+
+```sh
+DECK_DATA=/tmp/deck-fixture DECK_TOKEN=test DECK_NO_TAILSCALE=1 \
+  pnpm exec vite dev --port 4819
+```
+
+Each part earns its place. `DECK_DATA` keeps the fixture off the real sessions
+and projects; without it the instance lock refuses to start, because two servers
+sharing `~/.deck` race each other's writes. `DECK_NO_TAILSCALE=1` keeps the
+fixture off the tailnet, which it has no business being on.
+
+Seed the fixture by writing `projects.json` and `sessions.json` into that
+directory before starting. It still lists the machine's live tmux sessions,
+which are read from tmux rather than from `~/.deck`.
+
+Don't `git pull` the live checkout to try a change: vite reloads the modules
+under the running server. Test in the worktree on its own port instead.
+
 ## Conventions
 
 - Tabs. No em dashes. Comments only where the *why* isn't obvious.

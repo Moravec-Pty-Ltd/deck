@@ -9,6 +9,7 @@
 	},
 	"scripts": {
 		"dev": "vite dev",
+		"dev:scratch": "scripts/dev-scratch.sh",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo '' ; husky || true",
