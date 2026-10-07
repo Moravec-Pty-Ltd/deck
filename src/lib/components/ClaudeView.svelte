@@ -36,7 +36,11 @@
 		flattenTranscript,
 		groupRuns,
 		isAskTool,
+		launchersOf,
+		nestSubagents,
+		parentOf,
 		ungrouped,
+		type Chunk,
 		type Row
 	} from '$lib/transcript-groups';
 
@@ -121,11 +125,13 @@
 	const visibleEvents = $derived(events.slice(start));
 
 	// What the window actually paints, flattened across events so a run of tool
-	// calls can be grouped even though each call arrives as its own event.
-	const rows = $derived(flattenTranscript(visibleEvents, baseIndex + start));
-	const chunks = $derived(condensed ? groupRuns(rows) : ungrouped(rows));
-	// Runs the reader has opened, by run key. Per run, and only for as long as the
-	// session view is open.
+	// calls can be grouped even though each call arrives as its own event. A
+	// subagent's rows sit inside the card of the call that launched it.
+	const thread = $derived(nestSubagents(flattenTranscript(visibleEvents, baseIndex + start)));
+	const layout = (rows: Row[]): Chunk[] => (condensed ? groupRuns(rows) : ungrouped(rows));
+	const chunks = $derived(layout(thread.rows));
+	// Runs and subagent cards the reader has opened, by run key or the launching
+	// call's id. Only for as long as the session view is open.
 	const openRuns = new SvelteSet<string>();
 
 	// Size the Chat window by what's actually on screen, not by raw event count:
@@ -220,7 +226,7 @@
 	// What a live event means for the reader: each assistant text block (or the
 	// question it asks), the turn's end, and an answer that closes a question.
 	function voiceHear(ev: AnyEvent) {
-		if (!voice.enabled) return;
+		if (!voice.enabled || parentOf(ev)) return;
 		if (ev.type === 'assistant') {
 			for (const block of ev.message?.content ?? []) {
 				if (block.type === 'text' && block.text?.trim()) voice.onAssistantText(block.text);
@@ -309,7 +315,7 @@
 					handleStream(ev);
 					return;
 				}
-				if (ev.type === 'assistant') liveText = '';
+				if (ev.type === 'assistant' && !parentOf(ev)) liveText = '';
 				if (ev.type === 'result') cost = foldResult(cost, ev);
 				context = foldContext(context, ev);
 				events.push(ev); // in-place: a full re-spread is O(n) on every event
@@ -355,6 +361,7 @@
 	});
 
 	function handleStream(ev: AnyEvent) {
+		if (parentOf(ev)) return; // the live bubble is the main thread's
 		const t = ev.event?.type;
 		if (t === 'message_start') {
 			liveText = '';
@@ -520,6 +527,8 @@
 		}
 		if (index < baseIndex || index >= baseIndex + events.length) return;
 		limit = Math.max(limit, events.length - (index - baseIndex));
+		await tick();
+		for (const id of launchersOf(thread, events[index - baseIndex])) openRuns.add(id);
 		await tick();
 		const el =
 			scroller?.querySelector<HTMLElement>(`[data-k="${index}"]`) ??
@@ -779,7 +788,16 @@
 				onanswer={(text, answers) => answerQuestion(block.id, text, answers)}
 			/>
 		{:else}
-			<ToolCall {block} result={resultsById.get(block.id)} />
+			{@const steps = thread.nested.get(block.id)}
+			<ToolCall
+				{block}
+				result={resultsById.get(block.id)}
+				steps={steps?.length ?? 0}
+				open={openRuns.has(block.id)}
+				ontoggle={() => toggleRun(block.id)}
+			>
+				{#if steps}{@render chunkList(layout(steps))}{/if}
+			</ToolCall>
 		{/if}
 	{:else if event.type === 'deck.user'}
 		<MessageBubble side="end" text={event.text ?? ''} bubbleClass="bg-base-300 text-base-content" sessionId={session.id}>
@@ -811,6 +829,29 @@
 	{:else if event.type === 'result'}
 		<div class="px-2 text-center text-xs opacity-50">{fmtCost(event)}</div>
 	{/if}
+{/snippet}
+
+<!-- The thread and each subagent's card lay their rows out the same way. -->
+{#snippet chunkList(list: Chunk[])}
+	{#each list as chunk (chunk.key)}
+		{#if chunk.kind === 'run'}
+			<div data-k={openRuns.has(chunk.key) ? undefined : chunk.key} class="space-y-3">
+				<ToolRun
+					count={chunk.count}
+					tools={chunk.tools}
+					open={openRuns.has(chunk.key)}
+					ontoggle={() => toggleRun(chunk.key)}
+				/>
+				{#if openRuns.has(chunk.key)}
+					{#each chunk.rows as row (row.key)}
+						<div data-k={row.key}>{@render transcriptRow(row)}</div>
+					{/each}
+				{/if}
+			</div>
+		{:else}
+			<div data-k={chunk.key}>{@render transcriptRow(chunk.row)}</div>
+		{/if}
+	{/each}
 {/snippet}
 
 <div
@@ -846,25 +887,7 @@
 				<span class="loading loading-spinner loading-xs opacity-60"></span>
 			</div>
 		{/if}
-		{#each chunks as chunk (chunk.key)}
-			{#if chunk.kind === 'run'}
-				<div data-k={openRuns.has(chunk.key) ? undefined : chunk.key} class="space-y-3">
-					<ToolRun
-						count={chunk.count}
-						tools={chunk.tools}
-						open={openRuns.has(chunk.key)}
-						ontoggle={() => toggleRun(chunk.key)}
-					/>
-					{#if openRuns.has(chunk.key)}
-						{#each chunk.rows as row (row.key)}
-							<div data-k={row.key}>{@render transcriptRow(row)}</div>
-						{/each}
-					{/if}
-				</div>
-			{:else}
-				<div data-k={chunk.key}>{@render transcriptRow(chunk.row)}</div>
-			{/if}
-		{/each}
+		{@render chunkList(chunks)}
 
 		{#if loaded && liveText.trim()}
 			<MessageBubble

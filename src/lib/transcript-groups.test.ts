@@ -3,6 +3,8 @@ import {
 	chunkKeyFor,
 	flattenTranscript,
 	groupRuns,
+	launchersOf,
+	nestSubagents,
 	ungrouped,
 	type AnyEvent,
 	type Chunk
@@ -19,6 +21,8 @@ const toolResult = (id: string): AnyEvent => ({
 	type: 'user',
 	message: { content: [{ type: 'tool_result', tool_use_id: id }] }
 });
+// What a subagent produces: the same events, tagged with its launching call.
+const within = (parent: string, event: AnyEvent): AnyEvent => ({ ...event, parent_tool_use_id: parent });
 
 function group(events: AnyEvent[], first = 0): Chunk[] {
 	return groupRuns(flattenTranscript(events, first));
@@ -129,5 +133,84 @@ describe('chunkKeyFor', () => {
 
 	it('returns null for a row outside the window', () => {
 		expect(chunkKeyFor(group(events), '99')).toBeNull();
+	});
+});
+
+describe('nestSubagents', () => {
+	const keysOf = (rows: { key: string }[] | undefined) => (rows ?? []).map((r) => r.key);
+
+	it('files each parallel subagent under its own call, wherever its events land', () => {
+		const thread = nestSubagents(
+			flattenTranscript(
+				[
+					assistant(tool('Agent', 'x'), tool('Agent', 'y')),
+					toolResult('x'),
+					toolResult('y'),
+					within('x', assistant(tool('Grep', 'x1'))),
+					within('y', assistant(text('looking'))),
+					within('x', toolResult('x1')),
+					assistant(text('both started')),
+					within('y', assistant(tool('Read', 'y1'))),
+					within('x', assistant(text('found it'))),
+					{ type: 'result', total_cost_usd: 1 }
+				],
+				0
+			)
+		);
+		expect(keysOf(thread.rows)).toEqual(['0:0', '0:1', '6:0', '9']);
+		expect(keysOf(thread.nested.get('x'))).toEqual(['3:0', '8:0']);
+		expect(keysOf(thread.nested.get('y'))).toEqual(['4:0', '7:0']);
+	});
+
+	it('keeps a run of launches whole in Chat, with no subagent prose between them', () => {
+		const events = [
+			assistant(tool('Agent', 'x')),
+			within('x', assistant(text('working'))),
+			assistant(tool('Agent', 'y')),
+			within('y', assistant(text('working too'))),
+			assistant(text('waiting on both'))
+		];
+		expect(shape(groupRuns(nestSubagents(flattenTranscript(events, 0)).rows))).toEqual(['run:2', 'text']);
+	});
+
+	it('leaves a row in the thread when its launcher is outside the window', () => {
+		const thread = nestSubagents(flattenTranscript([within('gone', assistant(text('late'))), assistant(text('main'))], 0));
+		expect(keysOf(thread.rows)).toEqual(['0:0', '1:0']);
+		expect(thread.nested.size).toBe(0);
+	});
+
+	it("never hides a subagent's question inside the card", () => {
+		const thread = nestSubagents(
+			flattenTranscript([assistant(tool('Agent', 'x')), within('x', assistant(tool('mcp__deck__ask', 'q')))], 0)
+		);
+		expect(thread.rows.map((r) => r.block?.name)).toEqual(['Agent', 'mcp__deck__ask']);
+	});
+
+	it('ignores progress heartbeats, which paint nothing', () => {
+		const thread = nestSubagents(
+			flattenTranscript(
+				[
+					assistant(tool('Bash', 'b')),
+					{ type: 'tool_progress', tool_name: 'Bash', tool_use_id: 'p', parent_tool_use_id: 'b', elapsed_time_seconds: 30 }
+				],
+				0
+			)
+		);
+		expect(keysOf(thread.rows)).toEqual(['0:0']);
+		expect(thread.nested.size).toBe(0);
+	});
+
+	it("nests a subagent's own subagent, and finds the cards a deep link must open", () => {
+		const events = [
+			assistant(tool('Agent', 'x')),
+			within('x', assistant(tool('Agent', 'inner'))),
+			within('inner', assistant(text('deep')))
+		];
+		const thread = nestSubagents(flattenTranscript(events, 0));
+		expect(keysOf(thread.rows)).toEqual(['0:0']);
+		expect(keysOf(thread.nested.get('x'))).toEqual(['1:0']);
+		expect(keysOf(thread.nested.get('inner'))).toEqual(['2:0']);
+		expect(launchersOf(thread, events[2])).toEqual(['inner', 'x']);
+		expect(launchersOf(thread, events[0])).toEqual([]);
 	});
 });
