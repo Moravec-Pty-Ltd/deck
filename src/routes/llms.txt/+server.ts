@@ -562,6 +562,14 @@ neither, on a directory that does not exist, on a session that does not exist or
 is a terminal, and on an agent pick that breaks the per-kind contracts
 (\`effort\` is claude-only, \`provider\` pi-only).
 
+### GET /api/agent/schedules/preview?cron=<expr>&count=3
+
+What an expression would do, without saving anything:
+\`{ "cron", "problem": null, "next": [<epoch ms>, ...] }\`. \`problem\` is the
+one-line reason it could not be read, and \`next\` is then empty — as it also is
+for an expression that reads fine but can never happen (30 February), which is
+why the two are separate fields. \`count\` is clamped to 1..10.
+
 ### PATCH /api/agent/schedules/{id}
 
 Any subset of the POST fields; only what the body mentions is applied, so an
