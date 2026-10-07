@@ -215,6 +215,23 @@ function modelCommands(ctx: CommandContext, s: DeckSession): Command[] {
 	];
 }
 
+// Extend this session into a schedule (issue #235): opens the schedules form
+// already pointed at it, so a prompt that should run again every morning is two
+// keystrokes from the session it should run in. Agent sessions only — a terminal
+// has nothing to send a prompt to.
+function scheduleCommands(ctx: CommandContext, s: DeckSession): Command[] {
+	if (!isAgentKind(s.kind)) return [];
+	return [
+		{
+			id: 'schedule-session',
+			title: 'Repeat a prompt on a schedule',
+			keywords: ['schedule', 'cron', 'repeat', 'daily', 'every', 'recurring', 'timer'],
+			hint: 'this session',
+			run: () => ctx.goto(`/schedules?session=${encodeURIComponent(s.id)}`)
+		}
+	];
+}
+
 // Restart a claude session's process (see server/session-restart.ts). Idle-only
 // and claude-only, absent otherwise like the model switch.
 function restartCommands(ctx: CommandContext, s: DeckSession): Command[] {
@@ -244,6 +261,12 @@ function globalCommands(ctx: CommandContext): Command[] {
 			title: 'Switch theme',
 			keywords: ['theme', 'dark', 'light', 'eink', 'appearance'],
 			run: () => ctx.cycleTheme()
+		},
+		{
+			id: 'schedules',
+			title: 'Schedules',
+			keywords: ['schedule', 'cron', 'repeat', 'recurring', 'timer', 'every morning'],
+			run: () => ctx.goto('/schedules')
 		},
 		{
 			id: 'search-sessions',
@@ -288,6 +311,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
 		...(s ? serverCommands(ctx) : []),
 		...(s ? modelCommands(ctx, s) : []),
 		...(s ? restartCommands(ctx, s) : []),
+		...(s ? scheduleCommands(ctx, s) : []),
 		...globalCommands(ctx),
 		...jumpCommands(ctx)
 	];

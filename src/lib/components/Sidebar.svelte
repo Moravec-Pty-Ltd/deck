@@ -22,7 +22,7 @@
 		type RecentError,
 		type ReviewDecision
 	} from '$lib/morabot-core';
-	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Workflow } from '@lucide/svelte';
+	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Workflow, Clock } from '@lucide/svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
@@ -383,6 +383,9 @@
 	<span class="text-sm font-semibold">Sessions</span>
 	<a href="/runs" class="btn btn-ghost btn-xs ml-auto" aria-label="Workflow runs" title="Runs">
 		<Workflow size={14} class="opacity-70" />
+	</a>
+	<a href="/schedules" class="btn btn-ghost btn-xs" aria-label="Scheduled prompts" title="Schedules">
+		<Clock size={14} class="opacity-70" />
 	</a>
 	<button
 		class="btn btn-ghost btn-xs"

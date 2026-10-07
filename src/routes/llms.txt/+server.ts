@@ -512,6 +512,73 @@ a note when a run blocks, a phase errors, or a run finishes; it acts through
 the run actions above with \`"by": "overseer"\`. \`DELETE\` stops waking it.
 Runs never depend on it.
 
+## Schedules
+
+A prompt that runs on a clock, for the recurring jobs that want an agent rather
+than a shell script. A schedule carries a five-field cron expression, read in
+the deck machine's local time, and exactly one target:
+
+- \`cwd\`: a fresh session per run, in that directory, with its first turn the
+  prompt. Agent/model/effort resolve like an automation lane (the schedule's
+  own pick, else the project's remembered one, else the CLI default). No
+  worktree is created.
+- \`sessionId\`: the prompt goes to that session every run, so what it worked
+  out last time is still loaded. Agent sessions only.
+
+Rules worth knowing before relying on one:
+
+- The due time is **stored**, not matched against the clock. A window that went
+  by while deck was down fires once, not once per minute it was away.
+- A window missed by more than an hour is recorded as skipped rather than caught
+  up: after an outage you want the next run, not yesterday's.
+- A run is skipped while the previous one is still mid-turn, so a job slower
+  than its own interval cannot pile up sessions.
+- Starting a run is silent (the same bargain automation makes). Only a schedule
+  deck has had to switch off pushes, as \`needs-you\`.
+
+### GET /api/agent/schedules
+
+Every schedule, newest first:
+
+\`\`\`json
+{ "id": "sch_...", "title": "Morning sweep", "cron": "0 9 * * mon-fri",
+	"prompt": "Summarise what changed overnight.", "enabled": true,
+	"cwd": "/path/to/project", "projectName": "example",
+	"agent": { "kind": "claude", "model": "opus" },
+	"createdAt": 0, "nextRunAt": 0, "lastRunAt": 0,
+	"lastOutcome": "ran", "lastNote": null, "lastSessionId": "c_...", "runs": 12 }
+\`\`\`
+
+\`lastOutcome\` is \`ran\`, \`skipped\` or \`failed\`, and \`lastNote\` says why
+for the latter two. A session-targeted schedule also carries \`sessionTitle\`;
+its absence means that session is gone, which is why the schedule stopped.
+
+### POST /api/agent/schedules
+
+\`{ "cron", "prompt", "cwd" | "sessionId", "title"?, "enabled"?, "agent"? }\`
+→ 201 with the digest. \`title\` defaults to the prompt's first line. 400 on an
+unreadable expression (the message names the field), on naming both targets or
+neither, on a directory that does not exist, on a session that does not exist or
+is a terminal, and on an agent pick that breaks the per-kind contracts
+(\`effort\` is claude-only, \`provider\` pi-only).
+
+### PATCH /api/agent/schedules/{id}
+
+Any subset of the POST fields; only what the body mentions is applied, so an
+old client cannot wipe a field it has never heard of. Moving the target means
+sending both halves. Changing the expression, or switching a schedule back on,
+re-books the next run from now.
+
+### POST /api/agent/schedules/{id}/run
+
+Run it now, whatever the due time says and whether or not it is enabled; the
+next due time still moves to the next real window, so this does not shift the
+schedule. 409 while the previous run is still going.
+
+### DELETE /api/agent/schedules/{id}
+
+Forget the schedule. The sessions it has already started are kept.
+
 ## Push notifications
 
 Native iOS/watchOS clients register a device token to receive the same nudges

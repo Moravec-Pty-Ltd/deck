@@ -5,6 +5,7 @@ import { listSessions } from './sessions';
 import { pollServers } from './devservers';
 import { retireReviewSession, syncCapturedPrs } from './pr';
 import { pollAutomation } from './automation';
+import { pollSchedules } from './scheduler';
 import { pollRuns } from './workflow-runner';
 import { notify } from './push';
 import { publishAgentEvent } from './agent-feed';
@@ -110,6 +111,17 @@ function start() {
 		void pollRuns().catch(() => {});
 	}, PR_SYNC_INTERVAL_MS);
 	prTimer.unref();
+
+	// Schedules get their own timer (issue #235) rather than riding either of the
+	// two above. A due schedule is a numeric comparison, so it must not queue
+	// behind the 75s gh fan-out; and firing one can spawn a session, so it must
+	// not hold up the health poll either. 30s against cron's minute resolution
+	// means a 9am job runs by 9:00:30, which is near enough for work measured in
+	// minutes. Single-flight internally, like the others.
+	const scheduleTimer = setInterval(() => {
+		void pollSchedules().catch(() => {});
+	}, 30_000);
+	scheduleTimer.unref();
 }
 
 // Before start(), and before anything else schedules work against the data

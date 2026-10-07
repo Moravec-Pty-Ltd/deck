@@ -227,8 +227,10 @@ function blankToUndefined(v: string | undefined): string | undefined {
 }
 
 // One lane's agent pick as the settings form sends it. Every field is optional,
-// and a blank string means unset rather than "the empty model".
-const agentSchema = z
+// and a blank string means unset rather than "the empty model". Exported because
+// a schedule picks its agent the same way (issue #235), and the two per-kind
+// contracts below are worth having in one place rather than two.
+export const agentSchema = z
 	.object({
 		kind: z.enum(AGENT_KINDS).optional(),
 		model: z.string().trim().optional().transform(blankToUndefined),

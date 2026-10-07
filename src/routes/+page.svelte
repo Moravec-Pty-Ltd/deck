@@ -15,7 +15,7 @@
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
 	import PairApprovals, { type PendingPairing } from '$lib/components/PairApprovals.svelte';
-	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, FolderCog, Workflow, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff } from '@lucide/svelte';
+	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, FolderCog, Workflow, Clock, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -215,6 +215,9 @@
 	<div class="flex items-center gap-2">
 		<a href="/runs" class="btn btn-ghost btn-sm" aria-label="Workflow runs" title="Runs">
 			<Workflow size={16} />
+		</a>
+		<a href="/schedules" class="btn btn-ghost btn-sm" aria-label="Scheduled prompts" title="Schedules">
+			<Clock size={16} />
 		</a>
 		<a href="/projects" class="btn btn-ghost btn-sm" aria-label="Manage projects" title="Projects">
 			<FolderCog size={16} />
