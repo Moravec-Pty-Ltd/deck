@@ -59,11 +59,14 @@ export function resultWindow(event: unknown): number {
 
 // Fold one transcript event into the running figure. An assistant message
 // replaces `used` (it is a level, not a sum); a result contributes the window
-// only. Anything else passes through, so a caller can fold a raw stream.
+// only. Anything else passes through, so a caller can fold a raw stream. A
+// subagent's messages (tagged with the call that launched it) report the
+// subagent's own context, not this session's, so they pass through too.
 export function foldContext(state: ContextUsage, event: unknown): ContextUsage {
-	const e = event as { type?: unknown; message?: { usage?: unknown } } | null;
+	const e = event as { type?: unknown; parent_tool_use_id?: unknown; message?: { usage?: unknown } } | null;
 	if (!e || typeof e !== 'object') return state;
 	if (e.type === 'assistant') {
+		if (e.parent_tool_use_id) return state;
 		const used = usedTokens(e.message?.usage);
 		return used > 0 ? { ...state, used } : state;
 	}

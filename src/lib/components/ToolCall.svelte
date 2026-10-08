@@ -5,10 +5,28 @@
 	import { shortPath } from '$lib/time';
 	import { toolOutput } from '$lib/toolOutput.svelte';
 	import { toolIcon } from '$lib/tool-icons';
-	import { Circle, CircleDot, CircleCheck } from '@lucide/svelte';
+	import RollingCount from './RollingCount.svelte';
+	import { Circle, CircleDot, CircleCheck, ChevronRight } from '@lucide/svelte';
+	import type { Snippet } from 'svelte';
 
 	type AnyBlock = Record<string, any>;
-	let { block, result }: { block: AnyBlock; result?: AnyBlock } = $props();
+	// `steps` counts what a subagent launched by this call has done so far;
+	// `children` renders those steps, only while the card is open.
+	let {
+		block,
+		result,
+		steps = 0,
+		open = false,
+		ontoggle,
+		children
+	}: {
+		block: AnyBlock;
+		result?: AnyBlock;
+		steps?: number;
+		open?: boolean;
+		ontoggle?: () => void;
+		children?: Snippet;
+	} = $props();
 
 	const name = $derived(block.name as string);
 	const input = $derived((block.input ?? {}) as AnyBlock);
@@ -16,6 +34,7 @@
 	const Icon = $derived(toolIcon(name));
 
 	const fileTools = new Set(['Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
+	const subagentTools = new Set(['Agent', 'Task']);
 
 	const headerArg = $derived.by(() => {
 		if (fileTools.has(name) && input.file_path) {
@@ -29,7 +48,8 @@
 		if (name === 'Grep' || name === 'Glob') return String(input.pattern ?? '');
 		if (name === 'WebFetch') return String(input.url ?? '');
 		if (name === 'WebSearch') return String(input.query ?? '');
-		if (name === 'Task') return String(input.subagent_type ?? input.description ?? '');
+		// Description first: parallel subagents usually share a type.
+		if (subagentTools.has(name)) return String(input.description ?? input.subagent_type ?? '');
 		if (name === 'TodoWrite') return `${(input.todos ?? []).length} items`;
 		return String(input.description ?? input.command ?? input.file_path ?? '').split('\n')[0];
 	});
@@ -135,6 +155,21 @@
 			</ul>
 		{/if}
 
+		{#if steps > 0 && children}
+			<button
+				type="button"
+				class="flex cursor-pointer select-none items-center gap-1 text-xs opacity-50 hover:opacity-80"
+				onclick={ontoggle}
+				aria-expanded={open}
+			>
+				<ChevronRight size={12} class="shrink-0 transition-transform {open ? 'rotate-90' : ''}" />
+				<RollingCount value={steps} /> steps
+			</button>
+			{#if open}
+				<div class="space-y-3 border-l border-base-300 pl-2">{@render children()}</div>
+			{/if}
+		{/if}
+
 		{#if !hideResult && name !== 'Bash'}
 			{#if isErr}
 				<div class="terminal-output max-h-72 overflow-y-auto rounded-box border border-error/40 bg-error/5 px-2 py-1.5 text-error"><AnsiText text={shownResult} /></div>
@@ -146,7 +181,7 @@
 			{/if}
 		{/if}
 
-		{#if !fileTools.has(name) && name !== 'Bash' && name !== 'TodoWrite' && name !== 'Grep' && name !== 'Glob' && name !== 'WebFetch' && name !== 'WebSearch' && name !== 'Task'}
+		{#if !fileTools.has(name) && name !== 'Bash' && name !== 'TodoWrite' && name !== 'Grep' && name !== 'Glob' && name !== 'WebFetch' && name !== 'WebSearch' && !subagentTools.has(name)}
 			<details>
 				<summary class="cursor-pointer select-none text-xs opacity-50">input</summary>
 				<pre class="terminal-output mt-1 max-h-60 overflow-y-auto opacity-70">{JSON.stringify(input, null, 2)}</pre>

@@ -79,6 +79,12 @@ describe('foldContext', () => {
 		expect(state).toEqual({ used: 13_070, window: 1_000_000 });
 	});
 
+	it("ignores a subagent's messages, which measure its context, not the session's", () => {
+		let state = foldContext(emptyContext(), assistant({ cache_read_input_tokens: 300_000 }));
+		state = foldContext(state, { ...assistant({ cache_read_input_tokens: 20_000 }), parent_tool_use_id: 'agent-1' });
+		expect(state.used).toBe(300_000);
+	});
+
 	it('passes through events that carry no figure, and survives junk', () => {
 		const state = { used: 10, window: 100 };
 		expect(foldContext(state, { type: 'user' })).toBe(state);
