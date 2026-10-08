@@ -4,6 +4,7 @@ import { invalidateIssues } from './issues/cache';
 import { invalidatePrs } from './prs';
 import { DEMO, demoProjects } from './demo';
 import { deleteSecret } from './secrets';
+import { orphanedKeys } from './credentials-core';
 
 // Issue-source API keys never sit in projects.json; they live behind the secret
 // store (OS keyring, or an opt-in 0600 file - see secrets.ts). Re-exported here
@@ -141,13 +142,17 @@ export function updateProject(path: string, patch: Partial<Project>): Project | 
 
 export function removeProject(path: string) {
 	const project = listProjects().find((p) => p.path === path);
-	// Persist the removal first; only then drop the sources' secrets, so a failed
-	// write can't strand a still-listed project with its keys already gone.
+	// Worked out before the write, while the project is still listed, but only
+	// the keys no surviving source points at: since issue #237 a credential can
+	// be shared, and dropping one would take another project's access with it.
+	const forget = orphanedKeys(listProjects(), { projectPath: path, sources: project?.sources ?? [] });
+	// Persist the removal first; only then drop the secrets, so a failed write
+	// can't strand a still-listed project with its keys already gone.
 	writeJson(
 		PROJECTS_FILE,
 		listProjects().filter((p) => p.path !== path)
 	);
-	for (const s of project?.sources ?? []) deleteSecret(s.id);
+	for (const key of forget) deleteSecret(key);
 	invalidateProjectCaches(path);
 }
 
@@ -210,9 +215,12 @@ export function removeSource(projectPath: string, sourceId: string): Project | u
 	const projects = listProjects();
 	const project = projects.find((p) => p.path === projectPath);
 	if (!project) return undefined;
+	// Asked before the source is dropped, so the check can see what it held. A
+	// key another source still names stays put (issue #237).
+	const forget = orphanedKeys(projects, { projectPath, sources: [{ id: sourceId }] });
 	project.sources = (project.sources ?? []).filter((s) => s.id !== sourceId);
 	writeJson(PROJECTS_FILE, projects);
-	deleteSecret(sourceId);
+	for (const key of forget) deleteSecret(key);
 	invalidateProjectCaches(projectPath);
 	return project;
 }

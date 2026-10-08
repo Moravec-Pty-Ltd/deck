@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { thrownError } from './test-env';
 import type { DeckSession, Project } from '$lib/types';
 import type { Schedule } from '$lib/schedules';
 
@@ -56,17 +57,6 @@ function stored(over: Partial<Schedule> = {}): Schedule {
 	};
 }
 
-// The shape SvelteKit's error() throws, so a test can read the status it chose.
-function thrown(run: () => unknown): { status: number; message: string } {
-	try {
-		run();
-	} catch (e) {
-		const err = e as { status: number; body?: { message?: string } };
-		return { status: err.status, message: err.body?.message ?? '' };
-	}
-	throw new Error('expected a rejection');
-}
-
 beforeEach(() => {
 	fake.sessions = [session()];
 	fake.projects = [PROJECT];
@@ -83,7 +73,7 @@ describe('scheduleFromRequest', () => {
 
 	// A path typo should fail in the form, not silently at 9am tomorrow.
 	it('refuses a directory that is not there', () => {
-		expect(thrown(() => scheduleFromRequest({ cron: '0 9 * * *', prompt: 'go', cwd: '/nope' }))).toEqual({
+		expect(thrownError(() => scheduleFromRequest({ cron: '0 9 * * *', prompt: 'go', cwd: '/nope' }))).toEqual({
 			status: 400,
 			message: 'that directory does not exist'
 		});
@@ -98,19 +88,19 @@ describe('scheduleFromRequest', () => {
 	// Checked here rather than at the first window, so the schedule never gets
 	// as far as switching itself off over a typo.
 	it('refuses a session that does not exist, or cannot take a prompt', () => {
-		expect(thrown(() => scheduleFromRequest({ cron: '0 9 * * *', prompt: 'go', sessionId: 'c_nope' }))).toEqual({
+		expect(thrownError(() => scheduleFromRequest({ cron: '0 9 * * *', prompt: 'go', sessionId: 'c_nope' }))).toEqual({
 			status: 400,
 			message: 'that session does not exist'
 		});
 		fake.sessions = [session({ id: 's_term', kind: 'shell' })];
-		expect(thrown(() => scheduleFromRequest({ cron: '0 9 * * *', prompt: 'go', sessionId: 's_term' }))).toEqual({
+		expect(thrownError(() => scheduleFromRequest({ cron: '0 9 * * *', prompt: 'go', sessionId: 's_term' }))).toEqual({
 			status: 400,
 			message: 'a terminal session cannot take a prompt'
 		});
 	});
 
 	it('passes a core problem through as a 400 with its own message', () => {
-		expect(thrown(() => scheduleFromRequest({ cron: 'nope', prompt: 'go', cwd: PROJECT.path }))).toMatchObject({
+		expect(thrownError(() => scheduleFromRequest({ cron: 'nope', prompt: 'go', cwd: PROJECT.path }))).toMatchObject({
 			status: 400,
 			message: expect.stringMatching(/expected 5 fields/)
 		});
@@ -153,7 +143,7 @@ describe('applyPatch', () => {
 	});
 
 	it('validates the target it is moved to', () => {
-		expect(thrown(() => applyPatch(stored(), { sessionId: 'c_nope' }))).toMatchObject({ status: 400 });
+		expect(thrownError(() => applyPatch(stored(), { sessionId: 'c_nope' }))).toMatchObject({ status: 400 });
 	});
 });
 

@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { objectBody } from '$lib/server/http';
+import { resolveApiKey } from '$lib/server/credentials';
 import { linearMe, linearTeams, linearStates } from '$lib/server/issues/linear';
 import {
 	clickupMe,
@@ -44,13 +45,12 @@ async function run(handler: Handler, apiKey: string, body: Body) {
 }
 
 // POST /api/issues/meta — config-time lookups while adding a Linear/ClickUp
-// source. Takes an as-yet-unsaved apiKey and proxies the provider so the
-// add-source UI can cascade (me → teams → states / spaces → folders → lists →
-// statuses) before anything is persisted.
+// source. Proxies the provider so the add-source UI can cascade (me → teams →
+// states / spaces → folders → lists → statuses) before anything is persisted,
+// with either an as-yet-unsaved apiKey or a saved credentialId.
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await objectBody(request);
-	const apiKey = s(body.apiKey).trim();
-	if (!apiKey) error(400, 'apiKey required');
+	const apiKey = resolveApiKey(body);
 
 	const handler = HANDLERS[s(body.type)]?.[s(body.action)];
 	if (!handler) error(400, 'unknown type/action');

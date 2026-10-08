@@ -326,7 +326,7 @@ export interface GithubSource {
 	repo: string;
 }
 
-// Team-scoped. apiKey lives in the secret store; assignee is always "me".
+// Team-scoped. The API key lives in the secret store; assignee is always "me".
 export interface LinearSource {
 	id: string;
 	type: 'linear';
@@ -334,10 +334,12 @@ export interface LinearSource {
 	teamName: string;
 	assigneeEmail: string;
 	stateIds: string[];
+	// The stored key this authenticates with; see credentialKey below.
+	credentialId?: string;
 }
 
 // List-scoped, reached through a team → space → folder? → list cascade.
-// apiKey lives in the secret store; assignee is always "me".
+// The API key lives in the secret store; assignee is always "me".
 export interface ClickupSource {
 	id: string;
 	type: 'clickup';
@@ -351,9 +353,31 @@ export interface ClickupSource {
 	listName: string;
 	statuses: string[];
 	assigneeUserId: number;
+	// Who the key authenticates as, so a saved credential can be offered under a
+	// name rather than a number. Absent on sources stored before issue #237.
+	assigneeName?: string;
+	// The stored key this authenticates with; see credentialKey below.
+	credentialId?: string;
 }
 
 export type IssueSource = GithubSource | LinearSource | ClickupSource;
+
+// A source whose provider needs an API key. GitHub is the exception: it rides
+// the authenticated `gh` CLI and stores nothing.
+export type KeyedSource = LinearSource | ClickupSource;
+
+// Which stored credential a source authenticates with (issue #237), or null for
+// a source that needs no key.
+//
+// Several sources, across several projects, can name one credential: that is
+// what makes a key something entered once and rotated once rather than copied
+// per project. A source stored before credentials existed has no
+// `credentialId` and keeps its key under its own source id, so there was
+// nothing to migrate.
+export function credentialKey(source: IssueSource): string | null {
+	if (source.type === 'github') return null;
+	return source.credentialId ?? source.id;
+}
 
 export interface IssueBlocker {
 	id: string;

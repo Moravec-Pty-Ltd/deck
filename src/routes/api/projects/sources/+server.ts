@@ -3,16 +3,27 @@ import crypto from 'node:crypto';
 import type { RequestHandler } from './$types';
 import { objectBody } from '$lib/server/http';
 import { listProjects, addSource, removeSource, setSecret } from '$lib/server/store';
+import { credentialForSource } from '$lib/server/credentials';
 import type { IssueSource } from '$lib/types';
 
 type Body = Record<string, unknown>;
-type Built = { source: IssueSource; apiKey?: string };
+// `secret` is the key to stash, set only when one was supplied; a source reusing
+// a saved credential has nothing to write, because the key is already stored.
+type Built = { source: IssueSource; secret?: { credentialId: string; apiKey: string } };
 
 const str = (v: unknown) => String(v ?? '').trim();
 const strArray = (v: unknown) => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
 const need = (ok: boolean, msg: string) => {
 	if (!ok) error(400, msg);
 };
+
+function keyed(b: Body, build: (credentialId: string) => IssueSource): Built {
+	const { credentialId, apiKey } = credentialForSource(b);
+	return {
+		source: build(credentialId),
+		secret: apiKey ? { credentialId, apiKey } : undefined
+	};
+}
 
 function githubSource(id: string, b: Body): Built {
 	const owner = str(b.owner);
@@ -22,39 +33,43 @@ function githubSource(id: string, b: Body): Built {
 }
 
 function linearSource(id: string, b: Body): Built {
-	const apiKey = str(b.apiKey);
 	const teamId = str(b.teamId);
-	need(!!apiKey && !!teamId, 'apiKey and teamId are required');
-	return {
-		source: { id, type: 'linear', teamId, teamName: str(b.teamName), assigneeEmail: str(b.assigneeEmail), stateIds: strArray(b.stateIds) },
-		apiKey
-	};
+	need(!!teamId, 'teamId is required');
+	return keyed(b, (credentialId) => ({
+		id,
+		type: 'linear',
+		teamId,
+		teamName: str(b.teamName),
+		assigneeEmail: str(b.assigneeEmail),
+		stateIds: strArray(b.stateIds),
+		credentialId
+	}));
 }
 
 function clickupSource(id: string, b: Body): Built {
-	const f = { apiKey: str(b.apiKey), teamId: str(b.teamId), spaceId: str(b.spaceId), listId: str(b.listId), assigneeUserId: Number(b.assigneeUserId) };
+	const f = { teamId: str(b.teamId), spaceId: str(b.spaceId), listId: str(b.listId), assigneeUserId: Number(b.assigneeUserId) };
 	need(
-		[f.apiKey, f.teamId, f.spaceId, f.listId].every(Boolean) && Number.isFinite(f.assigneeUserId),
-		'apiKey, teamId, spaceId, listId and assigneeUserId are required'
+		[f.teamId, f.spaceId, f.listId].every(Boolean) && Number.isFinite(f.assigneeUserId),
+		'teamId, spaceId, listId and assigneeUserId are required'
 	);
 	const folderId = str(b.folderId);
-	return {
-		source: {
-			id,
-			type: 'clickup',
-			teamId: f.teamId,
-			teamName: str(b.teamName),
-			spaceId: f.spaceId,
-			spaceName: str(b.spaceName),
-			folderId: folderId || undefined,
-			folderName: folderId ? str(b.folderName) : undefined,
-			listId: f.listId,
-			listName: str(b.listName),
-			statuses: strArray(b.statuses),
-			assigneeUserId: f.assigneeUserId
-		},
-		apiKey: f.apiKey
-	};
+	return keyed(b, (credentialId) => ({
+		id,
+		type: 'clickup',
+		teamId: f.teamId,
+		teamName: str(b.teamName),
+		spaceId: f.spaceId,
+		spaceName: str(b.spaceName),
+		folderId: folderId || undefined,
+		folderName: folderId ? str(b.folderName) : undefined,
+		listId: f.listId,
+		listName: str(b.listName),
+		statuses: strArray(b.statuses),
+		assigneeUserId: f.assigneeUserId,
+		// Stored so a saved key can be offered under a name rather than a number.
+		assigneeName: str(b.assigneeName) || undefined,
+		credentialId
+	}));
 }
 
 const BUILDERS: Record<string, (id: string, b: Body) => Built> = {
@@ -63,30 +78,32 @@ const BUILDERS: Record<string, (id: string, b: Body) => Built> = {
 	clickup: clickupSource
 };
 
-// Validate the per-type body and return the source to persist plus, for keyed
-// providers, the apiKey to stash in the secret store. Throws a 400 on bad input.
+// Validate the per-type body and return the source to persist plus, when a key
+// was supplied, the credential to stash it under. Throws a 400 on bad input.
 function buildSource(id: string, body: Body): Built {
 	const builder = BUILDERS[str(body.type)];
 	if (!builder) error(400, 'unknown source type');
 	return builder(id, body);
 }
 
-// POST /api/projects/sources — add a source to a project. Generates the id,
-// stashes any apiKey in the secret store, and stores the (secret-free) source.
+// POST /api/projects/sources — add a source to a project. Generates the source
+// id, stashes a supplied apiKey under its credential id, and stores the
+// (secret-free) source. A body naming a saved `credentialId` instead reuses
+// that key: nothing is written, and the source points at it.
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await objectBody(request);
 	const path = str(body.projectPath);
 	if (!listProjects().some((p) => p.path === path)) error(404, 'project not found');
 
 	const id = crypto.randomUUID();
-	const { source, apiKey } = buildSource(id, body);
-	if (apiKey) setSecret(id, apiKey);
+	const { source, secret } = buildSource(id, body);
+	if (secret) setSecret(secret.credentialId, secret.apiKey);
 	addSource(path, source);
 	return json(source, { status: 201 });
 };
 
-// DELETE /api/projects/sources?project=<path>&id=<sourceId> — drops the source
-// and its stored secret.
+// DELETE /api/projects/sources?project=<path>&id=<sourceId> — drops the source,
+// and its stored key only if no other source still points at it (issue #237).
 export const DELETE: RequestHandler = async ({ url }) => {
 	const path = url.searchParams.get('project');
 	const id = url.searchParams.get('id');

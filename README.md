@@ -182,11 +182,13 @@ A client with its own model uses the agent API directly instead, including
 
 ## Issue-source API keys
 
-Linear and ClickUp sources need an API key (GitHub rides on `gh`'s own auth). deck keeps those keys in the **OS keyring**, not in a file: macOS **Keychain**, Windows **Credential Manager**, and the **Secret Service** (GNOME Keyring, KWallet) on Linux, under the service name `deck`, one entry per source. macOS and Windows work out of the box; on Linux it needs a running Secret Service, which a headless box, a container, or a bare tty session usually doesn't have.
+Linear and ClickUp sources need an API key (GitHub rides on `gh`'s own auth). deck keeps those keys in the **OS keyring**, not in a file: macOS **Keychain**, Windows **Credential Manager**, and the **Secret Service** (GNOME Keyring, KWallet) on Linux, under the service name `deck`, one entry per saved key. macOS and Windows work out of the box; on Linux it needs a running Secret Service, which a headless box, a container, or a bare tty session usually doesn't have.
 
 If the keyring can't be used, deck **fails to start** rather than quietly falling back to a plaintext file. Setting `DECK_SECRETS_FILE=1` opts in to the old behaviour: keys are stored in `~/.deck/secrets.json` as **plaintext**, readable by anything running as you, with the file mode set to `0600`. deck logs that choice once at boot. On Linux without a keyring daemon, this flag is the expected setup.
 
 Upgrading with an existing `~/.deck/secrets.json` migrates automatically on the first boot: each key is written to the keyring and read back, and only then is the file deleted. If anything fails, the file is left exactly as it was and deck stops with an error, so no key is ever lost half-way. Nothing to re-enter either way.
+
+**Reusing a key across projects.** A key belongs to an account, not to a project, so adding Linear or ClickUp to a second project offers the keys you have already saved instead of asking again. Pick one and the setup cascade (team, then states, or space/list/statuses) runs server-side against the stored key, so on that path the key never reaches the browser at all. Entered once, rotated once: every project pointing at a saved key follows it. *Use a different key* is still there for a second account. Removing a source, or a whole project, keeps a key another project still points at and forgets one that nothing uses any more.
 
 ## How it works
 

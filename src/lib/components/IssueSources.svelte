@@ -9,6 +9,7 @@
 	type LinearState = { id: string; name: string; type: string };
 	type CuNamed = { id: string; name: string };
 	type CuStatus = { status: string; type: string };
+	type Credential = { id: string; type: IssueSourceType; label: string; projects: string[] };
 
 	function summary(s: IssueSource): string {
 		if (s.type === 'github') return `${s.owner}/${s.repo}`;
@@ -29,6 +30,11 @@
 	let connected = $state(false);
 	let meLabel = $state('');
 	let meId = $state<string | number>('');
+	// Keys already saved for this provider (issue #237). Picking one means the
+	// cascade and the save both run against it server-side, so the key itself
+	// never comes back here. '' is the "enter a new one" case.
+	let credentials = $state<Credential[]>([]);
+	let credentialId = $state('');
 
 	// linear cascade
 	let linTeams = $state<LinearTeam[]>([]);
@@ -37,6 +43,7 @@
 	let linStateIds = $state<string[]>([]);
 
 	// clickup cascade
+	let cuAssigneeName = $state('');
 	let cuTeams = $state<CuNamed[]>([]);
 	let cuTeamId = $state('');
 	let cuSpaces = $state<CuNamed[]>([]);
@@ -66,17 +73,45 @@
 		linStates = [];
 		linStateIds = [];
 		cuTeams = [];
+		cuAssigneeName = '';
 		cuTeamId = cuSpaceId = cuFolderId = cuListId = '';
 		cuSpaces = cuFolders = cuLists = [];
 		cuStatuses = [];
 		cuSelected = [];
+		credentials = [];
+		credentialId = '';
 	}
+
+	// Start adding a keyed source: offer whatever keys are already saved for that
+	// provider, defaulting to the first so the common case is two taps. A failed
+	// lookup is not worth an error here, it just means typing the key.
+	async function startAdd(type: IssueSourceType) {
+		resetAdd();
+		addType = type;
+		try {
+			const res = await fetch(`/api/projects/credentials?type=${type}`);
+			if (!res.ok) return;
+			credentials = await res.json();
+			credentialId = credentials[0]?.id ?? '';
+		} catch {
+			credentials = [];
+		}
+	}
+
+	function credentialLabel(c: Credential): string {
+		return c.projects.length ? `${c.label} — used by ${c.projects.join(', ')}` : c.label;
+	}
+
+	// Enough to connect: a saved key picked, or one typed in.
+	const hasKey = $derived(!!credentialId || !!apiKey.trim());
 
 	async function meta<T>(type: IssueSourceType, action: string, params: Record<string, unknown> = {}): Promise<T> {
 		const res = await fetch('/api/issues/meta', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ type, action, apiKey, ...params })
+			// One or the other: a saved credential is resolved server-side, so the
+			// browser never holds the key it is reusing.
+			body: JSON.stringify({ type, action, ...(credentialId ? { credentialId } : { apiKey }), ...params })
 		});
 		if (!res.ok) throw new Error((await res.json()).message ?? 'request failed');
 		return res.json();
@@ -123,6 +158,7 @@
 			const me = await meta<{ id: number; username: string }>('clickup', 'me');
 			meLabel = me.username;
 			meId = me.id;
+			cuAssigneeName = me.username;
 			cuTeams = await meta<CuNamed[]>('clickup', 'teams');
 			connected = true;
 		});
@@ -191,6 +227,12 @@
 		return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 	}
 
+	// Reuse a saved key by naming it, or save the one just typed. Never both:
+	// the server takes a credentialId as "this key is already stored".
+	function keyField(): Record<string, string> {
+		return credentialId ? { credentialId } : { apiKey };
+	}
+
 	async function addSource(body: Record<string, unknown>) {
 		const res = await fetch('/api/projects/sources', {
 			method: 'POST',
@@ -209,7 +251,7 @@
 		run(() =>
 			addSource({
 				type: 'linear',
-				apiKey,
+				...keyField(),
 				teamId: linTeamId,
 				teamName: linTeamName,
 				assigneeEmail: meId,
@@ -221,7 +263,8 @@
 		run(() =>
 			addSource({
 				type: 'clickup',
-				apiKey,
+				assigneeName: cuAssigneeName,
+				...keyField(),
 				teamId: cuTeamId,
 				teamName: cuTeamName,
 				spaceId: cuSpaceId,
@@ -250,6 +293,31 @@
 	}
 </script>
 
+<!-- The key step for a keyed provider: pick one already saved, or type a new
+	one. Offered first because reusing is the common case once a second project
+	is on the same workspace. -->
+{#snippet keyStep(label: string, connect: () => void)}
+	{#if credentials.length}
+		<select class="select select-sm w-full" bind:value={credentialId}>
+			{#each credentials as c (c.id)}
+				<option value={c.id}>{credentialLabel(c)}</option>
+			{/each}
+			<option value="">Use a different key…</option>
+		</select>
+	{/if}
+	{#if !credentials.length || !credentialId}
+		<input
+			class="input input-sm mt-2 w-full"
+			type="password"
+			placeholder={label}
+			bind:value={apiKey}
+		/>
+	{/if}
+	<div class="mt-2 flex justify-end">
+		<button class="btn btn-sm" disabled={busy || !hasKey} onclick={connect}>Connect</button>
+	</div>
+{/snippet}
+
 <div class="mt-3">
 	<div class="mb-1 text-xs font-medium opacity-60">Issue sources</div>
 
@@ -277,10 +345,10 @@
 			<button class="btn btn-ghost btn-xs" onclick={() => (addType = 'github')}>
 				<Plus size={12} /> GitHub
 			</button>
-			<button class="btn btn-ghost btn-xs" onclick={() => (addType = 'linear')}>
+			<button class="btn btn-ghost btn-xs" onclick={() => startAdd('linear')}>
 				<Plus size={12} /> Linear
 			</button>
-			<button class="btn btn-ghost btn-xs" onclick={() => (addType = 'clickup')}>
+			<button class="btn btn-ghost btn-xs" onclick={() => startAdd('clickup')}>
 				<Plus size={12} /> ClickUp
 			</button>
 		</div>
@@ -306,10 +374,7 @@
 				</div>
 			{:else if addType === 'linear'}
 				{#if !connected}
-					<input class="input input-sm w-full" type="password" placeholder="Linear API key" bind:value={apiKey} />
-					<div class="mt-2 flex justify-end">
-						<button class="btn btn-sm" disabled={busy || !apiKey.trim()} onclick={connectLinear}>Connect</button>
-					</div>
+					{@render keyStep('Linear API key', connectLinear)}
 				{:else}
 					<p class="mb-2 text-xs opacity-60">Assignee: {meLabel}</p>
 					<select class="select select-sm w-full" bind:value={linTeamId} onchange={loadLinearStates}>
@@ -342,10 +407,7 @@
 				{/if}
 			{:else if addType === 'clickup'}
 				{#if !connected}
-					<input class="input input-sm w-full" type="password" placeholder="ClickUp API key" bind:value={apiKey} />
-					<div class="mt-2 flex justify-end">
-						<button class="btn btn-sm" disabled={busy || !apiKey.trim()} onclick={connectClickup}>Connect</button>
-					</div>
+					{@render keyStep('ClickUp API key', connectClickup)}
 				{:else}
 					<p class="mb-2 text-xs opacity-60">Assignee: {meLabel}</p>
 					<div class="space-y-2">
