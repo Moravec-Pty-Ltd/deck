@@ -1,4 +1,5 @@
 import { handoffPrompt } from './session-agent-core';
+import { backgroundTaskCount, IDLE_MS, teardownDecision } from './idle-teardown-core';
 import { type ChildProcess } from 'node:child_process';
 // cross-spawn so the `claude` CLI also resolves when installed as a Windows
 // .cmd/.bat shim, which node:child_process.spawn can't launch directly.
@@ -41,13 +42,16 @@ interface Proc {
 	stderrTail: string;
 	reqSeq: number;
 	idleTimer?: ReturnType<typeof setTimeout>;
+	// Background tasks (subagents, backgrounded shells) still running inside the
+	// process, from the latest background_tasks_changed event.
+	backgroundTasks: number;
+	idleSince?: number;
 }
 
 // One long-lived `claude --input-format stream-json` process per active session.
 // Messages are written to stdin (queued if a turn is in flight); interrupt is a
 // control_request that ends the current turn but keeps the session alive.
 const procs = new Map<string, Proc>();
-const IDLE_MS = 20 * 60 * 1000;
 
 // Survives HMR in dev so SSE subscribers and runners share one bus.
 const g = globalThis as { __deckBus?: EventEmitter };
@@ -212,7 +216,7 @@ function startProcess(id: string): Proc {
 		env: agentEnv(id, session.cwd, profile?.env),
 		stdio: ['pipe', 'pipe', 'pipe']
 	});
-	const proc: Proc = { child, running: false, buf: '', stderrTail: '', reqSeq: 0 };
+	const proc: Proc = { child, running: false, buf: '', stderrTail: '', reqSeq: 0, backgroundTasks: 0 };
 	procs.set(id, proc);
 
 	child.stdout!.on('data', (chunk: Buffer) => {
@@ -249,11 +253,21 @@ function startProcess(id: string): Proc {
 	return proc;
 }
 
-function scheduleIdleTeardown(id: string, proc: Proc) {
+// Tear an idle process down after IDLE_MS, but not while background work it
+// started is still running: that work dies with the process (see
+// idle-teardown-core.ts). When the work finishes, the timer starts afresh.
+function scheduleIdleTeardown(id: string, proc: Proc, ms = IDLE_MS) {
 	if (proc.idleTimer) clearTimeout(proc.idleTimer);
 	proc.idleTimer = setTimeout(() => {
-		if (!proc.running) proc.child.kill('SIGTERM');
-	}, IDLE_MS);
+		const decision = teardownDecision({
+			running: proc.running,
+			backgroundTasks: proc.backgroundTasks,
+			idleSince: proc.idleSince ?? Date.now(),
+			now: Date.now()
+		});
+		if (decision.action === 'kill') proc.child.kill('SIGTERM');
+		else if (decision.action === 'wait') scheduleIdleTeardown(id, proc, decision.ms);
+	}, ms);
 }
 
 type EventHandler = (id: string, proc: Proc, event: Record<string, unknown>) => boolean;
@@ -265,12 +279,21 @@ function isSystemNoise(subtype: string | undefined): boolean {
 	return subtype.startsWith('hook') || NOISE_SYSTEM_SUBTYPES.has(subtype);
 }
 
-// Record the resumable session id off the init event; drop system noise.
-function handleSystemEvent(id: string, _proc: Proc, event: Record<string, unknown>): boolean {
+// Record the resumable session id off the init event and the background task
+// count off background_tasks_changed; drop system noise.
+function handleSystemEvent(id: string, proc: Proc, event: Record<string, unknown>): boolean {
 	if (event.type !== 'system') return false;
 	const subtype = event.subtype as string | undefined;
 	if (subtype === 'init' && typeof event.session_id === 'string') {
 		updateSession(id, { claudeSessionId: event.session_id });
+	}
+	const tasks = backgroundTaskCount(event);
+	if (tasks !== undefined) {
+		const finished = proc.backgroundTasks > 0 && tasks === 0;
+		proc.backgroundTasks = tasks;
+		// The last background task ended while idle: give the session the usual
+		// idle window from now rather than from when its turn ended.
+		if (finished && !proc.running) scheduleIdleTeardown(id, proc);
 	}
 	return isSystemNoise(subtype);
 }
@@ -305,6 +328,7 @@ function isReplayedUserEcho(_id: string, _proc: Proc, event: Record<string, unkn
 function handleResult(id: string, proc: Proc, event: Record<string, unknown>): boolean {
 	if (event.type !== 'result') return false;
 	proc.running = false;
+	proc.idleSince = Date.now();
 	appendEvent(id, event);
 	setStatus(id, 'idle');
 	rejectAsk(id, 'turn ended');
