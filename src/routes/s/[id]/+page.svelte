@@ -5,6 +5,7 @@
 	import type { ReviewsPayload } from '$lib/morabot-core';
 	import ClaudeView from '$lib/components/ClaudeView.svelte';
 	import ShellView from '$lib/components/ShellView.svelte';
+	import FilesView from '$lib/components/FilesView.svelte';
 	import DiffView from '$lib/components/DiffView.svelte';
 	import DevServers from '$lib/components/DevServers.svelte';
 	import ServerChip from '$lib/components/ServerChip.svelte';
@@ -53,7 +54,12 @@
 	// session; Changes and Servers still reset on every switch. The initial value is
 	// the SSR default so hydration matches, and the session effect below picks up
 	// the stored choice on the client.
-	let tab = $state<'main' | 'chat' | 'changes' | 'servers'>('main');
+	let tab = $state<'main' | 'chat' | 'changes' | 'servers' | 'files'>('main');
+	// Files stays mounted once opened, so switching tabs keeps the folder and file.
+	let filesOpened = $state(false);
+	$effect(() => {
+		if (tab === 'files') filesOpened = true;
+	});
 	const transcriptTab = $derived(
 		session.kind !== 'shell' && transcriptMode.current === 'chat' ? 'chat' : 'main'
 	);
@@ -447,8 +453,7 @@
 			</div>
 		</div>
 
-		{#if liveKind !== 'shell' || gitRepo || hasServers}
-			<div class="join mb-2 shrink-0 self-start">
+		<div class="join mb-2 shrink-0 self-start">
 				{#if liveKind === 'shell'}
 					<button
 						class="btn join-item btn-sm {tab === 'main' ? 'btn-active' : 'btn-ghost'}"
@@ -493,8 +498,14 @@
 						<span class="badge badge-neutral badge-sm">{myServers.length}</span>
 					</button>
 				{/if}
+				<button
+					class="btn join-item btn-sm {tab === 'files' ? 'btn-active' : 'btn-ghost'}"
+					onclick={() => (tab = 'files')}
+					aria-pressed={tab === 'files'}
+				>
+					Files
+				</button>
 			</div>
-		{/if}
 
 		<div class="min-h-0 flex-1">
 			<!-- Thread and Chat are one mounted transcript in two modes, so switching
@@ -541,6 +552,13 @@
 						if (n !== null) changedCount = n;
 					}}
 				/>
+			{/if}
+			{#if filesOpened}
+				<div class="h-full" class:hidden={tab !== 'files'}>
+					{#key session.id}
+						<FilesView {session} visible={tab === 'files'} />
+					{/key}
+				</div>
 			{/if}
 			{#if tab === 'servers'}
 				<DevServers
