@@ -38,11 +38,24 @@
 		isAskTool,
 		launchersOf,
 		nestSubagents,
+		windowStart,
 		parentOf,
 		ungrouped,
 		type Chunk,
 		type Row
 	} from '$lib/transcript-groups';
+	import AgentsBar from './AgentsBar.svelte';
+	import {
+		agentForCall,
+		emptyAgents,
+		foldAgents,
+		hasOmittedReports,
+		mergeReports,
+		runningAgents,
+		stopAll,
+		type AgentState,
+		type AgentsState
+	} from '$lib/subagents-core';
 
 	// `visible` is false while the transcript sits behind the Changes/Servers tabs
 	// (the page keeps it mounted but display:none). A hidden scroller has no layout,
@@ -121,6 +134,18 @@
 	// pulled in via /transcript. Keyed-each uses baseIndex+start+i (an event's
 	// stable absolute index) so prepending older rows still reuses nodes.
 	let baseIndex = $state(0);
+	// Every subagent of the session: seeded from the snapshot (folded over the
+	// whole transcript on the server) and kept current from live events.
+	let agents = $state<AgentsState>(emptyAgents());
+	// When each agent last reported, and when one just finished, by task id: the
+	// agents bar counts elapsed time from the first and lingers on the second.
+	let agentSeen = $state<Record<string, number>>({});
+	let agentDone = $state<Record<string, number>>({});
+	const AGENT_LINGER_MS = 6000;
+	const barAgents = $derived([
+		...runningAgents(agents),
+		...Object.values(agents.tasks).filter((t) => t.status !== 'running' && agentDone[t.taskId])
+	]);
 	const start = $derived(Math.max(0, events.length - limit));
 	const visibleEvents = $derived(events.slice(start));
 
@@ -134,9 +159,11 @@
 	// call's id. Only for as long as the session view is open.
 	const openRuns = new SvelteSet<string>();
 
-	// Size the Chat window by what's actually on screen, not by raw event count:
-	// condensing a window of 60 events can leave two lines, so it would otherwise
-	// open near-empty with nothing to scroll and so no way to ask for more. While
+	// Size the window by what's actually on screen, not by raw event count:
+	// condensing a window of 60 events can leave two lines, and in Thread a busy
+	// session's recent history can be all subagent steps held back until their
+	// card loads, so either would otherwise open near-empty with nothing to scroll
+	// and so no way to ask for more. While
 	// the transcript is shorter than its scroller, keep widening over loaded events
 	// and then pulling older history. Capped: a turn that condenses to almost
 	// nothing shouldn't drag a whole session's history in behind one tab click.
@@ -144,7 +171,7 @@
 	let fillPulls = 0;
 	$effect(() => {
 		chunks; // re-check whenever what's rendered changes
-		if (!condensed || !loaded || !visible || fillPulls >= MAX_FILL_PULLS) return;
+		if (!loaded || !visible || fillPulls >= MAX_FILL_PULLS) return;
 		tick().then(() => {
 			if (!scroller || scroller.scrollHeight > scroller.clientHeight + 1) return;
 			if (limit < events.length) void growWindow(HYDRATE_CHUNK);
@@ -255,6 +282,9 @@
 		fillPulls = 0;
 		baseIndex = 0;
 		limit = INITIAL_WINDOW;
+		agents = emptyAgents();
+		agentSeen = {};
+		agentDone = {};
 		liveText = '';
 		loaded = false;
 		status = session.status;
@@ -285,7 +315,13 @@
 				if (frame.seq === 0) snapBuf = '';
 				snapBuf += frame.data;
 				if (frame.seq + 1 < frame.n) return; // wait for the rest
-				let snap: { start: number; events: AnyEvent[]; cost?: CostSummary; context?: ContextUsage };
+				let snap: {
+					start: number;
+					events: AnyEvent[];
+					cost?: CostSummary;
+					context?: ContextUsage;
+					agents?: AgentsState;
+				};
 				try {
 					snap = JSON.parse(snapBuf);
 				} catch {
@@ -297,7 +333,10 @@
 				context = snap.context ?? emptyContext();
 				reindex(snap.events);
 				baseIndex = snap.start;
-				limit = INITIAL_WINDOW;
+				limit = snap.events.length - windowStart(snap.events, INITIAL_WINDOW);
+				agents = snap.agents ?? emptyAgents();
+				const seen = Date.now();
+				agentSeen = Object.fromEntries(runningAgents(agents).map((a) => [a.taskId, seen]));
 				liveText = '';
 				loaded = true;
 				await tick();
@@ -318,6 +357,7 @@
 				if (ev.type === 'assistant' && !parentOf(ev)) liveText = '';
 				if (ev.type === 'result') cost = foldResult(cost, ev);
 				context = foldContext(context, ev);
+				trackAgents(ev, baseIndex + events.length);
 				events.push(ev); // in-place: a full re-spread is O(n) on every event
 				indexForward(index, ev);
 				limit += 1; // keep the new event in view without dropping a tail row
@@ -328,6 +368,8 @@
 				status = JSON.parse((e as MessageEvent).data);
 				if (status !== 'running') liveText = '';
 			});
+			// The claude process exited, taking any subagent still running with it.
+			es.addEventListener('exit', () => trackAgents(null, null));
 			es.addEventListener('ping', () => (connected = true));
 			es.onopen = () => (connected = true);
 			es.onerror = () => {
@@ -359,6 +401,44 @@
 			source?.close();
 		};
 	});
+
+	// Fold an event into the agents (null: the process exited), noting which
+	// agents just reported and which just finished.
+	function trackAgents(ev: AnyEvent | null, index: number | null) {
+		const before = runningAgents(agents).map((a) => a.taskId);
+		if (ev) foldAgents(agents, ev, index);
+		else stopAll(agents);
+		const now = Date.now();
+		if (ev?.type === 'system' && typeof ev.task_id === 'string' && agents.tasks[ev.task_id]) agentSeen[ev.task_id] = now;
+		for (const id of before) {
+			if (agents.tasks[id]?.status === 'running') continue;
+			agentDone[id] = now;
+			setTimeout(() => {
+				if (agentDone[id] === now) delete agentDone[id];
+			}, AGENT_LINGER_MS);
+		}
+	}
+
+	// Older cards come into view: fetch the reports the snapshot left out, once.
+	let reportsFetch: Promise<void> | null = null;
+	function fetchOmittedReports() {
+		if (reportsFetch || !hasOmittedReports(agents)) return;
+		const id = session.id;
+		reportsFetch = fetch(`/api/sessions/${encodeURIComponent(id)}/agents`)
+			.then((res) => (res.ok ? res.json() : null))
+			.then((full: AgentsState | null) => {
+				if (full && id === session.id) mergeReports(agents, full);
+			})
+			.catch(() => {})
+			.finally(() => (reportsFetch = null));
+	}
+
+	// Open an agent's card and bring it into view, loading older history if the
+	// call that launched it is further back than what's loaded.
+	async function jumpToAgent(agent: AgentState) {
+		openRuns.add(agent.toolUseId);
+		if (agent.callIndex !== null) await focusEvent(agent.callIndex);
+	}
 
 	function handleStream(ev: AnyEvent) {
 		if (parentOf(ev)) return; // the live bubble is the main thread's
@@ -562,6 +642,7 @@
 			events.unshift(...slice.events);
 			indexOlderBatch(index, slice.events);
 			baseIndex = slice.start;
+			fetchOmittedReports();
 			limit += added; // keep the just-loaded rows inside the render window
 			await tick();
 			if (scroller) scroller.scrollTop = scroller.scrollHeight - gap;
@@ -792,6 +873,7 @@
 			<ToolCall
 				{block}
 				result={resultsById.get(block.id)}
+				agent={agentForCall(agents, block.id)}
 				steps={steps?.length ?? 0}
 				open={openRuns.has(block.id)}
 				ontoggle={() => toggleRun(block.id)}
@@ -937,6 +1019,8 @@
 			{/if}
 		</div>
 	{/if}
+
+	<AgentsBar agents={barAgents} seenAt={agentSeen} onjump={(a) => void jumpToAgent(a)} />
 
 	{#if voice.enabled}
 		<VoiceBar {voice} />

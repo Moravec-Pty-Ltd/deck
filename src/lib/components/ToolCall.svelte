@@ -8,13 +8,18 @@
 	import RollingCount from './RollingCount.svelte';
 	import { Circle, CircleDot, CircleCheck, ChevronRight } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
+	import Markdown from './Markdown.svelte';
+	import { formatDuration, isLaunchReceipt, type AgentState } from '$lib/subagents-core';
+	import { formatTokens } from '$lib/context-core';
 
 	type AnyBlock = Record<string, any>;
 	// `steps` counts what a subagent launched by this call has done so far;
-	// `children` renders those steps, only while the card is open.
+	// `children` renders those steps, only while the card is open. `agent` is the
+	// subagent's live state (status, what it's doing, its final report).
 	let {
 		block,
 		result,
+		agent,
 		steps = 0,
 		open = false,
 		ontoggle,
@@ -22,6 +27,7 @@
 	}: {
 		block: AnyBlock;
 		result?: AnyBlock;
+		agent?: AgentState;
 		steps?: number;
 		open?: boolean;
 		ontoggle?: () => void;
@@ -66,7 +72,21 @@
 		return '';
 	}
 
-	const resText = $derived(resultText(result));
+	// A background subagent's call returns a launch receipt at once; its answer
+	// comes later as the agent's report, shown in place of the receipt.
+	const resText = $derived.by(() => {
+		const text = resultText(result);
+		return agent && isLaunchReceipt(text) ? '' : text;
+	});
+	// A foreground agent's answer is already its call result.
+	const report = $derived(resText ? '' : (agent?.summary ?? ''));
+	const STATUS_BADGE: Record<string, string> = {
+		running: 'badge-info',
+		completed: 'badge-success',
+		failed: 'badge-error',
+		stopped: 'badge-warning'
+	};
+	const statusLabel: Record<string, string> = { running: 'running', completed: 'done', failed: 'failed', stopped: 'stopped' };
 	const isErr = $derived(!!result?.is_error);
 	const MAX = 6000;
 	const clipped = $derived(resText.length > MAX);
@@ -94,8 +114,27 @@
 		<Icon size={14} class="shrink-0 opacity-60" />
 		<span class="shrink-0 font-medium">{name}</span>
 		<span class="truncate font-mono text-xs opacity-60">{headerArg}</span>
-		{#if isErr}<span class="badge badge-error badge-xs ml-auto shrink-0">error</span>{/if}
+		{#if isErr}
+			<span class="badge badge-error badge-xs ml-auto shrink-0">error</span>
+		{:else if agent}
+			<span class="badge {STATUS_BADGE[agent.status]} badge-xs badge-soft ml-auto shrink-0 gap-1">
+				{#if agent.status === 'running'}<span class="loading loading-ring loading-xs"></span>{/if}
+				{statusLabel[agent.status]}
+			</span>
+		{/if}
 	</div>
+	{#if agent && (agent.status === 'running' || agent.toolUses > 0)}
+		<div class="-mt-1 truncate px-3 pb-1.5 text-xs opacity-60">
+			{[
+				agent.status === 'running' && agent.activity ? `now: ${agent.activity}` : '',
+				formatDuration(agent.durationMs),
+				`${agent.toolUses} tools`,
+				`${formatTokens(agent.tokens)} tokens`
+			]
+				.filter(Boolean)
+				.join(' · ')}
+		</div>
+	{/if}
 
 	<div class="space-y-2 px-3 pb-2">
 		{#if name === 'Bash'}
@@ -168,6 +207,15 @@
 			{#if open}
 				<div class="space-y-3 border-l border-base-300 pl-2">{@render children()}</div>
 			{/if}
+		{/if}
+
+		{#if report}
+			<details>
+				<summary class="cursor-pointer select-none text-xs opacity-50">result</summary>
+				<div class="mt-1 max-h-96 overflow-y-auto rounded-box border border-base-300 px-2 py-1.5">
+					<Markdown source={report} />
+				</div>
+			</details>
 		{/if}
 
 		{#if !hideResult && name !== 'Bash'}

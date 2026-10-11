@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { isAgentKind } from '$lib/types';
 import { getSession } from '$lib/server/sessions';
-import { bus, snapshotFrames } from '$lib/server/claude';
+import { bus, hasProcess, snapshotFrames } from '$lib/server/claude';
 import { agentTurnRunning } from '$lib/server/agents/dispatch';
 import { DEMO, demoTranscript } from '$lib/server/demo';
 import { sessionCostSummary } from '$lib/session-cost-core';
@@ -34,17 +34,20 @@ export const GET: RequestHandler = async ({ params }) => {
 		// Recent history first (chunked into small frames so it actually flushes
 		// — see snapshotFrames), then live events. Older history loads lazily via
 		// /transcript on back-scroll.
-		for (const frame of snapshotFrames(id)) send('snapshot', frame);
+		for (const frame of snapshotFrames(id, session.kind !== 'claude' || hasProcess(id))) send('snapshot', frame);
 		send('status', agentTurnRunning(id) ? 'running' : session.status);
 
 		const onEvent = (event: unknown) => send('transcript', event);
 		const onStatus = (status: unknown) => send('status', status);
+		const onExit = () => send('exit', '1');
 		bus.on(`event:${id}`, onEvent);
 		bus.on(`status:${id}`, onStatus);
+		bus.on(`exit:${id}`, onExit);
 
 		return () => {
 			bus.off(`event:${id}`, onEvent);
 			bus.off(`status:${id}`, onStatus);
+			bus.off(`exit:${id}`, onExit);
 		};
 	});
 };

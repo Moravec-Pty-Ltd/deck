@@ -4,6 +4,7 @@ import {
 	flattenTranscript,
 	groupRuns,
 	launchersOf,
+	windowStart,
 	nestSubagents,
 	ungrouped,
 	type AnyEvent,
@@ -173,10 +174,15 @@ describe('nestSubagents', () => {
 		expect(shape(groupRuns(nestSubagents(flattenTranscript(events, 0)).rows))).toEqual(['run:2', 'text']);
 	});
 
-	it('leaves a row in the thread when its launcher is outside the window', () => {
+	it("holds back a row whose launcher isn't in the window yet, instead of flashing it in the thread", () => {
 		const thread = nestSubagents(flattenTranscript([within('gone', assistant(text('late'))), assistant(text('main'))], 0));
-		expect(keysOf(thread.rows)).toEqual(['0:0', '1:0']);
+		expect(keysOf(thread.rows)).toEqual(['1:0']);
 		expect(thread.nested.size).toBe(0);
+	});
+
+	it("still shows a question from a subagent whose launcher isn't in the window", () => {
+		const thread = nestSubagents(flattenTranscript([within('gone', assistant(tool('mcp__deck__ask', 'q')))], 0));
+		expect(thread.rows.map((r) => r.block?.name)).toEqual(['mcp__deck__ask']);
 	});
 
 	it("never hides a subagent's question inside the card", () => {
@@ -212,5 +218,18 @@ describe('nestSubagents', () => {
 		expect(keysOf(thread.nested.get('inner'))).toEqual(['2:0']);
 		expect(launchersOf(thread, events[2])).toEqual(['inner', 'x']);
 		expect(launchersOf(thread, events[0])).toEqual([]);
+	});
+});
+
+describe('windowStart', () => {
+	const main = (t: string) => assistant(text(t));
+	it('counts only main-thread events', () => {
+		const events = [main('a'), within('x', main('s1')), main('b'), within('x', main('s2')), within('x', main('s3')), main('c')];
+		expect(windowStart(events, 2)).toBe(2);
+		expect(windowStart(events, 3)).toBe(0);
+	});
+	it('starts at the beginning when there are fewer than asked for', () => {
+		expect(windowStart([within('x', main('s'))], 5)).toBe(0);
+		expect(windowStart([], 5)).toBe(0);
 	});
 });

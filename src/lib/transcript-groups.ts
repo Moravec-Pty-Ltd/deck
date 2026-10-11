@@ -85,9 +85,11 @@ export function parentOf(event: AnyEvent): string | null {
 
 // Background subagents keep producing events long after their call returned,
 // interleaved with the main thread and with each other, so they are filed by
-// parent id rather than by position. A row whose launcher isn't in the window
-// stays in the thread so nothing goes missing, and an ask stays there too: it
-// is how a blocked session gets answered.
+// parent id rather than by position. A row whose launching call isn't in the
+// window waits off-screen until the window reaches the call: showing it loose in
+// the thread meanwhile made it flash up and then vanish into the card as the
+// window widened. An ask stays in the thread regardless, since it is how a
+// blocked session gets answered.
 export function nestSubagents(rows: Row[]): Thread {
 	const calls = new Map<string, Row>();
 	for (const row of rows) {
@@ -97,15 +99,27 @@ export function nestSubagents(rows: Row[]): Thread {
 	const nested = new Map<string, Row[]>();
 	for (const row of rows) {
 		const parent = parentOf(row.event);
-		if (!parent || !calls.has(parent) || (row.block && isAskTool(row.block))) {
+		if (!parent || (row.block && isAskTool(row.block))) {
 			main.push(row);
 			continue;
 		}
+		if (!calls.has(parent)) continue;
 		const steps = nested.get(parent);
 		if (steps) steps.push(row);
 		else nested.set(parent, [row]);
 	}
 	return { rows: main, nested, calls };
+}
+
+// Where to start a window holding the last `n` main-thread events. A busy
+// session's tail is mostly subagent steps, so a window sized in raw events can
+// hold none of the conversation (and none of the calls those steps belong to).
+export function windowStart(events: AnyEvent[], n: number): number {
+	let seen = 0;
+	for (let i = events.length - 1; i >= 0; i--) {
+		if (!parentOf(events[i]) && ++seen >= n) return i;
+	}
+	return 0;
 }
 
 // The calls whose cards hold an event, innermost first, so a deep link to a
