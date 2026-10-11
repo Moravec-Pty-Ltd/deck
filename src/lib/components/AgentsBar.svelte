@@ -3,38 +3,21 @@
 	// is doing, for how long, and how far it has got. Collapsed to one line;
 	// tapping an agent jumps to its card in the transcript. Agents that just
 	// finished linger for a moment with their outcome before dropping off.
-	import { Bot, ChevronDown, CircleCheck, CircleX } from '@lucide/svelte';
+	import { ChevronDown, CircleCheck, CircleX } from '@lucide/svelte';
 	import { formatDuration, type AgentState } from '$lib/subagents-core';
-	import { formatTokens } from '$lib/context-core';
 
 	let {
 		agents,
-		seenAt,
+		elapsed,
 		onjump
 	}: {
 		agents: AgentState[];
-		// When each agent's figures last changed, by task id, so elapsed time keeps
-		// counting between progress reports.
-		seenAt: Record<string, number>;
+		elapsed: (agent: AgentState) => number;
 		onjump: (agent: AgentState) => void;
 	} = $props();
 
 	let open = $state(false);
-	let now = $state(Date.now());
-
-	$effect(() => {
-		if (!agents.length) return;
-		const t = setInterval(() => (now = Date.now()), 1000);
-		return () => clearInterval(t);
-	});
-
 	const running = $derived(agents.filter((a) => a.status === 'running'));
-
-	function elapsed(a: AgentState): string {
-		if (a.status !== 'running') return formatDuration(a.durationMs);
-		const since = seenAt[a.taskId];
-		return formatDuration(a.durationMs + (since ? Math.max(0, now - since) : 0));
-	}
 </script>
 
 {#if agents.length}
@@ -46,7 +29,7 @@
 			aria-expanded={open}
 		>
 			{#if running.length}
-				<span class="loading loading-ring loading-xs shrink-0 text-primary"></span>
+				<span class="loading loading-spinner loading-xs shrink-0 text-info"></span>
 				<span class="shrink-0 font-medium">
 					{running.length} {running.length === 1 ? 'agent' : 'agents'} running
 				</span>
@@ -54,41 +37,32 @@
 				<CircleCheck size={14} class="shrink-0 text-success" />
 				<span class="shrink-0 font-medium">agents finished</span>
 			{/if}
-			{#if !open}
-				<span class="min-w-0 flex-1 truncate opacity-60">
-					{agents.map((a) => a.description || a.subagentType).join(' · ')}
-				</span>
-			{:else}
-				<span class="flex-1"></span>
-			{/if}
+			<span class="flex-1"></span>
 			<ChevronDown size={14} class="shrink-0 opacity-60 transition-transform {open ? 'rotate-180' : ''}" />
 		</button>
 		{#if open}
-			<ul class="max-h-56 overflow-y-auto pb-1">
+			<ul class="max-h-48 overflow-y-auto pb-1">
 				{#each agents as a (a.taskId)}
 					<li>
 						<button
 							type="button"
-							class="flex w-full cursor-pointer items-start gap-2 px-3 py-1.5 text-left hover:bg-base-200"
+							class="flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left hover:bg-base-200"
 							onclick={() => onjump(a)}
 						>
-							{#if a.status === 'completed'}
-								<CircleCheck size={14} class="mt-0.5 shrink-0 text-success" />
-							{:else if a.status !== 'running'}
-								<CircleX size={14} class="mt-0.5 shrink-0 text-error" />
+							{#if a.status === 'running'}
+								<span class="loading loading-spinner loading-xs shrink-0 text-info"></span>
+							{:else if a.status === 'completed'}
+								<CircleCheck size={14} class="shrink-0 text-success" />
 							{:else}
-								<Bot size={14} class="mt-0.5 shrink-0 opacity-60" />
+								<CircleX size={14} class="shrink-0 {a.status === 'failed' ? 'text-error' : 'text-warning'}" />
 							{/if}
-							<span class="min-w-0 flex-1">
-								<span class="block truncate font-medium">{a.description || a.subagentType}</span>
-								<span class="block truncate opacity-60">
-									{a.status === 'running' ? a.activity || 'starting…' : a.status === 'completed' ? 'done' : a.status}
-								</span>
+							<span class="min-w-0 flex-1 truncate">
+								<span class="font-medium">{a.description || a.subagentType}</span>
+								{#if a.status === 'running' && a.activity}
+									<span class="opacity-50"> · {a.activity}</span>
+								{/if}
 							</span>
-							<span class="shrink-0 text-right tabular-nums opacity-60">
-								<span class="block">{elapsed(a)}</span>
-								<span class="block">{a.toolUses} steps · {formatTokens(a.tokens)}</span>
-							</span>
+							<span class="shrink-0 tabular-nums opacity-50">{formatDuration(elapsed(a))}</span>
 						</button>
 					</li>
 				{/each}

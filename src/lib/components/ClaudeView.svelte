@@ -142,6 +142,17 @@
 	let agentSeen = $state<Record<string, number>>({});
 	let agentDone = $state<Record<string, number>>({});
 	const AGENT_LINGER_MS = 6000;
+	// Ticks while any agent runs, so elapsed times count up between reports.
+	let agentClock = $state(Date.now());
+	$effect(() => {
+		if (!runningAgents(agents).length) return;
+		const t = setInterval(() => (agentClock = Date.now()), 1000);
+		return () => clearInterval(t);
+	});
+	function agentElapsed(a: AgentState): number {
+		const since = agentSeen[a.taskId];
+		return a.durationMs + (a.status === 'running' && since ? Math.max(0, agentClock - since) : 0);
+	}
 	const barAgents = $derived([
 		...runningAgents(agents),
 		...Object.values(agents.tasks).filter((t) => t.status !== 'running' && agentDone[t.taskId])
@@ -874,6 +885,7 @@
 				{block}
 				result={resultsById.get(block.id)}
 				agent={agentForCall(agents, block.id)}
+				{agentElapsed}
 				steps={steps?.length ?? 0}
 				open={openRuns.has(block.id)}
 				ontoggle={() => toggleRun(block.id)}
@@ -1020,7 +1032,7 @@
 		</div>
 	{/if}
 
-	<AgentsBar agents={barAgents} seenAt={agentSeen} onjump={(a) => void jumpToAgent(a)} />
+	<AgentsBar agents={barAgents} elapsed={agentElapsed} onjump={(a) => void jumpToAgent(a)} />
 
 	{#if voice.enabled}
 		<VoiceBar {voice} />
