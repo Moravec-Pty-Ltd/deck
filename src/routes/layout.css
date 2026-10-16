@@ -415,10 +415,14 @@ h3,
 	line-height: 1.5;
 	overflow-wrap: anywhere;
 }
-.markdown > :first-child {
+/* A fenced block is wrapped for its copy button, so the resets have to reach
+   through the wrapper to the pre that actually carries the margin. */
+.markdown > :first-child,
+.markdown > .code-block:first-child > pre {
 	margin-top: 0;
 }
-.markdown > :last-child {
+.markdown > :last-child,
+.markdown > .code-block:last-child > pre {
 	margin-bottom: 0;
 }
 .markdown p {
@@ -511,6 +515,39 @@ h3,
 .markdown pre code {
 	font: inherit;
 	white-space: pre;
+}
+/* Copy button, pinned to the block's top-right corner (CodeBlock.svelte). The
+   pre scrolls sideways, so the button hangs off a wrapper instead of sliding
+   away with the content, and the code shrink-wraps with trailing padding so a
+   long line scrolled to its end still clears the button. The wrapper itself
+   takes no margin: the pre's collapses straight through it. */
+.markdown .code-block {
+	position: relative;
+}
+.markdown .code-block > pre > code {
+	display: inline-block;
+	vertical-align: top;
+	padding-inline-end: 1.9em;
+}
+.markdown .code-copy {
+	position: absolute;
+	top: 0.25rem;
+	right: 0.25rem;
+	opacity: 0;
+	transition: opacity 0.15s;
+	/* Nearly opaque: the code behind it would otherwise read through the glyphs. */
+	background-color: color-mix(in oklch, var(--color-base-100) 94%, transparent);
+}
+.markdown .code-block:hover .code-copy,
+.markdown .code-copy:focus-visible,
+.markdown .code-copy.copied {
+	opacity: 1;
+}
+/* Nothing to hover with on touch, so the button stays up, dimmed. */
+@media (hover: none) {
+	.markdown .code-copy {
+		opacity: 0.65;
+	}
 }
 /* Shiki dual theme: light by default, dark under [data-theme='dark']. Shiki emits
    per-token --shiki-light/--shiki-dark custom properties (defaultColor:false), so
