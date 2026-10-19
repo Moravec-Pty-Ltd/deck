@@ -1,3 +1,4 @@
+import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { QuickMessage } from '$lib/types';
 import { readJson, writeJson } from './config';
@@ -31,4 +32,18 @@ export function saveQuickMessages(raw: unknown): QuickMessage[] {
 	const list = listSchema.parse(raw).map(normalise);
 	writeJson(FILE, list);
 	return list;
+}
+
+// Handlers shared by /api/quick-messages and /api/agent/quick-messages. PUT
+// replaces the whole list; a schema mismatch is a 400, not a 500.
+export function quickMessagesGetRoute(): Response {
+	return json(listQuickMessages());
+}
+
+export async function quickMessagesPutRoute({ request }: { request: Request }): Promise<Response> {
+	try {
+		return json(saveQuickMessages(await request.json()));
+	} catch (e) {
+		error(400, e instanceof Error ? e.message : 'invalid quick messages');
+	}
 }

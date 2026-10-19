@@ -4,6 +4,7 @@ import {
 	claudeModelOptions,
 	isExpensiveModel,
 	isListableKind,
+	markExpensive,
 	piModelOptions,
 	piProviderOptions,
 	shouldReseedModel
@@ -146,5 +147,15 @@ describe('isListableKind', () => {
 	it('rejects the kinds that do not, and junk', () => {
 		expect(isListableKind('claude')).toBe(false);
 		expect(isListableKind('../etc')).toBe(false);
+	});
+});
+
+describe('markExpensive', () => {
+	it('flags only the rows that warrant a cost confirm', () => {
+		expect(markExpensive([{ model: 'fable' }, { model: 'sonnet' }, { provider: 'sol', model: 'x' }])).toEqual([
+			{ model: 'fable', expensive: true },
+			{ model: 'sonnet' },
+			{ provider: 'sol', model: 'x', expensive: true }
+		]);
 	});
 });

@@ -12,6 +12,7 @@ import { parseEffort } from './session-effort-core';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
 import { conflictMessage, isWorktreeFix, worktreeConflict } from '$lib/worktree-conflict';
+import { singleIssueTitle } from '$lib/issues';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 import { issueContextWarning, issuePromptContext, type PickedIssue } from './issues/prompt';
 
@@ -353,7 +354,7 @@ export async function createSessionFromRequest(
 
 	const session = await createSession({
 		kind,
-		title: title || branch,
+		title: title || singleIssueTitle(picked.map((p) => p.issue)) || branch,
 		cwd,
 		model,
 		provider,

@@ -20,6 +20,7 @@ it('publishes the resolved defaults for a registered project', async () => {
 	expect(body.base).toBe('main');
 	expect(body.prompts).toEqual({ work: 'Fix [issue_body]' });
 	expect(body.kinds.claude).toEqual({ model: 'sonnet', permissionMode: 'bypassPermissions' });
+	expect(body.expensiveModels).toEqual(expect.arrayContaining(['fable']));
 });
 
 it('rejects a missing or unknown project', async () => {

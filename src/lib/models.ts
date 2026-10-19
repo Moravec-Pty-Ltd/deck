@@ -93,7 +93,7 @@ export function modelLabel(model: string | undefined): string {
 // Premium models worth a confirm before you select one, so an accidental pick
 // doesn't run costly work on a top-tier model (issue #134). Extend by editing
 // the list.
-const EXPENSIVE_MODELS = ['fable', 'sol', 'astra'] as const;
+export const EXPENSIVE_MODELS = ['fable', 'sol', 'astra'] as const;
 
 // Whether choosing this model should prompt a cost confirm. Case-insensitive
 // substring match against the model id (and provider, for pi's separate
@@ -102,6 +102,13 @@ const EXPENSIVE_MODELS = ['fable', 'sol', 'astra'] as const;
 export function isExpensiveModel(model: string | undefined, provider?: string): boolean {
 	const haystack = `${model ?? ''} ${provider ?? ''}`.toLowerCase();
 	return EXPENSIVE_MODELS.some((m) => haystack.includes(m));
+}
+
+// A model listing with `expensive: true` on the rows that warrant the confirm,
+// so a client that can't import this module (the native apps, an orchestrator)
+// gets the same answer from GET /api/agent/kinds.
+export function markExpensive(models: ModelChoice[]): (ModelChoice & { expensive?: true })[] {
+	return models.map((m) => (isExpensiveModel(m.model, m.provider) ? { ...m, expensive: true } : m));
 }
 
 // Switch a session's model (shared by the header ModelMenu and the palette's

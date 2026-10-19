@@ -41,7 +41,12 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./operator/events/+server'), () => import('./agent/operator/events/+server'), ['GET']],
 	[() => import('./operator/history/+server'), () => import('./agent/operator/history/+server'), ['GET']],
 	[() => import('./operator/reset/+server'), () => import('./agent/operator/reset/+server'), ['POST']],
-	[() => import('./reviews/+server'), () => import('./agent/reviews/+server'), ['GET']]
+	[() => import('./reviews/+server'), () => import('./agent/reviews/+server'), ['GET']],
+	[() => import('./sessions/[id]/pr/+server'), () => import('./agent/sessions/[id]/pr/+server'), ['DELETE']],
+	[() => import('./sessions/[id]/zed/+server'), () => import('./agent/sessions/[id]/zed/+server'), ['GET']],
+	[() => import('./quick-messages/+server'), () => import('./agent/quick-messages/+server'), ['GET', 'PUT']],
+	[() => import('./search/+server'), () => import('./agent/search/+server'), ['GET']],
+	[() => import('./user/+server'), () => import('./agent/user/+server'), ['GET']]
 ];
 
 describe('browser and agent routes share one handler', () => {

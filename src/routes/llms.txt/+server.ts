@@ -2,6 +2,8 @@ import type { RequestHandler } from './$types';
 import { baseUrl } from '$lib/server/config';
 import { shippedSkillVersion } from '$lib/server/skills';
 import { AGENT_CAPABILITIES } from '$lib/server/agent-capabilities';
+import { MIN_QUERY_CHARS } from '$lib/search-core';
+import { SEARCH_LIMIT_MAX } from '$lib/server/search';
 
 // The canonical machine-facing contract for deck's agent API (issue #127,
 // llmstxt.org convention): everything an external agent needs to drive and
@@ -42,6 +44,8 @@ Every /api error is a JSON body \`{ "message": "..." }\` with an HTTP status:
   project set (project confinement).
 - \`404\` — unknown session / project / route.
 - \`409\`: conflict (a turn is already in flight, e.g. a model switch mid-turn).
+  A worktree create that hits a leftover branch is a 409 too, with extra
+  fields: see POST /api/agent/sessions.
 
 Parse \`message\` for the reason; don't rely on the status alone.
 
@@ -88,6 +92,9 @@ Which agent CLIs are installed here and the models each enumerates:
 [{ "kind": "claude", "available": true, "models": [] },
  { "kind": "pi", "available": false, "models": [{ "provider": "...", "model": "..." }] }]
 \`\`\`
+
+A model row carries \`expensive: true\` when it is a premium model worth a
+cost confirm before you start or switch to it (absent otherwise).
 
 Pick a kind with \`available: true\` (an unavailable kind 400s at spawn).
 \`model\` on create is free-text; an empty \`models\` list means pass any id the
@@ -151,6 +158,42 @@ defaults the web new-session modal preselects.
 configured; an empty \`model\` means the CLI picks. Send these values on create
 to start exactly what the web modal would, or override any of them. 404 for a
 path that isn't a registered project.
+
+The response also carries \`"expensiveModels": ["fable", ...]\`: the premium
+models the web asks you to confirm before using. A model counts as expensive
+when any entry is a case-insensitive substring of its id or its provider, so a
+client can apply the same confirm to a free-text model it is about to send.
+
+### GET /api/agent/user
+
+\`{ "login": "octocat" }\`: the GitHub login deck's \`gh\` is signed in as, or
+\`null\` when gh can't resolve it. Use it to offer merge only on your own PRs
+(deck also captures PRs you are only reviewing).
+
+### GET /api/agent/search?q=<text>&limit=<n>
+
+Full-text search over what was said in every agent session. \`q\` is a
+case-insensitive substring, at least ${MIN_QUERY_CHARS} characters (shorter is a 400);
+\`limit\` defaults to 30 and is capped at ${SEARCH_LIMIT_MAX}.
+
+\`\`\`json
+{ "query": "...", "truncated": false,
+  "hits": [{ "sessionId": "...", "title": "...", "index": 42, "role": "user|assistant", "snippet": "...", "at": 1700000000000 }] }
+\`\`\`
+
+\`index\` is the event's absolute transcript index: open the session there
+with \`/s/{id}?at={index}\`, or page to it with /history.
+
+### GET /api/agent/quick-messages
+
+The user's canned messages, \`[{ "id": "...", "label"?: "...", "text": "..." }]\`,
+for a one-tap send to a session.
+
+### PUT /api/agent/quick-messages
+
+Replace the whole list with the same shape (up to 200; \`id\` and \`text\`
+required, a blank \`label\` is dropped). Returns the stored list; a schema
+mismatch is a 400.
 
 ## Sessions
 
@@ -303,6 +346,19 @@ placeholders and fetches attached issue titles, bodies, comments, and images.
 Preserve discovery's \`sourceId\` so keyed trackers use the correct credential.
 Older clients without it use the project's matching source where unambiguous.
 
+When \`title\` is omitted or blank, a session on exactly one issue is titled
+with its display id (\`#1\` for a GitHub issue, \`ABC-123\` otherwise), else
+with the worktree branch.
+
+**Leftover branch (409)**: when the worktree's branch already exists or a stale
+worktree holds it, create returns 409
+\`{ "message": "...", "code": "branch-exists" | "stale-worktree", "branch": "..." }\`
+instead of touching it. Retry the same body with
+\`"worktree": { ..., "onExisting": "reuse" | "recreate" }\`: \`reuse\` checks the
+existing branch out as it stands (keeping its commits), \`recreate\` deletes it
+and branches again from \`base\` (unpushed commits on it are lost). A second
+failure is reported as is.
+
 **Idempotency**: send \`Idempotency-Key: <key>\` (or body \`"idempotencyKey"\`)
 so a retried create — after a lost 201 — returns the same session (200) instead
 of spawning a second one + worktree. Retry a failed/timed-out create under the
@@ -412,6 +468,19 @@ Returns \`{ "pr": <pr> }\`; a gh failure is a 400 with the message.
 
 \`{ "method": "squash" | "merge" | "rebase", "deleteBranch": true }\` — merge
 the session's PR (method defaults to squash). Returns \`{ "pr": <pr> }\`.
+
+### DELETE /api/agent/sessions/{id}/pr
+
+Empty body. Dismiss the PR captured on the session (the chip goes away).
+Capture is forward-only: the next GitHub PR link the agent prints captures a PR
+again. Returns \`{ "ok": true }\`.
+
+### GET /api/agent/sessions/{id}/zed
+
+\`{ "command": "zed ssh://user@host/path/to/worktree" }\`: the command that opens
+the session's directory in Zed over SSH on the deck host (the host is the one
+you reached deck on, unless the user set a Zed SSH target). \`command\` is null
+for a session with no directory.
 
 ### DELETE /api/agent/sessions/{id}
 

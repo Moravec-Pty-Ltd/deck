@@ -1,7 +1,8 @@
 import fs from 'node:fs';
+import { error, json } from '@sveltejs/kit';
 import readline from 'node:readline';
 import { isAgentKind, type DeckSession } from '$lib/types';
-import { lineMayMatch, searchableText, snippetAround, type SearchHit } from '$lib/search-core';
+import { MIN_QUERY_CHARS, lineMayMatch, normaliseQuery, searchableText, snippetAround, type SearchHit } from '$lib/search-core';
 import { listStoredSessions } from './store';
 import { transcriptPath } from './transcript';
 
@@ -68,4 +69,15 @@ export async function searchTranscripts(needle: string, limit: number): Promise<
 		hits.push(...(await searchSession(session, needle, deadline)));
 	}
 	return { hits: hits.slice(0, limit), truncated: truncated || hits.length > limit };
+}
+
+// GET handler shared by /api/search and /api/agent/search: full-text search over
+// what was said in every agent session. `q` is a plain case-insensitive
+// substring; hits carry the session and the event index so a client can open the
+// session at that point (/s/{id}?at={index}).
+export async function searchRoute({ url }: { url: URL }): Promise<Response> {
+	const q = normaliseQuery(url.searchParams.get('q'));
+	if (q.length < MIN_QUERY_CHARS) error(400, `query must be at least ${MIN_QUERY_CHARS} characters`);
+	const limit = Math.min(SEARCH_LIMIT_MAX, Math.max(1, Number(url.searchParams.get('limit')) || 30));
+	return json({ query: q, ...(await searchTranscripts(q, limit)) });
 }
