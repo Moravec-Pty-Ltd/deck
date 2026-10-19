@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { Search, User, Bot, MessageSquare, X } from '@lucide/svelte';
-	import type { DeckSession } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
 	import type { NameMatch, SearchHit } from '$lib/search-core';
 	import { MIN_QUERY_CHARS, matchSessionNames } from '$lib/search-core';
 	import { searchUi } from '$lib/search-ui.svelte';
@@ -19,7 +19,7 @@
 	let dialogEl = $state<HTMLDialogElement>();
 	let inputEl = $state<HTMLInputElement>();
 	let query = $state('');
-	let sessions = $state<DeckSession[]>([]);
+	let sessions = $state<SessionView[]>([]);
 	let hits = $state<SearchHit[]>([]);
 	let truncated = $state(false);
 	let selected = $state(0);
@@ -47,7 +47,7 @@
 
 	async function loadSessions() {
 		try {
-			const res = await fetch('/api/sessions');
+			const res = await fetch('/api/agent/sessions');
 			if (res.ok) sessions = await res.json();
 		} catch {
 			// A failed list just means no name matches; the transcript search still runs.
@@ -75,7 +75,7 @@
 	async function run(q: string) {
 		busy = true;
 		try {
-			const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=40`);
+			const res = await fetch(`/api/agent/search?q=${encodeURIComponent(q)}&limit=40`);
 			if (!res.ok) return;
 			const body = (await res.json()) as { hits: SearchHit[]; truncated: boolean };
 			hits = body.hits;

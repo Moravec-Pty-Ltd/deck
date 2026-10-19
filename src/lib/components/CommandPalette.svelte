@@ -9,7 +9,8 @@
 		type MergeMethod,
 		type PrActionPayload
 	} from '$lib/commands';
-	import type { DeckSession, ServerRuntime, AgentSettingsView } from '$lib/types';
+	import type { ServerRuntime, AgentSettingsView } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
 	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
 	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
 	import { restartSession } from '$lib/session-restart';
@@ -51,7 +52,7 @@
 
 	let query = $state('');
 	let selected = $state(0);
-	let sessions = $state<DeckSession[]>([]);
+	let sessions = $state<SessionView[]>([]);
 	let sessionServers = $state<ServerRuntime[]>([]);
 
 	// Second-step panel: a command awaiting its input before it runs.
@@ -69,13 +70,10 @@
 		currentId ? (sessions.find((s) => s.id === currentId) ?? null) : null
 	);
 
-	async function prPost(payload: PrActionPayload) {
+	// Review and merge are separate agent routes, named by the payload's action.
+	async function sessionPr(path: string, init: RequestInit) {
 		if (!currentSession) throw new Error('no session');
-		const res = await fetch(`/api/sessions/${encodeURIComponent(currentSession.id)}/pr`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(payload)
-		});
+		const res = await fetch(`/api/agent/sessions/${encodeURIComponent(currentSession.id)}/${path}`, init);
 		if (!res.ok) {
 			const data = await res.json().catch(() => null);
 			throw new Error(data?.message || 'action failed');
@@ -83,17 +81,14 @@
 		await loadData();
 	}
 
-	async function prDismiss() {
-		if (!currentSession) return;
-		const res = await fetch(`/api/sessions/${encodeURIComponent(currentSession.id)}/pr`, {
-			method: 'DELETE'
+	const prPost = ({ action, ...body }: PrActionPayload) =>
+		sessionPr(action, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
 		});
-		if (!res.ok) {
-			const data = await res.json().catch(() => null);
-			throw new Error(data?.message || 'action failed');
-		}
-		await loadData();
-	}
+
+	const prDismiss = () => sessionPr('pr', { method: 'DELETE' });
 
 	function context(): CommandContext {
 		return {
@@ -134,7 +129,7 @@
 	// Pull the switch-list + current session's servers whenever the palette opens
 	// (and after an action mutates them). Cheap and on-demand, no new poller.
 	async function loadData() {
-		const sRes = await fetch('/api/sessions').catch(() => null);
+		const sRes = await fetch('/api/agent/sessions').catch(() => null);
 		if (sRes?.ok) sessions = await sRes.json();
 		sessionServers = currentId ? await fetchServers(currentId).catch(() => []) : [];
 	}

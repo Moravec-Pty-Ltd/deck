@@ -106,11 +106,13 @@ Open issues for a project (\`project\` = a discovery \`path\`; \`&refresh=1\`
 bypasses the 60s cache). Each row maps onto \`create\`'s \`issue\`:
 
 \`\`\`json
-{ "issues": [{ "source": "github", "sourceId": "...", "id": "owner/repo#1", "title": "...", "url": "..." }],
+{ "issues": [{ "source": "github", "sourceId": "...", "id": "owner/repo#1", "title": "...", "url": "...",
+	"updatedAt": 1700000000000, "blockers": [{ "id": "owner/repo#2", "title": "..." }] }],
   "errors": [{ "sourceId": "...", "message": "..." }] }
 \`\`\`
 
 Pass \`{ source, sourceId, id, url }\` straight through as \`create\`'s \`issue\`.
+\`updatedAt\` is epoch ms; \`blockers\` lists the open issues this one waits on.
 
 ### GET /api/agent/prs?project=<path>
 
@@ -118,8 +120,9 @@ Open PRs awaiting your review for a project. Each row carries \`review\`'s
 \`pr { repo, number }\` plus context for picking one:
 
 \`\`\`json
-{ "prs": [{ "repo": "owner/repo", "number": 42, "title": "...", "url": "...",
-	"headRefName": "feat", "baseRefName": "main", "isDraft": false, "author": "..." }],
+{ "prs": [{ "sourceId": "...", "repo": "owner/repo", "number": 42, "title": "...", "url": "...",
+	"headRefName": "feat", "baseRefName": "main", "isDraft": false, "author": "...",
+	"updatedAt": 1700000000000 }],
   "errors": [] }
 \`\`\`
 
@@ -417,7 +420,8 @@ PR, so the review/merge endpoints below work on it.
 	"cwd": "/path/to/project",          // required; an existing directory
 	"command": "npm run dev",           // optional; runs instead of the login shell
 	"title": "...",                     // optional; untitled shells get a generated name
-	"worktree": { "branch": "my-branch", "newBranch": true }  // optional, as in work mode
+	"worktree": { "branch": "my-branch", "newBranch": true },  // optional, as in work mode; or { "fromPr": 42 } for a PR's head
+	"issues": [...], "pr": { "repo": "owner/repo", "number": 42 }  // optional context, shaped as in work / review mode
 }
 \`\`\`
 

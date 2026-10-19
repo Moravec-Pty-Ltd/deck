@@ -1,4 +1,4 @@
-import type { DeckSession, Issue, Project, PullRequest, SessionIssue } from '$lib/types';
+import type { AgentIssue, AgentPr, DeckSession, Issue, Project, PullRequest } from '$lib/types';
 import { publicCost, type AgentSessionDigest } from '$lib/session-view';
 import { isAgentKind } from '$lib/types';
 import { baseUrl } from './config';
@@ -76,33 +76,21 @@ export function projectDigest(p: Project): AgentProject {
 	return { path: p.path, name: p.name, group: p.group, hidden: p.hidden || undefined };
 }
 
-// Maps onto create's `issue { source, sourceId, id, url }`.
-export interface AgentIssue {
-	source: SessionIssue['source'];
-	sourceId: string;
-	id: string;
-	title: string;
-	url: string;
-}
-
 export function issueDigest(i: Issue): AgentIssue {
-	return { source: i.sourceType, sourceId: i.sourceId, id: i.id, title: i.title, url: i.url };
-}
-
-// Maps onto review's `pr { repo, number }`; the rest is context for picking one.
-export interface AgentPr {
-	repo: string;
-	number: number;
-	title: string;
-	url: string;
-	headRefName: string;
-	baseRefName: string;
-	isDraft: boolean;
-	author: string;
+	return {
+		source: i.sourceType,
+		sourceId: i.sourceId,
+		id: i.id,
+		title: i.title,
+		url: i.url,
+		updatedAt: i.updatedAt,
+		blockers: i.blockers
+	};
 }
 
 export function prDigest(p: PullRequest): AgentPr {
 	return {
+		sourceId: p.sourceId,
 		repo: p.repo,
 		number: p.number,
 		title: p.title,
@@ -110,6 +98,7 @@ export function prDigest(p: PullRequest): AgentPr {
 		headRefName: p.headRefName,
 		baseRefName: p.baseRefName,
 		isDraft: p.isDraft,
-		author: p.author
+		author: p.author,
+		updatedAt: p.updatedAt
 	};
 }

@@ -4,6 +4,7 @@ import type {
 	DeckSettings,
 	ModelChoice,
 	Project,
+	RememberedPicks,
 	SessionKind
 } from '$lib/types';
 import { agentPost, sessionPath } from '$lib/agent-api';
@@ -60,7 +61,7 @@ const DEFAULT_CLAUDE_MODEL = 'opus';
 export function resolveModelChoice(
 	kind: AgentKind,
 	project: Project | undefined,
-	settings: DeckSettings
+	settings: RememberedPicks
 ): ModelChoice {
 	const remembered = project?.lastModels?.[kind] ?? settings.lastModels?.[kind];
 	if (remembered) return remembered;
@@ -99,10 +100,15 @@ export const EXPENSIVE_MODELS = ['fable', 'sol', 'astra'] as const;
 // Whether choosing this model should prompt a cost confirm. Case-insensitive
 // substring match against the model id (and provider, for pi's separate
 // --provider arg), so one entry covers the claude shortname (`fable`), a
-// codex/pi free-text id, and opencode's combined `provider/model`.
-export function isExpensiveModel(model: string | undefined, provider?: string): boolean {
+// codex/pi free-text id, and opencode's combined `provider/model`. `list` is
+// the server's expensiveModels (GET /api/agent/defaults) when a client has it.
+export function isExpensiveModel(
+	model: string | undefined,
+	provider?: string,
+	list: readonly string[] = EXPENSIVE_MODELS
+): boolean {
 	const haystack = `${model ?? ''} ${provider ?? ''}`.toLowerCase();
-	return EXPENSIVE_MODELS.some((m) => haystack.includes(m));
+	return list.some((m) => haystack.includes(m.toLowerCase()));
 }
 
 // A model listing with `expensive: true` on the rows that warrant the confirm,

@@ -1,26 +1,36 @@
 <script lang="ts">
 	import { isAgentKind } from '$lib/types';
 	import type {
+		AgentIssue,
+		AgentPr,
+		AgentSettingsView,
 		DeckEffort,
-		DeckSettings,
-		Issue,
 		ModelChoice,
 		NewSessionPreset,
 		Project,
-		PullRequest,
 		SessionKind
 	} from '$lib/types';
 	import { groupProjects, existingGroupNames } from '$lib/groups';
 	import {
 		claudeModelOptions,
+		EXPENSIVE_MODELS,
 		isExpensiveModel,
 		piModelOptions,
 		piProviderOptions,
 		shouldReseedModel
 	} from '$lib/models';
 	import { EFFORT_LEVELS, effortLabel } from '$lib/effort';
-	import { DEFAULT_CLAUDE_PERMISSION_MODE, kindStartDefaults } from '$lib/start-defaults-core';
-	import { agentModels, loadAgentModels } from '$lib/agent-models-store.svelte';
+	import {
+		DEFAULT_CLAUDE_PERMISSION_MODE,
+		kindStartDefaults,
+		type ProjectStartDefaults
+	} from '$lib/start-defaults-core';
+	import {
+		agentAvailability,
+		agentModels,
+		loadAgentKinds,
+		loadAgentModels
+	} from '$lib/agent-models-store.svelte';
 	import { shortIssueId } from '$lib/issues';
 	import {
 		conflictMessage,
@@ -80,19 +90,24 @@
 	// re-seeded alongside model under the same `modelDirty` guard.
 	let effort = $state<DeckEffort | ''>('');
 	let modelDirty = $state(false);
-	let settings = $state<DeckSettings>({});
+	// Redacted settings (GET /api/agent/settings): the remembered picks and model
+	// profiles, never a stored secret.
+	let settings = $state<AgentSettingsView>({});
+	// The server's start defaults for the selected project (GET /api/agent/defaults),
+	// plus its cost-confirm list. Until they land the shared resolver runs here on
+	// the same inputs, and a custom path (no project) always resolves here.
+	let startDefaults = $state<(ProjectStartDefaults & { expensiveModels?: string[] }) | null>(null);
+	let expensiveModels = $state<readonly string[]>(EXPENSIVE_MODELS);
+	let defaultsSeq = 0;
 	// The kind and project the model/provider fields were last seeded for; a
 	// change to either means the prior pick belongs to a different agent or
 	// project and must be re-seeded.
 	let seededKind: SessionKind | null = null;
 	let seededProjectPath: string | undefined = undefined;
-	// Which agent CLIs are installed (GET /api/agents/available). null until the
-	// fetch lands or if it failed — both mean "show every kind" (fail-soft), so a
+	// Which agent CLIs are installed (GET /api/agent/kinds, cached). null until the
+	// fetch lands or if it failed: both mean "show every kind" (fail-soft), so a
 	// harness is only hidden once we positively know it's absent.
-	let availability = $state<Partial<Record<SessionKind, boolean>> | null>(null);
-	// Bumped on each init() so a slow availability response from a prior open can't
-	// land after a reopen and clobber the current one with stale data.
-	let availabilitySeq = 0;
+	const availability = $derived(agentAvailability());
 	let yolo = $state(DEFAULT_CLAUDE_PERMISSION_MODE === 'bypassPermissions');
 	let worktreeMode = $state<WorktreeMode>('new');
 	let worktreeModeDirty = $state(false);
@@ -125,8 +140,8 @@
 	let onExisting = $state<WorktreeFix | null>(null);
 	let confirmedExpensive = $state(false);
 	let showPicker = $state(false);
-	let pickedIssues = $state<Issue[]>([]);
-	let pickedPrs = $state<PullRequest[]>([]);
+	let pickedIssues = $state<AgentIssue[]>([]);
+	let pickedPrs = $state<AgentPr[]>([]);
 	// Split a multi-item selection into one session per item (loop the create).
 	// Work defaults to combine (one session, all issues); review always splits
 	// (one session per PR; no multi-PR worktree). Only offered for work.
@@ -139,21 +154,21 @@
 	let showOptions = $state(false);
 	let addingProject = $state(false);
 
-	const issueKey = (i: Issue) => `${i.sourceId}:${i.id}`;
-	const prKey = (p: PullRequest) => `${p.sourceId}:${p.number}`;
-	// Mirror the server's ISSUE_CAP (POST /api/sessions) so the selection can't
+	const issueKey = (i: AgentIssue) => `${i.sourceId}:${i.id}`;
+	const prKey = (p: AgentPr) => `${p.sourceId}:${p.number}`;
+	// Mirror the server's ISSUE_CAP (POST /api/agent/sessions) so the selection can't
 	// grow past what actually gets persisted and fetched.
 	const MAX_ISSUES = 10;
 	// Review splits into one session per PR; cap the fan-out like issues.
 	const MAX_PRS = 10;
 	// The modal-level title for a PR selection: the PR's own title for a single
 	// pick (unchanged), else the refs joined so the field reads sensibly.
-	const prTitleField = (list: PullRequest[]) =>
+	const prTitleField = (list: AgentPr[]) =>
 		list.length === 1 ? list[0].title : list.map((p) => `#${p.number}`).join('+');
 	// Same for an issue selection. Short ids, matching the split-create path and
 	// the header chip; the full ref stays on the issue itself.
-	const issueTitleField = (list: Issue[]) =>
-		list.map((i) => shortIssueId(i.sourceType, i.id)).join('+');
+	const issueTitleField = (list: AgentIssue[]) =>
+		list.map((i) => shortIssueId(i.source, i.id)).join('+');
 
 	let wasOpen = false;
 	$effect(() => {
@@ -179,22 +194,12 @@
 		pickedPrs = [];
 		split = false;
 		createProgress = '';
-		availability = null;
-		const seq = ++availabilitySeq;
-		fetch('/api/agents/available')
-			.then((r) => r.json())
-			.then((a: Partial<Record<SessionKind, boolean>>) => {
-				if (seq !== availabilitySeq) return;
-				availability = a && typeof a === 'object' && !Array.isArray(a) ? a : null;
-			})
-			.catch(() => {
-				if (seq === availabilitySeq) availability = null;
-			});
+		void loadAgentKinds();
 		const p = preset;
 		worktreeModeDirty = !!(p?.kind || p?.cwd);
-		fetch('/api/settings')
-			.then((r) => r.json())
-			.then((s: DeckSettings) => (settings = s ?? {}))
+		fetch('/api/agent/settings')
+			.then((r) => (r.ok ? r.json() : {}))
+			.then((s: AgentSettingsView) => (settings = s ?? {}))
 			.catch(() => {});
 		fetch('/api/projects')
 			.then((r) => r.json())
@@ -270,7 +275,7 @@
 	// concatenated (branch-name-safe — no spaces, so it drives the branch as a
 	// single ref does today) and the branch follows it. The picker stays open for
 	// multi-select; the modal renders removable chips for what's picked.
-	function pickIssue(issue: Issue) {
+	function pickIssue(issue: AgentIssue) {
 		// A batch create is in flight; freezing the selection keeps the submitted
 		// set and the partial-failure retry state in sync.
 		if (busy) return;
@@ -289,7 +294,7 @@
 	// Toggle a PR in/out of the selection (mirrors pickIssue). Review always
 	// splits, so each picked PR becomes its own session; the title tracks the
 	// picks so a single PR still reads as its own title, as before.
-	function pickPr(pr: PullRequest) {
+	function pickPr(pr: AgentPr) {
 		if (busy) return;
 		const k = prKey(pr);
 		const has = pickedPrs.some((p) => prKey(p) === k);
@@ -363,7 +368,9 @@
 	// remembered provider must not sway the warning for claude/codex/opencode.
 	const effectiveProvider = $derived(kind === 'pi' ? provider : '');
 	const pickedModelLabel = $derived([effectiveProvider, model].filter(Boolean).join('/'));
-	const expensivePick = $derived(isAgentKind(kind) && isExpensiveModel(model, effectiveProvider));
+	const expensivePick = $derived(
+		isAgentKind(kind) && isExpensiveModel(model, effectiveProvider, expensiveModels)
+	);
 
 	// The collapsed Options row and its one-line digest of what the defaults
 	// will do: worktree plan, model, and (for claude) the permission mode.
@@ -412,7 +419,10 @@
 		seededKind = kind;
 		seededProjectPath = projectPath;
 		if (modelDirty) return;
-		const defaults = isAgentKind(kind) ? kindStartDefaults(kind, selectedProject, settings) : { model: '' };
+		const served = startDefaults?.path === projectPath ? startDefaults : null;
+		const defaults = isAgentKind(kind)
+			? (served?.kinds[kind] ?? kindStartDefaults(kind, selectedProject, settings))
+			: { model: '' };
 		model = defaults.model;
 		provider = defaults.provider ?? '';
 		// Effort is claude-only; other kinds always seed blank.
@@ -426,9 +436,25 @@
 		if (open && isAgentKind(kind)) loadAgentModels(kind);
 	});
 
+	// Load the server's start defaults whenever the project changes. A response
+	// for a project since switched away from is dropped.
+	$effect(() => {
+		const path = open ? selectedProject?.path : undefined;
+		if (!path) return;
+		const seq = ++defaultsSeq;
+		fetch(`/api/agent/defaults?project=${encodeURIComponent(path)}`)
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d: (ProjectStartDefaults & { expensiveModels?: string[] }) | null) => {
+				if (seq !== defaultsSeq || !d) return;
+				startDefaults = d;
+				if (Array.isArray(d.expensiveModels)) expensiveModels = d.expensiveModels;
+			})
+			.catch(() => {});
+	});
+
 	$effect(() => {
 		if (worktreeMode === 'new' && effectiveCwd) {
-			fetch(`/api/git/branches?repo=${encodeURIComponent(effectiveCwd)}`)
+			fetch(`/api/agent/git/branches?repo=${encodeURIComponent(effectiveCwd)}`)
 				.then((r) => r.json())
 				.then((b: string[]) => (branches = Array.isArray(b) ? b : []));
 		}
@@ -436,7 +462,7 @@
 
 	$effect(() => {
 		if (worktreeMode === 'existing' && effectiveCwd) {
-			fetch(`/api/git/worktrees?repo=${encodeURIComponent(effectiveCwd)}`)
+			fetch(`/api/agent/git/worktrees?repo=${encodeURIComponent(effectiveCwd)}`)
 				.then((r) => r.json())
 				.then((w: Worktree[]) => {
 					existingWorktrees = Array.isArray(w) ? w.filter((x) => !x.isMain) : [];
@@ -479,7 +505,8 @@
 	// a partial-failure retry only re-fires the ones that failed.
 	function buildCreates(startCwd: string): Create[] {
 		const common = {
-			kind,
+			mode: kind === 'shell' ? 'shell' : reviewMode ? 'review' : 'work',
+			kind: kind === 'shell' ? undefined : kind,
 			model: model.trim() || undefined,
 			provider: kind === 'pi' && provider.trim() ? provider.trim() : undefined,
 			effort: kind === 'claude' && effort ? effort : undefined,
@@ -500,8 +527,8 @@
 				}
 			}));
 		}
-		const issueField = (i: Issue) => ({
-			source: i.sourceType,
+		const issueField = (i: AgentIssue) => ({
+			source: i.source,
 			sourceId: i.sourceId,
 			id: i.id,
 			url: i.url
@@ -519,7 +546,7 @@
 				body: {
 					...common,
 					cwd: startCwd,
-					title: shortIssueId(issue.sourceType, issue.id),
+					title: shortIssueId(issue.source, issue.id),
 					worktree: newWorktree(issue.id),
 					issues: [issueField(issue)]
 				}
@@ -549,7 +576,7 @@
 	}
 
 	async function postCreate(body: Record<string, unknown>): Promise<string> {
-		const res = await fetch('/api/sessions', {
+		const res = await fetch('/api/agent/sessions', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(body)
@@ -807,7 +834,7 @@
 								onclick={() => pickIssue(i)}
 								title="remove {i.id}"
 							>
-								{shortIssueId(i.sourceType, i.id)} <X size={12} />
+								{shortIssueId(i.source, i.id)} <X size={12} />
 							</button>
 						{/each}
 					</div>
@@ -824,12 +851,12 @@
 							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
 							<div class="min-w-0">
 								<div class="font-medium">
-									<span class="font-mono" title={i.id}>{shortIssueId(i.sourceType, i.id)}</span>:
+									<span class="font-mono" title={i.id}>{shortIssueId(i.source, i.id)}</span>:
 									{i.blockers.length} incomplete blocker(s) — you can still start.
 								</div>
 								{#each i.blockers as b (b.id)}
 									<div class="truncate" title={b.id}>
-										<span class="font-mono">{shortIssueId(i.sourceType, b.id)}</span>
+										<span class="font-mono">{shortIssueId(i.source, b.id)}</span>
 										{b.title}
 									</div>
 								{/each}

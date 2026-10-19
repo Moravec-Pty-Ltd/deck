@@ -8,7 +8,7 @@
 	// lists the system-wide canned messages; clicking one fires it immediately via
 	// `onpick`, which sends it with server-side [token] expansion. A "Manage" entry
 	// opens a modal to add/edit/remove/reorder the list, persisted through
-	// GET/PUT /api/quick-messages.
+	// GET/PUT /api/agent/quick-messages.
 	let { onpick }: { onpick: (text: string) => void } = $props();
 
 	type Draft = { id: string; label: string; text: string };
@@ -24,7 +24,7 @@
 
 	async function load() {
 		try {
-			const res = await fetch('/api/quick-messages');
+			const res = await fetch('/api/agent/quick-messages');
 			if (res.ok) messages = await res.json();
 		} catch {
 			// best-effort; an empty list just shows the empty state
@@ -77,7 +77,7 @@
 			.map((m) => ({ id: m.id, label: m.label.trim() || undefined, text: m.text.trim() }))
 			.filter((m) => m.text);
 		try {
-			const res = await fetch('/api/quick-messages', {
+			const res = await fetch('/api/agent/quick-messages', {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(payload)

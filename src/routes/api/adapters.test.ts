@@ -38,7 +38,6 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./operator/history/+server'), () => import('./agent/operator/history/+server'), ['GET']],
 	[() => import('./operator/reset/+server'), () => import('./agent/operator/reset/+server'), ['POST']],
 	[() => import('./reviews/+server'), () => import('./agent/reviews/+server'), ['GET']],
-	[() => import('./sessions/[id]/pr/+server'), () => import('./agent/sessions/[id]/pr/+server'), ['DELETE']],
 	[() => import('./quick-messages/+server'), () => import('./agent/quick-messages/+server'), ['GET', 'PUT']],
 	[() => import('./search/+server'), () => import('./agent/search/+server'), ['GET']],
 	[() => import('./user/+server'), () => import('./agent/user/+server'), ['GET']],

@@ -11,7 +11,7 @@
 		PHASE_STATUS_VIEW,
 		RUN_STATUS_VIEW
 	} from '$lib/workflow-view';
-	import type { Issue, Project, PullRequest } from '$lib/types';
+	import type { AgentIssue, AgentPr, Project } from '$lib/types';
 	import { relativeTime } from '$lib/time';
 	import { shortIssueId } from '$lib/issues';
 	import IssuePicker from '$lib/components/IssuePicker.svelte';
@@ -41,8 +41,8 @@
 	// A run takes one issue or one PR, so these hold at most a single pick. The
 	// typed `ref` stays as the way in for anything the picker doesn't list (an
 	// issue assigned to someone else, a URL from elsewhere).
-	let pickedIssue = $state<Issue | null>(null);
-	let pickedPr = $state<PullRequest | null>(null);
+	let pickedIssue = $state<AgentIssue | null>(null);
+	let pickedPr = $state<AgentPr | null>(null);
 
 	let clearing = $state(false);
 	const finishedCount = $derived(runs.filter((r) => r.status === 'done' || r.status === 'cancelled').length);
@@ -56,14 +56,14 @@
 	// A pick fills the reference field, so one field always says what the run
 	// will start from whether it was picked or typed. Picking the same row again
 	// clears it.
-	function pickIssue(issue: Issue) {
+	function pickIssue(issue: AgentIssue) {
 		const same = pickedIssue?.sourceId === issue.sourceId && pickedIssue?.id === issue.id;
 		pickedIssue = same ? null : issue;
 		ref = pickedIssue?.id ?? '';
 		formError = '';
 	}
 
-	function pickPr(pr: PullRequest) {
+	function pickPr(pr: AgentPr) {
 		const same = pickedPr?.sourceId === pr.sourceId && pickedPr?.number === pr.number;
 		pickedPr = same ? null : pr;
 		ref = pickedPr?.url ?? '';
@@ -124,7 +124,7 @@
 		if (!isReview && pickedIssue) {
 			return {
 				issue: {
-					source: pickedIssue.sourceType,
+					source: pickedIssue.source,
 					sourceId: pickedIssue.sourceId,
 					id: pickedIssue.id,
 					url: pickedIssue.url
@@ -270,7 +270,7 @@
 								<span class="badge badge-sm badge-primary gap-1">
 									{isReview
 										? `${pickedPr!.repo}#${pickedPr!.number}`
-										: shortIssueId(pickedIssue!.sourceType, pickedIssue!.id)}
+										: shortIssueId(pickedIssue!.source, pickedIssue!.id)}
 									<button
 										type="button"
 										aria-label="Clear the pick"

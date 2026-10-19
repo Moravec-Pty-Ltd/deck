@@ -397,6 +397,19 @@ export interface Issue {
 	blockers: IssueBlocker[];
 }
 
+// The agent API's issue row (GET /api/agent/issues), what the web picker reads
+// too. Maps onto create's `issue { source, sourceId, id, url }`; the rest is
+// context for picking one.
+export interface AgentIssue {
+	source: IssueSourceType;
+	sourceId: string;
+	id: string;
+	title: string;
+	url: string;
+	updatedAt: number;
+	blockers: IssueBlocker[];
+}
+
 // An open GitHub PR awaiting the authenticated user's review, as surfaced in the
 // Review-mode PR picker. `repo` is owner/repo; `headRefName`/`baseRefName` are the
 // PR's head/base branches; the worktree is checked out to a local `pr/<number>`
@@ -411,6 +424,21 @@ export interface PullRequest {
 	// The head commit sha. Keys the review automation trigger, so a PR re-entering
 	// the review-requested feed at a new head can fire again (issue #209).
 	headRefOid: string;
+	baseRefName: string;
+	isDraft: boolean;
+	author: string;
+	updatedAt: number;
+}
+
+// The agent API's PR row (GET /api/agent/prs). Maps onto review's
+// `pr { repo, number }`; the rest is context for picking one.
+export interface AgentPr {
+	sourceId: string;
+	repo: string;
+	number: number;
+	title: string;
+	url: string;
+	headRefName: string;
 	baseRefName: string;
 	isDraft: boolean;
 	author: string;
@@ -494,6 +522,10 @@ export interface AgentSettingsPatch {
 	autoCompact?: Nullable<{ enabled: boolean; percent: number }> | null;
 	zedSshTarget?: string | null;
 }
+
+// The settings the start-defaults resolver reads: present on both the stored
+// file and its redacted agent view.
+export type RememberedPicks = Pick<DeckSettings, 'lastModels' | 'lastEffort'>;
 
 export interface DeckSettings {
 	speech?: SpeechSettings;

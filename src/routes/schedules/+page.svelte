@@ -5,7 +5,8 @@
 	// thing the form asks, because everything below it depends on the answer.
 	import type { ScheduleDigest } from '$lib/schedules';
 	import { OUTCOME_VIEW } from '$lib/schedules';
-	import type { DeckSession, AgentSettingsView, Project } from '$lib/types';
+	import type { AgentSettingsView, Project } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
 	import { api, pollWhileVisible } from '$lib/workflow-view';
 	import { CRON_PRESETS, cronProblem, nextRuns } from '$lib/cron';
 	import { clockTime, relativeTime, shortPath, whenDue } from '$lib/time';
@@ -17,7 +18,7 @@
 
 	let schedules = $state<ScheduleDigest[]>([]);
 	let projects = $state<Project[]>([]);
-	let sessions = $state<DeckSession[]>([]);
+	let sessions = $state<SessionView[]>([]);
 	let settings = $state<AgentSettingsView>({});
 	let loaded = $state(false);
 	let loadError = $state('');
@@ -56,7 +57,7 @@
 	async function loadSetup() {
 		const [list, live, loadedSettings] = await Promise.all([
 			api<Project[]>('/api/projects').catch(() => [] as Project[]),
-			api<DeckSession[]>('/api/sessions').catch(() => [] as DeckSession[]),
+			api<SessionView[]>('/api/agent/sessions').catch(() => [] as SessionView[]),
 			loadSettings().catch(() => ({}) as AgentSettingsView)
 		]);
 		projects = list.filter((p) => !p.hidden);

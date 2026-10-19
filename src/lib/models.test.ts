@@ -26,6 +26,11 @@ describe('isExpensiveModel', () => {
 		expect(isExpensiveModel('fable-preview')).toBe(true);
 	});
 
+	it('matches against a server-supplied list when given one', () => {
+		expect(isExpensiveModel('acme-max', '', ['Max'])).toBe(true);
+		expect(isExpensiveModel('fable', '', ['max'])).toBe(false);
+	});
+
 	it('matches an expensive provider when model is separate (pi)', () => {
 		expect(isExpensiveModel('', 'sol')).toBe(true);
 	});

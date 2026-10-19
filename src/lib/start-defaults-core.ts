@@ -1,4 +1,4 @@
-import { AGENT_KINDS, type AgentKind, type DeckEffort, type DeckSettings, type Project } from './types';
+import { AGENT_KINDS, type AgentKind, type DeckEffort, type Project, type RememberedPicks } from './types';
 import { resolveModelChoice } from './models';
 import { resolveEffort } from './effort';
 
@@ -34,7 +34,7 @@ export const DEFAULT_CLAUDE_PERMISSION_MODE = 'bypassPermissions';
 export function kindStartDefaults(
 	kind: AgentKind,
 	project: Project | undefined,
-	settings: DeckSettings
+	settings: RememberedPicks
 ): KindStartDefaults {
 	const choice = resolveModelChoice(kind, project, settings);
 	const defaults: KindStartDefaults = { model: choice.model };
@@ -51,7 +51,7 @@ function nonEmpty(value: string | undefined): string | undefined {
 	return value?.trim() || undefined;
 }
 
-export function projectStartDefaults(project: Project, settings: DeckSettings): ProjectStartDefaults {
+export function projectStartDefaults(project: Project, settings: RememberedPicks): ProjectStartDefaults {
 	const kinds = {} as Record<AgentKind, KindStartDefaults>;
 	for (const kind of AGENT_KINDS) kinds[kind] = kindStartDefaults(kind, project, settings);
 	const defaults: ProjectStartDefaults = {

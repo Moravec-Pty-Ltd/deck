@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildCommands, filterCommands, type CommandContext } from './commands';
-import type { DeckSession, ServerRuntime, ServerState, SessionPR } from './types';
+import type { ServerRuntime, ServerState, SessionPR } from './types';
+import type { SessionView } from './session-view';
 
-function session(over: Partial<DeckSession> = {}): DeckSession {
+function session(over: Partial<SessionView> = {}): SessionView {
 	return {
 		id: 's1',
+		url: 'http://example.test/s/s1',
+		awaitingInput: false,
 		kind: 'claude',
 		title: 'web',
 		cwd: '/path/to/web',
@@ -94,11 +97,6 @@ describe('buildCommands', () => {
 		const list = ids(ctx({ session: s }));
 		expect(list).toContain('issue-open:github:acme/web#42');
 		expect(list).not.toContain('issue-open:linear:LIN-9'); // no url, skipped
-	});
-
-	it('reads the legacy single `issue` field', () => {
-		const s = session({ issue: { source: 'linear', id: 'LIN-9', url: 'https://example.test/lin-9' } });
-		expect(ids(ctx({ session: s }))).toContain('issue-open:linear:LIN-9');
 	});
 
 	it('a stopped server offers Run only', () => {

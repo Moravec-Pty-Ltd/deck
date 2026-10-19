@@ -11,7 +11,7 @@
 
 	// Composer control showing the session's current model, opening a switcher (issue
 	// #88). claude picks from the same shortnames as the New Session modal; the
-	// other kinds list whatever their CLI enumerates (GET /api/agents/:kind/models)
+	// other kinds list whatever their CLI enumerates (GET /api/agent/kinds)
 	// above a free-text id for anything unlisted. Disabled while a turn runs (the
 	// model applies on the next turn, so switching mid-turn would only mislead);
 	// the server 409s on that race anyway.

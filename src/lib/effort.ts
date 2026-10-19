@@ -1,4 +1,4 @@
-import type { DeckEffort, DeckSettings, Project } from '$lib/types';
+import type { DeckEffort, Project, RememberedPicks } from '$lib/types';
 import { agentPost, sessionPath } from '$lib/agent-api';
 
 // Reasoning-effort levels the claude CLI accepts (`--effort`), offered next to the
@@ -10,7 +10,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 // project's last pick, else the global last-used (fresh-project fallback), else
 // unset (the CLI's own default). Mirrors resolveModelChoice, but scalar since
 // effort is claude-only.
-export function resolveEffort(project: Project | undefined, settings: DeckSettings): DeckEffort | undefined {
+export function resolveEffort(project: Project | undefined, settings: RememberedPicks): DeckEffort | undefined {
 	return project?.lastEffort ?? settings.lastEffort;
 }
 
