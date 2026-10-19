@@ -244,6 +244,12 @@ public final class DeckStore {
 		try await stored(client.updateProject(path: path, changes: changes))
 	}
 
+	/// Save a project's dev-server config.
+	public func saveDevConfig(path: String, dev: DevConfig) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await stored(client.saveDevConfig(path: path, dev: dev))
+	}
+
 	/// Unregister a project; its folder and sessions are left alone.
 	public func removeProject(path: String) async throws {
 		guard let client else { throw DeckError.notConfigured }

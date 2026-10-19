@@ -139,6 +139,14 @@ public final class DeckClient: @unchecked Sendable {
 		return try decoder.decode(ProjectDetail.self, from: data)
 	}
 
+	/// Replace a project's dev-server config. A shape the server rejects is a
+	/// 400 whose message names the problem.
+	public func saveDevConfig(path: String, dev: DevConfig) async throws -> ProjectDetail {
+		let body: [String: Any] = ["path": path, "dev": try dev.jsonObject()]
+		let data = try await requestData("PATCH", "/api/agent/projects/config", body: body)
+		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
 	/// Folder suggestions for a path being typed, `~`-collapsed.
 	public func completePath(_ partial: String) async throws -> [String] {
 		try await get("/api/agent/fs/complete", query: [URLQueryItem(name: "q", value: partial)])

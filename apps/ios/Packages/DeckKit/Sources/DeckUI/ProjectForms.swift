@@ -198,6 +198,7 @@ public struct ProjectEditorForm<Extra: View>: View {
 					.lineLimit(1)
 					.truncationMode(.head)
 			}
+			NavigationLink("Dev servers") { DevConfigEditor(project: project) }
 		}
 		Section {
 			TextField("Default first prompt (optional)", text: $draft.template, axis: .vertical)

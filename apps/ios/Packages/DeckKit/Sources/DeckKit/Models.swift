@@ -630,10 +630,11 @@ public struct ProjectDetail: Codable, Sendable {
 	public let reviewPrompt: String?
 	public let hidden: Bool?
 	public let automation: ProjectAutomation?
+	public let dev: DevConfig?
 
 	public init(
 		path: String, name: String?, group: String?, template: String? = nil, reviewPrompt: String? = nil,
-		hidden: Bool? = nil, automation: ProjectAutomation?
+		hidden: Bool? = nil, automation: ProjectAutomation?, dev: DevConfig? = nil
 	) {
 		self.path = path
 		self.name = name
@@ -642,6 +643,7 @@ public struct ProjectDetail: Codable, Sendable {
 		self.reviewPrompt = reviewPrompt
 		self.hidden = hidden
 		self.automation = automation
+		self.dev = dev
 	}
 }
 

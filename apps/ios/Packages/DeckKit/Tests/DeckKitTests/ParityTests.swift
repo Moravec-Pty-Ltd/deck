@@ -797,6 +797,31 @@ final class ParityTests: XCTestCase {
 		XCTAssertTrue(sent.isEmpty)
 	}
 
+	// MARK: - Dev config (plan item P17b)
+
+	func testSavingTheDevConfigPatchesOnlyDev() async {
+		let dev = DevConfig(
+			copyFromMain: ["apps/api/.env.local"],
+			setup: [DevSetupStep(label: "install", run: "pnpm i")],
+			servers: [DevServer(name: "web", run: "pnpm dev", setup: [], ports: [DevPort(port: 5173, primary: true)], readyPattern: #"Local:\s+(http\S+)"#)])
+		let sent = await requests(reply: Self.record) { _ = try await $0.saveDevConfig(path: "/path/to/project", dev: dev) }
+		assertShape(sent, "PATCH", "/api/agent/projects/config", keys: ["dev", "path"])
+		let body = (sent.first?.json as? [String: Any])?["dev"] as? [String: Any]
+		XCTAssertEqual(Set(body?.keys.map { $0 } ?? []), ["copyFromMain", "setup", "servers"])
+		let server = (body?["servers"] as? [[String: Any]])?.first
+		XCTAssertEqual(Set(server?.keys.map { $0 } ?? []), ["name", "run", "setup", "ports", "readyPattern"], "blank optionals are left out")
+		XCTAssertEqual(server?["readyPattern"] as? String, #"Local:\s+(http\S+)"#)
+		XCTAssertEqual((server?["ports"] as? [[String: Any]])?.first?["port"] as? Int, 5173)
+	}
+
+	func testADevConfigRefusalIsShownAsItWasSent() async {
+		var thrown: Error?
+		_ = await requests(reply: #"{"message":"duplicate server name: web"}"#, status: 400) {
+			do { _ = try await $0.saveDevConfig(path: "/path/to/project", dev: DevConfig()) } catch { thrown = error; throw error }
+		}
+		XCTAssertEqual(thrown.map(DeckError.message(for:)), "duplicate server name: web")
+	}
+
 	// MARK: - Capability gating
 
 	func testServerInfoReadsTheCapabilities() async throws {

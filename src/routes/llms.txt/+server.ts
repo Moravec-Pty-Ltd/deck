@@ -243,6 +243,22 @@ has its own route, sources theirs, and the remembered model picks are written
 by session creates, so those are ignored here. Returns the updated record; 404
 for an unregistered path.
 
+\`dev\` replaces the whole dev-server config (see Dev servers). Every key is
+optional; step and server \`cwd\` are relative to the worktree:
+
+\`\`\`json
+{
+	"copyFromMain": [".env"],
+	"setup": [{ "label": "install", "run": "pnpm i", "cwd"?: "." }],
+	"servers": [{ "name": "web", "run": "pnpm dev", "cwd"?: "apps/web",
+		"setup"?: [<step>], "ports"?: [{ "port": 5173, "label"?: "app", "primary"?: true }],
+		"readyPattern"?: "Local:\\\\s+(http\\\\S+)" }]
+}
+\`\`\`
+
+Server names must be unique (also after tmux sanitising) and \`readyPattern\`
+must compile as a regex; a port is an integer 1-65535.
+
 ### POST /api/agent/projects/clone
 
 \`{ "url": "https://github.com/acme/repo.git", "parent": "~/code", "name"?, "group"? }\`
