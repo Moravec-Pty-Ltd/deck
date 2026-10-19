@@ -55,7 +55,13 @@
 
 	// Blank fields clear on the server; the key is sent only when there is a new
 	// one to store (or null to remove it), so saving never needs the stored value.
-	async function save(key: { apiKey?: string | null } = apiKey.trim() ? { apiKey: apiKey.trim() } : {}) {
+	// The stored key is never sent back to the page, so an empty field means
+	// "keep it": send apiKey only to set a newly typed key or to remove one.
+	async function save(removeKey = false) {
+		const typed = apiKey.trim();
+		const key: { apiKey?: string | null } = {};
+		if (removeKey) key.apiKey = null;
+		else if (typed) key.apiKey = typed;
 		busy = true;
 		message = '';
 		saved = false;
@@ -130,7 +136,7 @@
 						<div class="flex flex-wrap items-center gap-2 text-sm">
 							<span class="flex items-center gap-1"><KeyRound size={14} /> A key is saved</span>
 							<button class="btn btn-xs" onclick={() => (replacingKey = true)} disabled={busy}>Replace</button>
-							<button class="btn btn-ghost btn-xs" onclick={() => save({ apiKey: null })} disabled={busy}>Remove</button>
+							<button class="btn btn-ghost btn-xs" onclick={() => save(true)} disabled={busy}>Remove</button>
 						</div>
 					{:else}
 						<input
