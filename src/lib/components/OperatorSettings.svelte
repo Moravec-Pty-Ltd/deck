@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Check, KeyRound, MessageSquareText } from '@lucide/svelte';
+	import { Check, KeyRound } from '@lucide/svelte';
 	import { fetchSettings, patchSettings } from '$lib/settings-patch';
 
 	// Somewhere to start from: the local model that fits a small machine, the
@@ -80,17 +80,15 @@
 
 <div class="card border border-base-300 bg-base-100">
 	<div class="card-body gap-3 p-4">
-		<h2 class="m-0 flex items-center gap-2 text-base font-semibold">
-			<MessageSquareText size={16} /> Watch operator
-			{#if status}
-				<span class="badge badge-sm {status.configured ? 'badge-success' : 'badge-ghost'}">{status.configured ? 'on' : 'off'}</span>
-			{/if}
-		</h2>
-		<p class="m-0 text-sm opacity-70">
-			The hands-free operator: a model that talks with you and drives sessions (status, replies,
-			messages, answers, starting and stopping). Any chat endpoint with tool calling, OpenAI-shaped
-			(a local mlx_lm.server or llama-server, a machine on your tailnet, most hosted models) or
-			Anthropic-shaped (Claude). Voice mode above supplies the ears and voice.
+		{#if status}
+			<div>
+				<span class="badge badge-sm {status.configured ? 'badge-success' : 'badge-ghost'}">{status.configured ? 'Configured' : 'Not configured'}</span>
+			</div>
+		{/if}
+		<p class="m-0 text-xs opacity-70">
+			Any chat endpoint with tool calling: OpenAI-shaped (a local mlx_lm.server or llama-server, a
+			machine on your tailnet, most hosted models) or Anthropic-shaped (Claude). The Voice section
+			supplies its ears and voice.
 		</p>
 		<div class="flex flex-wrap gap-2">
 			{#each PRESETS as preset (preset.label)}

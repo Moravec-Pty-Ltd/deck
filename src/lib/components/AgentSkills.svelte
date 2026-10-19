@@ -52,11 +52,10 @@
 </script>
 
 <div class="rounded-box border border-base-300 bg-base-100 p-4">
-	<h2 class="mb-1 text-sm font-semibold">Agent skills</h2>
-	<p class="mb-3 text-xs opacity-60">
-		Teach each installed harness to drive deck (the shipped
-		<span class="font-mono">deck</span> skill, backed by
-		<a href="/llms.txt" target="_blank" rel="noopener noreferrer" class="link">/llms.txt</a>).
+	<p class="mb-3 text-xs opacity-70">
+		The shipped <span class="font-mono">deck</span> skill, backed by
+		<a href="/llms.txt" target="_blank" rel="noopener noreferrer" class="link">/llms.txt</a>,
+		installed into each harness's skill directory.
 	</p>
 	{#if errorMsg}
 		<div class="alert alert-error mb-3 py-2 text-sm">{errorMsg}</div>

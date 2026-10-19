@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { patchSettings } from '$lib/settings-patch';
-	import { AudioLines, Check, Search } from '@lucide/svelte';
+	import { Check, Search } from '@lucide/svelte';
 
 	// App-wide panel: where voice mode's speech servers are. Both are
 	// OpenAI-shaped endpoints deck proxies; the local chatterbox server offers
@@ -78,17 +78,15 @@
 
 <div class="card border border-base-300 bg-base-100">
 	<div class="card-body gap-3 p-4">
-		<h2 class="m-0 flex items-center gap-2 text-base font-semibold">
-			<AudioLines size={16} /> Voice mode
-			{#if status}
-				<span class="badge badge-sm {status.tts ? 'badge-success' : 'badge-ghost'}">read {status.tts ? 'on' : 'off'}</span>
-				<span class="badge badge-sm {status.stt ? 'badge-success' : 'badge-ghost'}">talk {status.stt ? 'on' : 'off'}</span>
-			{/if}
-		</h2>
-		<p class="m-0 text-sm opacity-70">
-			Reads a session's replies aloud and sends what you say. Point it at an OpenAI-shaped speech
-			server (POST /v1/audio/speech and /v1/audio/transcriptions); deck proxies both so phones and
-			browsers never reach the server directly.
+		{#if status}
+			<div class="flex flex-wrap items-center gap-2">
+				<span class="badge badge-sm {status.tts ? 'badge-success' : 'badge-ghost'}">Read aloud {status.tts ? 'on' : 'off'}</span>
+				<span class="badge badge-sm {status.stt ? 'badge-success' : 'badge-ghost'}">Dictation {status.stt ? 'on' : 'off'}</span>
+			</div>
+		{/if}
+		<p class="m-0 text-xs opacity-70">
+			Any OpenAI-shaped speech server (POST /v1/audio/speech and /v1/audio/transcriptions). deck
+			proxies both, so phones and browsers never reach the server directly.
 		</p>
 		{#if loaded}
 			<div class="grid gap-2 sm:grid-cols-2">

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Check, Shrink } from '@lucide/svelte';
+	import { Check } from '@lucide/svelte';
 	import { fetchSettings, patchSettings } from '$lib/settings-patch';
 	import {
 		COMPACT_PERCENT_MAX,
@@ -51,18 +51,11 @@
 
 <div class="card border border-base-300 bg-base-100">
 	<div class="card-body gap-3 p-4">
-		<h2 class="m-0 flex items-center gap-2 text-base font-semibold">
-			<Shrink size={16} /> Auto-compact
-			{#if loaded && enabled}
-				<span class="badge badge-ghost badge-sm">at {percent}%</span>
-			{/if}
-		</h2>
 		<p class="m-0 text-xs opacity-70">
-			Claude compacts a full context window on its own, but only once it is genuinely full, and that
-			costs the best part of a minute at the end of a turn you were waiting on. Turn this on and deck
-			compacts earlier, at a point you pick. What it keeps is what a handoff keeps: the goal, what is
-			done and in progress, next steps, blockers, key files, decisions, and the git state. Claude
-			sessions only.
+			Claude's own compaction waits until the window is genuinely full, which costs the best part of
+			a minute at the end of a turn you were waiting on. What deck keeps is what a handoff keeps: the
+			goal, what is done and in progress, next steps, blockers, key files, decisions, and the git
+			state.
 		</p>
 		{#if loaded}
 			<label class="flex cursor-pointer items-center gap-2 text-sm">

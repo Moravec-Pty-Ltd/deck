@@ -454,7 +454,7 @@ export interface NewSessionPreset {
 	title?: string;
 }
 
-// One harness's row in the projects page's Agent skills panel (issue #127):
+// One harness's row in the settings page's Agent skills panel (issue #127):
 // the shipped deck skill's install/version status. `supported` is whether deck
 // knows where that harness keeps skills; unsupported rows render as such
 // rather than blocking the panel. Derived in server/skills-core.ts.

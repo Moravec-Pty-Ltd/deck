@@ -7,10 +7,6 @@
 	import IssueSources from '$lib/components/IssueSources.svelte';
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
-	import AgentSkills from '$lib/components/AgentSkills.svelte';
-	import SpeechSettings from '$lib/components/SpeechSettings.svelte';
-	import OperatorSettings from '$lib/components/OperatorSettings.svelte';
-	import CompactSettings from '$lib/components/CompactSettings.svelte';
 	import AutomationAgentForm from '$lib/components/AutomationAgentForm.svelte';
 	import { fromRow, toRow, type AgentRow } from '$lib/automation-form-core';
 	import { loadSettings } from '$lib/settings-store';
@@ -299,12 +295,6 @@
 				{/if}
 			</div>
 		{/each}
-	</div>
-	<div class="mt-5 space-y-4">
-		<SpeechSettings />
-		<OperatorSettings />
-		<CompactSettings />
-		<AgentSkills />
 	</div>
 {/if}
 
