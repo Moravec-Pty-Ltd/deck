@@ -1,8 +1,5 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { resetOperator } from '$lib/server/operator';
+import { operatorResetRoute } from '$lib/server/operator-route';
 
-// Start a new conversation; the old one is archived, not deleted.
-export const POST: RequestHandler = () => {
-	return json({ ok: true, archived: resetOperator() });
-};
+// Start a new operator conversation, same handler as the agent API's twin; see operator-route.ts.
+export const POST: RequestHandler = operatorResetRoute;

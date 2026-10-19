@@ -710,6 +710,115 @@ unregistered \`projectPath\`.
 Remove a source. Its key goes from the keyring too, unless another source still
 uses it. Returns \`{ "ok": true }\`; 404 on an unregistered project.
 
+## Dev servers
+
+The dev servers a project configures in its dev config, run per session
+in that session's own worktree. deck resolves the worktree from the stored
+session; no request names a path.
+
+### GET /api/agent/servers
+
+Every session's server states from the monitor's last poll (no fresh probing):
+\`{ "<sessionId>": ["running", "stopped", ...] }\`. A state is one of stopped |
+setup | starting | running | stalled | errored | dead. Sessions without
+configured servers are absent.
+
+### GET /api/agent/sessions/{id}/servers
+
+\`{ "servers": [{ "name", "state", "tmuxName", "ports": [{ "port", "label"?,
+"primary"?, "listening" }], "previewUrl"?, "setup": [{ "label", "state":
+"pending"|"running"|"ok"|"failed", "exitCode"?, "output"? }], "error"?,
+"warning"? }] }\`, probed live. 404 for an unknown session.
+
+### POST /api/agent/sessions/{id}/servers/{name}
+
+\`{ "action": "start" | "stop" | "restart" | "resetup" }\`, or
+\`{ "action": "step", "step": <index>, "label"?: "<step label>" }\` to re-run one
+setup step (\`label\`, when sent, must still match the step at that index, which
+catches a stale step list). Returns the server's runtime as in the list above.
+400 for an unknown action, a bad step, an unknown server, or a bring-up already
+in flight, with the reason in \`message\`.
+
+### GET /api/agent/sessions/{id}/servers/{name}/logs?h=<tag>
+
+A snapshot of the server's terminal pane: \`{ "text", "cleared"?, "dead"?, "h" }\`,
+or \`{ "text": "(not running)", "dead": true }\` when it has no pane. Send the
+last \`h\` back to get \`{ "unchanged": true, "h" }\` when nothing changed, so a
+poller can skip re-rendering. 404 for an unknown session or server.
+
+## Voice
+
+Voice mode reads replies aloud and takes push-to-talk input through a local
+speech server, and the operator is a hands-free assistant over all sessions.
+Both are off until configured in deck's settings.
+
+### GET /api/agent/speech
+
+\`{ "tts": bool, "stt": bool, "voice": "<name>"|null, "voices": [...], "config":
+{ "ttsUrl"?, "sttUrl"?, "voice"? } }\`: which halves are configured and
+answering. Hide voice features when both are false.
+
+### POST /api/agent/speech/segments
+
+\`{ "text": "<markdown reply>" }\` → \`{ "segments": [{ "id", "text" }] }\`, the
+sentences voice mode plays, with code blocks and tables replaced by a short
+spoken marker. Audio is made when a segment is fetched, so play the first while
+fetching the rest. 400 when no text-to-speech server is configured.
+
+### GET /api/agent/speech/audio/{id}
+
+One segment's audio as \`audio/wav\`, synthesised on first fetch. The id is a
+content hash, so the bytes never change: cache it. 404 for an unknown id, 502
+when synthesis fails.
+
+### POST /api/agent/speech/transcribe
+
+The recording as the raw body with its \`audio/*\` (or \`video/*\`,
+\`application/octet-stream\`) content-type, up to 25 MB →
+\`{ "text", "seconds" }\`. 400 when no speech-to-text server is configured or the
+body is empty, 413 when too large, 502 when transcription fails.
+
+### GET /api/agent/operator
+
+\`{ "configured": bool, "model": "<id>"|null, "provider": "anthropic"|"openai", "listening": bool }\`.
+\`listening\` is true while some client holds the events stream open.
+
+### POST /api/agent/operator
+
+\`{ "text": "<utterance>", "source"?: "voice" | "<label>" }\`, one user turn →
+\`{ "text": "<what the operator said>", "actions": [{ "tool", "args",
+"result" }] }\`. The operator can read sessions and act on them (send, answer,
+start), so this drives deck the way the user's voice would.
+
+### GET /api/agent/operator/events
+
+Server-sent events: \`ready\` \`{ "at" }\` on open, then \`announcement\`
+\`{ "text", "sessionId", "kind": "ask"|"turn"|"status", "at" }\` whenever the
+operator speaks unprompted. Holding the stream open turns those announcements
+on; they stop when the last listener leaves.
+
+### GET /api/agent/operator/history?limit=<n>
+
+\`{ "turns": [{ "role": "user"|"assistant", "content", "at", "source"? }] }\`,
+oldest first; \`limit\` defaults to 50, clamped to 1..200.
+
+### POST /api/agent/operator/reset
+
+Start a new conversation. The old log is archived, not deleted:
+\`{ "ok": true, "archived": "<archive path>"|null }\` (null when there was
+nothing to archive).
+
+## Reviews
+
+### GET /api/agent/reviews
+
+The morabot PR reviewer's state from the monitor's last poll: \`{ "status":
+"ok"|"offline"|"unconfigured", "updatedAt"?, "inFlight": { "repo", "pr",
+"headSha", "phase", "startedAt" }|null, "recent": [{ "repo", "pr", "headSha",
+"decision", "reviewId", "url", "reviewedAt" }], "recentErrors": [{ "repo",
+"pr", "headSha", "phase", "message", "url", "failedAt" }] }\`. \`unconfigured\`
+means no reviewer is set up on this machine.
+
 ## Push notifications
 
 Native iOS/watchOS clients register a device token to receive the same nudges

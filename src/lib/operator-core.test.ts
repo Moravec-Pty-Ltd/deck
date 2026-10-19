@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	HISTORY_TURNS,
+	historyLimit,
 	IDLE_RESET_MS,
 	OPERATOR_TOOLS,
 	askAnnouncement,
@@ -176,5 +177,19 @@ describe('pickOption', () => {
 		expect(pickOption('the second one', options)).toBe('Fixed 320');
 		expect(pickOption('something else entirely', options)).toBeNull();
 		expect(pickOption('9', options)).toBeNull();
+	});
+});
+
+describe('historyLimit', () => {
+	it.each([
+		[null, 50],
+		['20', 20],
+		['5000', 200],
+		['0', 1],
+		['-3', 1],
+		['abc', 50],
+		['7.9', 7]
+	])('%s reads as %d', (raw, want) => {
+		expect(historyLimit(raw)).toBe(want);
 	});
 });

@@ -28,7 +28,20 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./sessions/[id]/restart/+server'), () => import('./agent/sessions/[id]/restart/+server'), ['POST']],
 	[() => import('./projects/credentials/+server'), () => import('./agent/credentials/+server'), ['GET']],
 	[() => import('./projects/sources/+server'), () => import('./agent/projects/sources/+server'), ['POST', 'DELETE']],
-	[() => import('./issues/meta/+server'), () => import('./agent/projects/sources/lookup/+server'), ['POST']]
+	[() => import('./issues/meta/+server'), () => import('./agent/projects/sources/lookup/+server'), ['POST']],
+	[() => import('./servers/+server'), () => import('./agent/servers/+server'), ['GET']],
+	[() => import('./sessions/[id]/servers/+server'), () => import('./agent/sessions/[id]/servers/+server'), ['GET']],
+	[() => import('./sessions/[id]/servers/[name]/+server'), () => import('./agent/sessions/[id]/servers/[name]/+server'), ['POST']],
+	[() => import('./sessions/[id]/servers/[name]/logs/+server'), () => import('./agent/sessions/[id]/servers/[name]/logs/+server'), ['GET']],
+	[() => import('./speech/+server'), () => import('./agent/speech/+server'), ['GET']],
+	[() => import('./speech/segments/+server'), () => import('./agent/speech/segments/+server'), ['POST']],
+	[() => import('./speech/audio/[id]/+server'), () => import('./agent/speech/audio/[id]/+server'), ['GET']],
+	[() => import('./speech/transcribe/+server'), () => import('./agent/speech/transcribe/+server'), ['POST']],
+	[() => import('./operator/+server'), () => import('./agent/operator/+server'), ['GET', 'POST']],
+	[() => import('./operator/events/+server'), () => import('./agent/operator/events/+server'), ['GET']],
+	[() => import('./operator/history/+server'), () => import('./agent/operator/history/+server'), ['GET']],
+	[() => import('./operator/reset/+server'), () => import('./agent/operator/reset/+server'), ['POST']],
+	[() => import('./reviews/+server'), () => import('./agent/reviews/+server'), ['GET']]
 ];
 
 describe('browser and agent routes share one handler', () => {
