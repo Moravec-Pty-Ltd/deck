@@ -22,7 +22,8 @@
 	import VoiceBar from './VoiceBar.svelte';
 	import { VoiceSession } from '$lib/voice.svelte';
 	import { agentGet, agentPost, sessionPath } from '$lib/agent-api';
-	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight, AudioLines } from '@lucide/svelte';
+	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight, AudioLines, FileText } from '@lucide/svelte';
+	import { admitUploads, formatBytes, isInlineImage } from '$lib/upload-core';
 	import {
 		isCrossSession,
 		isEmptyDraft,
@@ -101,6 +102,11 @@
 
 	type Attachment = { media_type: string; data: string; url: string };
 	let attachments = $state<Attachment[]>(restored?.attachments ?? []);
+	// Everything the model can't be handed inline goes through the upload route
+	// and is read from disk. Held as File, not base64, and never persisted with
+	// the draft: these can be 25 MB each.
+	let uploads = $state<File[]>([]);
+	let uploadError = $state('');
 	// The session the draft was started in (null when empty); drives the "from:"
 	// chip and the confirm-on-send guard when it differs from the viewed session.
 	let originSessionId = $state<string | null>(restored?.originSessionId ?? null);
@@ -563,33 +569,43 @@
 		return btoa(bin);
 	}
 
-	async function addFile(file: File) {
-		if (!file.type.startsWith('image/')) return;
+	async function addImage(file: File) {
 		const data = toBase64(await file.arrayBuffer());
 		attachments = [...attachments, { media_type: file.type, data, url: `data:${file.type};base64,${data}` }];
+	}
+
+	function addFiles(files: Iterable<File>) {
+		const others: File[] = [];
+		for (const f of files) {
+			if (isInlineImage(f.type)) addImage(f);
+			else others.push(f);
+		}
+		const { admitted, errors } = admitUploads(uploads.length, others);
+		uploads = [...uploads, ...admitted];
+		uploadError = errors.join('. ');
 	}
 
 	function onPaste(e: ClipboardEvent) {
 		const items = e.clipboardData?.items;
 		if (!items) return;
+		const files: File[] = [];
 		for (const it of items) {
-			if (it.kind === 'file' && it.type.startsWith('image/')) {
-				const f = it.getAsFile();
-				if (f) addFile(f);
-			}
+			const f = it.kind === 'file' ? it.getAsFile() : null;
+			if (f) files.push(f);
 		}
+		if (files.length) addFiles(files);
 	}
 
 	function onDrop(e: DragEvent) {
 		e.preventDefault();
 		dragging = false;
 		const files = e.dataTransfer?.files;
-		if (files) for (const f of files) addFile(f);
+		if (files) addFiles(files);
 	}
 
 	function onPick(e: Event) {
 		const files = (e.target as HTMLInputElement).files;
-		if (files) for (const f of files) addFile(f);
+		if (files) addFiles(files);
 		(e.target as HTMLInputElement).value = '';
 	}
 
@@ -597,7 +613,13 @@
 		attachments = attachments.filter((_, k) => k !== i);
 	}
 
-	const canSend = $derived(!!input.trim() || attachments.length > 0);
+	function removeUpload(i: number) {
+		uploads = uploads.filter((_, k) => k !== i);
+		uploadError = '';
+	}
+
+	const canSend = $derived(!!input.trim() || attachments.length > 0 || uploads.length > 0);
+	const attachedCount = $derived(attachments.length + uploads.length);
 
 	// The draft was started in a different session than the one being viewed.
 	const crossSession = $derived(isCrossSession(originSessionId, session.id));
@@ -629,13 +651,15 @@
 	// Track the origin session: adopt the current one when the draft first becomes
 	// non-empty, hold it across switches, clear it when the draft is emptied.
 	$effect(() => {
-		const empty = isEmptyDraft({ text: input, attachments });
+		const empty = isEmptyDraft({ text: input, attachments }) && uploads.length === 0;
 		originSessionId = nextOrigin(originSessionId, empty, session.id);
 	});
 
 	function clearDraft() {
 		input = '';
 		attachments = [];
+		uploads = [];
+		uploadError = '';
 		originSessionId = null;
 		if (typeof localStorage !== 'undefined') {
 			try {
@@ -668,16 +692,29 @@
 		const images = attachments.map((a) => ({ media_type: a.media_type, data: a.data }));
 		// Clear optimistically, but snapshot so a failed send restores the draft
 		// (the draft should only clear on a *successful* send).
-		const prev = { input, attachments, originSessionId };
+		const prev = { input, attachments, uploads, originSessionId };
 		clearDraft();
 		atBottom = true;
 		try {
-			await agentPost(sessionPath(session.id, 'message'), { text, images: images.length ? images : undefined });
-		} catch {
+			await postMessage(text, images, prev.uploads);
+		} catch (err) {
 			input = prev.input;
 			attachments = prev.attachments;
+			uploads = prev.uploads;
 			originSessionId = prev.originSessionId;
+			if (prev.uploads.length) uploadError = err instanceof Error ? err.message : 'upload failed';
 		}
+	}
+
+	// With files, the upload route sends the turn itself, naming where each file
+	// landed under the text (the share extension's message), images still inline.
+	async function postMessage(text: string, images: { media_type: string; data: string }[], files: File[]) {
+		const inline = images.length ? images : undefined;
+		if (!files.length) return agentPost(sessionPath(session.id, 'message'), { text, images: inline });
+		const encoded = await Promise.all(
+			files.map(async (f) => ({ name: f.name, data: toBase64(await f.arrayBuffer()) }))
+		);
+		return agentPost(sessionPath(session.id, 'upload'), { files: encoded, text, images: inline });
 	}
 
 	// Fire a quick message immediately; `expand: true` opts it into server-side
@@ -861,7 +898,7 @@
 
 	{#if dragging}
 		<div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-box border-2 border-dashed border-primary bg-base-100/70 text-sm font-medium">
-			Drop images to attach
+			Drop files to attach
 		</div>
 	{/if}
 
@@ -923,13 +960,34 @@
 				{/each}
 			</div>
 		{/if}
+		{#if uploads.length}
+			<div class="mb-2 flex flex-wrap gap-2">
+				{#each uploads as f, i (i)}
+					<span class="badge badge-lg max-w-full gap-1.5 border-base-300 pr-1" title={f.name}>
+						<FileText size={14} class="shrink-0 opacity-70" />
+						<span class="truncate">{f.name}</span>
+						<span class="shrink-0 opacity-60">{formatBytes(f.size)}</span>
+						<button
+							class="btn btn-ghost btn-circle btn-xs shrink-0"
+							onclick={() => removeUpload(i)}
+							aria-label="Remove {f.name}"
+						>
+							<X size={12} />
+						</button>
+					</span>
+				{/each}
+			</div>
+		{/if}
+		{#if uploadError}
+			<p class="mb-2 text-xs text-error" role="alert">{uploadError}</p>
+		{/if}
 		<textarea
 			class="textarea block min-h-18 w-full"
 			rows="3"
 			style="height: calc(4.5em + 1.5rem + 3px)"
 			placeholder={status === 'running'
 				? 'queue a follow-up (ctrl/cmd+enter)'
-				: 'message (ctrl/cmd+enter, paste images)'}
+				: 'message (ctrl/cmd+enter, paste or drop files)'}
 			bind:value={input}
 			onkeydown={onKeydown}
 			onpaste={onPaste}
@@ -951,7 +1009,6 @@
 				<input
 					bind:this={fileInput}
 					type="file"
-					accept="image/*"
 					multiple
 					class="hidden"
 					onchange={onPick}
@@ -959,8 +1016,8 @@
 				<button
 					class="btn btn-ghost btn-square"
 					onclick={() => fileInput?.click()}
-					aria-label="Attach image"
-					title="Attach image"
+					aria-label="Attach files"
+					title="Attach files"
 				>
 					<Paperclip size={16} />
 				</button>
@@ -986,8 +1043,8 @@
 				</h3>
 				<p class="mb-3 text-sm opacity-70">
 					This draft was started in <span class="font-semibold">{originTitle}</span>. Send it to
-					<span class="font-semibold">{session.title}</span>?{#if attachments.length}
-						(with {attachments.length} image{attachments.length > 1 ? 's' : ''}){/if}
+					<span class="font-semibold">{session.title}</span>?{#if attachedCount}
+						(with {attachedCount} attachment{attachedCount > 1 ? 's' : ''}){/if}
 				</p>
 				<div class="modal-action">
 					<button class="btn" onclick={() => (pendingSend = false)}>Cancel</button>

@@ -1,6 +1,5 @@
 import type { ImageInput } from './claude';
-
-const IMAGE_TYPE = /^image\/(png|jpe?g|gif|webp)$/;
+import { isInlineImage } from '$lib/upload-core';
 
 export function parseImages(raw: unknown): ImageInput[] {
 	if (!Array.isArray(raw)) return [];
@@ -9,7 +8,7 @@ export function parseImages(raw: unknown): ImageInput[] {
 			(i): i is ImageInput =>
 				!!i &&
 				typeof i.media_type === 'string' &&
-				IMAGE_TYPE.test(i.media_type) &&
+				isInlineImage(i.media_type) &&
 				typeof i.data === 'string' &&
 				i.data.length < 12_000_000
 		)

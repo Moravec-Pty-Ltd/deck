@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { objectBody, sessionOr404 } from './http';
 import { persistUpload } from './uploads';
 import { sendAgentMessage } from './send-agent-message';
-import { sharedFileMessage, uploadTooLarge } from '$lib/upload-core';
+import { MAX_UPLOAD_FILES, sharedFileMessage, uploadTooLarge } from '$lib/upload-core';
 
 // Share one or more files with a session. Shared verbatim by
 // /api/sessions/[id]/upload (browser) and /api/agent/sessions/[id]/upload, the
@@ -39,7 +39,7 @@ function parseFile(raw: unknown): Incoming {
 function parseFiles(v: unknown): Incoming[] {
 	const list = Array.isArray(v) ? v : [];
 	if (!list.length) error(400, 'files must be a non-empty array of { name, data }');
-	if (list.length > 10) error(400, 'at most 10 files per share');
+	if (list.length > MAX_UPLOAD_FILES) error(400, `at most ${MAX_UPLOAD_FILES} files per share`);
 	return list.map(parseFile);
 }
 
@@ -54,7 +54,9 @@ export async function uploadToSession(event: {
 	// Size was settled before anything was written (see parseFile), so nothing
 	// oversized ever reaches the disk to be cleaned up afterwards.
 	const stored = files.map((f) => persistUpload(session.id, f.name, f.data));
-	await sendAgentMessage(session, { text: shareMessage(body.text, stored.map((s) => s.path)) });
+	// `images` rides along so a composer with both pictures and files sends one
+	// turn: the pictures inline, the files by path.
+	await sendAgentMessage(session, { text: shareMessage(body.text, stored.map((s) => s.path)), images: body.images });
 	return json({ ok: true, files: stored });
 }
 

@@ -521,9 +521,10 @@ terminal already holds is a 409. A registered session keeps its id.
 
 ### POST /api/agent/sessions/{id}/upload
 
-\`{ "files": [{ "name": "report.pdf", "data": "<base64>" }], "text"?: "..." }\` —
+\`{ "files": [{ "name": "report.pdf", "data": "<base64>" }], "text"?: "...", "images"?: [...] }\` —
 share files with a session. Up to 10 per call, 25 MB each; a bigger one is a 413
-naming its size.
+naming its size. \`images\` takes the send endpoint's shape and goes inline with
+the same turn, so pictures and files can travel in one message.
 
 The files are written under deck's data dir (never into the worktree, so sharing
 cannot dirty a repo) and the session is sent a message naming their absolute
