@@ -41,6 +41,12 @@ public final class DeckStore {
 	public private(set) var expensiveModels: [String] = []
 	/// What the server advertises on GET /api/agent. Nil until it first answers.
 	public private(set) var serverInfo: ServerInfo?
+	/// Devices waiting to be let in, oldest first. Kept current by the
+	/// `pairing` event, so nothing polls for it.
+	public private(set) var pairingRequests: [PairingRequest] = []
+	/// The PR reviewer's last reported state. Nil until fetched or when the
+	/// server has no reviews route.
+	public private(set) var reviews: ReviewsSnapshot?
 	private var seq: Int?
 	private var eventTask: Task<Void, Never>?
 
@@ -112,6 +118,8 @@ public final class DeckStore {
 		runs = []
 		overseer = nil
 		serverInfo = nil
+		pairingRequests = []
+		reviews = nil
 		connection = .signedOut
 	}
 
@@ -134,8 +142,30 @@ public final class DeckStore {
 			async let quick: Void = refreshQuickMessages()
 			async let details: Void = refreshProjectDetails()
 			async let user: Void = refreshUser()
-			_ = await (quick, details, user)
+			async let pairing: Void = refreshPairing()
+			async let reviews: Void = refreshReviews()
+			_ = await (quick, details, user, pairing, reviews)
 		}
+	}
+
+	public func refreshPairing() async {
+		guard let client, supports(.pairing) else { return }
+		if let fresh = try? await client.pairingRequests() { pairingRequests = fresh }
+	}
+
+	public func refreshReviews() async {
+		guard let client, supports(.reviews) else { return }
+		if let fresh = try? await client.reviews() { reviews = fresh }
+	}
+
+	/// Let a device in or turn it away. The request leaves the list either way:
+	/// one that had already expired or been decided elsewhere is gone too.
+	@discardableResult
+	public func decidePairing(id: String, approve: Bool) async throws -> Bool {
+		guard let client else { throw DeckError.notConfigured }
+		let ok = try await client.decidePairing(id: id, approve: approve)
+		pairingRequests.removeAll { $0.id == id }
+		return ok
 	}
 
 	/// Ask the server what it supports. A failure keeps what was known before.
@@ -401,7 +431,10 @@ public final class DeckStore {
 		}
 		// The snapshot covers sessions only; after a gap the run-updated events
 		// it skipped are gone too, so re-read the runs.
-		if response.gap == true { Task { await refreshRuns() } }
+		if response.gap == true {
+			Task { await refreshRuns() }
+			Task { await refreshPairing() }
+		}
 		for event in response.events ?? [] {
 			apply(event)
 			onFeedEvent?(event)
@@ -439,6 +472,8 @@ public final class DeckStore {
 			// The event names the run; the digest is fetched, never derived here.
 			if let runId = event.runId ?? event.sessionId { Task { await refreshRun(id: runId) } }
 			Task { await refreshOverseer() }
+		case "pairing":
+			applyPairing(event)
 		case "run-deleted":
 			if let runId = event.runId ?? event.sessionId {
 				runs.removeAll { $0.id == runId }
@@ -463,6 +498,20 @@ public final class DeckStore {
 			if let pr = event.pr { sessions[index].pr = pr }
 			if let cost = event.cost { sessions[index].cost = cost }
 			if let at = event.at { sessions[index].lastActiveAt = at }
+		}
+	}
+
+	private func applyPairing(_ event: DeckEvent) {
+		guard let id = event.pairingId ?? event.sessionId else { return }
+		guard event.state == "pending" else {
+			pairingRequests.removeAll { $0.id == id }
+			return
+		}
+		guard !pairingRequests.contains(where: { $0.id == id }) else { return }
+		if let code = event.code {
+			pairingRequests.append(PairingRequest(id: id, code: code))
+		} else {
+			Task { await refreshPairing() }
 		}
 	}
 

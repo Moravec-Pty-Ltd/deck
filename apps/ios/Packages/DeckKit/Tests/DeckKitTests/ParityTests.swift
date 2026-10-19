@@ -849,6 +849,50 @@ final class ParityTests: XCTestCase {
 		await store.refreshServerInfo()
 		XCTAssertFalse(store.serverTooOld)
 	}
+	func testPairingListUsesTheAgentRoute() async {
+		let sent = await requests(reply: #"{"pending":[]}"#) { _ = try await $0.pairingRequests() }
+		assertShape(sent, "GET", "/api/agent/pairing")
+	}
+
+	func testDecidingAPairingPostsApproveAlone() async {
+		let sent = await requests { _ = try await $0.decidePairing(id: "pair_a", approve: false) }
+		assertShape(sent, "POST", "/api/agent/pairing/pair_a", keys: ["approve"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["approve"] as? Bool, false)
+	}
+
+	func testReviewsUseTheAgentRoute() async throws {
+		let reply = #"{"status":"ok","updatedAt":"2026-01-01T00:00:00Z","inFlight":{"repo":"acme/web","pr":4,"headSha":"abc","phase":"model","startedAt":"2026-01-01T00:00:00Z"},"recent":[{"repo":"acme/web","pr":3,"headSha":"def","decision":"REQUEST_CHANGES","reviewId":11,"url":"https://example.test/r/11","reviewedAt":"2026-01-01T00:00:00Z"}],"recentErrors":[{"repo":"acme/web","pr":2,"headSha":"0a1","phase":"prepare","message":"no diff","url":"https://example.test/pr/2","failedAt":"2026-01-01T00:00:00Z"}]}"#
+		var decoded: ReviewsSnapshot?
+		let sent = await requests(reply: reply) { decoded = try await $0.reviews() }
+		assertShape(sent, "GET", "/api/agent/reviews")
+		let reviews = try XCTUnwrap(decoded)
+		XCTAssertEqual(reviews.inFlight?.phaseLabel, "Reviewing")
+		XCTAssertEqual(reviews.recent.first?.decisionLabel, "Changes requested")
+		XCTAssertEqual(reviews.recentErrors.first?.phaseLabel, "Preparation")
+		XCTAssertTrue(reviews.isShown)
+	}
+
+	@MainActor
+	func testAPairingEventAddsARequestAndADecisionRemovesIt() async throws {
+		_ = await requests { _ in }
+		let store = DeckStore(client: Self.stubbedClient())
+		let asked = try JSONDecoder().decode(EventsResponse.self, from: Data("""
+		{ "events": [{ "seq": 1, "sessionId": "pair_a", "type": "pairing", "pairingId": "pair_a", "code": "123456", "state": "pending" },
+		             { "seq": 2, "sessionId": "pair_b", "type": "pairing", "pairingId": "pair_b", "code": "654321", "state": "pending" }], "seq": 2 }
+		""".utf8))
+		store.apply(asked)
+		store.apply(asked)
+		XCTAssertEqual(store.pairingRequests, [PairingRequest(id: "pair_a", code: "123456"), PairingRequest(id: "pair_b", code: "654321")], "a repeated event is applied once")
+
+		try await store.decidePairing(id: "pair_a", approve: true)
+		XCTAssertEqual(store.pairingRequests.map(\.id), ["pair_b"])
+
+		let decidedElsewhere = try JSONDecoder().decode(EventsResponse.self, from: Data("""
+		{ "events": [{ "seq": 3, "sessionId": "pair_b", "type": "pairing", "pairingId": "pair_b", "state": "denied" }], "seq": 3 }
+		""".utf8))
+		store.apply(decidedElsewhere)
+		XCTAssertTrue(store.pairingRequests.isEmpty)
+	}
 }
 
 private actor AsyncGate {

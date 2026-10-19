@@ -386,6 +386,11 @@ public struct DeckEvent: Codable, Sendable {
 	public let runId: String?
 	public let phase: String?
 	public let updatedAt: Double?
+	/// `pairing`: a device asked for access (`state` pending, with its `code`)
+	/// or the request was decided (approved or denied).
+	public let pairingId: String?
+	public let code: String?
+	public let state: String?
 }
 
 public struct EventsResponse: Codable, Sendable {

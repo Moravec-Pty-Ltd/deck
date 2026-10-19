@@ -28,6 +28,7 @@ struct SessionsView: View {
 	/// The Hidden section starts closed: you hid those on purpose.
 	@State private var hiddenExpanded = false
 	@State private var showSettings = false
+	@State private var showReviews = false
 
 	/// The session that is open, at a message when it came from a search hit.
 	struct SessionTarget: Hashable {
@@ -303,7 +304,12 @@ struct SessionsView: View {
 				.listStyle(.plain)
 			}
 		}
-		.safeAreaInset(edge: .top, spacing: 0) { ServerTooOldBanner() }
+		.safeAreaInset(edge: .top, spacing: 0) {
+			VStack(spacing: 8) {
+				ServerTooOldBanner()
+				PairingBanner()
+			}
+		}
 		.navigationTitle("Sessions")
 		.searchable(text: $query, prompt: "Search sessions")
 		.onChange(of: query) { _, text in runSearch(text) }
@@ -328,9 +334,21 @@ struct SessionsView: View {
 				.accessibilityLabel("Settings")
 				.accessibilityIdentifier("openSettings")
 			}
+			if store.reviews?.isShown == true {
+				ToolbarItem(placement: .topBarLeading) {
+					Button { showReviews = true } label: {
+						Image(systemName: "checklist")
+					}
+					.accessibilityLabel("Reviews")
+					.accessibilityIdentifier("openReviews")
+				}
+			}
 		}
 		.sheet(isPresented: $showSettings) {
 			SettingsView()
+		}
+		.sheet(isPresented: $showReviews) {
+			ReviewsView { sessionId in open = SessionTarget(sessionId: sessionId) }
 		}
 		// A bar of our own rather than .bottomBar toolbar items: the tab bar
 		// owns the bottom of the screen, so those never show up.

@@ -89,6 +89,7 @@ struct MainTabView: View {
 				.tabItem { Label("Browser", systemImage: "globe") }
 				.tag(Tab.browser)
 		}
+		.modifier(PairingPrompt())
 		.onReceive(NotificationCenter.default.publisher(for: .deckOpenSession)) { note in
 			guard let sessionId = note.object as? String else { return }
 			deepLinkSessionId = sessionId
