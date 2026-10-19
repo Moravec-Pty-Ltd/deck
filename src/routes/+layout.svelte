@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './layout.css';
-	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff, RefreshCw, X } from '@lucide/svelte';
+	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff, RefreshCw, X, LayoutGrid } from '@lucide/svelte';
 	import { urlBase64ToUint8Array } from '$lib/push';
 	import { watchForUpdate } from '$lib/pwa-update';
 	import { guardedFetch } from '$lib/api-guard';
@@ -9,6 +9,10 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import TranscriptSearch from '$lib/components/TranscriptSearch.svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import NavLinks from '$lib/components/NavLinks.svelte';
+	import InboxWatch from '$lib/components/InboxWatch.svelte';
+	import Popover from '$lib/components/Popover.svelte';
+	import { badgeText, isContained, isSessionPage, showsNav } from '$lib/nav-core';
 
 	let { children } = $props();
 
@@ -44,6 +48,12 @@
 	// (sidebar + panel flush under the header); every other route wants the body
 	// padding, so scope it here rather than stripping it from every page.
 	const bodyPadding = $derived(page.url.pathname.startsWith('/s/') ? '' : 'p-3 sm:p-4');
+
+	const withNav = $derived(showsNav(page.url.pathname));
+	const onSession = $derived(isSessionPage(page.url.pathname));
+	const contained = $derived(isContained(page.url.pathname));
+	let inboxCount = $state(0);
+	let navMenuOpen = $state(false);
 
 	// Bounce to /login when any /api call 401s (an expired or absent session), so
 	// the UI can't wedge on failed data. Defence-in-depth behind the load guard
@@ -175,10 +185,13 @@
 		{ id: 'eink', label: 'E-ink', icon: BookOpen }
 	];
 
-	// Advance to the next theme in the header order, for the palette's Switch theme.
+	const themeIndex = $derived(Math.max(0, themes.findIndex((t) => t.id === theme)));
+	const currentTheme = $derived(themes[themeIndex]);
+	const nextTheme = $derived(themes[(themeIndex + 1) % themes.length]);
+
+	// Advance to the next theme in order: the header control and the palette's Switch theme.
 	function cycleTheme() {
-		const order = themes.map((t) => t.id);
-		setTheme(order[(order.indexOf(theme) + 1) % order.length]);
+		setTheme(nextTheme.id);
 	}
 </script>
 
@@ -196,16 +209,24 @@
 />
 <TranscriptSearch />
 
-<div class="flex h-[100dvh] flex-col overflow-hidden bg-base-200">
-	<header class="navbar min-h-12 shrink-0 gap-2 border-b border-base-300 bg-base-100 px-3 sm:px-4">
-		<div class="flex flex-1 items-center">
-			<a href="/" class="deck-brand flex items-center gap-2.5" aria-label="deck home">
-				<span class="deck-mark" aria-hidden="true"></span>
-				<span class="text-base font-semibold tracking-tight">deck</span>
-			</a>
-		</div>
+{#if withNav}<InboxWatch bind:count={inboxCount} />{/if}
 
-		<div class="flex items-center gap-1.5">
+<div class="flex h-[100dvh] flex-col overflow-hidden bg-base-200">
+	<header
+		class="flex h-12 shrink-0 items-stretch gap-3 border-b border-base-300 bg-base-100 px-3 sm:px-4"
+	>
+		<a href="/" class="deck-brand flex items-center gap-2.5" aria-label="deck home">
+			<span class="deck-mark" aria-hidden="true"></span>
+			<span class="text-base font-semibold tracking-tight">deck</span>
+		</a>
+
+		{#if withNav}
+			<div class="hidden md:flex">
+				<NavLinks variant="tabs" {inboxCount} />
+			</div>
+		{/if}
+
+		<div class="ml-auto flex items-center gap-1.5">
 			{#if installPrompt}
 				<button class="btn btn-primary btn-sm" onclick={install} aria-label="Install app">
 					<Download size={16} /> <span class="hidden sm:inline">Install</span>
@@ -232,31 +253,58 @@
 					{/if}
 				</button>
 			{/if}
-			<div class="join" role="group" aria-label="Theme">
-				{#each themes as t (t.id)}
-					<button
-						class="btn join-item btn-sm {theme === t.id ? 'btn-active' : 'btn-ghost'}"
-						onclick={() => setTheme(t.id)}
-						title={t.label}
-						aria-label={t.label}
-						aria-pressed={theme === t.id}
+			<button
+				class="btn btn-square btn-ghost btn-sm"
+				onclick={cycleTheme}
+				title="Theme: {currentTheme.label}. Switch to {nextTheme.label}"
+				aria-label="Theme: {currentTheme.label}. Switch to {nextTheme.label}"
+			>
+				<currentTheme.icon size={16} />
+			</button>
+			{#if withNav && onSession}
+				<div class="md:hidden">
+					<Popover
+						bind:open={navMenuOpen}
+						summaryClass="btn btn-square btn-ghost btn-sm"
+						summaryLabel={inboxCount ? `Go to, ${inboxCount} waiting in the inbox` : 'Go to'}
+						summaryTitle="Go to"
+						panelClass="w-56 p-2"
 					>
-						<t.icon size={16} />
-						<span class="hidden sm:inline">{t.label}</span>
-					</button>
-				{/each}
-			</div>
+						{#snippet trigger()}
+							<span class="deck-nav-icon">
+								<LayoutGrid size={16} />
+								{#if inboxCount}<span class="nav-badge">{badgeText(inboxCount)}</span>{/if}
+							</span>
+						{/snippet}
+						<NavLinks variant="menu" {inboxCount} onnavigate={() => (navMenuOpen = false)} />
+					</Popover>
+				</div>
+			{/if}
 		</div>
 	</header>
 
 	<main class="w-full min-h-0 flex-1 overflow-y-auto {bodyPadding}">
-		{@render children()}
+		{#if contained}
+			<div class="mx-auto w-full max-w-content">
+				{@render children()}
+			</div>
+		{:else}
+			{@render children()}
+		{/if}
 	</main>
+
+	{#if withNav && !onSession}
+		<div class="shrink-0 md:hidden">
+			<NavLinks variant="bar" {inboxCount} />
+		</div>
+	{:else if onSession}
+		<div class="session-home-inset shrink-0 md:hidden" aria-hidden="true"></div>
+	{/if}
 </div>
 
 {#if updateReady}
 	<div
-		class="fixed inset-x-0 bottom-4 z-50 flex justify-center px-3"
+		class="fixed inset-x-0 z-50 flex justify-center px-3 {withNav && !onSession ? 'update-toast-above-bar' : 'bottom-4'}"
 		role="status"
 		aria-live="polite"
 	>

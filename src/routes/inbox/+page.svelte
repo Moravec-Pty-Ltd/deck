@@ -7,7 +7,7 @@
 	import { api } from '$lib/workflow-view';
 	import { relativeTime } from '$lib/time';
 	import AskQuestion from '$lib/components/AskQuestion.svelte';
-	import { ArrowLeft, ExternalLink, Inbox } from '@lucide/svelte';
+	import { ExternalLink, Inbox } from '@lucide/svelte';
 
 	let asks = $state<InboxAsk[]>([]);
 	let loaded = $state(false);
@@ -50,9 +50,8 @@
 
 <svelte:head><title>Inbox · deck</title></svelte:head>
 
-<div class="mx-auto max-w-2xl">
+<div>
 	<div class="mb-4 flex items-center gap-2">
-		<a href="/" class="btn btn-ghost btn-sm" aria-label="Back"><ArrowLeft size={16} /></a>
 		<h1 class="text-lg font-semibold">Inbox</h1>
 	</div>
 

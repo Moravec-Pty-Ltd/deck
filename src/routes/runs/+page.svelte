@@ -17,7 +17,7 @@
 	import IssuePicker from '$lib/components/IssuePicker.svelte';
 	import PrPicker from '$lib/components/PrPicker.svelte';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Plus, X, Eye, ExternalLink, CircleHelp, GitBranch, Trash2 } from '@lucide/svelte';
+	import { Plus, X, Eye, ExternalLink, CircleHelp, GitBranch, Trash2 } from '@lucide/svelte';
 
 	let runs = $state<RunDigest[]>([]);
 	let loaded = $state(false);
@@ -200,7 +200,6 @@
 <svelte:head><title>Runs · deck</title></svelte:head>
 
 <div class="mb-4 flex items-center gap-2">
-	<a href="/" class="btn btn-ghost btn-sm" aria-label="Back"><ArrowLeft size={16} /></a>
 	<h1 class="text-lg font-semibold">Runs</h1>
 	<div class="flex-1"></div>
 	{#if finishedCount > 0}

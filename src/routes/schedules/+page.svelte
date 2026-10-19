@@ -14,7 +14,7 @@
 	import { loadSettings } from '$lib/settings-store';
 	import { page } from '$app/state';
 	import AutomationAgentForm from '$lib/components/AutomationAgentForm.svelte';
-	import { ArrowLeft, Clock, ExternalLink, Pencil, Play, Plus, Trash2, X } from '@lucide/svelte';
+	import { Clock, ExternalLink, Pencil, Play, Plus, Trash2, X } from '@lucide/svelte';
 
 	let schedules = $state<ScheduleDigest[]>([]);
 	let projects = $state<Project[]>([]);
@@ -178,7 +178,6 @@
 <svelte:head><title>Schedules · deck</title></svelte:head>
 
 <div class="mb-4 flex items-center gap-2">
-	<a href="/" class="btn btn-ghost btn-sm" aria-label="Back"><ArrowLeft size={16} /></a>
 	<h1 class="text-lg font-semibold">Schedules</h1>
 	<div class="flex-1"></div>
 	<button class="btn btn-sm {formOpen ? 'btn-ghost' : 'btn-primary'}" onclick={() => (formOpen ? closeForm() : startAdd())}>

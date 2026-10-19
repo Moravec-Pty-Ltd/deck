@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import WorkflowGraph from '$lib/components/WorkflowGraph.svelte';
-	import { ArrowLeft, GitBranch, GitPullRequest, CircleHelp, Pause, Hand, Play, RotateCcw, Ban, Trash2, Wrench } from '@lucide/svelte';
+	import { GitBranch, GitPullRequest, CircleHelp, Pause, Hand, Play, RotateCcw, Ban, Trash2, Wrench } from '@lucide/svelte';
 
 	type RunView = RunDigest & { handoffStale?: boolean };
 
@@ -97,7 +97,6 @@
 <svelte:head><title>{run?.title ?? 'Run'} · deck</title></svelte:head>
 
 <div class="mb-4 flex items-center gap-2">
-	<a href="/runs" class="btn btn-ghost btn-sm" aria-label="Back to runs"><ArrowLeft size={16} /></a>
 	<h1 class="min-w-0 flex-1 truncate text-lg font-semibold">{run?.title ?? 'Run'}</h1>
 	{#if run}
 		<span class="badge {RUN_STATUS_VIEW[run.status].badge}">{RUN_STATUS_VIEW[run.status].label}</span>

@@ -14,7 +14,7 @@
 	import { fromRow, toRow, type AgentRow } from '$lib/automation-form-core';
 	import { loadSettings } from '$lib/settings-store';
 	import { hideProject } from '$lib/hidden';
-	import { ArrowLeft, Plus, Trash2, Check, ChevronRight, ChevronDown, Eye, EyeOff } from '@lucide/svelte';
+	import { Plus, Trash2, Check, ChevronRight, ChevronDown, Eye, EyeOff } from '@lucide/svelte';
 
 	// automation is always materialised (both toggles and both agent picks present)
 	// so the inputs bind cleanly; the API stores the all-default shape as absent.
@@ -152,7 +152,6 @@
 <svelte:head><title>Projects · deck</title></svelte:head>
 
 <div class="mb-4 flex items-center gap-2">
-	<a href="/" class="btn btn-ghost btn-sm" aria-label="Back"><ArrowLeft size={16} /></a>
 	<h1 class="text-lg font-semibold">Projects</h1>
 	<div class="flex-1"></div>
 	<button class="btn btn-ghost btn-sm" onclick={() => openAddModal('')} aria-label="Add project">
