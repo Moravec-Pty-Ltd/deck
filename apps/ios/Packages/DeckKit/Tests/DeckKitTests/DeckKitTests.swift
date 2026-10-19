@@ -391,8 +391,8 @@ final class DeckKitTests: XCTestCase {
 
 	func testMergeLeavesOtherKindsToTheirOwnEnumeration() {
 		XCTAssertEqual(
-			DeckModels.merge(kind: "opencode", enumerated: ["strix-halo/qwen38-q4"]),
-			["strix-halo/qwen38-q4"])
+			DeckModels.merge(kind: "opencode", enumerated: ["gpu-box/qwen38-q4"]),
+			["gpu-box/qwen38-q4"])
 	}
 
 }

@@ -7,7 +7,7 @@
 	const PRESETS: { label: string; url: string; model: string; provider: '' | 'openai' | 'anthropic'; apiKeyFile?: string }[] = [
 		{ label: 'Local (light)', url: 'http://127.0.0.1:17498/v1', model: 'mlx-community/Qwen3.5-9B-MLX-4bit', provider: 'openai' },
 		{ label: 'Local (large)', url: 'http://127.0.0.1:17498/v1', model: 'mlx-community/Qwen3.5-35B-A3B-4bit', provider: 'openai' },
-		{ label: 'Tailnet', url: 'http://strix-halo:8000/v1', model: '', provider: 'openai' },
+		{ label: 'Tailnet', url: 'http://gpu-box:8000/v1', model: '', provider: 'openai' },
 		{ label: 'Claude', url: 'https://api.anthropic.com/v1', model: 'claude-haiku-4-5-20251001', provider: 'anthropic', apiKeyFile: '~/.secrets/anthropic.env' }
 	];
 

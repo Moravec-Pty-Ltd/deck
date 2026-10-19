@@ -56,6 +56,7 @@
 		const d = dialog;
 		if (!d) return;
 		if (open && !d.open) {
+			dismissed = false;
 			d.showModal();
 			d.focus();
 		} else if (!open && d.open) {
@@ -63,8 +64,19 @@
 		}
 	});
 
-	function onClose() {
-		if (open) onclose();
+	// Escape fires `cancel` and then `close`. Some engines never deliver the
+	// `close`, which left the caller's open state stuck, so a dismissal is taken
+	// from whichever arrives first and reported once.
+	let dismissed = false;
+	function dismiss() {
+		if (!open || dismissed) return;
+		dismissed = true;
+		onclose();
+	}
+
+	function onCancel(e: Event) {
+		if (!dismissible) e.preventDefault();
+		else dismiss();
 	}
 
 	// A cancelled keydown never becomes a close request, which also covers
@@ -79,8 +91,8 @@
 	class="{DIALOG_CLASS} deck-modal"
 	aria-labelledby={titleId}
 	tabindex="-1"
-	onclose={onClose}
-	oncancel={(e) => !dismissible && e.preventDefault()}
+	onclose={dismiss}
+	oncancel={onCancel}
 	onkeydown={onKeydown}
 >
 	{#if open}
