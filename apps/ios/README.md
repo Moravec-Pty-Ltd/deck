@@ -301,9 +301,6 @@ so a URL that looks right can still be the wrong host underneath. And the
 machine's SSH host key is trusted on first use, so a rebuilt machine fails with
 both fingerprints until you forget it in the tunnel sheet.
 
-The Mac build needs `com.apple.security.network.{client,server}` because Mac
-Catalyst is sandboxed and the listener is refused silently without them.
-
 Testing the tunnel end to end needs an SSH server, so that test skips without
 one. Any server with password auth and forwarding will do:
 
@@ -387,18 +384,44 @@ anywhere else. An image in the transcript has **Copy image** on its context
 menu and a copy button in the full-screen gallery, which puts the picture on
 the clipboard rather than a file reference.
 
-A Mac Catalyst build also compiles and runs (`supportedDestinations:
-[iOS, macCatalyst]`, with Live Activities and the hinge guarded out, and the
-watch app and widget extension excluded from that destination). The dev browser
-puts its controls in the window toolbar there rather than a bottom bar:
+### The Mac app
+
+`DeckMac` is a native SwiftUI app for macOS 15 and later, not a Catalyst build
+of the iPad app. It shares the bundle id `tech.moravec.deck` with the iOS app,
+so one App Store record carries both, and links DeckKit, DeckUI (the shared
+session row, tool cards, question card and terminal view) and DeckIntents, so
+the Siri phrases match the phone's.
 
 ```sh
-xcodebuild -scheme DeckApp -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' build
+xcodebuild -project Deck.xcodeproj -scheme DeckMac -destination 'platform=macOS' \
+  -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
 ```
 
-Distributing it needs Mac Catalyst enabled for the app id and a matching
-provisioning profile; without one, `xcodebuild test` on that destination
-cannot sign. Live Activities and the watch app stay phone-only.
+A Mac has no camera to scan the sign-in QR code, so it signs in one of two
+ways:
+
+- **Paste** the server URL and the token, or paste a whole sign-in link (the
+  one the QR code encodes) into the URL field and the token comes with it.
+- **Ask for access.** The app requests pairing from the server and shows a
+  six-digit code. Approve the request in deck in a browser that is already
+  signed in, after checking it shows the same code; the app picks the token up
+  from the approval and signs in.
+
+What it does so far: the sessions list (hidden sessions in their own section)
+beside the open session, the transcript with history paged in on demand, live
+output as it streams, the question card when a session is waiting on you, a
+composer (Command-Return sends), Stop (Command-.), and a terminal for
+shell sessions. Sign Out is in the app menu.
+
+Not yet: starting sessions, runs, schedules, settings, notifications and a menu
+bar item, multiple windows, attachments, the dev browser and the on-device
+operator. The share extension is deferred; Live Activities, widgets and the
+hinge are phone-only and stay that way.
+
+The app is sandboxed with network client and server access (the server half is
+for the dev browser's loopback SOCKS listener, which the sandbox refuses
+silently otherwise) and read-only access to files you pick. Shipping it needs
+macOS added to the app id's platforms and a Mac provisioning profile with push.
 
 ## Foldables
 

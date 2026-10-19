@@ -4,6 +4,7 @@ options:
   deploymentTarget:
     iOS: "18.0"
     watchOS: "11.0"
+    macOS: "15.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -21,7 +22,6 @@ targets:
   DeckApp:
     type: application
     platform: iOS
-    supportedDestinations: [iOS, macCatalyst]
     sources:
       - Apps/DeckApp
       - Apps/Shared
@@ -39,11 +39,8 @@ targets:
       # Downloaded on-device models. Only the app runs one, and it carries MLX.
       - package: DeckKit
         product: DeckLocalModel
-      # Neither can be embedded in a Mac Catalyst build of the app.
       - target: DeckWatch
-        destinationFilters: [iOS]
       - target: DeckWidgets
-        destinationFilters: [iOS]
       - target: DeckShare
     info:
       path: Apps/DeckApp/Info.plist
@@ -110,7 +107,6 @@ targets:
   DeckShare:
     type: app-extension
     platform: iOS
-    supportedDestinations: [iOS, macCatalyst]
     sources:
       - Apps/DeckShare
     dependencies:
@@ -148,7 +144,6 @@ targets:
   DeckAppUITests:
     type: bundle.ui-testing
     platform: iOS
-    supportedDestinations: [iOS, macCatalyst]
     sources:
       - Apps/DeckAppUITests
     dependencies:
@@ -191,6 +186,43 @@ targets:
           CODE_SIGN_ENTITLEMENTS: Apps/DeckWatch/DeckWatch.debug.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: Apps/DeckWatch/DeckWatch.release.entitlements
+  DeckMac:
+    type: application
+    platform: macOS
+    sources:
+      - Apps/DeckMac
+      - Apps/SharedIntents
+      # The detail screen's model is plain Foundation over DeckStore, so the
+      # Mac reads the transcript through the same code as the phone.
+      - path: Apps/DeckApp/Support/SessionDetailViewModel.swift
+    dependencies:
+      - package: DeckKit
+        product: DeckKit
+      - package: DeckKit
+        product: DeckUI
+      - package: DeckKit
+        product: DeckIntents
+    info:
+      path: Apps/DeckMac/Info.plist
+      properties:
+        CFBundleDisplayName: deck
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        # Shared with the iOS app, so one App Store record carries both.
+        PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckMac/DeckMac.debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckMac/DeckMac.release.entitlements
 schemes:
   DeckApp:
     build:
@@ -207,5 +239,11 @@ schemes:
     build:
       targets:
         DeckWatch: all
+    run:
+      config: Debug
+  DeckMac:
+    build:
+      targets:
+        DeckMac: all
     run:
       config: Debug

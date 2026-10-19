@@ -29,9 +29,12 @@ final class SessionDetailViewModel {
 
 	var hasOlderHistory: Bool { didLoadOnce && baseIndex > 0 && store.supports(.history) }
 
+	// The Mac app shares this model; voice mode there is a later item.
+	#if os(iOS)
 	/// Voice mode for this session: reads what the live stream delivers and
 	/// sends what you say through the same store calls the composer uses.
 	private(set) var voice: VoiceController?
+	#endif
 
 	private var streamTask: Task<Void, Never>?
 	private var builder = TranscriptBuilder()
@@ -53,6 +56,7 @@ final class SessionDetailViewModel {
 		store.sessions.first { $0.id == sessionId }
 	}
 
+	#if os(iOS)
 	/// The voice controller, made on first use so screens without a speech
 	/// server never touch the audio session.
 	func voiceController() -> VoiceController? {
@@ -67,6 +71,7 @@ final class SessionDetailViewModel {
 		voice = controller
 		return controller
 	}
+	#endif
 
 	var pendingAsk: DeckAsk? {
 		store.asks.first { $0.sessionId == sessionId }
@@ -92,7 +97,9 @@ final class SessionDetailViewModel {
 	/// Leaving the session ends voice mode; playback must not outlive the
 	/// screen that shows what is being read.
 	func leave() {
+		#if os(iOS)
 		voice?.disable()
+		#endif
 		stopPolling()
 	}
 
@@ -117,7 +124,9 @@ final class SessionDetailViewModel {
 						if event["type"].string == "assistant" { streamingText = "" }
 						builder.append(event)
 						items = builder.items
+						#if os(iOS)
 						voice?.hear(event)
+						#endif
 					case .turnStart:
 						streamingText = ""
 					case .textDelta(let text):

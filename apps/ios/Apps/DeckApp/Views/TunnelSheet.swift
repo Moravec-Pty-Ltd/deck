@@ -59,9 +59,7 @@ struct TunnelSheet: View {
 				}
 			}
 			.navigationTitle("Tunnel")
-			#if !targetEnvironment(macCatalyst)
-				.navigationBarTitleDisplayMode(.inline)
-			#endif
+			.navigationBarTitleDisplayMode(.inline)
 			.toolbar {
 				ToolbarItem(placement: .confirmationAction) {
 					Button("Done") { dismiss() }

@@ -41,9 +41,7 @@ struct BrowserView: View {
 			}
 		}
 		.navigationTitle("Browser")
-		#if !targetEnvironment(macCatalyst)
-			.navigationBarTitleDisplayMode(.inline)
-		#endif
+		.navigationBarTitleDisplayMode(.inline)
 		.task { await begin() }
 		.onChange(of: scenePhase) { _, phase in
 			// iOS suspends sockets in the background, so the tunnel is usually
@@ -79,21 +77,14 @@ struct BrowserView: View {
 		// that will not load is nearly always the tunnel, and the last forwarded
 		// target is the proof it is carrying traffic rather than merely up.
 		.safeAreaInset(edge: .top) { statusStrip(model) }
-		#if targetEnvironment(macCatalyst)
-			.toolbar {
-				ToolbarItemGroup(placement: .primaryAction) { controls(model) }
+		.safeAreaInset(edge: .bottom) {
+			VStack(spacing: 6) {
+				tabStrip(model)
+				controls(model)
 			}
-			.safeAreaInset(edge: .top) { tabStrip(model) }
-		#else
-			.safeAreaInset(edge: .bottom) {
-				VStack(spacing: 6) {
-					tabStrip(model)
-					controls(model)
-				}
-				.padding(.vertical, 8)
-				.deckGlass(in: Rectangle())
-			}
-		#endif
+			.padding(.vertical, 8)
+			.deckGlass(in: Rectangle())
+		}
 	}
 
 	@ViewBuilder
