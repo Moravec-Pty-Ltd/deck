@@ -14,9 +14,9 @@
 		try {
 			const res = await fetch('/api/agent/settings/skill');
 			if (res.ok) statuses = await res.json();
-			else errorMsg = 'failed to load skill status';
+			else errorMsg = "Couldn't load skill status";
 		} catch {
-			errorMsg = 'failed to load skill status';
+			errorMsg = "Couldn't load skill status";
 		} finally {
 			loaded = true;
 		}
@@ -38,13 +38,13 @@
 			if (!res.ok) {
 				// A non-JSON failure (proxy error page, crash) must still surface a message.
 				const err = await res.json().catch(() => null);
-				errorMsg = err?.message ?? 'failed to install';
+				errorMsg = err?.message ?? "Couldn't install the skill";
 				return;
 			}
 			const updated: SkillStatus = await res.json();
 			statuses = statuses.map((s) => (s.kind === updated.kind ? updated : s));
 		} catch {
-			errorMsg = 'failed to install';
+			errorMsg = "Couldn't install the skill";
 		} finally {
 			busy = null;
 		}
@@ -61,16 +61,16 @@
 		<div class="alert alert-error mb-3 py-2 text-sm">{errorMsg}</div>
 	{/if}
 	{#if !loaded}
-		<p class="py-2 text-center text-sm opacity-60">Loading...</p>
+		<p class="py-2 text-center text-sm opacity-60">Loading…</p>
 	{:else}
 		<div class="space-y-2">
 			{#each statuses as s (s.kind)}
 				<div class="flex items-center gap-2 text-sm">
 					<span class="w-24 font-mono">{s.kind}</span>
 					{#if !s.available}
-						<span class="text-xs opacity-40">not installed on this machine</span>
+						<span class="text-xs opacity-40">Not installed on this machine</span>
 					{:else if !s.supported}
-						<span class="text-xs opacity-40">no known skill directory</span>
+						<span class="text-xs opacity-40">No known skill directory</span>
 					{:else if s.upToDate}
 						<span class="flex items-center gap-1 text-xs text-success">
 							<Check size={13} /> v{s.installedVersion} installed
@@ -80,7 +80,7 @@
 							v{s.installedVersion ?? '?'} installed, v{s.shippedVersion} available
 						</span>
 					{:else}
-						<span class="text-xs opacity-60">skill not installed</span>
+						<span class="text-xs opacity-60">Skill not installed</span>
 					{/if}
 					<div class="flex-1"></div>
 					{#if s.available && s.supported && !s.upToDate}

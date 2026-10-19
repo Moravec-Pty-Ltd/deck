@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Modal from './Modal.svelte';
-	import { isAgentKind } from '$lib/types';
+	import { isAgentKind, KIND_LABELS } from '$lib/types';
 	import type {
 		AgentIssue,
 		AgentPr,
@@ -66,8 +66,8 @@
 	const KIND_OPTIONS = [
 		{ id: 'claude', label: 'Claude', icon: Bot },
 		{ id: 'pi', label: 'pi', icon: PiGlyph },
-		{ id: 'codex', label: 'codex', icon: Braces },
-		{ id: 'opencode', label: 'opencode', icon: SquareCode },
+		{ id: 'codex', label: KIND_LABELS.codex, icon: Braces },
+		{ id: 'opencode', label: KIND_LABELS.opencode, icon: SquareCode },
 		{ id: 'shell', label: 'Shell', icon: Terminal }
 	] as const;
 
@@ -494,7 +494,7 @@
 			newProjectTemplate = '';
 			addingProject = false;
 		} else {
-			errorMsg = (await res.json()).message ?? 'failed to add project';
+			errorMsg = (await res.json()).message ?? "Couldn't add project";
 		}
 	}
 
@@ -584,7 +584,7 @@
 		});
 		const data = await res.json().catch(() => ({}));
 		if (res.ok) return data.id as string;
-		const err = new CreateError(data.message ?? 'failed to create session');
+		const err = new CreateError(data.message ?? "Couldn't create session");
 		if (res.status === 409 && isWorktreeConflict(data.code)) {
 			err.conflict = data.code;
 			err.branch = typeof data.branch === 'string' ? data.branch : '';
@@ -605,22 +605,22 @@
 	async function create() {
 		errorMsg = '';
 		if (reviewMode && !pickedPrs.length) {
-			errorMsg = 'pick a PR to review';
+			errorMsg = 'Pick a PR to review';
 			return;
 		}
 		if (titleRequired && !title.trim()) {
-			errorMsg = 'title is required';
+			errorMsg = 'Title is required';
 			return;
 		}
 		if (!reviewMode && worktreeMode === 'existing' && !existingWorktreeDir) {
-			errorMsg = 'pick an existing worktree';
+			errorMsg = 'Pick an existing worktree';
 			return;
 		}
 		// Review mode always makes its own worktree from the project repo, so it
 		// starts from the project path, not a picked existing-worktree dir.
 		const startCwd = reviewMode ? effectiveCwd : finalCwd;
 		if (!startCwd) {
-			errorMsg = 'pick a project or path';
+			errorMsg = 'Pick a project or path';
 			return;
 		}
 		// Expensive-model gate: a fable/sol pick pops the confirm instead of starting;
@@ -659,7 +659,7 @@
 			const results = await Promise.allSettled(
 				creates.map(async (c) => {
 					const id = await postCreate(c.body);
-					createProgress = `created ${++done}/${creates.length}`;
+					createProgress = `Created ${++done} of ${creates.length}`;
 					return id;
 				})
 			);
@@ -702,7 +702,7 @@
 				conflict = { kind: e.conflict, branch: e.branch };
 				return;
 			}
-			errorMsg = e instanceof Error ? e.message : 'failed to create session';
+			errorMsg = e instanceof Error ? e.message : "Couldn't create session";
 		} finally {
 			busy = false;
 			createProgress = '';
@@ -767,7 +767,7 @@
 					{/each}
 				</optgroup>
 			{/each}
-			<option value="__custom">Custom path...</option>
+			<option value="__custom">Custom path…</option>
 		</select>
 		{#if cwd === '__custom'}
 			<PathInput placeholder="/absolute/path or ~/path" bind:value={customCwd} />
@@ -782,7 +782,7 @@
 				<div class="min-w-0 flex-1">
 					<PathInput
 						class="input input-sm w-full"
-						placeholder="register a project path"
+						placeholder="Register a project path"
 						bind:value={newProjectPath}
 						onenter={addProject}
 					/>
@@ -792,14 +792,14 @@
 			{#if newProjectPath.trim()}
 				<input
 					class="input input-sm w-full"
-					placeholder="group (optional)"
+					placeholder="Group (optional)"
 					list="new-session-project-groups"
 					bind:value={newProjectGroup}
 				/>
 				<textarea
 					class="textarea textarea-sm w-full"
 					rows="2"
-					placeholder="template first prompt for this project (optional)"
+					placeholder="Template first prompt for this project (optional)"
 					bind:value={newProjectTemplate}
 				></textarea>
 				<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
@@ -821,7 +821,7 @@
 		<div class="flex w-full gap-1">
 			<input
 				class="input min-w-0 flex-1 {titleRequired && !title.trim() ? 'input-error' : ''}"
-				placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
+				placeholder={titleRequired ? 'Required' : 'Named after a starship if blank'}
 				bind:value={title}
 			/>
 			{#if projectHasSources && !reviewMode}
@@ -884,19 +884,19 @@
 			<legend class="fieldset-legend">Pull request{pickedPrs.length > 1 ? 's' : ''}</legend>
 			{#if pickedPrs.length}
 				<div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
-					<span class="opacity-60">reviewing:</span>
+					<span class="opacity-60">Reviewing:</span>
 					{#each pickedPrs as pr (prKey(pr))}
 						<button
 							class="btn btn-ghost btn-xs gap-1 font-mono"
 							onclick={() => pickPr(pr)}
-							title="remove"
+							title="Remove"
 						>
 							#{pr.number} <X size={12} />
 						</button>
 					{/each}
 				</div>
 				{#if pickedPrs.length > 1}
-					<p class="mt-1 text-xs opacity-50">creates one review session per PR</p>
+					<p class="mt-1 text-xs opacity-50">Creates one review session per PR.</p>
 				{/if}
 			{/if}
 			{#if selectedProject}
@@ -904,7 +904,7 @@
 					<PrPicker project={selectedProject} picked={pickedPrs} onpick={pickPr} />
 				</div>
 			{:else}
-				<p class="text-xs opacity-60">pick a project first</p>
+				<p class="text-xs opacity-60">Pick a project first.</p>
 			{/if}
 		</fieldset>
 	{/if}
@@ -914,7 +914,7 @@
 			<legend class="fieldset-legend">Shell</legend>
 			<input
 				class="input w-full"
-				placeholder="command (optional, default: your shell)"
+				placeholder="Command (optional, default: your shell)"
 				bind:value={command}
 			/>
 		</fieldset>
@@ -924,7 +924,7 @@
 			<textarea
 				class="textarea w-full"
 				rows="3"
-				placeholder="first prompt (optional, starts immediately)"
+				placeholder="First prompt (optional, starts immediately)"
 				bind:value={prompt}
 				oninput={() => (promptDirty = true)}
 			></textarea>
@@ -988,12 +988,12 @@
 										{/each}
 									</select>
 								{:else}
-									<p class="text-xs opacity-60">no existing worktrees for this repo</p>
+									<p class="text-xs opacity-60">No existing worktrees for this repo.</p>
 								{/if}
 							{:else if worktreeMode === 'new'}
 								<input
 									class="input w-full"
-									placeholder="branch name (defaults to title)"
+									placeholder="Branch name (defaults to title)"
 									bind:value={branch}
 									oninput={() => (branchDirty = true)}
 								/>
@@ -1003,7 +1003,7 @@
 								</label>
 								{#if newBranch}
 									<select class="select w-full" bind:value={base} onchange={() => (baseDirty = true)}>
-										<option value="">base: default branch</option>
+										<option value="">Base: default branch</option>
 										{#if base && !branches.includes(base)}
 											<option value={base}>base: {base}</option>
 										{/if}
@@ -1042,14 +1042,14 @@
 								<ComboInput
 									bind:value={provider}
 									options={piProviders}
-									placeholder="provider (optional, e.g. anthropic, google)"
+									placeholder="Provider (optional, e.g. anthropic, google)"
 									ariaLabel="Provider"
 									oninput={() => (modelDirty = true)}
 								/>
 								<ComboInput
 									bind:value={model}
 									options={piModels}
-									placeholder="model (optional, pi pattern or id)"
+									placeholder="Model (optional, pi pattern or id)"
 									ariaLabel="Model"
 									oninput={() => (modelDirty = true)}
 								/>
@@ -1057,7 +1057,7 @@
 								<ComboInput
 									bind:value={model}
 									options={modelIds}
-									placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
+									placeholder="Model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
 									ariaLabel="Model"
 									oninput={() => (modelDirty = true)}
 								/>
@@ -1065,14 +1065,14 @@
 								<ComboInput
 									bind:value={model}
 									options={modelIds}
-									placeholder="model (optional, e.g. gpt-6-astra)"
+									placeholder="Model (optional, e.g. gpt-6-astra)"
 									ariaLabel="Model"
 									oninput={() => (modelDirty = true)}
 								/>
 							{:else}
 								<input
 									class="input w-full"
-									placeholder="model (optional, e.g. gpt-5-codex)"
+									placeholder="Model (optional, e.g. gpt-5-codex)"
 									bind:value={model}
 									oninput={() => (modelDirty = true)}
 								/>
@@ -1109,7 +1109,7 @@
 				onclick={create}
 				disabled={busy || (titleRequired && !title.trim()) || (reviewMode && !pickedPrs.length)}
 			>
-				{busy ? createProgress || 'Creating...' : 'Create'}
+				{busy ? createProgress || 'Creating…' : 'Create'}
 			</button>
 	{/snippet}
 </Modal>

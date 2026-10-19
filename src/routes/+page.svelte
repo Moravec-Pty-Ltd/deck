@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { NewSessionPreset, Project, SessionKind } from '$lib/types';
+	import { KIND_LABELS } from '$lib/types';
 	import type { SessionView } from '$lib/session-view';
 	import { liveSessions } from '$lib/session-feed.svelte';
 	import { deriveGroup, relativeTime, shortPath } from '$lib/time';
@@ -190,7 +191,7 @@
 					class="btn join-item btn-sm {filter === f ? 'btn-active' : ''}"
 					onclick={() => (filter = f as 'all' | SessionKind)}
 				>
-					{f}
+					{f === 'all' ? 'All' : KIND_LABELS[f as SessionKind]}
 				</button>
 			{/each}
 		</div>
@@ -378,7 +379,7 @@
 		class="mb-3 flex flex-wrap items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2"
 	>
 		<button class="btn btn-ghost btn-sm" onclick={toggleAll} disabled={visibleOrder.length === 0}>
-			{allSelected(visibleOrder, selected) ? 'Deselect All' : 'Select All'}
+			{allSelected(visibleOrder, selected) ? 'Deselect all' : 'Select all'}
 		</button>
 		<span class="text-sm opacity-60">{selected.size} selected</span>
 		<button
@@ -392,7 +393,7 @@
 {/if}
 
 {#if !loaded}
-	<p class="p-8 text-center opacity-60">Loading sessions...</p>
+	<p class="p-8 text-center opacity-60">Loading sessions…</p>
 {:else if listed.length === 0}
 	<div class="rounded-box border border-base-300 bg-base-100 p-10 text-center">
 		<p class="mb-3 opacity-70">No sessions yet.</p>

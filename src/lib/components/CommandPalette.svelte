@@ -210,7 +210,7 @@
 			await cmd.run(input);
 			open = false;
 		} catch (e) {
-			err = e instanceof Error ? e.message : 'action failed';
+			err = e instanceof Error ? e.message : 'Action failed';
 		} finally {
 			busy = false;
 		}
@@ -393,7 +393,7 @@
 								}
 							}}
 							class="input input-bordered input-sm w-full"
-							placeholder="model id (empty for default)"
+							placeholder="Model ID (empty for the default)"
 							autocomplete="off"
 							spellcheck="false"
 						/>

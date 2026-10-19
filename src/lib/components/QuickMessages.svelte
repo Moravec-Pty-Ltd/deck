@@ -81,7 +81,7 @@
 			messages = await agentRequest<QuickMessage[]>(agentPath('quick-messages'), { method: 'PUT', body: payload });
 			managing = false;
 		} catch (e) {
-			err = e instanceof AgentApiError ? 'save failed' : 'network error';
+			err = e instanceof AgentApiError ? 'Save failed' : 'Network error';
 		} finally {
 			saving = false;
 		}

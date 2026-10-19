@@ -25,7 +25,7 @@
 			percent = clampCompactPercent(settings.autoCompact?.percent);
 			loaded = true;
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'failed to load compaction settings';
+			message = e instanceof Error ? e.message : "Couldn't load compaction settings";
 		}
 	}
 
@@ -42,7 +42,7 @@
 			saved = true;
 			await load();
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'save failed';
+			message = e instanceof Error ? e.message : 'Save failed';
 		} finally {
 			busy = false;
 		}

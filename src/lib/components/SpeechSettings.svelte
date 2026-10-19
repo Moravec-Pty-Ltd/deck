@@ -20,7 +20,7 @@
 	async function load() {
 		try {
 			const res = await fetch('/api/agent/speech');
-			if (!res.ok) throw new Error('failed to load speech settings');
+			if (!res.ok) throw new Error("Couldn't load speech settings");
 			const body = await res.json();
 			ttsUrl = body.config?.ttsUrl ?? '';
 			sttUrl = body.config?.sttUrl ?? '';
@@ -28,7 +28,7 @@
 			voices = body.voices ?? [];
 			status = { tts: body.tts, stt: body.stt };
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'failed to load speech settings';
+			message = e instanceof Error ? e.message : "Couldn't load speech settings";
 		} finally {
 			loaded = true;
 		}
@@ -69,7 +69,7 @@
 			saved = true;
 			await load();
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'save failed';
+			message = e instanceof Error ? e.message : 'Save failed';
 		} finally {
 			busy = false;
 		}
@@ -107,7 +107,7 @@
 							{/each}
 						</select>
 					{:else}
-						<input class="input input-sm w-full" placeholder="server default" bind:value={voice} />
+						<input class="input input-sm w-full" placeholder="Server default" bind:value={voice} />
 					{/if}
 				</label>
 			</div>
@@ -117,7 +117,7 @@
 				</button>
 				<button class="btn btn-sm btn-primary" onclick={save} disabled={busy}>Save</button>
 				{#if saved}
-					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
+					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> Saved</span>
 				{/if}
 				{#if message}
 					<span class="text-xs opacity-70">{message}</span>

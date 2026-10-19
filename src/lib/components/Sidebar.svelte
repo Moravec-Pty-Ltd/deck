@@ -348,7 +348,7 @@
 				</ul>
 			{:else if !reviews.inFlight}
 				<p class="px-2 py-1 text-xs opacity-50">
-					{reviews.status === 'offline' ? 'morabot offline.' : 'No recent reviews.'}
+					{reviews.status === 'offline' ? 'morabot is offline.' : 'No recent reviews.'}
 				</p>
 			{/if}
 

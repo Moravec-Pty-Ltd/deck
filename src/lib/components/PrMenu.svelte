@@ -88,7 +88,7 @@
 			onChange();
 			return true;
 		} catch (e) {
-			err = e instanceof TypeError ? 'network error' : e instanceof Error ? e.message : 'action failed';
+			err = e instanceof TypeError ? 'Network error' : e instanceof Error ? e.message : 'Action failed';
 			return false;
 		} finally {
 			busy = false;
@@ -107,7 +107,7 @@
 		// guard here so a non-own PR (author/identity can shift via polling while the
 		// menu is open) gets an immediate message rather than a round-trip that fails.
 		if (!ownPr) {
-			err = 'you can only merge your own PRs from deck';
+			err = 'You can only merge your own PRs from deck';
 			return;
 		}
 		// The branch (local + remote) is only removed when deck created it; a
@@ -171,7 +171,7 @@
 				{#if canMerge}
 					<!-- title sits on the (non-disabled) li: a disabled button won't show
 					     its own tooltip, and pointer-events-none lets the hover reach here. -->
-					<li title={ownPr ? undefined : 'you can only merge your own PRs from deck'}>
+					<li title={ownPr ? undefined : 'You can only merge your own PRs from deck'}>
 						<button
 							onclick={() => (panel = 'merge')}
 							disabled={!ownPr}
@@ -252,7 +252,7 @@
 					<!-- own-PR tooltip on the wrapper so it shows even when the button is
 					     disabled; the force-merge tooltip stays on the button (shown when
 					     it's enabled). -->
-					<span title={ownPr ? undefined : 'you can only merge your own PRs from deck'}>
+					<span title={ownPr ? undefined : 'You can only merge your own PRs from deck'}>
 						<button
 							class="btn btn-xs {blocked ? 'btn-warning' : 'btn-primary'}"
 							class:pointer-events-none={!ownPr}

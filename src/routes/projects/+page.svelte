@@ -110,7 +110,7 @@
 			})
 		});
 		if (!res.ok) {
-			errorMsg = (await res.json()).message ?? 'failed to save';
+			errorMsg = (await res.json()).message ?? "Couldn't save";
 			return;
 		}
 		savedPath = p.path;
@@ -133,7 +133,7 @@
 		try {
 			await hideProject(p.path, !p.hidden);
 		} catch (e) {
-			errorMsg = e instanceof Error ? e.message : 'failed to save';
+			errorMsg = e instanceof Error ? e.message : "Couldn't save";
 			return;
 		}
 		await load();
@@ -167,7 +167,7 @@
 {/if}
 
 {#if !loaded}
-	<p class="p-8 text-center opacity-60">Loading...</p>
+	<p class="p-8 text-center opacity-60">Loading…</p>
 {:else}
 	<datalist id="project-groups">
 		{#each groupSuggestions as g (g)}
@@ -216,7 +216,7 @@
 										<input class="input input-sm flex-1 font-medium" bind:value={p.name} />
 										<input
 											class="input input-sm w-40"
-											placeholder="group (optional)"
+											placeholder="Group (optional)"
 											list="project-groups"
 											bind:value={p.group}
 										/>
@@ -236,18 +236,18 @@
 									<textarea
 										class="textarea textarea-sm w-full"
 										rows="3"
-										placeholder="default first prompt (optional)"
+										placeholder="Default first prompt (optional)"
 										bind:value={p.template}
 									></textarea>
 									<textarea
 										class="textarea textarea-sm mt-2 w-full"
 										rows="3"
-										placeholder="review-mode first prompt (optional)"
+										placeholder="Review-mode first prompt (optional)"
 										bind:value={p.reviewPrompt}
 									></textarea>
 									<input
 										class="input input-sm mt-2 w-full sm:w-72"
-										placeholder="default base branch (remembered automatically)"
+										placeholder="Default base branch (remembered automatically)"
 										bind:value={p.lastBase}
 									/>
 									<div class="mt-2">
@@ -282,7 +282,7 @@
 										<span class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}; review adds {REVIEW_PLACEHOLDERS}</span>
 										<div class="flex-1"></div>
 										{#if savedPath === p.path}
-											<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
+											<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> Saved</span>
 										{/if}
 										<button class="btn btn-sm btn-primary" onclick={() => save(p)}>Save</button>
 									</div>

@@ -45,7 +45,7 @@
 			status = await fetch('/api/agent/operator').then((r) => (r.ok ? r.json() : null));
 			loaded = true;
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'failed to load operator settings';
+			message = e instanceof Error ? e.message : "Couldn't load operator settings";
 		}
 	}
 
@@ -71,7 +71,7 @@
 			saved = true;
 			await load();
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'save failed';
+			message = e instanceof Error ? e.message : 'Save failed';
 		} finally {
 			busy = false;
 		}
@@ -150,7 +150,7 @@
 			<div class="flex flex-wrap items-center gap-2">
 				<button class="btn btn-sm btn-primary" onclick={() => save()} disabled={busy}>Save</button>
 				{#if saved}
-					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
+					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> Saved</span>
 				{/if}
 				{#if message}
 					<span class="text-xs opacity-70">{message}</span>

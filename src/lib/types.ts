@@ -1,4 +1,14 @@
 export type SessionKind = 'claude' | 'pi' | 'codex' | 'opencode' | 'shell';
+
+// How each kind is named in the UI; pi spells itself in lower case.
+export const KIND_LABELS: Record<SessionKind, string> = {
+	claude: 'Claude',
+	pi: 'pi',
+	codex: 'Codex',
+	opencode: 'OpenCode',
+	shell: 'Shell'
+};
+
 export type SessionStatus = 'running' | 'idle' | 'error' | 'dead';
 
 // Agent kinds drive an LLM coding agent (chat view); 'shell' is a tmux terminal.

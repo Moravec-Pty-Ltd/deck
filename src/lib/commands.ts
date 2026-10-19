@@ -240,7 +240,7 @@ function restartCommands(ctx: CommandContext, s: SessionView): Command[] {
 	return [
 		{
 			id: 'restart-claude',
-			title: 'Restart claude',
+			title: 'Restart Claude',
 			keywords: ['restart', 'reload', 'config', 'claude.md', 'settings', 'skills', 'mcp'],
 			hint: 'reload config',
 			run: () => ctx.restartSession()

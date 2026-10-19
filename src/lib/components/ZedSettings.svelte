@@ -15,7 +15,7 @@
 			target = (await fetchSettings()).zedSshTarget ?? '';
 			loaded = true;
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'failed to load editor settings';
+			message = e instanceof Error ? e.message : "Couldn't load editor settings";
 		}
 	}
 
@@ -32,7 +32,7 @@
 			saved = true;
 			await load();
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'save failed';
+			message = e instanceof Error ? e.message : 'Save failed';
 		} finally {
 			busy = false;
 		}
@@ -59,7 +59,7 @@
 			<div class="flex items-center gap-2">
 				<button class="btn btn-sm btn-primary" onclick={save} disabled={busy}>Save</button>
 				{#if saved}
-					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
+					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> Saved</span>
 				{/if}
 			</div>
 		{/if}

@@ -29,7 +29,7 @@
 		try {
 			await agentPost(sessionPath(id, 'compact'));
 		} catch (e) {
-			errorMsg = e instanceof AgentApiError ? e.message : 'compact failed';
+			errorMsg = e instanceof AgentApiError ? e.message : 'Compact failed';
 		} finally {
 			compacting = false;
 		}

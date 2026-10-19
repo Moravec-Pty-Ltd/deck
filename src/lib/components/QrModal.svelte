@@ -21,7 +21,7 @@
 		if (!open) return;
 		error = '';
 		fetch('/api/token')
-			.then((r) => (r.ok ? r.json() : Promise.reject(new Error('could not load token'))))
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error("Couldn't load token"))))
 			.then((d) => (token = d.token))
 			.catch((e) => (error = e.message));
 	});
@@ -83,6 +83,6 @@
 			</span>
 		</div>
 	{:else}
-		<p class="p-8 text-center text-sm opacity-60">Loading...</p>
+		<p class="p-8 text-center text-sm opacity-60">Loading…</p>
 	{/if}
 </Modal>

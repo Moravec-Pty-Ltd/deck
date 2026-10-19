@@ -50,7 +50,7 @@
 			schedules = await api<ScheduleDigest[]>('/api/agent/schedules');
 			loadError = '';
 		} catch (e) {
-			loadError = e instanceof Error ? e.message : 'failed to load schedules';
+			loadError = e instanceof Error ? e.message : "Couldn't load schedules";
 		}
 		loaded = true;
 	}
@@ -133,7 +133,7 @@
 			closeForm();
 			await load();
 		} catch (err) {
-			formError = err instanceof Error ? err.message : 'failed to save the schedule';
+			formError = err instanceof Error ? err.message : "Couldn't save the schedule";
 		} finally {
 			saving = false;
 		}
@@ -146,7 +146,7 @@
 			await run();
 			await load();
 		} catch (err) {
-			loadError = err instanceof Error ? err.message : 'the request failed';
+			loadError = err instanceof Error ? err.message : 'The request failed';
 		} finally {
 			busyId = '';
 		}
@@ -177,7 +177,7 @@
 	// What a schedule points at, in a few words. A session target that has gone
 	// says so: it is the reason the schedule stopped.
 	function target(schedule: ScheduleDigest): string {
-		if (schedule.sessionId) return schedule.sessionTitle ?? 'session no longer exists';
+		if (schedule.sessionId) return schedule.sessionTitle ?? 'Session no longer exists';
 		return schedule.projectName ?? shortPath(schedule.cwd ?? '');
 	}
 </script>
@@ -308,14 +308,14 @@
 			<div class="mt-3 flex justify-end gap-2">
 				<button class="btn btn-sm btn-ghost" type="button" onclick={closeForm}>Cancel</button>
 				<button class="btn btn-sm btn-primary" type="submit" disabled={saving || !!problem || !prompt.trim()}>
-					{saving ? 'Saving...' : editing ? 'Save' : 'Add schedule'}
+					{saving ? 'Saving…' : editing ? 'Save' : 'Add schedule'}
 				</button>
 			</div>
 		</form>
 	{/if}
 
 	{#if !loaded}
-		<p class="p-8 text-center opacity-60">Loading...</p>
+		<p class="p-8 text-center opacity-60">Loading…</p>
 	{:else if schedules.length === 0}
 		<p class="p-8 text-center text-sm opacity-60">
 			No schedules yet. Add one to run a prompt on a clock, in a fresh session each time or in one that keeps its context.
