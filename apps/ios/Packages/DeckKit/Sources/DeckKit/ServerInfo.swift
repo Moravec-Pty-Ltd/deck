@@ -16,6 +16,9 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 	case user
 	case quickMessages = "quick-messages"
 	case projectConfig = "project-config"
+	case projectsWrite = "projects-write"
+	case clone
+	case fsComplete = "fs-complete"
 	case git
 	case prDismiss = "pr-dismiss"
 	case expensiveModels = "expensive-models"
@@ -36,7 +39,10 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 		case .search: return "transcript search"
 		case .user: return "merge on your own PRs"
 		case .quickMessages: return "quick messages"
-		case .projectConfig: return "project automation"
+		case .projectConfig: return "project settings"
+		case .projectsWrite: return "adding and removing projects"
+		case .clone: return "cloning a project"
+		case .fsComplete: return "folder suggestions"
 		case .git: return "branches and worktrees"
 		case .prDismiss: return "dismissing a PR"
 		case .expensiveModels: return "the expensive-model check"

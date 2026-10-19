@@ -193,6 +193,42 @@ public final class DeckStore {
 		projectDetails[projectPath] = try await client.saveAutomation(projectPath: projectPath, automation: automation)
 	}
 
+	/// Register a directory as a project and list it.
+	@discardableResult
+	public func registerProject(path: String, name: String?, group: String?) async throws -> ProjectDetail {
+		guard let client else { throw DeckError.notConfigured }
+		return try await stored(client.registerProject(path: path, name: name, group: group))
+	}
+
+	/// Clone a repo into a parent folder and register the result.
+	@discardableResult
+	public func cloneProject(url: String, parent: String, name: String?, group: String?) async throws -> ProjectDetail {
+		guard let client else { throw DeckError.notConfigured }
+		return try await stored(client.cloneProject(url: url, parent: parent, name: name, group: group))
+	}
+
+	/// Save the changed fields of a project's config. Nothing changed, nothing sent.
+	public func updateProject(path: String, changes: [String: String]) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		guard !changes.isEmpty else { return }
+		try await stored(client.updateProject(path: path, changes: changes))
+	}
+
+	/// Unregister a project; its folder and sessions are left alone.
+	public func removeProject(path: String) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await client.removeProject(path: path)
+		projectDetails[path] = nil
+		await refreshProjects()
+	}
+
+	@discardableResult
+	private func stored(_ detail: ProjectDetail) async -> ProjectDetail {
+		projectDetails[detail.path] = detail
+		await refreshProjects()
+		return detail
+	}
+
 	public func changeEffort(sessionId: String, effort: String?) async throws {
 		guard let client else { throw DeckError.notConfigured }
 		try await client.changeEffort(sessionId: sessionId, effort: effort)

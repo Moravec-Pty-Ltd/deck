@@ -619,12 +619,23 @@ public struct ProjectDetail: Codable, Sendable {
 	public let path: String
 	public let name: String?
 	public let group: String?
+	/// The first prompt of a work session, before placeholders expand.
+	public let template: String?
+	/// The first prompt of a review session.
+	public let reviewPrompt: String?
+	public let hidden: Bool?
 	public let automation: ProjectAutomation?
 
-	public init(path: String, name: String?, group: String?, automation: ProjectAutomation?) {
+	public init(
+		path: String, name: String?, group: String?, template: String? = nil, reviewPrompt: String? = nil,
+		hidden: Bool? = nil, automation: ProjectAutomation?
+	) {
 		self.path = path
 		self.name = name
 		self.group = group
+		self.template = template
+		self.reviewPrompt = reviewPrompt
+		self.hidden = hidden
 		self.automation = automation
 	}
 }

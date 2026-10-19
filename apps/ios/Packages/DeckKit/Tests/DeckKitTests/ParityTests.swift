@@ -741,6 +741,62 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(rows.map(\.canInstall), [true, false, true])
 	}
 
+	// MARK: - Projects (plan item P17a)
+
+	private static let record = #"{"path":"/path/to/project","name":"example","group":"apps"}"#
+
+	func testRegisteringAProjectPostsOnlyWhatWasGiven() async {
+		let sent = await requests(reply: Self.record, status: 201) { _ = try await $0.registerProject(path: "~/code/example", name: " ", group: "apps") }
+		assertShape(sent, "POST", "/api/agent/projects", keys: ["group", "path"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["path"] as? String, "~/code/example")
+	}
+
+	func testEditingAProjectPatchesOnlyTheChangedFields() async {
+		let original = ProjectDraft(name: "example", group: "apps", template: "fix [issue_id]", reviewPrompt: "")
+		var draft = original
+		draft.group = ""
+		draft.reviewPrompt = "review [pr_url] "
+		let sent = await requests(reply: Self.record) { _ = try await $0.updateProject(path: "/path/to/project", changes: draft.changes(from: original)) }
+		assertShape(sent, "PATCH", "/api/agent/projects/config", keys: ["group", "path", "reviewPrompt"])
+		let body = sent.first?.json as? [String: Any]
+		XCTAssertEqual(body?["group"] as? String, "", "a blank clears the group")
+		XCTAssertEqual(body?["reviewPrompt"] as? String, "review [pr_url]")
+	}
+
+	func testCloningPostsTheUrlAndParent() async {
+		let sent = await requests(reply: Self.record, status: 201) {
+			_ = try await $0.cloneProject(url: "https://github.com/acme/repo.git", parent: "~/code", name: "repo", group: nil)
+		}
+		assertShape(sent, "POST", "/api/agent/projects/clone", keys: ["name", "parent", "url"])
+	}
+
+	func testRemovingAProjectDeletesItByPath() async {
+		let sent = await requests { try await $0.removeProject(path: "/path/to/project") }
+		assertShape(sent, "DELETE", "/api/agent/projects", query: "path=/path/to/project")
+	}
+
+	func testFolderSuggestionsUseTheAgentRoute() async {
+		let sent = await requests(reply: #"["~/code/example"]"#) { _ = try await $0.completePath("~/code/ex") }
+		assertShape(sent, "GET", "/api/agent/fs/complete", query: "q=~/code/ex")
+	}
+
+	func testAServerRefusalIsShownAsItWasSent() async {
+		var thrown: Error?
+		_ = await requests(reply: #"{"message":"path must be under your home directory"}"#, status: 403) {
+			do { _ = try await $0.registerProject(path: "/elsewhere") } catch { thrown = error; throw error }
+		}
+		XCTAssertEqual(thrown.map(DeckError.message(for:)), "path must be under your home directory")
+	}
+
+	@MainActor
+	func testAProjectEditWithNoChangesSendsNothing() async throws {
+		let sent = await requests { client in
+			let store = DeckStore(client: client)
+			try await store.updateProject(path: "/path/to/project", changes: [:])
+		}
+		XCTAssertTrue(sent.isEmpty)
+	}
+
 	// MARK: - Capability gating
 
 	func testServerInfoReadsTheCapabilities() async throws {

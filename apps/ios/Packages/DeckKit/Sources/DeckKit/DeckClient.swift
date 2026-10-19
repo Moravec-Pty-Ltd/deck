@@ -18,6 +18,15 @@ public enum DeckError: Error, LocalizedError {
 	}
 }
 
+extension DeckError {
+	/// What a form shows for a failure: the server's own message as it sent
+	/// it (a 400 or 403 says what to fix), anything else as described.
+	public static func message(for error: Error) -> String {
+		if case DeckError.http(_, let message) = error { return message }
+		return error.localizedDescription
+	}
+}
+
 public struct Credentials: Codable, Equatable, Sendable {
 	public let baseURL: URL
 	public let token: String
@@ -99,6 +108,47 @@ public final class DeckClient: @unchecked Sendable {
 		let body: [String: Any] = ["path": projectPath, "automation": automation.json]
 		let data = try await requestData("PATCH", "/api/agent/projects/config", body: body)
 		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
+	// MARK: - Projects
+
+	/// Register an existing directory. Re-registering a path keeps every field
+	/// left out.
+	public func registerProject(path: String, name: String? = nil, group: String? = nil) async throws -> ProjectDetail {
+		try await post("/api/agent/projects", json: Self.compact(["path": path, "name": name, "group": group]))
+	}
+
+	/// Clone `url` into `parent/<repo name>` and register it. The clone runs
+	/// before the reply, so it gets longer than the usual request timeout.
+	public func cloneProject(url: String, parent: String, name: String? = nil, group: String? = nil) async throws -> ProjectDetail {
+		let body = Self.compact(["url": url, "parent": parent, "name": name, "group": group])
+		let data = try await requestData("POST", "/api/agent/projects/clone", body: body, timeout: 120)
+		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
+	/// Unregister a project. Its folder, worktrees and sessions stay as they are.
+	public func removeProject(path: String) async throws {
+		_ = try await requestData("DELETE", "/api/agent/projects", query: [URLQueryItem(name: "path", value: path)])
+	}
+
+	/// PATCH the named fields of a project's config and return the stored record.
+	public func updateProject(path: String, changes: [String: String]) async throws -> ProjectDetail {
+		var body: [String: Any] = changes
+		body["path"] = path
+		let data = try await requestData("PATCH", "/api/agent/projects/config", body: body)
+		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
+	/// Folder suggestions for a path being typed, `~`-collapsed.
+	public func completePath(_ partial: String) async throws -> [String] {
+		try await get("/api/agent/fs/complete", query: [URLQueryItem(name: "q", value: partial)])
+	}
+
+	private static func compact(_ fields: [String: String?]) -> [String: Any] {
+		fields.compactMapValues { value in
+			guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+			return value
+		}
 	}
 
 	// MARK: - Sessions
@@ -619,9 +669,12 @@ public final class DeckClient: @unchecked Sendable {
 	}
 
 	/// Arbitrary method + JSON body (object or array), returning raw validated data.
-	func requestData(_ method: String, _ path: String, query: [URLQueryItem] = [], body: Any? = nil) async throws -> Data {
+	func requestData(
+		_ method: String, _ path: String, query: [URLQueryItem] = [], body: Any? = nil, timeout: TimeInterval? = nil
+	) async throws -> Data {
 		var request = try request(path: path, query: query)
 		request.httpMethod = method
+		if let timeout { request.timeoutInterval = timeout }
 		if let body {
 			request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 			request.httpBody = try JSONSerialization.data(withJSONObject: body)

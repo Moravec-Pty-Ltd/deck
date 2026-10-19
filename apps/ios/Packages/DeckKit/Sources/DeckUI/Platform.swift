@@ -77,3 +77,14 @@ extension View {
 		#endif
 	}
 }
+
+extension View {
+	/// A field for paths, urls and names: no autocapitalisation or autocorrect.
+	func deckPlainInput() -> some View {
+		#if os(iOS)
+		textInputAutocapitalization(.never).autocorrectionDisabled()
+		#else
+		autocorrectionDisabled()
+		#endif
+	}
+}

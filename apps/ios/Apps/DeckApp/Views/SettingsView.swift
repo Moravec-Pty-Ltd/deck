@@ -24,7 +24,7 @@ struct SettingsView: View {
 				}
 
 				Section("Projects") {
-					NavigationLink("Automation") {
+					NavigationLink("Manage projects") {
 						ProjectsSettingsView()
 					}
 				}
