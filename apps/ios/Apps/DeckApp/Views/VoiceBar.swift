@@ -1,6 +1,7 @@
 import AVKit
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// The strip between the transcript and the composer while voice mode is on:
 /// what is being read (or heard), hold-to-talk, Skip, Stop, and the per-device
@@ -43,7 +44,7 @@ struct VoiceBar: View {
 		}
 		.padding(.horizontal)
 		.padding(.vertical, 8)
-		.background(.thinMaterial)
+		.deckGlass(in: Rectangle())
 	}
 }
 
@@ -162,6 +163,8 @@ struct TalkButton: View {
 				.opacity(voice.recording ? 1 : 0)
 			Circle()
 				.fill(voice.recording ? Color.red : Color.accentColor)
+			// Fixed to the circle, which is sized by the caller: a Dynamic Type
+			// glyph would outgrow it at the larger accessibility sizes.
 			Image(systemName: "mic.fill")
 				.font(.system(size: size * 0.4))
 				.foregroundStyle(.white)

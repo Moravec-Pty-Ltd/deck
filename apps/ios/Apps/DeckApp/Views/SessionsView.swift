@@ -521,7 +521,7 @@ struct SessionsView: View {
 		}
 		.padding(.horizontal)
 		.padding(.vertical, 10)
-		.background(.bar)
+		.deckGlass(in: Rectangle())
 	}
 
 	private func progressBar(_ progress: DeleteProgress) -> some View {
@@ -541,7 +541,7 @@ struct SessionsView: View {
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.padding(.horizontal)
 		.padding(.vertical, 10)
-		.background(.bar)
+		.deckGlass(in: Rectangle())
 	}
 
 	private var selectedSessions: [SessionDigest] {

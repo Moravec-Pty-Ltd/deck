@@ -245,7 +245,7 @@ struct ServerLogsView: View {
 					.foregroundStyle(.secondary)
 					.padding(8)
 					.frame(maxWidth: .infinity)
-					.background(.thinMaterial)
+					.deckGlass(in: Rectangle())
 			}
 		}
 		.navigationTitle(name)

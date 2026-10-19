@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// The Operator tab: the conversation with the hands-free operator, what it
 /// did, whether it is listening for "hey deck" or awake for a command, the
@@ -132,7 +133,7 @@ struct OperatorView: View {
 			}
 			.padding(10)
 			.background(background(for: entry.role))
-			.clipShape(RoundedRectangle(cornerRadius: 12))
+			.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 			if entry.role != .user { Spacer(minLength: 40) }
 		}
 	}

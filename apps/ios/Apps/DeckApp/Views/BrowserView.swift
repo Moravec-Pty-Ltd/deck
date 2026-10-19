@@ -1,5 +1,6 @@
 import DeckBrowser
 import DeckKit
+import DeckUI
 import SwiftUI
 import WebKit
 
@@ -90,7 +91,7 @@ struct BrowserView: View {
 					controls(model)
 				}
 				.padding(.vertical, 8)
-				.background(.bar)
+				.deckGlass(in: Rectangle())
 			}
 		#endif
 	}
@@ -218,7 +219,7 @@ struct BrowserView: View {
 				.padding(.horizontal, 8)
 				.padding(.vertical, 6)
 				.background(Color.secondary.opacity(0.12))
-				.clipShape(RoundedRectangle(cornerRadius: 8))
+				.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 
 				if model.isLoading(for: tab) {
 					Button { model.stop(tab) } label: { Image(systemName: "xmark") }

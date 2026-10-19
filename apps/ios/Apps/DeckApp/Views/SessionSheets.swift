@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 struct ModelPickerSheet: View {
 	let kind: String
@@ -49,7 +50,7 @@ struct ModelPickerSheet: View {
 					.foregroundStyle(.secondary)
 					.padding()
 					.frame(maxWidth: .infinity)
-					.background(.thinMaterial)
+					.deckGlass(in: Rectangle())
 			}
 		}
 	}
@@ -351,7 +352,7 @@ struct EffortPickerSheet: View {
 					.foregroundStyle(.secondary)
 					.padding()
 					.frame(maxWidth: .infinity)
-					.background(.thinMaterial)
+					.deckGlass(in: Rectangle())
 			}
 		}
 	}

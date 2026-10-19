@@ -477,7 +477,8 @@ struct SessionDetailView: View {
 	private var voiceInvitation: some View {
 		VStack(spacing: 12) {
 			Image(systemName: "waveform.circle")
-				.font(.system(size: 44))
+				.font(.largeTitle)
+				.imageScale(.large)
 				.foregroundStyle(.secondary)
 			if let voice, voice.canRead {
 				Button("Start voice mode") { voice.enable() }
@@ -540,7 +541,9 @@ struct SessionDetailView: View {
 			}
 			.id(ask.id)
 			.padding()
-			.background(.thinMaterial)
+			.deckGlass()
+			.padding(.horizontal, 8)
+			.padding(.vertical, 4)
 		}
 	}
 
@@ -575,7 +578,7 @@ struct SessionDetailView: View {
 								.id(group.id)
 								.overlay {
 									if highlightedId == group.id {
-										RoundedRectangle(cornerRadius: 12)
+										RoundedRectangle(cornerRadius: DeckStyle.Radius.card)
 											.stroke(Color.accentColor, lineWidth: 2)
 											.padding(-4)
 									}
@@ -587,7 +590,7 @@ struct SessionDetailView: View {
 							MarkdownText(viewModel.streamingText)
 								.padding(10)
 								.background(Color(.secondarySystemBackground))
-								.clipShape(RoundedRectangle(cornerRadius: 12))
+								.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 							Spacer(minLength: 40)
 						}
 						.id("streaming")
@@ -773,6 +776,7 @@ struct SessionDetailView: View {
 			}
 		}
 		.padding()
+		.deckGlass(in: Rectangle())
 		.disabled(isSending)
 		.onChange(of: photoItems) { _, items in
 			Task { await loadPhotos(items) }
@@ -786,7 +790,7 @@ struct SessionDetailView: View {
 					.resizable()
 					.scaledToFill()
 					.frame(width: 48, height: 48)
-					.clipShape(RoundedRectangle(cornerRadius: 6))
+					.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 			}
 			Button {
 				attachedImages.removeAll { $0.id == image.id }
@@ -955,7 +959,7 @@ struct TranscriptBubble: View {
 			}
 			.padding(10)
 			.background(isUser ? Color.accentColor.opacity(0.15) : Color(.secondarySystemBackground))
-			.clipShape(RoundedRectangle(cornerRadius: 12))
+			.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 			if !isUser { Spacer(minLength: 40) }
 		}
 	}
@@ -984,7 +988,7 @@ struct AttachmentImage: View {
 			}
 		}
 		.frame(width: 96, height: 96)
-		.clipShape(RoundedRectangle(cornerRadius: 8))
+		.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 		.task(id: image) {
 			guard uiImage == nil else { return }
 			if let data = await viewModel?.imageData(for: image), let loaded = UIImage(data: data) {
@@ -1036,8 +1040,8 @@ struct QuestionCard: View {
 		}
 		.padding(10)
 		.frame(maxWidth: .infinity, alignment: .leading)
-		.background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-		.overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5))
+		.background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
+		.overlay(RoundedRectangle(cornerRadius: DeckStyle.Radius.card).stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5))
 	}
 }
 
