@@ -10,6 +10,7 @@ enum MacWindow {
 
 @main
 struct DeckMacMain: App {
+	@NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
 	@State private var store = DeckStore()
 
 	var body: some Scene {
@@ -48,6 +49,13 @@ struct DeckMacMain: App {
 				.frame(minWidth: 420, minHeight: 480)
 		}
 		.keyboardShortcut("o", modifiers: [.command, .shift])
+
+		MenuBarExtra {
+			MenuBarContent().environment(store)
+		} label: {
+			MenuBarIcon().environment(store)
+		}
+		.menuBarExtraStyle(.window)
 	}
 }
 

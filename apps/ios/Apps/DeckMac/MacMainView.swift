@@ -64,6 +64,7 @@ struct MacMainView: View {
 			deepLinkRunId = id
 			selection = .inbox
 		}
+		.macOpenTarget(selection: $selection)
 		.sheet(isPresented: $showReviews) {
 			ReviewsView { selection = .session($0) }
 				.frame(minWidth: 520, minHeight: 480)
