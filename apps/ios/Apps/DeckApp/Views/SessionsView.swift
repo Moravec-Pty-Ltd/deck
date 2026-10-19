@@ -3,15 +3,19 @@ import DeckKit
 import DeckUI
 
 /// The list of sessions and the one that is open. On a phone the open session
-/// pushes over the list. On a foldable opened flat the list stays on the left
-/// half and the session fills the right, split on the fold; half open on a
-/// table the session takes the whole window (see SessionDetailView), since a
-/// column each side of a horizontal fold reads badly.
+/// pushes over the list; on an iPad it sits beside it in a split view. On a
+/// foldable opened flat the list stays on the left half and the session fills
+/// the right, split on the fold, which a NavigationSplitView cannot be pinned
+/// to; half open on a table the session takes the whole window (see
+/// SessionDetailView), since a column each side of a horizontal fold reads badly.
 struct SessionsView: View {
 	@Environment(DeckStore.self) private var store
 	@Environment(HingeMonitor.self) private var hinge
 	@Environment(\.horizontalSizeClass) private var sizeClass
 	@Binding var deepLinkSessionId: String?
+	/// Opens the Settings tab where there is a sidebar to show it; nil pushes
+	/// Settings over the list instead.
+	var openSettingsTab: (() -> Void)?
 	@State private var open: SessionTarget?
 	@State private var path: [SessionTarget] = []
 	@State private var models = OpenSessionModel()
@@ -27,7 +31,8 @@ struct SessionsView: View {
 	@State private var searchTask: Task<Void, Never>?
 	/// The Hidden section starts closed: you hid those on purpose.
 	@State private var hiddenExpanded = false
-	@State private var showSettings = false
+	@State private var pushSettings = false
+	@State private var columns = NavigationSplitViewVisibility.all
 	@State private var showReviews = false
 
 	/// The session that is open, at a message when it came from a search hit.
@@ -38,63 +43,28 @@ struct SessionsView: View {
 
 	private var wide: Bool { sizeClass == .regular && !hinge.isTabletop }
 
-	// MARK: - Sidebar width
-
-	private static let sidebarMin: CGFloat = 260
-	private static let sidebarMax: CGFloat = 560
-	private static let sidebarDefault: CGFloat = 360
-
-	/// Remembered per device. On a foldable opened flat the fold decides, since
-	/// the seam has to land on the hinge rather than wherever it was dragged to.
-	@AppStorage("sidebarWidth") private var storedSidebarWidth: Double = Double(sidebarDefault)
-	@State private var dragWidth: CGFloat?
-
-	private var sidebarWidth: CGFloat {
-		if let fold = hinge.halfWidth { return fold }
-		return dragWidth ?? CGFloat(storedSidebarWidth)
-	}
-
-	/// The divider, draggable except where the fold owns the split.
-	@ViewBuilder
-	private var sidebarDivider: some View {
-		if hinge.halfWidth != nil {
-			Divider()
-		} else {
-			Divider()
-				// A one-pixel divider is not a grabbable target, so widen the
-				// hit area without drawing anything wider.
-				.padding(.horizontal, 3)
-				.contentShape(Rectangle())
-				.gesture(
-					DragGesture(coordinateSpace: .global)
-						.onChanged { value in
-							dragWidth = clampSidebar(CGFloat(storedSidebarWidth) + value.translation.width)
-						}
-						.onEnded { _ in
-							if let dragWidth { storedSidebarWidth = Double(dragWidth) }
-							dragWidth = nil
-						}
-				)
-				// No resize cursor: SwiftUI's PointerStyle is unavailable on iOS
-				// and so on Mac Catalyst too. The widened hit area is the only
-				// affordance, which is why it is generous.
-				.accessibilityLabel("Resize the sidebar")
-		}
-	}
-
-	private func clampSidebar(_ width: CGFloat) -> CGFloat {
-		min(Self.sidebarMax, max(Self.sidebarMin, width))
-	}
+	/// The fold owns the split: half the window each side of the hinge.
+	private var foldWidth: CGFloat? { hinge.halfWidth }
 
 	var body: some View {
 		Group {
-			if wide {
+			if wide, let foldWidth {
 				HStack(spacing: 0) {
 					NavigationStack { sidebar }
-						.frame(width: sidebarWidth)
-					sidebarDivider
+						.frame(width: foldWidth)
+					Divider()
 					NavigationStack { detail }
 				}
+			} else if wide {
+				NavigationSplitView(columnVisibility: $columns) {
+					sidebar
+						.navigationSplitViewColumnWidth(min: 260, ideal: 360, max: 560)
+				} detail: {
+					NavigationStack { detail }
+				}
+				// Balanced keeps the list beside the session in portrait too,
+				// rather than sliding it over the session.
+				.navigationSplitViewStyle(.balanced)
 			} else {
 				NavigationStack(path: $path) {
 					sidebar.navigationDestination(for: SessionTarget.self) { target in
@@ -147,26 +117,12 @@ struct SessionsView: View {
 		.id(target)
 	}
 
-	/// A row that opens its session: pushes it on a phone, shows it in the
-	/// right column when the list has one beside it.
+	/// A row that opens its session: pushes it on a phone; beside the list it
+	/// is a tagged row, so the list's own selection opens it and draws it.
 	@ViewBuilder
 	private func link<Label: View>(to target: SessionTarget, @ViewBuilder label: () -> Label) -> some View {
 		if wide {
-			Button {
-				open = target
-			} label: {
-				// A plain button hit-tests what it draws, so without these the
-				// only clickable part of the row is the text itself: the gaps
-				// between the title, the chips and the timestamp all miss.
-				// Spanning the width and giving it a rectangular content shape
-				// makes the whole row the target, the way a NavigationLink row
-				// behaves on the phone.
-				label()
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-			.listRowBackground(open?.sessionId == target.sessionId ? Color.accentColor.opacity(0.12) : nil)
+			label().tag(target)
 		} else {
 			NavigationLink(value: target) { label() }
 		}
@@ -232,8 +188,8 @@ struct SessionsView: View {
 								.foregroundStyle(selection.contains(session.id) ? Color.accentColor : .secondary)
 							SessionRow(session: session)
 						}
-						// Same as `link`: a plain button hit-tests only what it
-						// draws, so ticking a row would need a hit on its text.
+						// A plain button hit-tests only what it draws, so ticking
+						// a row would otherwise need a hit on its text.
 						.frame(maxWidth: .infinity, alignment: .leading)
 						.contentShape(Rectangle())
 					}
@@ -245,7 +201,7 @@ struct SessionsView: View {
 				// swapping to a separate results view: replacing the whole list
 				// while the search field is active is what a UIKit list handles
 				// worst, and the Mac crashed on it.
-				List {
+				List(selection: wide ? $open : nil) {
 					Section {
 						ForEach(listedSessions) { session in
 							link(to: SessionTarget(sessionId: session.id)) {
@@ -324,11 +280,10 @@ struct SessionsView: View {
 					}
 				}
 			}
-			// Settings left the tab bar to make room for the browser: five tabs
-			// is the most iOS shows before it buries the sixth under "More",
-			// and this is the one opened least.
 			ToolbarItem(placement: .topBarLeading) {
-				Button { showSettings = true } label: {
+				Button {
+					if let openSettingsTab { openSettingsTab() } else { pushSettings = true }
+				} label: {
 					Image(systemName: "gearshape")
 				}
 				.accessibilityLabel("Settings")
@@ -344,7 +299,7 @@ struct SessionsView: View {
 				}
 			}
 		}
-		.sheet(isPresented: $showSettings) {
+		.navigationDestination(isPresented: $pushSettings) {
 			SettingsView()
 		}
 		.sheet(isPresented: $showReviews) {
