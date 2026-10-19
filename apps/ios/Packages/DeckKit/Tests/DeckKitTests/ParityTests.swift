@@ -918,6 +918,185 @@ final class ParityTests: XCTestCase {
 		store.apply(decidedElsewhere)
 		XCTAssertTrue(store.pairingRequests.isEmpty)
 	}
+
+	// MARK: - Issue sources (plan item P18)
+
+	func testAGithubSourcePostsOwnerAndRepo() async {
+		let sent = await requests(reply: #"{"id":"src_1","type":"github","owner":"acme","repo":"web"}"#, status: 201) {
+			try await $0.addIssueSource(projectPath: "/path/to/project", body: IssueSourceBody.github(owner: " acme ", repo: "web"))
+		}
+		assertShape(sent, "POST", "/api/agent/projects/sources", keys: ["owner", "projectPath", "repo", "type"])
+		let body = sent.first?.json as? [String: Any]
+		XCTAssertEqual(body?["owner"] as? String, "acme")
+		XCTAssertEqual(body?["type"] as? String, "github")
+	}
+
+	func testALinearSourceWithANewKeyPostsTheKey() async {
+		let body = IssueSourceBody.linear(
+			key: .new("example-key"), teamId: "team_1", teamName: "Example", assigneeEmail: "someone@example.com", stateIds: ["s1"])
+		let sent = await requests(reply: #"{"id":"src_2","type":"linear"}"#, status: 201) {
+			try await $0.addIssueSource(projectPath: "/path/to/project", body: body)
+		}
+		assertShape(sent, "POST", "/api/agent/projects/sources", keys: [
+			"apiKey", "assigneeEmail", "projectPath", "stateIds", "teamId", "teamName", "type"
+		])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["stateIds"] as? [String], ["s1"])
+	}
+
+	func testAClickupSourcePostsItsPlaceAndANumericAssignee() async {
+		var place = IssueSourceBody.ClickupPlace()
+		place.teamId = "t1"; place.teamName = "Acme"
+		place.spaceId = "sp1"; place.spaceName = "Eng"
+		place.folderId = "f1"; place.folderName = "Sprint"
+		place.listId = "l1"; place.listName = "Backlog"
+		let body = IssueSourceBody.clickup(
+			key: .saved("cred_1"), place: place, statuses: ["to do"], assigneeUserId: 42, assigneeName: "someone")
+		let sent = await requests(reply: #"{"id":"src_3","type":"clickup"}"#, status: 201) {
+			try await $0.addIssueSource(projectPath: "/path/to/project", body: body)
+		}
+		assertShape(sent, "POST", "/api/agent/projects/sources", keys: [
+			"assigneeName", "assigneeUserId", "credentialId", "folderId", "folderName", "listId", "listName",
+			"projectPath", "spaceId", "spaceName", "statuses", "teamId", "teamName", "type"
+		])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["assigneeUserId"] as? Int, 42)
+
+		place.folderId = ""
+		let folderless = IssueSourceBody.clickup(key: .saved("cred_1"), place: place, statuses: [], assigneeUserId: 42, assigneeName: "")
+		XCTAssertNil(folderless["folderId"], "a folderless list sends no folder")
+		XCTAssertNil(folderless["folderName"])
+	}
+
+	func testAKeyNeverPrints() {
+		XCTAssertFalse(String(describing: IssueSourceKey.new("example-key")).contains("example-key"))
+	}
+
+	func testSavedCredentialsAreListedByType() async throws {
+		var list: [SavedCredential] = []
+		let sent = await requests(reply: #"[{"id":"cred_1","type":"linear","label":"someone@example.com","projects":["example"]}]"#) {
+			list = try await $0.issueCredentials(type: .linear)
+		}
+		assertShape(sent, "GET", "/api/agent/credentials", query: "type=linear")
+		XCTAssertEqual(list.first?.displayLabel, "someone@example.com, used by example")
+	}
+
+	func testLookupRequestShapes() async {
+		let cases: [(IssueSourceType, String, [String: String], [String])] = [
+			(.linear, "me", [:], ["action", "apiKey", "type"]),
+			(.linear, "teams", [:], ["action", "apiKey", "type"]),
+			(.linear, "states", ["teamId": "t1"], ["action", "apiKey", "teamId", "type"]),
+			(.clickup, "spaces", ["teamId": "t1"], ["action", "apiKey", "teamId", "type"]),
+			(.clickup, "folders", ["spaceId": "sp1"], ["action", "apiKey", "spaceId", "type"]),
+			(.clickup, "lists", ["folderId": "f1"], ["action", "apiKey", "folderId", "type"]),
+			(.clickup, "statuses", ["listId": "l1"], ["action", "apiKey", "listId", "type"])
+		]
+		for (type, action, params, keys) in cases {
+			let sent = await requests(reply: "[]") {
+				let _: [ClickupStatus] = try await $0.issueSourceLookup(type: type, action: action, key: .new("example-key"), params: params)
+			}
+			assertShape(sent, "POST", "/api/agent/projects/sources/lookup", keys: keys)
+			let body = sent.first?.json as? [String: Any]
+			XCTAssertEqual(body?["action"] as? String, action)
+			XCTAssertEqual(body?["type"] as? String, type.rawValue)
+		}
+	}
+
+	func testRemovingASourceDeletesItByProjectAndId() async {
+		let sent = await requests { try await $0.removeIssueSource(projectPath: "/path/to/project", id: "src_1") }
+		assertShape(sent, "DELETE", "/api/agent/projects/sources", query: "project=/path/to/project&id=src_1")
+	}
+
+	func testAProjectsSourcesReadItsRecord() async throws {
+		var sources: [IssueSource] = []
+		let sent = await requests(reply: #"{"path":"/path/to/project","name":"example","sources":[{"id":"a","type":"github","owner":"acme","repo":"web"},{"id":"b","type":"linear","teamId":"t","teamName":"Example","assigneeEmail":"","stateIds":["1","2"]},{"id":"c","type":"clickup","listName":"Backlog","statuses":["to do"],"assigneeUserId":1}]}"#) {
+			sources = try await $0.issueSources(projectPath: "/path/to/project")
+		}
+		assertShape(sent, "GET", "/api/agent/projects/config", query: "path=/path/to/project")
+		XCTAssertEqual(sources.map(\.summary), ["acme/web", "Example · 2 state(s)", "Backlog · 1 status(es)"])
+	}
+
+	/// Answers each cascade step the way the server's lookups do.
+	private func cascade(_ recorder: Recorder, status: Int = 200, credentials: String) {
+		RequestStub.status = status
+		RequestStub.handler = { request in
+			let data = Self.bodyData(request)
+			let json = data.isEmpty ? nil : try? JSONSerialization.jsonObject(with: data)
+			recorder.sent.append(Sent(method: request.httpMethod ?? "GET", path: request.url?.path ?? "", query: request.url?.query, accept: nil, contentType: nil, keys: (json as? [String: Any]).map { $0.keys.sorted() }, json: json))
+			if status != 200 { return Data(#"{"message":"Linear: authentication failed"}"#.utf8) }
+			if request.url?.path == "/api/agent/credentials" { return Data(credentials.utf8) }
+			let action = (json as? [String: Any])?["action"] as? String
+			let replies = [
+				"me": #"{"name":"Someone","email":"someone@example.com","id":42,"username":"someone"}"#,
+				"teams": #"[{"id":"t1","name":"Example","key":"EX"}]"#,
+				"states": #"[{"id":"s1","name":"Todo","type":"unstarted"},{"id":"s2","name":"Done","type":"completed"}]"#,
+				"spaces": #"[{"id":"sp1","name":"Eng"}]"#,
+				"folders": #"[{"id":"f1","name":"Sprint"}]"#,
+				"lists": #"[{"id":901,"name":"Backlog"}]"#,
+				"statuses": #"[{"status":"to do","type":"open"},{"status":"in progress","type":"custom"}]"#
+			]
+			return Data((action.flatMap { replies[$0] } ?? #"{"id":"src","type":"linear"}"#).utf8)
+		}
+	}
+
+	@MainActor
+	func testReusingASavedKeySendsNoApiKey() async {
+		let recorder = Recorder()
+		cascade(recorder, credentials: #"[{"id":"cred_1","type":"clickup","label":"someone","projects":["example"]}]"#)
+		let setup = IssueSourceSetup(client: Self.stubbedClient(), type: .clickup)
+		await setup.start()
+		XCTAssertEqual(setup.credentialId, "cred_1", "the first saved key is picked")
+		await setup.connect()
+		await setup.selectClickupTeam("t1")
+		await setup.selectClickupSpace("sp1")
+		await setup.selectClickupFolder("f1")
+		await setup.selectClickupList("901")
+		XCTAssertEqual(setup.clickupSelected, ["to do"])
+		let saved = await setup.save(projectPath: "/path/to/project")
+		XCTAssertTrue(saved)
+
+		let posts = recorder.sent.filter { $0.method == "POST" }
+		XCTAssertEqual(posts.compactMap { ($0.json as? [String: Any])?["action"] as? String },
+			["me", "teams", "spaces", "folders", "lists", "lists", "statuses"])
+		XCTAssertTrue(posts.allSatisfy { $0.keys?.contains("apiKey") == false }, "a reused key is never sent")
+		XCTAssertTrue(posts.allSatisfy { $0.keys?.contains("credentialId") == true })
+		let source = posts.last?.json as? [String: Any]
+		XCTAssertEqual(source?["listId"] as? String, "901")
+		XCTAssertEqual(source?["folderName"] as? String, "Sprint")
+		XCTAssertEqual(source?["assigneeUserId"] as? Int, 42)
+	}
+
+	@MainActor
+	func testATypedKeyIsSentForTheCascadeThenDropped() async {
+		let recorder = Recorder()
+		cascade(recorder, credentials: "[]")
+		let setup = IssueSourceSetup(client: Self.stubbedClient(), type: .linear)
+		await setup.start()
+		XCTAssertEqual(setup.credentialId, "")
+		setup.apiKey = "example-key"
+		await setup.connect()
+		await setup.selectLinearTeam("t1")
+		XCTAssertEqual(setup.linearStateIds, ["s1"], "unstarted states are preselected")
+		let saved = await setup.save(projectPath: "/path/to/project")
+		XCTAssertTrue(saved)
+		XCTAssertEqual(setup.apiKey, "", "the key is gone once the server has it")
+
+		let source = recorder.sent.last?.json as? [String: Any]
+		XCTAssertEqual(recorder.sent.last?.path, "/api/agent/projects/sources")
+		XCTAssertEqual(source?["apiKey"] as? String, "example-key")
+		XCTAssertNil(source?["credentialId"])
+		XCTAssertEqual(source?["assigneeEmail"] as? String, "someone@example.com")
+		XCTAssertEqual(source?["teamName"] as? String, "Example")
+	}
+
+	@MainActor
+	func testAProviderErrorIsShownAsReturned() async {
+		let recorder = Recorder()
+		cascade(recorder, status: 400, credentials: "[]")
+		let setup = IssueSourceSetup(client: Self.stubbedClient(), type: .linear)
+		setup.apiKey = "example-key"
+		await setup.connect()
+		XCTAssertFalse(setup.connected)
+		XCTAssertEqual(setup.errorMessage, "Linear: authentication failed")
+	}
 }
 
 private actor AsyncGate {

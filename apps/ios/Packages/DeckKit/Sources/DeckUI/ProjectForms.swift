@@ -155,6 +155,7 @@ public struct ProjectEditorForm<Extra: View>: View {
 				Section { LabeledContent("Folder", value: project.path) }
 			}
 			extra
+			IssueSourcesLink(project: project)
 			if let errorMessage {
 				Section { Text(errorMessage).foregroundStyle(.red).font(.footnote) }
 			}

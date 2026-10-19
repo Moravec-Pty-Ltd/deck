@@ -26,6 +26,7 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 	case settings
 	case pairing
 	case reviews
+	case issueSources = "issue-sources"
 
 	/// What the feature is called where a banner names what is missing.
 	public var label: String {
@@ -52,6 +53,7 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 		case .settings: return "server settings"
 		case .pairing: return "approving new devices"
 		case .reviews: return "PR reviews"
+		case .issueSources: return "issue sources"
 		}
 	}
 }
