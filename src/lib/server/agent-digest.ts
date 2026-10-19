@@ -30,7 +30,14 @@ export interface AgentSessionDigest {
 	createdAt: number;
 	lastActiveAt: number;
 	model?: string;
+	// pi's --provider; absent for the kinds that carry it inside `model`.
+	provider?: string;
 	effort?: DeckSession['effort'];
+	permissionMode?: DeckSession['permissionMode'];
+	// Shells only: whether deck owns the tmux session (managed) and whether a
+	// client is attached to it right now (attached).
+	managed?: boolean;
+	attached?: boolean;
 	worktree?: DeckSession['worktree'];
 	issues?: SessionIssue[];
 	pr?: SessionPR;
@@ -63,6 +70,23 @@ function definedContext(id: string): ContextUsage | undefined {
 	return context.used > 0 || context.window > 0 ? context : undefined;
 }
 
+// Omitted rather than undefined when unset, so they only appear on a session
+// that carries them.
+function runtimeFields(s: DeckSession): Pick<AgentSessionDigest, 'provider' | 'permissionMode'> {
+	return {
+		...(s.provider ? { provider: s.provider } : {}),
+		...(s.permissionMode ? { permissionMode: s.permissionMode } : {})
+	};
+}
+
+function shellFlags(s: DeckSession): Pick<AgentSessionDigest, 'managed' | 'attached'> {
+	if (s.kind !== 'shell') return {};
+	return {
+		...(s.managed !== undefined ? { managed: s.managed } : {}),
+		...(s.attached !== undefined ? { attached: s.attached } : {})
+	};
+}
+
 export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): AgentSessionDigest {
 	return {
 		id: s.id,
@@ -76,6 +100,8 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		lastActiveAt: s.lastActiveAt,
 		model: s.model,
 		effort: s.effort,
+		...runtimeFields(s),
+		...shellFlags(s),
 		worktree: s.worktree,
 		issues: s.issues ?? (s.issue ? [s.issue] : undefined),
 		pr: s.pr,

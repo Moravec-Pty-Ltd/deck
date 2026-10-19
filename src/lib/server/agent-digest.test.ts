@@ -68,6 +68,23 @@ describe('sessionDigest', () => {
 		expect(shell.issues).toEqual([{ source: 'github', id: 'a/b#1', url: '' }]);
 	});
 
+	it('carries provider and permissionMode only when set', () => {
+		const set = sessionDigest(session({ kind: 'pi', provider: 'example', permissionMode: 'plan' }));
+		expect(set).toMatchObject({ provider: 'example', permissionMode: 'plan' });
+		const unset = sessionDigest(session());
+		expect('provider' in unset).toBe(false);
+		expect('permissionMode' in unset).toBe(false);
+	});
+
+	it('carries managed/attached for shells only, and only when set', () => {
+		const shell = sessionDigest(session({ kind: 'shell', managed: true, attached: false }));
+		expect(shell).toMatchObject({ managed: true, attached: false });
+		const bare = sessionDigest(session({ kind: 'shell' }));
+		expect('managed' in bare || 'attached' in bare).toBe(false);
+		const agent = sessionDigest(session({ managed: true, attached: true }));
+		expect('managed' in agent || 'attached' in agent).toBe(false);
+	});
+
 	it('normalises absent awaitingInput to false', () => {
 		expect(sessionDigest(session()).awaitingInput).toBe(false);
 	});

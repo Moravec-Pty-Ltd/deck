@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { baseUrl } from '$lib/server/config';
 import { shippedSkillVersion } from '$lib/server/skills';
+import { AGENT_CAPABILITIES } from '$lib/server/agent-capabilities';
 
 // The canonical machine-facing contract for deck's agent API (issue #127,
 // llmstxt.org convention): everything an external agent needs to drive and
@@ -48,6 +49,14 @@ Parse \`message\` for the reason; don't rely on the status alone.
 
 Read-only projections, stable regardless of deck's internal storage. Use these
 to form valid create/review calls without any out-of-band values.
+
+### GET /api/agent
+
+What this server supports: \`{ "version": "<skill version>", "capabilities": ["stream", ...] }\`.
+Each capability token names an agent route or behaviour added after the
+baseline; a client should check for a token before relying on what it names,
+and treat a 404 here as a server older than every token. Tokens are only ever
+added. Current tokens: ${AGENT_CAPABILITIES.map((t) => `\`${t}\``).join(', ')}.
 
 ### GET /api/agent/projects
 
@@ -172,6 +181,11 @@ Digest of every session:
 }]
 \`\`\`
 
+Present only when set: \`provider\` (pi's provider, the other kinds carry it
+inside \`model\`), \`permissionMode\` (acceptEdits | bypassPermissions | default |
+plan), and on shell sessions \`managed\` (deck owns the tmux session) and
+\`attached\` (a terminal client is attached to it).
+
 \`hidden\` is present only on a hidden session, whether it was hidden itself or
 its project was. A client that lists sessions should keep those out of its main
 list and offer them in a "Hidden" section instead.
@@ -192,6 +206,62 @@ Readable turn output — what the session actually said:
 
 Bounded to the recent tail. The digest tells you a turn finished; this tells you
 what it produced.
+
+### GET /api/agent/sessions/{id}/stream
+
+Server-sent events for one agent session's raw transcript (what the web and
+native session views render). 404 when unknown, 400 for a shell session.
+Events:
+
+- \`snapshot\`: \`{ "seq", "n", "data" }\`, the recent history split into \`n\`
+	frames. Concatenate \`data\` in \`seq\` order and parse it as
+	\`{ "start", "total", "cost", "context", "events": [...] }\`: \`events\` are the
+	transcript lines from index \`start\` of \`total\`.
+- \`status\`: the session status (running | idle | error | dead) on open and on
+	every change.
+- \`transcript\`: one live raw event, appended after the snapshot.
+- \`ping\`: a heartbeat every 25s; a stream silent for longer is dead, reconnect.
+
+Opening the stream also kicks a background refresh of the session's PR, which
+arrives through the digest and event log. Raw events are the CLI's own
+stream-json lines plus deck's \`deck.*\` markers; they are less stable than
+the digest and transcript projections above.
+
+### GET /api/agent/sessions/{id}/history?before=<index>&limit=<n>
+
+Older raw events for back-scroll: \`{ "start", "events": [...] }\`, the lines
+\`[start, before)\` oldest first. \`before\` defaults to the end of the
+transcript; \`limit\` defaults to 200 and is capped at 1000. Page backwards by
+passing the previous \`start\` as the next \`before\` until \`start\` is 0.
+
+### GET /api/agent/sessions/{id}/images/{file}
+
+The bytes of an image attached to a user message, named by the \`file\` the
+transcript's \`deck.user\` event carries. Immutable, so cache it. 404 when the
+session or image is unknown.
+
+### POST /api/agent/sessions/{id}/files
+
+\`{ "paths": ["/path/to/project/out.png", "notes.md"] }\` — which of the files a
+message mentions exist and can be served: \`{ "files": [{ "path", "name",
+"size", "mime", "image" }] }\` (\`path\` as sent, so you can match it back). Relative paths resolve from the session's cwd. Only
+regular files inside a registered project or its worktrees are listed; anything
+else is silently absent. Up to 20 paths are checked per call.
+
+### GET /api/agent/sessions/{id}/files?path=<path>&download=1
+
+Serve one of those files, inline (or as an attachment with \`download=1\`), with
+an \`etag\` (send \`If-None-Match\` for a 304). 404 for a path outside the
+registered projects or a missing file.
+
+### GET /api/agent/sessions/{id}/diff?meta=1
+
+The session's worktree changes against its base branch. \`{ "git": false }\` when
+the cwd is not a git repository; otherwise \`{ "git": true, "patch": "<unified
+diff>", "meta" }\`, or with \`meta=1\` just \`{ "git": true, "meta" }\`. \`meta\` is
+\`{ "baseRef", "baseResolved", "truncated", "fileCount", "additions",
+"deletions", "files": [{ "path", "status", "additions", "deletions", "binary",
+"oldPath"? }] }\`; \`truncated\` means the patch was trimmed (about 5 MB).
 
 ### POST /api/agent/sessions
 
