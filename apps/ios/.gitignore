@@ -1,0 +1,14 @@
+.DS_Store
+xcuserdata/
+*.xcodeproj
+DerivedData/
+.build/
+.swiftpm/
+.env
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+*.ipa
+*.dSYM.zip
+fastlane/README.md

@@ -4,8 +4,8 @@ Guidance for AI agents working in this repo. For the human-facing version, see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 deck is a single-user, single-machine tool (SvelteKit + Svelte 5) for driving
-Claude Code sessions and tmux terminals from one browser app. **This repository
-is public.**
+Claude Code sessions and tmux terminals from one browser app, with native
+SwiftUI clients in `apps/ios`. **This repository is public.**
 
 ## Public repo: never reference specific clients
 
@@ -57,6 +57,34 @@ which are read from tmux rather than from `~/.deck`.
 
 Don't `git pull` the live checkout to try a change: vite reloads the modules
 under the running server. Test in the worktree on its own port instead.
+
+## Native apps (`apps/ios`)
+
+SwiftUI clients for iPhone, iPad, Apple Watch and Mac, sharing the
+`Packages/DeckKit` package. They talk to the server only through its HTTP API,
+so a change to a route's request or response shape updates `DeckKit`'s models
+and `ParityTests.swift` in the same PR. The full guide is
+[apps/ios/README.md](apps/ios/README.md); run its commands from `apps/ios`.
+
+```sh
+brew install xcodegen fastlane                 # once
+./generate.sh                                  # Deck.xcodeproj is generated, never committed
+cd Packages/DeckKit && swift test              # unit tests
+xcodebuild -project Deck.xcodeproj -scheme DeckApp \
+  -destination 'generic/platform=iOS Simulator' \
+  -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
+./ship.sh                                      # TestFlight via fastlane
+```
+
+- `-skipMacroValidation` is required on every command-line build (mlx-swift-lm
+  uses Swift macros).
+- UI tests skip unless `TEST_RUNNER_DECK_UITEST_URL` and
+  `TEST_RUNNER_DECK_UITEST_TOKEN` are exported in the shell. Passed as trailing
+  `KEY=value` arguments they become build settings and the tests skip while the
+  run still reports success.
+- Use the Homebrew fastlane; `bundle exec` has no installed bundle.
+- `.env` holds the signing team and App Store Connect key settings. It is
+  gitignored, and none of its values belong in the repo.
 
 ## Conventions
 

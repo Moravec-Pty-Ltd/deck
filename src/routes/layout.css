@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@source not '../../apps';
 
 /* iOS Safari zooms the page when a focused field has a font-size below 16px.
    Force the 16px minimum on touch devices so focusing any control never zooms;
