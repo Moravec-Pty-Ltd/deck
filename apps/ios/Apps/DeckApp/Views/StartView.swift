@@ -17,6 +17,8 @@ struct StartView: View {
 	@State private var selectedIssue: DeckIssue?
 	@State private var selectedPR: DeckPR?
 	@State private var startingPrompt = false
+	@State private var startingShell = false
+	@State private var shellError: String?
 
 	var body: some View {
 		NavigationStack {
@@ -76,6 +78,11 @@ struct StartView: View {
 					StartConfirmSheet(kind: .pr(pr), project: project, onCreated: onSessionCreated)
 				}
 			}
+			.alert("Couldn't start a terminal", isPresented: Binding(get: { shellError != nil }, set: { if !$0 { shellError = nil } })) {
+				Button("OK", role: .cancel) {}
+			} message: {
+				Text(shellError ?? "")
+			}
 			.sheet(isPresented: $startingPrompt) {
 				if let project = selectedProject {
 					StartConfirmSheet(kind: .prompt, project: project, onCreated: onSessionCreated)
@@ -100,6 +107,15 @@ struct StartView: View {
 					Text("Starts a session on its own branch with whatever you type as the first message.")
 						.font(.footnote)
 						.foregroundStyle(.secondary)
+					if store.supports(.terminal) {
+						Button {
+							Task { await startShell(in: project) }
+						} label: {
+							Label("Terminal in \(project.name)", systemImage: "terminal")
+						}
+						.disabled(startingShell)
+						.accessibilityIdentifier("startShell")
+					}
 				case .issues:
 					let issues = store.issuesByProject[project.path] ?? []
 					if issues.isEmpty {
@@ -122,6 +138,16 @@ struct StartView: View {
 			}
 			.listStyle(.plain)
 			.refreshable { await refresh(force: true) }
+		}
+	}
+
+	private func startShell(in project: DeckProject) async {
+		startingShell = true
+		defer { startingShell = false }
+		do {
+			onSessionCreated(try await store.startShell(project: project).id)
+		} catch {
+			shellError = error.localizedDescription
 		}
 	}
 

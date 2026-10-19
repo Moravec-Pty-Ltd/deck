@@ -570,6 +570,15 @@ public final class DeckStore {
 		return response
 	}
 
+	/// Start a terminal in a project: a deck-managed tmux shell, no agent.
+	@discardableResult
+	public func startShell(project: DeckProject, idempotencyKey: String = UUID().uuidString) async throws -> CreateSessionResponse {
+		guard let client else { throw DeckError.notConfigured }
+		let response = try await client.createShellSession(cwd: project.path, idempotencyKey: idempotencyKey)
+		await refreshSessions()
+		return response
+	}
+
 	/// Start a review session for a PR.
 	@discardableResult
 	public func startReview(

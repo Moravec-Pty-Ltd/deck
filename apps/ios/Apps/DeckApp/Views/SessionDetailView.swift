@@ -25,6 +25,7 @@ struct SessionDetailView: View {
 	@Environment(\.dismiss) private var dismiss
 
 	@State private var viewModel: SessionDetailViewModel?
+	@State private var terminal: TerminalPoller?
 	@State private var composerText = ""
 	/// The phone layout's height, which caps how tall a pending question grows.
 	@State private var stackedHeight: CGFloat = 0
@@ -87,6 +88,10 @@ struct SessionDetailView: View {
 		let project = session.flatMap { SessionProject.owning($0, in: store.projects) }
 		Task { await store.loadExpensiveModels(projectPath: project?.path) }
 		showModelSheet = true
+	}
+
+	private var isTerminal: Bool {
+		session?.kind == "shell" && store.supports(.terminal)
 	}
 
 	private func compact() async {
@@ -157,7 +162,10 @@ struct SessionDetailView: View {
 				if viewModel == nil {
 					viewModel = shared ?? SessionDetailViewModel(sessionId: sessionId, store: store)
 				}
-				if viewModel?.isPolling != true { viewModel?.startPolling() }
+				if viewModel?.isPolling != true, session?.kind != "shell" { viewModel?.startPolling() }
+				if terminal == nil, let client = store.client {
+					terminal = .shell(client: client, sessionId: sessionId)
+				}
 				Task { await store.refreshKinds() }
 				if voice == nil, isAgentSession, store.supports(.speech), let controller = viewModel?.voiceController() {
 					voice = controller
@@ -327,7 +335,9 @@ struct SessionDetailView: View {
 	private var content: some View {
 		if let viewModel {
 			Group {
-				if hinge.isTabletop {
+				if isTerminal, let terminal {
+					TerminalView(poller: terminal)
+				} else if hinge.isTabletop {
 					tabletop(viewModel)
 				} else {
 					stacked(viewModel)

@@ -159,6 +159,34 @@ public final class DeckClient: @unchecked Sendable {
 		try await get("/api/agent/sessions/\(sessionId)/servers/\(seg(name))/logs", query: tag.map { [URLQueryItem(name: "h", value: $0)] } ?? [])
 	}
 
+	// MARK: - Terminals
+
+	/// A shell session's screen, ANSI and all. Pass the previous `h` tag to get
+	/// `unchanged` back instead of the same text.
+	public func terminal(sessionId: String, tag: String?, lines: Int? = nil) async throws -> TerminalSnapshot {
+		var query: [URLQueryItem] = []
+		if let lines { query.append(URLQueryItem(name: "lines", value: String(lines))) }
+		if let tag { query.append(URLQueryItem(name: "h", value: tag)) }
+		return try await get("/api/agent/sessions/\(sessionId)/terminal", query: query)
+	}
+
+	/// Type literal text into a shell session, pressing Enter after it unless
+	/// `submit` is false. Empty text with submit is a bare Enter.
+	public func typeInTerminal(sessionId: String, text: String, submit: Bool = true) async throws {
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/terminal", json: ["text": text, "submit": submit])
+	}
+
+	public func pressInTerminal(sessionId: String, key: TerminalKey) async throws {
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/terminal", json: ["key": key.name])
+	}
+
+	/// Start a deck-managed tmux terminal in `cwd`.
+	public func createShellSession(cwd: String, title: String? = nil, idempotencyKey: String? = nil) async throws -> CreateSessionResponse {
+		var body: [String: Any] = ["mode": "shell", "cwd": cwd]
+		if let title { body["title"] = title }
+		return try await post("/api/agent/sessions", json: body, idempotencyKey: idempotencyKey)
+	}
+
 	public func createWorkSession(
 		cwd: String,
 		prompt: String? = nil,

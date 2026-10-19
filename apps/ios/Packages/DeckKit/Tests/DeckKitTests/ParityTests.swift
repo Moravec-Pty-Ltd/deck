@@ -335,6 +335,68 @@ final class ParityTests: XCTestCase {
 		assertShape(sent, "GET", "/api/agent/sessions/example/servers/web/logs", query: "h=abc")
 	}
 
+	// MARK: - Terminals
+
+	func testTerminalSnapshotSendsTheTag() async {
+		let sent = await requests(reply: #"{"text":""}"#) { _ = try await $0.terminal(sessionId: "example", tag: "abc", lines: 200) }
+		assertShape(sent, "GET", "/api/agent/sessions/example/terminal", query: "lines=200&h=abc")
+	}
+
+	func testTerminalTypesTextWithSubmit() async {
+		let sent = await requests { try await $0.typeInTerminal(sessionId: "example", text: "ls -la", submit: false) }
+		assertShape(sent, "POST", "/api/agent/sessions/example/terminal", keys: ["submit", "text"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["submit"] as? Bool, false)
+	}
+
+	func testTerminalPressesAKeyByItsTmuxName() async {
+		let sent = await requests { try await $0.pressInTerminal(sessionId: "example", key: .control("c")!) }
+		assertShape(sent, "POST", "/api/agent/sessions/example/terminal", keys: ["key"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["key"] as? String, "C-c")
+	}
+
+	func testAShellStartsInShellMode() async {
+		let sent = await requests(reply: #"{"id":"example"}"#) { _ = try await $0.createShellSession(cwd: "/path/to/project") }
+		assertShape(sent, "POST", "/api/agent/sessions", keys: ["cwd", "mode"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["mode"] as? String, "shell")
+	}
+
+	@MainActor
+	func testThePollerSendsTheTagBackUntilAKeystroke() async {
+		let recorder = Recorder()
+		RequestStub.status = 200
+		RequestStub.handler = { request in
+			recorder.sent.append(Sent(
+				method: request.httpMethod ?? "GET", path: request.url?.path ?? "", query: request.url?.query,
+				accept: nil, contentType: nil, keys: nil, json: nil))
+			return Data(#"{"text":"\u001b[32m$ \u001b[0m","cleared":false,"dead":false,"h":"t1"}"#.utf8)
+		}
+		let poller = TerminalPoller.shell(client: Self.stubbedClient(), sessionId: "example")
+		await poller.refresh()
+		XCTAssertEqual(poller.runs.first?.text, "$ ")
+		XCTAssertEqual(poller.tag, "t1")
+		await poller.refresh()
+		await poller.press(.enter)
+		let gets = recorder.sent.filter { $0.method == "GET" }.map(\.query)
+		XCTAssertEqual(gets, [nil, "h=t1", nil], "a keystroke asks for the whole screen again")
+	}
+
+	@MainActor
+	func testThePollerKeepsTheScreenWhenUnchangedAndFlagsDeadOrCleared() {
+		let poller = TerminalPoller(fetch: { _ in throw CancellationError() })
+		XCTAssertFalse(poller.canType)
+		poller.apply(TerminalSnapshot(text: "last output", cleared: true, dead: false, h: "a", unchanged: nil))
+		XCTAssertTrue(poller.cleared)
+		poller.apply(TerminalSnapshot(text: nil, cleared: nil, dead: nil, h: "a", unchanged: true))
+		XCTAssertEqual(poller.text, "last output")
+		XCTAssertTrue(poller.cleared)
+		poller.apply(TerminalSnapshot(text: "(session is dead)", cleared: nil, dead: true, h: nil, unchanged: nil))
+		XCTAssertTrue(poller.dead)
+		XCTAssertNil(poller.tag)
+		XCTAssertEqual(poller.interval, TerminalPoller.idleInterval)
+		poller.focused = true
+		XCTAssertEqual(poller.interval, TerminalPoller.focusedInterval)
+	}
+
 	func testModelChangeHasNoBrowserFallback() async {
 		let sent = await requests(status: 404) { try await $0.changeModel(sessionId: "example", model: "opus") }
 		assertShape(sent, "POST", "/api/agent/sessions/example/model", keys: ["model"])

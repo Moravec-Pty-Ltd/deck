@@ -767,12 +767,16 @@ public struct ServersResponse: Codable, Sendable {
 	public let servers: [ServerRuntime]
 }
 
-/// A dev server's log pane snapshot. `unchanged` means the tag matched the
-/// previous poll and no text was sent.
-public struct ServerLogs: Codable, Sendable {
+/// A tmux pane snapshot: a shell session's terminal or a dev server's log
+/// pane. `unchanged` means the tag matched the previous poll and no text was
+/// sent; `cleared` that the program cleared the screen and `text` is its last
+/// non-empty output.
+public struct TerminalSnapshot: Codable, Sendable {
 	public let text: String?
 	public let cleared: Bool?
 	public let dead: Bool?
 	public let h: String?
 	public let unchanged: Bool?
 }
+
+public typealias ServerLogs = TerminalSnapshot

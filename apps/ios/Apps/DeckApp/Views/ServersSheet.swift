@@ -221,35 +221,25 @@ struct ServersSheet: View {
 	}
 }
 
-/// The tail of a dev server's tmux pane, refreshed every couple of seconds
-/// using the same change tag the web log pane sends back.
+/// The tail of a dev server's tmux pane, ANSI colours and all, polled with
+/// the same change tag the web log pane sends back.
 struct ServerLogsView: View {
 	let sessionId: String
 	let name: String
 
 	@Environment(DeckStore.self) private var store
-	@State private var text = ""
-	@State private var tag: String?
-	@State private var dead = false
-	@State private var loaded = false
+	@State private var poller: TerminalPoller?
 
 	var body: some View {
-		ScrollViewReader { proxy in
-			ScrollView([.vertical, .horizontal]) {
-				Text(text.isEmpty && loaded ? "(no output)" : text)
-					.font(.caption.monospaced())
-					.textSelection(.enabled)
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.padding()
-					.id("logs")
+		Group {
+			if let poller {
+				TerminalView(poller: poller, emptyText: "(no output)")
+			} else {
+				ProgressView()
 			}
-			.onChange(of: text) { _, _ in proxy.scrollTo("logs", anchor: .bottom) }
-		}
-		.overlay {
-			if !loaded { ProgressView() }
 		}
 		.safeAreaInset(edge: .bottom) {
-			if dead {
+			if poller?.dead == true {
 				Text("Not running")
 					.font(.footnote)
 					.foregroundStyle(.secondary)
@@ -260,21 +250,10 @@ struct ServerLogsView: View {
 		}
 		.navigationTitle(name)
 		.navigationBarTitleDisplayMode(.inline)
-		.task { await poll() }
-	}
-
-	private func poll() async {
-		guard let client = store.client else { return }
-		while !Task.isCancelled {
-			if let logs = try? await client.serverLogs(sessionId: sessionId, name: name, tag: tag) {
-				if logs.unchanged != true {
-					text = logs.text ?? ""
-					tag = logs.h
-				}
-				dead = logs.dead ?? false
-				loaded = true
+		.onAppear {
+			if poller == nil, let client = store.client {
+				poller = .serverLogs(client: client, sessionId: sessionId, name: name)
 			}
-			try? await Task.sleep(for: .seconds(2))
 		}
 	}
 }

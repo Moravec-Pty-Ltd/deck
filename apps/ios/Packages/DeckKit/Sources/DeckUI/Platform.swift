@@ -49,6 +49,14 @@ extension Color {
 		#endif
 	}
 
+	static var deckBackground: Color {
+		#if canImport(UIKit)
+		Color(.systemBackground)
+		#else
+		Color(nsColor: .textBackgroundColor)
+		#endif
+	}
+
 	static var deckSeparator: Color {
 		#if canImport(UIKit)
 		Color(.separator)
