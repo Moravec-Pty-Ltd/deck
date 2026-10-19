@@ -67,7 +67,7 @@ talk to; without the two variables they skip. They only read and cancel, never
 confirm a delete.
 
 Point them at a deck started with `--host`. Vite with no `--host` binds `[::1]`
-only, so the simulator cannot reach `127.0.0.1:<port>` — and the app then
+only, so the simulator cannot reach `127.0.0.1:<port>`, and the app then
 renders as if signed in with no data (an empty Inbox, "No projects") rather than
 reporting that it cannot connect, which reads like a bug in the screen under
 test. `curl -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` returning
@@ -124,8 +124,8 @@ with an energy detector; sensitivity adjustable) which can interrupt a reply
 mid-sentence. Reading continues behind the lock screen for the session you
 turned it on for; the watch reads while its Voice screen is open.
 
-It needs deck configured with a speech server (deck's **Projects > Voice
-mode**); the button only appears when `GET /api/agent/speech` reports one. The phone
+It needs deck configured with a speech server (**Settings > Voice** on the
+web, or **Settings > deck server settings** here); the button only appears when `GET /api/agent/speech` reports one. The phone
 never talks to the speech server directly.
 
 ## Operator
@@ -167,11 +167,12 @@ tool call a tool call, and keep what comes back small.
 
 Needs Apple Intelligence on and iOS 26 or later; the tab says so when it is
 missing. It still needs deck configured with a speech server for the voice part
-(deck's **Projects > Voice mode**).
+(**Settings > Voice** on the web, or **Settings > deck server settings** here).
 
 The watch is the exception: watchOS ships the model framework but marks the
 model itself unavailable, so the watch Operator page still asks deck to think
-for it and needs the `operator` block in deck's settings. No wake word there
+for it and needs deck's watch operator settings (**Settings > Watch operator**
+on the web). No wake word there
 either, since watchOS has no on-device recogniser for one.
 
 ## Operator model
@@ -209,7 +210,7 @@ operator keeps using Apple's.
 [`mlx-swift-lm`](https://github.com/ml-explore/mlx-swift-lm)'s
 `MLXFoundationModels` bridges an MLX model to Apple's own
 `FoundationModels.LanguageModel`, so a downloaded model plugs into
-`LanguageModelSession` and **deck's seven operator tools are unchanged** — only
+`LanguageModelSession` and **deck's seven operator tools are unchanged**; only
 which model answers differs. That bridge is why this is a model-management
 feature rather than a second operator.
 
@@ -359,8 +360,8 @@ Long-press any reply to have it read aloud.
 A session's menu shows how full its context window is and offers **Compact
 context**, which summarises the history and frees the window. A row in the list
 grows a `context 78%` chip once it passes two thirds, red past 85%. deck can
-also compact on its own at a threshold you set; that lives in deck's own
-settings, not here.
+also compact on its own at a threshold you set, under **Settings > deck server
+settings** here or **Settings > Auto-compact** on the web.
 
 Rename a session from its menu (**Rename**) or by swiping its row in the list.
 An unregistered tmux terminal has no record on the deck side, so renaming it
