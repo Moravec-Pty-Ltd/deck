@@ -83,19 +83,47 @@ xcodebuild -project Deck.xcodeproj -scheme DeckApp \
 
 ## TestFlight
 
-`./ship.sh` runs `fastlane ios beta` from this Mac: it regenerates the project
-with XcodeGen, numbers the build one past the latest on TestFlight, archives
-DeckApp with the embedded watch app, and uploads it. Use the Homebrew fastlane
-(`brew install fastlane`); the lane signs with an App Store Connect API key, so
-no Xcode account is needed. `.env` (see `.env.example`) supplies the key id,
-issuer id, key path and `DEVELOPMENT_TEAM`. The key needs the Admin role, since
-cloud signing refuses an App Manager key. Release builds sign with the
-production push entitlement (`Apps/*/*.release.entitlements`) so TestFlight
-tokens are real; Debug stays on the sandbox.
+`./ship.sh [ios|mac|all]` ships from this Mac (default `ios`):
 
-One-time setup: create the App Store Connect app for bundle id
-`tech.moravec.deck` (`fastlane ios bootstrap` does it with the same key); the
-watch app id `tech.moravec.deck.watchkitapp` is registered on the first archive.
+- `ios` runs `fastlane ios beta`: archives DeckApp with the embedded watch app
+  and uploads the ipa.
+- `mac` runs `fastlane mac beta`: archives DeckMac, exports an App Store pkg and
+  uploads it as a macOS build.
+- `all` runs both, iOS first.
+
+Each lane regenerates the project with XcodeGen and numbers the build one past
+the larger of the latest iOS and latest macOS TestFlight builds. The Mac app
+shares the bundle id `tech.moravec.deck` with the iOS app, so both platforms
+live on one App Store Connect record, and a build number either platform has
+used is refused on the other.
+
+Use the Homebrew fastlane (`brew install fastlane`); the lanes sign with an App
+Store Connect API key, so no Xcode account is needed. `.env` (see
+`.env.example`) supplies the key id, issuer id, key path and
+`DEVELOPMENT_TEAM`. The key needs the Admin role, since cloud signing refuses an
+App Manager key. Release builds sign with the production push entitlement
+(`Apps/*/*.release.entitlements`) so TestFlight tokens are real; Debug stays on
+the sandbox.
+
+One-time setup:
+
+1. `./ship.sh bootstrap` (`fastlane ios bootstrap`) creates the App Store
+   Connect app for `tech.moravec.deck` with iOS and macOS, or adds macOS to an
+   existing record by creating its first macOS version. If App Store Connect
+   refuses that, the lane says so: add it by hand under Apps > deck > Add
+   Platform > macOS.
+2. On developer.apple.com, under Certificates, Identifiers & Profiles >
+   Identifiers > `tech.moravec.deck`, check the App ID is not limited to iOS
+   (an explicit App ID registered today covers every platform; an older one
+   shows only iOS, and the Mac archive then fails to find a profile) and that
+   Push Notifications is still ticked. Fix it there; the API cannot change an
+   App ID's platform.
+3. The Mac pkg is signed with a Mac Installer Distribution certificate. If the
+   `mac` lane's export stops for want of one, create it under Certificates
+   (Mac Installer Distribution) and install it in the login keychain.
+
+The watch app id `tech.moravec.deck.watchkitapp` and the Mac App Store
+provisioning profile are created on the first archive.
 
 ## Server prerequisites
 
