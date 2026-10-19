@@ -73,20 +73,28 @@ struct SessionDetailView: View {
 	}
 
 	/// Switch to the model picked in the sheet, asking first when the server
-	/// marks it expensive.
+	/// marks it expensive. A pick can beat the list's first load, so it waits
+	/// for that load (a no-op once the list is in) before deciding.
 	private func applyModelPick() {
 		guard let pick = modelPick else { return }
 		modelPick = nil
-		if let kind = session?.kind, store.needsExpensiveConfirm(model: pick.model, kind: kind, current: session?.model) {
-			pendingExpensiveModel = pick.model
-		} else {
-			Task { await viewModel?.changeModel(pick.model) }
+		Task {
+			await loadExpensiveModels()
+			if let kind = session?.kind, store.needsExpensiveConfirm(model: pick.model, kind: kind, current: session?.model) {
+				pendingExpensiveModel = pick.model
+			} else {
+				await viewModel?.changeModel(pick.model)
+			}
 		}
 	}
 
-	private func openModelSheet() {
+	private func loadExpensiveModels() async {
 		let project = session.flatMap { SessionProject.owning($0, in: store.projects) }
-		Task { await store.loadExpensiveModels(projectPath: project?.path) }
+		await store.loadExpensiveModels(projectPath: project?.path)
+	}
+
+	private func openModelSheet() {
+		Task { await loadExpensiveModels() }
 		showModelSheet = true
 	}
 
