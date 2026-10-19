@@ -1,4 +1,4 @@
-import type { DeckSession } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 import type { SessionGroup } from '$lib/groups';
 import type { StatusBucket, StatusBucketKey } from '$lib/status-groups';
 
@@ -9,8 +9,8 @@ import type { StatusBucket, StatusBucketKey } from '$lib/status-groups';
 export function flattenVisibleGroups(
 	groups: SessionGroup[],
 	isExpanded: (name: string) => boolean
-): DeckSession[] {
-	const order: DeckSession[] = [];
+): SessionView[] {
+	const order: SessionView[] = [];
 	for (const group of groups) {
 		if (!isExpanded(group.name)) continue;
 		for (const sub of group.subgroups) order.push(...sub.sessions);
@@ -24,8 +24,8 @@ export function flattenVisibleGroups(
 export function flattenVisibleBuckets(
 	buckets: StatusBucket[],
 	isCollapsed: (key: StatusBucketKey) => boolean
-): DeckSession[] {
-	const order: DeckSession[] = [];
+): SessionView[] {
+	const order: SessionView[] = [];
 	for (const bucket of buckets) {
 		if (isCollapsed(bucket.key)) continue;
 		order.push(...bucket.sessions);
@@ -36,7 +36,7 @@ export function flattenVisibleBuckets(
 // The visible row to land on after removing `id` from an ordered, on-screen
 // list: the row just below, else the row just above, else null (the list
 // emptied, so the caller navigates home).
-export function pickNeighbor(order: DeckSession[], id: string): DeckSession | null {
+export function pickNeighbor(order: SessionView[], id: string): SessionView | null {
 	const i = order.findIndex((s) => s.id === id);
 	if (i === -1) return null;
 	return order[i + 1] ?? order[i - 1] ?? null;

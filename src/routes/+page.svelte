@@ -1,5 +1,7 @@
 <script lang="ts">
-	import type { DeckSession, NewSessionPreset, Project, SessionKind } from '$lib/types';
+	import type { NewSessionPreset, Project, SessionKind } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
+	import { liveSessions } from '$lib/session-feed.svelte';
 	import { deriveGroup, relativeTime, shortPath } from '$lib/time';
 	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
 	import { visibleSessions } from '$lib/hidden-core';
@@ -20,13 +22,15 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
-	let sessions = $state<DeckSession[]>([]);
 	let projects = $state<Project[]>([]);
 	let filter = $state<'all' | SessionKind>('all');
 	let modalOpen = $state(false);
 	let preset = $state<NewSessionPreset | null>(null);
-	let loaded = $state(false);
+	let projectsLoaded = $state(false);
 	let qrOpen = $state(false);
+	const { feed, refresh } = liveSessions(refreshOthers);
+	const sessions = $derived(feed.sessions);
+	const loaded = $derived(feed.loaded && projectsLoaded);
 
 	// Multi-select for batch removal (issue #211). `anchor` is the last row clicked
 	// in select mode, which a shift-click extends the range from.
@@ -53,18 +57,12 @@
 		modalOpen = true;
 	}
 
-	async function refresh() {
-		const [sRes, pRes] = await Promise.all([fetch('/api/sessions'), fetch('/api/projects')]);
-		if (sRes.ok) sessions = await sRes.json();
+	// Sessions come from the live feed; projects still poll.
+	async function refreshOthers() {
+		const pRes = await fetch('/api/projects');
 		if (pRes.ok) projects = await pRes.json();
-		loaded = true;
+		projectsLoaded = true;
 	}
-
-	$effect(() => {
-		refresh();
-		const interval = setInterval(refresh, 5000);
-		return () => clearInterval(interval);
-	});
 
 	const listed = $derived(filter === 'all' ? sessions : sessions.filter((s) => s.kind === filter));
 
@@ -115,7 +113,7 @@
 			: flattenVisibleGroups(groups, (n) => collapse.has(n))
 	);
 
-	// Keep the selection to rows that are actually on the list: the 5s poll can
+	// Keep the selection to rows that are actually on the list: the live feed can
 	// remove a session under it, and switching the kind filter can hide one, either
 	// of which would otherwise leave a stale id in the Remove count and in the batch.
 	// Leave select mode outright once there's nothing left to select.
@@ -169,13 +167,13 @@
 	// that want attention (running = brand orange, error = red); idle and dead stay
 	// neutral so a list at rest reads calm. Solid vs hollow keeps idle and dead
 	// apart under e-ink, where colour collapses to monochrome.
-	function statusDot(s: DeckSession) {
+	function statusDot(s: SessionView) {
 		if (s.status === 'running') return 'bg-primary';
 		if (s.status === 'error') return 'bg-error';
 		if (s.status === 'dead') return 'border border-base-content/40';
 		return 'bg-base-content/35';
 	}
-	function statusText(s: DeckSession) {
+	function statusText(s: SessionView) {
 		if (s.status === 'running') return 'font-medium text-primary';
 		if (s.status === 'error') return 'font-medium text-error';
 		if (s.status === 'dead') return 'text-base-content/40';
@@ -244,7 +242,7 @@
 
 <PairApprovals />
 
-{#snippet row(s: DeckSession)}
+{#snippet row(s: SessionView)}
 	{@const picked = selected.has(s.id)}
 	<div
 		class="flex items-center gap-2 rounded-box border bg-base-100 pr-2 hover:border-base-content/30 sm:gap-3 sm:pr-3 {selectMode

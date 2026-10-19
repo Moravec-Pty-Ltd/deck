@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
-	import type { DeckSession, NewSessionPreset, Project, ServerState } from '$lib/types';
+	import type { NewSessionPreset, Project, ServerState } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
+	import { liveSessions } from '$lib/session-feed.svelte';
 	import type { ReviewsPayload } from '$lib/morabot-core';
 	import ClaudeView from '$lib/components/ClaudeView.svelte';
 	import ShellView from '$lib/components/ShellView.svelte';
@@ -39,7 +41,8 @@
 	const session = $derived(data.session);
 
 	let projects = $state<Project[]>([]);
-	let sessions = $state<DeckSession[]>([]);
+	const { feed, refresh } = liveSessions(refreshOthers);
+	const sessions = $derived(feed.sessions);
 	let modalOpen = $state(false);
 	let preset = $state<NewSessionPreset | null>(null);
 	let sidebarOpen = $state(false);
@@ -122,26 +125,19 @@
 	const serverChip = $derived(aggregateState(myServers));
 	const hasServers = $derived(myServers.length > 0);
 
-	async function refresh() {
+	// Sessions come from the live feed; the rest still polls.
+	async function refreshOthers() {
 		// allSettled, not all: a single endpoint failure (e.g. the servers poll) must not
-		// abort the whole refresh and leave projects/sessions stale.
-		const [pRes, sRes, vRes, rRes] = await Promise.allSettled([
+		// abort the whole refresh and leave projects stale.
+		const [pRes, vRes, rRes] = await Promise.allSettled([
 			fetch('/api/projects'),
-			fetch('/api/sessions'),
 			fetch('/api/agent/servers'),
 			fetch('/api/reviews')
 		]);
 		if (pRes.status === 'fulfilled' && pRes.value.ok) projects = await pRes.value.json();
-		if (sRes.status === 'fulfilled' && sRes.value.ok) sessions = await sRes.value.json();
 		if (vRes.status === 'fulfilled' && vRes.value.ok) serverStates = await vRes.value.json();
 		if (rRes.status === 'fulfilled' && rRes.value.ok) reviews = await rRes.value.json();
 	}
-
-	$effect(() => {
-		refresh();
-		const interval = setInterval(refresh, 5000);
-		return () => clearInterval(interval);
-	});
 
 	// Lightweight badge/visibility probe: meta only, no patch build.
 	async function loadDiffMeta() {
@@ -188,7 +184,7 @@
 		modalOpen = true;
 		sidebarOpen = false;
 	}
-	function shellHere(s: DeckSession) {
+	function shellHere(s: SessionView) {
 		preset = { kind: 'shell', cwd: s.cwd, title: '' };
 		modalOpen = true;
 		sidebarOpen = false;
@@ -205,7 +201,7 @@
 	const del = new DeleteFlow(refresh, (s) => {
 		if (s.id === session.id) goto(pendingHref, { replaceState: true });
 	});
-	function onDeleteSession(s: DeckSession, neighbor?: DeckSession | null) {
+	function onDeleteSession(s: SessionView, neighbor?: SessionView | null) {
 		if (s.id === session.id) pendingHref = neighbor ? `/s/${encodeURIComponent(neighbor.id)}` : '/';
 		del.request(s);
 	}

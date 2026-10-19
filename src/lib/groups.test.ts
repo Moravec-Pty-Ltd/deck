@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { DeckSession, Project } from '$lib/types';
+import type { Project } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 import {
 	groupSessions,
 	groupProjects,
@@ -14,9 +15,11 @@ function project(name: string, path: string, group?: string): Project {
 	return { name, path, group };
 }
 
-function session(id: string, cwd: string, lastActiveAt: number): DeckSession {
+function session(id: string, cwd: string, lastActiveAt: number): SessionView {
 	return {
 		id,
+		url: '',
+		awaitingInput: false,
 		kind: 'shell',
 		title: id,
 		cwd,

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { DeckSession, Project, ServerState } from '$lib/types';
+	import type { Project, ServerState } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
 	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
@@ -36,16 +37,16 @@
 
 	interface Props {
 		projects: Project[];
-		sessions: DeckSession[];
+		sessions: SessionView[];
 		serverStates?: Record<string, ServerState[]>;
 		reviews?: ReviewsPayload | null;
 		currentId?: string;
 		deletingIds?: Set<string>;
 		onQuickAdd: (path: string) => void;
-		onShellHere: (session: DeckSession) => void;
-		onDelete: (session: DeckSession, neighbor?: DeckSession | null) => void;
+		onShellHere: (session: SessionView) => void;
+		onDelete: (session: SessionView, neighbor?: SessionView | null) => void;
 		// Re-fetch the page's sessions and projects, so a hide shows up at once
-		// rather than on the next poll.
+		// rather than waiting on the feed.
 		onChanged: () => void;
 	}
 	let { projects, sessions, serverStates, reviews, currentId, deletingIds, onQuickAdd, onShellHere, onDelete, onChanged }: Props =
@@ -93,7 +94,7 @@
 
 	// Status dot, mirroring the home list: orange = running, red = error, neutral
 	// for idle, a hollow ring for dead (so it survives e-ink without colour).
-	function dotClass(s: DeckSession) {
+	function dotClass(s: SessionView) {
 		if (s.status === 'running') return 'bg-primary';
 		if (s.status === 'error') return 'bg-error';
 		if (s.status === 'dead') return 'border border-base-content/40';
@@ -132,10 +133,10 @@
 	const reviewsCollapse = createCollapseState('deck:sidebar:collapsedReviews');
 
 	// The sessions actually on screen, in render order, computed on demand at
-	// delete time (only read then, so not a derived recomputed every poll).
+	// delete time (only read then, so not a derived recomputed on every list change).
 	// The Hidden section sits below both views, so its rows join the order
 	// whenever it is open.
-	function visibleOrder(): DeckSession[] {
+	function visibleOrder(): SessionView[] {
 		const above =
 			viewMode.current === 'status'
 				? flattenVisibleBuckets(buckets, (k) => statusCollapse.has(k))
@@ -146,12 +147,12 @@
 	// For the open session, hand the page its visible neighbour to land on once
 	// it's gone (the row below, else above, else home = null); other rows just
 	// delete in place with no navigation.
-	function onDeleteRow(s: DeckSession) {
+	function onDeleteRow(s: SessionView) {
 		onDelete(s, s.id === currentId ? pickNeighbor(visibleOrder(), s.id) : undefined);
 	}
 </script>
 
-{#snippet sessionRow(s: DeckSession)}
+{#snippet sessionRow(s: SessionView)}
 	{@const proj = viewMode.current === 'status' ? deriveGroup(s.cwd, projects) : null}
 	<li class="flex items-center gap-1 pl-1 pr-0">
 		<a
