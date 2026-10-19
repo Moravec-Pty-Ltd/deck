@@ -89,6 +89,7 @@ public final class TerminalPoller {
 	/// Set by the view while the input line or the screen has keyboard focus.
 	public var focused = false
 	private(set) var tag: String?
+	private var generation = 0
 
 	private let fetch: Fetch
 	private let input: Input?
@@ -122,9 +123,24 @@ public final class TerminalPoller {
 		}
 	}
 
+	/// A keystroke's refresh can overlap the loop's, and their answers can land
+	/// in either order, so only the latest-started one may touch the screen.
 	public func refresh() async {
+		generation &+= 1
+		let mine = generation
+		let result: Result<TerminalSnapshot, Error>
 		do {
-			let snapshot = try await fetch(tag)
+			result = .success(try await fetch(tag))
+		} catch {
+			result = .failure(error)
+		}
+		guard mine == generation else { return }
+		take(result)
+	}
+
+	private func take(_ result: Result<TerminalSnapshot, Error>) {
+		do {
+			let snapshot = try result.get()
 			connected = true
 			apply(snapshot)
 		} catch is CancellationError {

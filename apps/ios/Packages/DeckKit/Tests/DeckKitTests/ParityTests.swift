@@ -445,6 +445,28 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(poller.interval, TerminalPoller.focusedInterval)
 	}
 
+	@MainActor
+	func testTerminalOverlappingRefreshesKeepTheNewerScreen() async {
+		let gate = AsyncGate()
+		let poller = TerminalPoller(fetch: { tag in
+			if tag == "old" {
+				await gate.wait()
+				return TerminalSnapshot(text: "stale", cleared: nil, dead: nil, h: "stale", unchanged: nil)
+			}
+			return TerminalSnapshot(text: "newer", cleared: nil, dead: nil, h: "new", unchanged: nil)
+		})
+		poller.apply(TerminalSnapshot(text: "first", cleared: nil, dead: nil, h: "old", unchanged: nil))
+		let slow = Task { await poller.refresh() }
+		while !(await gate.isWaiting) { await Task.yield() }
+		poller.apply(TerminalSnapshot(text: "first", cleared: nil, dead: nil, h: nil, unchanged: nil))
+		await poller.refresh()
+		XCTAssertEqual(poller.text, "newer")
+		await gate.open()
+		await slow.value
+		XCTAssertEqual(poller.text, "newer")
+		XCTAssertEqual(poller.tag, "new")
+	}
+
 	func testModelChangeHasNoBrowserFallback() async {
 		let sent = await requests(status: 404) { try await $0.changeModel(sessionId: "example", model: "opus") }
 		assertShape(sent, "POST", "/api/agent/sessions/example/model", keys: ["model"])
@@ -636,5 +658,23 @@ final class ParityTests: XCTestCase {
 		let store = DeckStore(client: Self.stubbedClient())
 		await store.refreshServerInfo()
 		XCTAssertFalse(store.serverTooOld)
+	}
+}
+
+private actor AsyncGate {
+	private var waiter: CheckedContinuation<Void, Never>?
+	private var opened = false
+
+	var isWaiting: Bool { waiter != nil }
+
+	func wait() async {
+		if opened { return }
+		await withCheckedContinuation { waiter = $0 }
+	}
+
+	func open() {
+		opened = true
+		waiter?.resume()
+		waiter = nil
 	}
 }
