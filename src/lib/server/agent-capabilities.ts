@@ -25,6 +25,11 @@ export const AGENT_CAPABILITIES: readonly string[] = [
 	'terminal',
 	'settings',
 	'pairing',
+	'projects-write',
+	'project-config',
+	'clone',
+	'fs-complete',
+	'git',
 ];
 
 export function agentInfo(): { version: string | null; capabilities: string[] } {

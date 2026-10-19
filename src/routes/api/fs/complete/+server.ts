@@ -1,8 +1,5 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { completeDirs } from '$lib/server/fsutil';
+import { completeDirsRoute } from '$lib/server/project-record';
 
-export const GET: RequestHandler = async ({ url }) => {
-	const q = url.searchParams.get('q') ?? '';
-	return json(completeDirs(q));
-};
+// Same handler as the agent API's /api/agent/fs/complete; see project-record.ts.
+export const GET: RequestHandler = completeDirsRoute;

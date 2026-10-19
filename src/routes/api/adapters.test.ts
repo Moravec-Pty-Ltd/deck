@@ -50,7 +50,12 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./user/+server'), () => import('./agent/user/+server'), ['GET']],
 	[() => import('./speech/detect/+server'), () => import('./agent/settings/speech/detect/+server'), ['POST']],
 	[() => import('./skills/+server'), () => import('./agent/settings/skill/+server'), ['GET', 'POST']],
-	[() => import('./pair/pending/+server'), () => import('./agent/pairing/+server'), ['GET']]
+	[() => import('./pair/pending/+server'), () => import('./agent/pairing/+server'), ['GET']],
+	[() => import('./projects/+server'), () => import('./agent/projects/+server'), ['POST', 'DELETE']],
+	[() => import('./projects/clone/+server'), () => import('./agent/projects/clone/+server'), ['POST']],
+	[() => import('./fs/complete/+server'), () => import('./agent/fs/complete/+server'), ['GET']],
+	[() => import('./git/branches/+server'), () => import('./agent/git/branches/+server'), ['GET']],
+	[() => import('./git/worktrees/+server'), () => import('./agent/git/worktrees/+server'), ['GET']]
 ];
 
 describe('browser and agent routes share one handler', () => {

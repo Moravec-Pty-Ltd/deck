@@ -195,6 +195,78 @@ Replace the whole list with the same shape (up to 200; \`id\` and \`text\`
 required, a blank \`label\` is dropped). Returns the stored list; a schema
 mismatch is a 400.
 
+## Projects
+
+Register, configure and remove the projects that confine every worktree, git
+and file operation. A deck-spawned agent may do this too: registering a
+directory widens what deck will run git against, so it is limited to
+directories under \`$HOME\` or inside an already registered project (anything
+else is a 403).
+
+### POST /api/agent/projects
+
+\`{ "path": "~/code/example", "name"?: "example", "group"?: "apps" }\` registers
+an existing directory (\`~\` expands; a missing or non-directory path is a 400,
+one outside \`$HOME\` and the registered projects a 403). Posting a path that is
+already registered re-saves it: every field you omit keeps its stored value.
+Optional fields as for \`PATCH /api/agent/projects/config\`. Returns the full
+stored record, 201.
+
+### DELETE /api/agent/projects?path=<path>
+
+Unregister a project. Its directory, worktrees and sessions are untouched; its
+issue-source keys go unless another project's source still uses them. Returns
+\`{ "ok": true }\`.
+
+### GET /api/agent/projects/config?path=<path>
+
+A project's full stored record: \`{ name, path, group?, hidden?, template?,
+reviewPrompt?, lastBase?, lastModels?, lastEffort?, sources?, dev?, automation? }\`.
+\`template\` and \`reviewPrompt\` are the first-prompt templates for work and
+review sessions, \`dev\` the dev-server config, \`automation\` the background
+feed config. Without \`path\`, an array of every record. 404 for an
+unregistered path.
+
+### PATCH /api/agent/projects/config
+
+\`{ "path": "<registered path>", ...fields }\` edits a project. Only the fields
+you send change: \`name\`, \`group\`, \`template\`, \`reviewPrompt\`,
+\`lastBase\` (strings; a blank clears, a non-string is a 400), \`dev\` and
+\`automation\` (validated; a bad shape is a 400 naming the problem). \`hidden\`
+has its own route, sources theirs, and the remembered model picks are written
+by session creates, so those are ignored here. Returns the updated record; 404
+for an unregistered path.
+
+### POST /api/agent/projects/clone
+
+\`{ "url": "https://github.com/acme/repo.git", "parent": "~/code", "name"?, "group"? }\`
+clones into \`<parent>/<repo name>\` and registers the result (201, the stored
+record). \`url\` must be https, ssh, git or scp-style; \`parent\` an existing
+directory under \`$HOME\` or a registered project (403 otherwise). 409 when
+the destination exists and is not an empty directory, or is already
+registered; 400 with git's stderr when the clone fails, and nothing is
+registered then.
+
+### GET /api/agent/fs/complete?q=<partial path>
+
+Directory completions for a path being typed, as \`["~/code/example", ...]\`
+(up to 40, \`~\`-collapsed; hidden directories only when the last segment
+starts with \`.\`). Confined to \`$HOME\` and the registered projects: anything
+else returns \`[]\`.
+
+### GET /api/agent/git/branches?repo=<path>
+
+Branch names (local and remote, \`origin/\` stripped, deduplicated) for a
+registered project or one of its worktrees, as \`["main", "feat", ...]\`.
+\`[]\` for a path outside the project set or not a git repo; 400 without
+\`repo\`.
+
+### GET /api/agent/git/worktrees?repo=<path>
+
+\`[{ "path": "/path/to/project", "branch": "main", "isMain": true }, ...]\`, the
+repo's worktrees, main working tree first. Same confinement and errors as
+branches.
+
 ## Sessions
 
 A session is the unit of work: one agent (kind: claude|pi|codex|opencode) or
