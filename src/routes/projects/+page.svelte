@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmAction } from '$lib/confirm.svelte';
 	import type { AgentSettingsView, Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
 	import { groupProjects, UNGROUPED } from '$lib/groups';
@@ -143,7 +144,13 @@
 	}
 
 	async function remove(p: Project) {
-		if (!confirm(`Remove project "${p.name}"? (does not touch files)`)) return;
+		const ok = await confirmAction({
+			title: `Remove project "${p.name}"?`,
+			body: 'Takes it off deck only. The files on disk are not touched.',
+			confirmLabel: 'Remove',
+			danger: true
+		});
+		if (!ok) return;
 		await fetch(`/api/agent/projects?path=${encodeURIComponent(p.path)}`, { method: 'DELETE' });
 		load();
 	}

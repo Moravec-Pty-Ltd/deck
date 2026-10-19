@@ -3,6 +3,7 @@
 	// edit one. A schedule either sends its prompt into a session that already
 	// exists or spawns a fresh one in a directory, and that choice is the first
 	// thing the form asks, because everything below it depends on the answer.
+	import { confirmAction } from '$lib/confirm.svelte';
 	import type { ScheduleDigest } from '$lib/schedules';
 	import { OUTCOME_VIEW } from '$lib/schedules';
 	import type { AgentSettingsView, Project } from '$lib/types';
@@ -161,8 +162,14 @@
 		return act(schedule.id, () => api(url, 'POST', {}));
 	}
 
-	function remove(schedule: ScheduleDigest) {
-		if (!confirm(`Delete "${schedule.title}"? The sessions it has already started are kept.`)) return;
+	async function remove(schedule: ScheduleDigest) {
+		const ok = await confirmAction({
+			title: `Delete schedule "${schedule.title}"?`,
+			body: 'The sessions it has already started are kept.',
+			confirmLabel: 'Delete',
+			danger: true
+		});
+		if (!ok) return;
 		const url = `/api/agent/schedules/${encodeURIComponent(schedule.id)}`;
 		return act(schedule.id, () => api(url, 'DELETE'));
 	}

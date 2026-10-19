@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmAction } from '$lib/confirm.svelte';
 	import type { RunDigest, WorkflowDef } from '$lib/workflows';
 	import {
 		api,
@@ -168,7 +169,13 @@
 
 	async function clearFinished() {
 		const n = finishedCount;
-		if (!confirm(`Delete ${n} finished run${n === 1 ? '' : 's'}? Their phase sessions are deleted too; worktrees and branches are kept.`)) return;
+		const ok = await confirmAction({
+			title: `Delete ${n} finished run${n === 1 ? '' : 's'}?`,
+			body: 'Their phase sessions are deleted too. Worktrees and branches are kept.',
+			confirmLabel: 'Delete',
+			danger: true
+		});
+		if (!ok) return;
 		clearing = true;
 		try {
 			await api('/api/agent/runs?finished=1', 'DELETE');

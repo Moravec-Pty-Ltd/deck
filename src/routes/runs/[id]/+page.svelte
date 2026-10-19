@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmAction } from '$lib/confirm.svelte';
 	import { canFixFindings, type RunDigest } from '$lib/workflows';
 	import { api, ApiError, allowedControls, pollWhileVisible, RUN_STATUS_VIEW, type RunControl } from '$lib/workflow-view';
 	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
@@ -61,7 +62,14 @@
 	// Resuming a running run stops its live agent, so it asks first, like Cancel.
 	async function resume() {
 		const live = run?.status === 'running' || (run?.status === 'paused' && !run.humanTouched);
-		if (live && !confirm('This stops the phase session if it is still working, then resumes. Continue?')) return;
+		const ok =
+			!live ||
+			(await confirmAction({
+				title: 'Resume this run?',
+				body: 'This stops the phase session if it is still working, then resumes.',
+				confirmLabel: 'Resume'
+			}));
+		if (!ok) return;
 		if (await act('resume', resumeAt ? { phase: resumeAt } : {})) resumeAt = '';
 	}
 
@@ -72,8 +80,13 @@
 	async function remove() {
 		if (!run) return;
 		const live = run.status !== 'done' && run.status !== 'cancelled';
-		const note = 'Its phase sessions are deleted too; the worktree and branch are kept.';
-		if (!confirm(live ? `Stop and delete this run? ${note}` : `Delete this run? ${note}`)) return;
+		const ok = await confirmAction({
+			title: live ? 'Stop and delete this run?' : 'Delete this run?',
+			body: 'Its phase sessions are deleted too. The worktree and branch are kept.',
+			confirmLabel: live ? 'Stop and delete' : 'Delete',
+			danger: true
+		});
+		if (!ok) return;
 		busy = 'delete';
 		try {
 			await api(`/api/agent/runs/${encodeURIComponent(id)}`, 'DELETE');
@@ -84,13 +97,25 @@
 		}
 	}
 
-	function fixFindings() {
+	async function fixFindings() {
 		const n = run?.findings.length ?? 0;
-		if (confirm(`Start one session to fix ${n} finding${n === 1 ? '' : 's'}, commit, and push to the PR?`)) act('fix-findings');
+		const ok = await confirmAction({
+			title: `Fix ${n} finding${n === 1 ? '' : 's'}?`,
+			body: 'Starts one session to fix them, commit, and push to the PR.',
+			confirmLabel: 'Start fixing'
+		});
+		if (ok) act('fix-findings');
 	}
 
-	function cancel() {
-		if (confirm('Cancel this run? Its phase session is stopped and the run will not move again.')) act('cancel');
+	async function cancel() {
+		const ok = await confirmAction({
+			title: 'Cancel this run?',
+			body: 'Its phase session is stopped and the run will not move again.',
+			confirmLabel: 'Cancel run',
+			cancelLabel: 'Keep running',
+			danger: true
+		});
+		if (ok) act('cancel');
 	}
 </script>
 
