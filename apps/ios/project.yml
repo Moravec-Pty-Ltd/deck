@@ -25,6 +25,7 @@ targets:
     sources:
       - Apps/DeckApp
       - Apps/Shared
+      - Apps/SharedIntents
     dependencies:
       - package: DeckKit
         product: DeckKit
@@ -161,6 +162,7 @@ targets:
     platform: watchOS
     sources:
       - Apps/DeckWatch
+      - Apps/SharedIntents
     dependencies:
       - package: DeckKit
         product: DeckKit

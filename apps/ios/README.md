@@ -331,7 +331,8 @@ domain for coding-agent sessions (Apple ships them for mail, photos, documents
 and the like), so App Shortcuts match these close to verbatim and nothing is
 paraphrased for us: a phrasing that is not written down gets "I can't do that
 in the deck app, try opening it". If Siri misses something you say often, add
-it to `Apps/DeckApp/Support/AppIntentsRegistration.swift`; every phrase must
+it to `Apps/SharedIntents/AppIntentsRegistration.swift` (the phone and watch
+apps both compile it); every phrase must
 contain `\(.applicationName)`.
 
 The intents surface automatically once the app is installed, and are built with
