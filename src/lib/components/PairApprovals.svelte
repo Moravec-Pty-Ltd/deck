@@ -1,34 +1,46 @@
-<script module lang="ts">
-	// Shape of a live access request, mirrored from /api/pair/pending (SvelteKit
-	// won't let a client import a $lib/server type). In the module script so the home
-	// page can import it alongside the component.
-	export interface PendingPairing {
-		id: string;
-		code: string;
-	}
-</script>
-
 <script lang="ts">
 	import { Smartphone, Check, X } from '@lucide/svelte';
 
-	// Approval prompts for devices requesting access (issue #150, phase 2). The home
-	// page reads /api/pair/pending on its poll and hands the live requests here; a
-	// person confirms the code shown matches the device in front of them, then
-	// approves or denies. On either action we ask the page to refresh the list.
-	let { pending, onchange }: { pending: PendingPairing[]; onchange: () => void } = $props();
+	// A live access request from GET /api/agent/pairing: id and code only.
+	interface PendingPairing {
+		id: string;
+		code: string;
+	}
 
+	const POLL_MS = 5000;
+
+	// Approval prompts for devices requesting access (issue #150, phase 2). A
+	// person confirms the code shown matches the device in front of them, then
+	// approves or denies. Polls the agent pairing route on its own rather than
+	// riding the home page's session poll, so it works wherever it is mounted.
+	let pending = $state<PendingPairing[]>([]);
 	let busy = $state<string | null>(null);
+
+	async function refresh() {
+		try {
+			const res = await fetch('/api/agent/pairing');
+			if (res.ok) pending = ((await res.json()) as { pending: PendingPairing[] }).pending;
+		} catch {
+			// offline: keep the last list until the next poll
+		}
+	}
+
+	$effect(() => {
+		void refresh();
+		const interval = setInterval(refresh, POLL_MS);
+		return () => clearInterval(interval);
+	});
 
 	async function decide(id: string, approve: boolean) {
 		if (busy) return;
 		busy = id;
 		try {
-			await fetch('/api/pair/approve', {
+			await fetch(`/api/agent/pairing/${encodeURIComponent(id)}`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ id, approve })
+				body: JSON.stringify({ approve })
 			});
-			onchange();
+			await refresh();
 		} finally {
 			busy = null;
 		}

@@ -1,8 +1,8 @@
 import type {
 	AgentKind,
+	AgentSettingsView,
 	DeckSettings,
 	ModelChoice,
-	ModelProfile,
 	Project,
 	SessionKind
 } from '$lib/types';
@@ -16,10 +16,10 @@ export const CLAUDE_MODELS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
 // model plumbing treats it like any other string). Profiles come from the user's
 // ~/.deck settings, so this repo stays free of private-infra ids.
 export function claudeModelOptions(
-	settings: DeckSettings | undefined
+	settings: DeckSettings | AgentSettingsView | undefined
 ): { value: string; label: string }[] {
 	const builtin = CLAUDE_MODELS.map((m) => ({ value: m, label: m }));
-	const profiles = (settings?.modelProfiles ?? []).map((p: ModelProfile) => ({
+	const profiles = (settings?.modelProfiles ?? []).map((p) => ({
 		value: p.id,
 		label: p.label || p.id
 	}));

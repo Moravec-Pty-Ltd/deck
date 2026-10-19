@@ -38,7 +38,7 @@
 		message = '';
 		saved = false;
 		try {
-			await patchSettings('autoCompact', { enabled, percent: clampCompactPercent(percent) });
+			await patchSettings({ autoCompact: { enabled, percent: clampCompactPercent(percent) } });
 			saved = true;
 			await load();
 		} catch (e) {

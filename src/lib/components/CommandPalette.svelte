@@ -9,7 +9,7 @@
 		type MergeMethod,
 		type PrActionPayload
 	} from '$lib/commands';
-	import type { DeckSession, ServerRuntime, DeckSettings } from '$lib/types';
+	import type { DeckSession, ServerRuntime, AgentSettingsView } from '$lib/types';
 	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
 	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
 	import { restartSession } from '$lib/session-restart';
@@ -44,7 +44,7 @@
 
 	// Locally-configured model profiles (~/.deck settings), so the palette's model
 	// step offers the same options as the modal and header switcher.
-	let paletteSettings = $state<DeckSettings>({});
+	let paletteSettings = $state<AgentSettingsView>({});
 	$effect(() => {
 		loadSettings().then((s) => (paletteSettings = s));
 	});

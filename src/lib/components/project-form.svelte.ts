@@ -1,6 +1,6 @@
 // Shared machinery for the per-project config forms (dev servers): the
 // ordered-list move helper and the busy/saved/error state around the
-// /api/projects POST (which carries every field the form doesn't send).
+// projects/config PATCH (which keeps every field the form doesn't send).
 
 // Swap list[i] with its neighbour at i+delta, bounds-checked.
 export function move<T>(list: T[], i: number, delta: number): T[] {
@@ -15,7 +15,7 @@ async function saveError(res: Response): Promise<string> {
 	return (await res.json().catch(() => ({})))?.message ?? 'failed to save';
 }
 
-// Save-state for a config form: `save(body)` POSTs the project patch, tracks
+// Save-state for a config form: `save(body)` PATCHes the project config, tracks
 // busy/saved/errorMsg, and reports success back through `onsaved`.
 export function createProjectSaver(onsaved: () => void) {
 	let busy = $state(false);
@@ -27,8 +27,8 @@ export function createProjectSaver(onsaved: () => void) {
 		errorMsg = '';
 		saved = false;
 		try {
-			const res = await fetch('/api/projects', {
-				method: 'POST',
+			const res = await fetch('/api/agent/projects/config', {
+				method: 'PATCH',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(body)
 			});

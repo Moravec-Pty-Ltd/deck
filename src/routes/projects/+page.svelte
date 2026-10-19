@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { DeckSettings, Project } from '$lib/types';
+	import type { AgentSettingsView, Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
 	import { groupProjects, UNGROUPED } from '$lib/groups';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
@@ -23,7 +23,7 @@
 	};
 
 	// modelProfiles for the claude model select; empty until the fetch lands.
-	let settings = $state<DeckSettings>({});
+	let settings = $state<AgentSettingsView>({});
 	let projects = $state<ProjectRow[]>([]);
 	let loaded = $state(false);
 	let savedPath = $state<string | null>(null);
@@ -69,7 +69,7 @@
 	const groupSuggestions = $derived(layout.map((s) => s.name).filter((name) => name !== UNGROUPED));
 
 	async function load() {
-		const res = await fetch('/api/projects');
+		const res = await fetch('/api/agent/projects/config');
 		if (res.ok) {
 			projects = ((await res.json()) as Project[]).map((p) => ({
 				...p,
@@ -93,8 +93,8 @@
 
 	async function save(p: ProjectRow) {
 		errorMsg = '';
-		const res = await fetch('/api/projects', {
-			method: 'POST',
+		const res = await fetch('/api/agent/projects/config', {
+			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
 				path: p.path,
@@ -144,7 +144,7 @@
 
 	async function remove(p: Project) {
 		if (!confirm(`Remove project "${p.name}"? (does not touch files)`)) return;
-		await fetch(`/api/projects?path=${encodeURIComponent(p.path)}`, { method: 'DELETE' });
+		await fetch(`/api/agent/projects?path=${encodeURIComponent(p.path)}`, { method: 'DELETE' });
 		load();
 	}
 </script>

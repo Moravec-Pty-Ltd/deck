@@ -5,7 +5,7 @@
 	// thing the form asks, because everything below it depends on the answer.
 	import type { ScheduleDigest } from '$lib/schedules';
 	import { OUTCOME_VIEW } from '$lib/schedules';
-	import type { DeckSession, DeckSettings, Project } from '$lib/types';
+	import type { DeckSession, AgentSettingsView, Project } from '$lib/types';
 	import { api, pollWhileVisible } from '$lib/workflow-view';
 	import { CRON_PRESETS, cronProblem, nextRuns } from '$lib/cron';
 	import { clockTime, relativeTime, shortPath, whenDue } from '$lib/time';
@@ -18,7 +18,7 @@
 	let schedules = $state<ScheduleDigest[]>([]);
 	let projects = $state<Project[]>([]);
 	let sessions = $state<DeckSession[]>([]);
-	let settings = $state<DeckSettings>({});
+	let settings = $state<AgentSettingsView>({});
 	let loaded = $state(false);
 	let loadError = $state('');
 
@@ -57,7 +57,7 @@
 		const [list, live, loadedSettings] = await Promise.all([
 			api<Project[]>('/api/projects').catch(() => [] as Project[]),
 			api<DeckSession[]>('/api/sessions').catch(() => [] as DeckSession[]),
-			loadSettings().catch(() => ({}) as DeckSettings)
+			loadSettings().catch(() => ({}) as AgentSettingsView)
 		]);
 		projects = list.filter((p) => !p.hidden);
 		// Only sessions that can take a prompt: a terminal has nothing to send to.

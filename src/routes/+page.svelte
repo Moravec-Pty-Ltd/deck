@@ -14,7 +14,7 @@
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
-	import PairApprovals, { type PendingPairing } from '$lib/components/PairApprovals.svelte';
+	import PairApprovals from '$lib/components/PairApprovals.svelte';
 	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, FolderCog, Workflow, Clock, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
@@ -27,7 +27,6 @@
 	let preset = $state<NewSessionPreset | null>(null);
 	let loaded = $state(false);
 	let qrOpen = $state(false);
-	let pending = $state<PendingPairing[]>([]);
 
 	// Multi-select for batch removal (issue #211). `anchor` is the last row clicked
 	// in select mode, which a shift-click extends the range from.
@@ -55,14 +54,9 @@
 	}
 
 	async function refresh() {
-		const [sRes, pRes, pairRes] = await Promise.all([
-			fetch('/api/sessions'),
-			fetch('/api/projects'),
-			fetch('/api/pair/pending')
-		]);
+		const [sRes, pRes] = await Promise.all([fetch('/api/sessions'), fetch('/api/projects')]);
 		if (sRes.ok) sessions = await sRes.json();
 		if (pRes.ok) projects = await pRes.json();
-		if (pairRes.ok) pending = (await pairRes.json()).pending;
 		loaded = true;
 	}
 
@@ -248,7 +242,7 @@
 	</div>
 </div>
 
-<PairApprovals {pending} onchange={refresh} />
+<PairApprovals />
 
 {#snippet row(s: DeckSession)}
 	{@const picked = selected.has(s.id)}

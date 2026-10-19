@@ -470,6 +470,31 @@ export interface OperatorSettings {
 	apiKeyFile?: string;
 }
 
+// The agent API's view of ~/.deck/settings.json (GET /api/agent/settings):
+// the operator key reads as hasApiKey and a model profile's env as its key
+// names, so no client ever holds a stored secret.
+export interface AgentSettingsView {
+	speech?: SpeechSettings;
+	operator?: Omit<OperatorSettings, 'apiKey'> & { hasApiKey: boolean };
+	modelProfiles?: { id: string; label?: string; model?: string; envKeys: string[] }[];
+	lastModels?: DeckSettings['lastModels'];
+	lastEffort?: DeckSettings['lastEffort'];
+	zedSshTarget?: string;
+	autoCompact?: { enabled: boolean; percent: number };
+}
+
+type Nullable<T> = { [K in keyof T]?: T[K] | null };
+
+// A PATCH /api/agent/settings body: only the blocks being changed. Within a
+// block an omitted field keeps its stored value and null (or a blank string)
+// clears it; a null block removes the whole block.
+export interface AgentSettingsPatch {
+	speech?: Nullable<SpeechSettings> | null;
+	operator?: Nullable<OperatorSettings> | null;
+	autoCompact?: Nullable<{ enabled: boolean; percent: number }> | null;
+	zedSshTarget?: string | null;
+}
+
 export interface DeckSettings {
 	speech?: SpeechSettings;
 	operator?: OperatorSettings;

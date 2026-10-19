@@ -12,7 +12,7 @@
 
 	async function load() {
 		try {
-			const res = await fetch('/api/skills');
+			const res = await fetch('/api/agent/settings/skill');
 			if (res.ok) statuses = await res.json();
 			else errorMsg = 'failed to load skill status';
 		} catch {
@@ -30,7 +30,7 @@
 		errorMsg = '';
 		busy = kind;
 		try {
-			const res = await fetch('/api/skills', {
+			const res = await fetch('/api/agent/settings/skill', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ kind })

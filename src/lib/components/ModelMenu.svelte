@@ -4,7 +4,7 @@
 	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
 	import { agentModels, loadAgentModels } from '$lib/agent-models-store.svelte';
 	import { loadSettings } from '$lib/settings-store';
-	import type { DeckSettings } from '$lib/types';
+	import type { AgentSettingsView } from '$lib/types';
 	import { haptic } from '$lib/haptics';
 	import { Cpu, Check, TriangleAlert } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
@@ -32,7 +32,7 @@
 	let open = $state(false);
 	// Model profiles live in ~/.deck settings, so the switcher offers the same
 	// locally-configured backends as the New Session modal (cached read-through).
-	let settings = $state<DeckSettings>({});
+	let settings = $state<AgentSettingsView>({});
 	$effect(() => {
 		if (open) loadSettings().then((s) => (settings = s));
 	});

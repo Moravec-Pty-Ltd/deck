@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Check, MessageSquareText } from '@lucide/svelte';
+	import { Check, KeyRound, MessageSquareText } from '@lucide/svelte';
 	import { fetchSettings, patchSettings } from '$lib/settings-patch';
 
 	// Somewhere to start from: the local model that fits a small machine, the
@@ -20,6 +20,10 @@
 	let url = $state('');
 	let model = $state('');
 	let provider = $state<'' | 'openai' | 'anthropic'>('');
+	// The stored key never comes back: the server says only whether one is set.
+	// A typed key replaces it on save; an untouched field leaves it alone.
+	let hasApiKey = $state(false);
+	let replacingKey = $state(false);
 	let apiKey = $state('');
 	let apiKeyFile = $state('');
 	let loaded = $state(false);
@@ -34,9 +38,11 @@
 			url = settings.operator?.url ?? '';
 			model = settings.operator?.model ?? '';
 			provider = settings.operator?.provider ?? '';
-			apiKey = settings.operator?.apiKey ?? '';
+			hasApiKey = settings.operator?.hasApiKey === true;
+			replacingKey = false;
+			apiKey = '';
 			apiKeyFile = settings.operator?.apiKeyFile ?? '';
-			status = await fetch('/api/operator').then((r) => (r.ok ? r.json() : null));
+			status = await fetch('/api/agent/operator').then((r) => (r.ok ? r.json() : null));
 			loaded = true;
 		} catch (e) {
 			message = e instanceof Error ? e.message : 'failed to load operator settings';
@@ -47,19 +53,16 @@
 		void load();
 	});
 
-	async function save() {
+	// Blank fields clear on the server; the key is sent only when there is a new
+	// one to store (or null to remove it), so saving never needs the stored value.
+	async function save(key: { apiKey?: string | null } = apiKey.trim() ? { apiKey: apiKey.trim() } : {}) {
 		busy = true;
 		message = '';
 		saved = false;
 		try {
-			const operator = {
-				url: url.trim() || undefined,
-				model: model.trim() || undefined,
-				provider: provider || undefined,
-				apiKey: apiKey.trim() || undefined,
-				apiKeyFile: apiKeyFile.trim() || undefined
-			};
-			await patchSettings('operator', operator);
+			await patchSettings({
+				operator: { url: url.trim(), model: model.trim(), provider: provider || null, apiKeyFile: apiKeyFile.trim(), ...key }
+			});
 			saved = true;
 			await load();
 		} catch (e) {
@@ -121,13 +124,28 @@
 					<span class="label-text text-xs opacity-70">Key file (preferred: a path under ~/.secrets)</span>
 					<input class="input input-sm w-full" placeholder="~/.secrets/anthropic.env" autocomplete="off" bind:value={apiKeyFile} />
 				</label>
-				<label class="form-control sm:col-span-2">
+				<div class="form-control sm:col-span-2">
 					<span class="label-text text-xs opacity-70">API key (only if you would rather store it here)</span>
-					<input class="input input-sm w-full" type="password" autocomplete="off" bind:value={apiKey} />
-				</label>
+					{#if hasApiKey && !replacingKey}
+						<div class="flex flex-wrap items-center gap-2 text-sm">
+							<span class="flex items-center gap-1"><KeyRound size={14} /> A key is saved</span>
+							<button class="btn btn-xs" onclick={() => (replacingKey = true)} disabled={busy}>Replace</button>
+							<button class="btn btn-ghost btn-xs" onclick={() => save({ apiKey: null })} disabled={busy}>Remove</button>
+						</div>
+					{:else}
+						<input
+							class="input input-sm w-full"
+							type="password"
+							autocomplete="off"
+							aria-label="API key"
+							placeholder={hasApiKey ? 'New key (leave blank to keep the saved one)' : ''}
+							bind:value={apiKey}
+						/>
+					{/if}
+				</div>
 			</div>
 			<div class="flex flex-wrap items-center gap-2">
-				<button class="btn btn-sm btn-primary" onclick={save} disabled={busy}>Save</button>
+				<button class="btn btn-sm btn-primary" onclick={() => save()} disabled={busy}>Save</button>
 				{#if saved}
 					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
 				{/if}

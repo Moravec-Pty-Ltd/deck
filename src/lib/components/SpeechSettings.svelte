@@ -19,7 +19,7 @@
 
 	async function load() {
 		try {
-			const res = await fetch('/api/speech');
+			const res = await fetch('/api/agent/speech');
 			if (!res.ok) throw new Error('failed to load speech settings');
 			const body = await res.json();
 			ttsUrl = body.config?.ttsUrl ?? '';
@@ -42,7 +42,7 @@
 		busy = true;
 		message = '';
 		try {
-			const res = await fetch('/api/speech/detect', { method: 'POST' });
+			const res = await fetch('/api/agent/settings/speech/detect', { method: 'POST' });
 			const body = await res.json();
 			if (!body.found) {
 				message = 'No speech server answered on 127.0.0.1:17496.';
@@ -65,12 +65,7 @@
 		message = '';
 		saved = false;
 		try {
-			const speech = {
-				ttsUrl: ttsUrl.trim() || undefined,
-				sttUrl: sttUrl.trim() || undefined,
-				voice: voice.trim() || undefined
-			};
-			await patchSettings('speech', speech);
+			await patchSettings({ speech: { ttsUrl: ttsUrl.trim(), sttUrl: sttUrl.trim(), voice: voice.trim() } });
 			saved = true;
 			await load();
 		} catch (e) {

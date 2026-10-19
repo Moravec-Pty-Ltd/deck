@@ -26,9 +26,6 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./sessions/[id]/diff/+server'), () => import('./agent/sessions/[id]/diff/+server'), ['GET']],
 	[() => import('./sessions/[id]/model/+server'), () => import('./agent/sessions/[id]/model/+server'), ['POST']],
 	[() => import('./sessions/[id]/restart/+server'), () => import('./agent/sessions/[id]/restart/+server'), ['POST']],
-	[() => import('./projects/credentials/+server'), () => import('./agent/credentials/+server'), ['GET']],
-	[() => import('./projects/sources/+server'), () => import('./agent/projects/sources/+server'), ['POST', 'DELETE']],
-	[() => import('./issues/meta/+server'), () => import('./agent/projects/sources/lookup/+server'), ['POST']],
 	[() => import('./servers/+server'), () => import('./agent/servers/+server'), ['GET']],
 	[() => import('./sessions/[id]/servers/+server'), () => import('./agent/sessions/[id]/servers/+server'), ['GET']],
 	[() => import('./sessions/[id]/servers/[name]/+server'), () => import('./agent/sessions/[id]/servers/[name]/+server'), ['POST']],
@@ -47,12 +44,7 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./quick-messages/+server'), () => import('./agent/quick-messages/+server'), ['GET', 'PUT']],
 	[() => import('./search/+server'), () => import('./agent/search/+server'), ['GET']],
 	[() => import('./user/+server'), () => import('./agent/user/+server'), ['GET']],
-	[() => import('./speech/detect/+server'), () => import('./agent/settings/speech/detect/+server'), ['POST']],
-	[() => import('./skills/+server'), () => import('./agent/settings/skill/+server'), ['GET', 'POST']],
-	[() => import('./pair/pending/+server'), () => import('./agent/pairing/+server'), ['GET']],
 	[() => import('./projects/+server'), () => import('./agent/projects/+server'), ['POST', 'DELETE']],
-	[() => import('./projects/clone/+server'), () => import('./agent/projects/clone/+server'), ['POST']],
-	[() => import('./fs/complete/+server'), () => import('./agent/fs/complete/+server'), ['GET']],
 	[() => import('./git/branches/+server'), () => import('./agent/git/branches/+server'), ['GET']],
 	[() => import('./git/worktrees/+server'), () => import('./agent/git/worktrees/+server'), ['GET']]
 ];

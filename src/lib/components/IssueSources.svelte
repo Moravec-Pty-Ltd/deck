@@ -89,7 +89,7 @@
 		resetAdd();
 		addType = type;
 		try {
-			const res = await fetch(`/api/projects/credentials?type=${type}`);
+			const res = await fetch(`/api/agent/credentials?type=${type}`);
 			if (!res.ok) return;
 			credentials = await res.json();
 			credentialId = credentials[0]?.id ?? '';
@@ -106,7 +106,7 @@
 	const hasKey = $derived(!!credentialId || !!apiKey.trim());
 
 	async function meta<T>(type: IssueSourceType, action: string, params: Record<string, unknown> = {}): Promise<T> {
-		const res = await fetch('/api/issues/meta', {
+		const res = await fetch('/api/agent/projects/sources/lookup', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			// One or the other: a saved credential is resolved server-side, so the
@@ -234,7 +234,7 @@
 	}
 
 	async function addSource(body: Record<string, unknown>) {
-		const res = await fetch('/api/projects/sources', {
+		const res = await fetch('/api/agent/projects/sources', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ projectPath: project.path, ...body })
@@ -282,7 +282,7 @@
 	async function remove(s: IssueSource) {
 		await run(async () => {
 			const res = await fetch(
-				`/api/projects/sources?project=${encodeURIComponent(project.path)}&id=${encodeURIComponent(s.id)}`,
+				`/api/agent/projects/sources?project=${encodeURIComponent(project.path)}&id=${encodeURIComponent(s.id)}`,
 				{ method: 'DELETE' }
 			);
 			if (!res.ok) {

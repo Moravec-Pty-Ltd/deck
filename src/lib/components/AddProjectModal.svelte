@@ -1,6 +1,5 @@
 <script lang="ts">
-	import type { Project } from '$lib/types';
-	import { repoNameFromUrl, isCloneUrlSafe } from '$lib/repo-url';
+		import { repoNameFromUrl, isCloneUrlSafe } from '$lib/repo-url';
 	import PathInput from './PathInput.svelte';
 
 	let {
@@ -53,12 +52,12 @@
 			newName = '';
 			nameEdited = false;
 			newGroup = initialGroup;
-			fetch('/api/projects')
+			fetch('/api/agent/projects')
 				.then((r) => {
 					if (!r.ok) return [];
 					return r.json();
 				})
-				.then((list: Project[]) => {
+				.then((list: { group?: string }[]) => {
 					const names = new Set<string>();
 					for (const p of list) {
 						const g = p.group?.trim();
@@ -83,7 +82,7 @@
 		busy = true;
 		try {
 			const res = cloning
-				? await fetch('/api/projects/clone', {
+				? await fetch('/api/agent/projects/clone', {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
 						body: JSON.stringify({
@@ -93,7 +92,7 @@
 							group: newGroup.trim() || undefined
 						})
 					})
-				: await fetch('/api/projects', {
+				: await fetch('/api/agent/projects', {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
 						body: JSON.stringify({
