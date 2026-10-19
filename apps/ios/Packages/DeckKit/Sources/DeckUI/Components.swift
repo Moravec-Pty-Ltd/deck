@@ -3,8 +3,12 @@ import DeckKit
 
 /// Small colored status indicator: green running, gray idle, orange awaiting
 /// input, red error/dead.
-struct StatusDot: View {
+public struct StatusDot: View {
 	let session: SessionDigest
+
+	public init(session: SessionDigest) {
+		self.session = session
+	}
 
 	private var color: Color {
 		if session.awaitingInput == true { return .orange }
@@ -16,18 +20,23 @@ struct StatusDot: View {
 		}
 	}
 
-	var body: some View {
+	public var body: some View {
 		Circle()
 			.fill(color)
 			.frame(width: 8, height: 8)
 	}
 }
 
-struct Chip: View {
+public struct Chip: View {
 	let text: String
 	var color: Color = .secondary
 
-	var body: some View {
+	public init(text: String, color: Color = .secondary) {
+		self.text = text
+		self.color = color
+	}
+
+	public var body: some View {
 		Text(text)
 			.font(.caption2.weight(.medium))
 			.lineLimit(1)
@@ -39,7 +48,7 @@ struct Chip: View {
 }
 
 extension Color {
-	init(hex: UInt32) {
+	public init(hex: UInt32) {
 		self.init(
 			.sRGB,
 			red: Double((hex >> 16) & 0xff) / 255,
@@ -48,14 +57,14 @@ extension Color {
 	}
 
 	// GitHub PR state hues, matching deck's web sidebar.
-	static let prOpen = Color(hex: 0x1f883d)
-	static let prMerged = Color(hex: 0x8250df)
-	static let prClosed = Color(hex: 0xcf222e)
-	static let prDraft = Color(hex: 0x6e7781)
+	public static let prOpen = Color(hex: 0x1f883d)
+	public static let prMerged = Color(hex: 0x8250df)
+	public static let prClosed = Color(hex: 0xcf222e)
+	public static let prDraft = Color(hex: 0x6e7781)
 }
 
-enum PRDisplay {
-	static func color(for pr: SessionPR) -> Color {
+public enum PRDisplay {
+	public static func color(for pr: SessionPR) -> Color {
 		switch pr.state?.lowercased() {
 		case "merged": return .prMerged
 		case "closed": return .prClosed
@@ -64,7 +73,7 @@ enum PRDisplay {
 		}
 	}
 
-	static func label(for pr: SessionPR) -> String {
+	public static func label(for pr: SessionPR) -> String {
 		let number = pr.number.map { "#\($0)" } ?? "PR"
 		let state = pr.state?.capitalized
 		return [number, state].compactMap { $0 }.joined(separator: " · ")
@@ -73,12 +82,18 @@ enum PRDisplay {
 
 /// Green ticks per approval, red crosses per change-request (capped), mirroring
 /// the web's ReviewMarks.
-struct ReviewMarks: View {
+public struct ReviewMarks: View {
 	let approvals: Int
 	let changesRequested: Int
 	var cap = 5
 
-	var body: some View {
+	public init(approvals: Int, changesRequested: Int, cap: Int = 5) {
+		self.approvals = approvals
+		self.changesRequested = changesRequested
+		self.cap = cap
+	}
+
+	public var body: some View {
 		if approvals > 0 || changesRequested > 0 {
 			HStack(spacing: 3) {
 				marks(count: approvals, symbol: "checkmark", color: .prOpen)
@@ -107,10 +122,14 @@ struct ReviewMarks: View {
 }
 
 /// A colored PR state chip plus its review marks, for rows and the detail header.
-struct PRStatusBadge: View {
+public struct PRStatusBadge: View {
 	let pr: SessionPR
 
-	var body: some View {
+	public init(pr: SessionPR) {
+		self.pr = pr
+	}
+
+	public var body: some View {
 		HStack(spacing: 6) {
 			Chip(text: PRDisplay.label(for: pr), color: PRDisplay.color(for: pr))
 			ReviewMarks(approvals: pr.approvals ?? 0, changesRequested: pr.changesRequested ?? 0)
@@ -120,11 +139,15 @@ struct PRStatusBadge: View {
 
 /// Says the deck server is older than the app when it lacks something `needs`
 /// names. Those features are hidden on the screen; this says why.
-struct ServerTooOldBanner: View {
+public struct ServerTooOldBanner: View {
 	@Environment(DeckStore.self) private var store
-	var needs: [DeckCapability] = DeckCapability.allCases
+	var needs: [DeckCapability]
 
-	var body: some View {
+	public init(needs: [DeckCapability] = DeckCapability.allCases) {
+		self.needs = needs
+	}
+
+	public var body: some View {
 		let missing = store.missing(needs)
 		if !missing.isEmpty {
 			Label {
@@ -137,7 +160,7 @@ struct ServerTooOldBanner: View {
 			.foregroundStyle(.orange)
 			.padding(.horizontal, 12)
 			.padding(.vertical, 8)
-			.background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+			.background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 			.padding(.horizontal)
 			.accessibilityIdentifier("serverTooOld")
 		}

@@ -14,6 +14,10 @@ Siri drives the same actions through App Intents.
     `/api/agent/*` routes (plus push registration), and reads the server's
     capability tokens from `GET /api/agent`: a feature the server doesn't
     advertise is hidden, with a banner saying deck needs updating
+  - `DeckUI`: the app's shared leaf views (session rows, tool call and ask
+    cards, PR and diff views, file attachment rows), `DeckStyle` radius tokens
+    and `deckGlass()`. Builds for iOS and macOS; only the app links it, not the
+    watch app or the extensions
   - `DeckIntents`: Siri App Intents (entities: sessions, projects, open issues,
     open PRs; intents: start work, start review, start a session from a spoken
     instruction, answer, attention check, send prompt, status, stop)

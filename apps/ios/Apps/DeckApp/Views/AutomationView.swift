@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// Per-project feed automation (the web Projects page's automation section):
 /// whether new issues assigned to you and PRs awaiting your review spawn a

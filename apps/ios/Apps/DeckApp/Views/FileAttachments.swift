@@ -1,6 +1,7 @@
 import QuickLook
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// The local files a message mentions, under its text: images as previews
 /// that open full size (with the message's other images a swipe away), other
@@ -27,7 +28,7 @@ struct FileAttachments: View {
 							Button {
 								gallery = GalleryOpening(images: images, index: index)
 							} label: {
-								FileThumbnail(file: file, viewModel: viewModel)
+								FileThumbnail(file: file) { await viewModel.fileData(path: file.path) }
 							}
 							.buttonStyle(.plain)
 							.accessibilityLabel("Open \(file.name)")
@@ -39,19 +40,7 @@ struct FileAttachments: View {
 				Button {
 					open(file)
 				} label: {
-					HStack(spacing: 6) {
-						if fetching == file.path {
-							ProgressView().controlSize(.mini)
-						} else {
-							Image(systemName: "doc")
-						}
-						Text(file.name).lineLimit(1)
-						Text(MessageFiles.formatBytes(file.size)).foregroundStyle(.secondary)
-					}
-					.font(.caption)
-					.padding(.horizontal, 8)
-					.padding(.vertical, 5)
-					.background(Color(.tertiarySystemFill), in: Capsule())
+					FileChip(file: file, fetching: fetching == file.path)
 				}
 				.buttonStyle(.plain)
 				.disabled(fetching != nil)
@@ -83,56 +72,6 @@ struct GalleryOpening: Identifiable {
 	let index: Int
 }
 
-/// A mentioned image at preview size, fetched through the authenticated
-/// client like message attachments are.
-struct FileThumbnail: View {
-	let file: FileInfo
-	let viewModel: SessionDetailViewModel
-
-	@State private var image: UIImage?
-	@State private var failed = false
-
-	var body: some View {
-		Group {
-			if let image {
-				Image(uiImage: image)
-					.resizable()
-					.scaledToFill()
-			} else if failed {
-				Image(systemName: "photo")
-					.foregroundStyle(.secondary)
-			} else {
-				ProgressView().controlSize(.small)
-			}
-		}
-		.frame(width: 160, height: 120)
-		.clipShape(RoundedRectangle(cornerRadius: 8))
-		.overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator), lineWidth: 0.5))
-		// Copy without opening the image first: on a Mac the point of seeing a
-		// screenshot in the transcript is usually to paste it somewhere else.
-		.contextMenu {
-			if let image {
-				Button {
-					ImageClipboard.copy(image)
-				} label: {
-					Label("Copy image", systemImage: "doc.on.doc")
-				}
-				ShareLink(item: Image(uiImage: image), preview: SharePreview(file.name, image: Image(uiImage: image))) {
-					Label("Share…", systemImage: "square.and.arrow.up")
-				}
-			}
-		}
-		.task(id: file.path) {
-			guard image == nil else { return }
-			if let data = await viewModel.fileData(path: file.path), let loaded = UIImage(data: data) {
-				image = loaded
-			} else {
-				failed = true
-			}
-		}
-	}
-}
-
 /// A message's images full size, one per page: swipe or the arrows move
 /// between them, a pinch zooms, and the share button hands the image on.
 struct ImageGallery: View {
@@ -141,7 +80,7 @@ struct ImageGallery: View {
 	let viewModel: SessionDetailViewModel
 
 	@Environment(\.dismiss) private var dismiss
-	@State private var loaded: [String: UIImage] = [:]
+	@State private var loaded: [String: PlatformImage] = [:]
 
 	private var current: FileInfo { images[index] }
 
@@ -154,7 +93,7 @@ struct ImageGallery: View {
 						.tag(i)
 						.task(id: file.path) {
 							guard loaded[file.path] == nil, let data = await viewModel.fileData(path: file.path) else { return }
-							loaded[file.path] = UIImage(data: data)
+							loaded[file.path] = PlatformImage(data: data)
 						}
 				}
 			}
@@ -179,7 +118,7 @@ struct ImageGallery: View {
 						Image(systemName: "doc.on.doc")
 					}
 					.accessibilityLabel("Copy \(current.name)")
-					ShareLink(item: Image(uiImage: image), preview: SharePreview(current.name, image: Image(uiImage: image))) {
+					ShareLink(item: Image(platformImage: image), preview: SharePreview(current.name, image: Image(platformImage: image))) {
 						Image(systemName: "square.and.arrow.up")
 					}
 					.accessibilityLabel("Share \(current.name)")
@@ -195,55 +134,5 @@ struct ImageGallery: View {
 		// scene behind it.
 		.environment(\.colorScheme, .dark)
 		.statusBarHidden()
-	}
-}
-
-/// One gallery page: the image fit to the screen, a pinch to zoom, a double
-/// tap to zoom in or back out.
-struct ZoomableImage: View {
-	let image: UIImage?
-
-	@State private var scale: CGFloat = 1
-	@State private var pinch: CGFloat = 1
-
-	var body: some View {
-		Group {
-			if let image {
-				ScrollView([.horizontal, .vertical], showsIndicators: false) {
-					Image(uiImage: image)
-						.resizable()
-						.scaledToFit()
-						.containerRelativeFrame([.horizontal, .vertical]) { length, _ in length * scale * pinch }
-				}
-				.scrollDisabled(scale * pinch <= 1)
-				.gesture(
-					MagnifyGesture()
-						.onChanged { pinch = $0.magnification }
-						.onEnded { _ in
-							scale = min(max(scale * pinch, 1), 5)
-							pinch = 1
-						}
-				)
-				.onTapGesture(count: 2) {
-					withAnimation { scale = scale > 1 ? 1 : 2.5 }
-				}
-			} else {
-				ProgressView().tint(.white)
-			}
-		}
-		.frame(maxWidth: .infinity, maxHeight: .infinity)
-	}
-}
-
-/// Putting an image on the clipboard. UIPasteboard covers iOS, iPadOS and Mac
-/// Catalyst alike, so ⌘V on a Mac and Paste on a phone both get the picture
-/// rather than a file reference.
-enum ImageClipboard {
-	static func copy(_ image: UIImage) {
-		// PNG as well as the image itself: some destinations take only data,
-		// and a screenshot pasted as JPEG loses its crispness.
-		var items: [String: Any] = ["public.image": image]
-		if let png = image.pngData() { items["public.png"] = png }
-		UIPasteboard.general.items = [items]
 	}
 }

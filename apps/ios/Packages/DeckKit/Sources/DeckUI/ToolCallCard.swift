@@ -3,11 +3,15 @@ import DeckKit
 
 /// One tool the agent ran, rendered the way deck's web session view renders it:
 /// name, the one argument worth seeing, and the output behind a disclosure.
-struct ToolCallCard: View {
+public struct ToolCallCard: View {
 	let call: ToolCall
 	@State private var showOutput = false
 
-	var body: some View {
+	public init(call: ToolCall) {
+		self.call = call
+	}
+
+	public var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
 			header
 			if let command = call.command, !command.isEmpty {
@@ -43,10 +47,10 @@ struct ToolCallCard: View {
 		}
 		.padding(10)
 		.frame(maxWidth: .infinity, alignment: .leading)
-		.background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+		.background(Color.deckSecondaryGroupedBackground, in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 		.overlay(
-			RoundedRectangle(cornerRadius: 12)
-				.stroke(call.isError ? Color.red.opacity(0.4) : Color(.separator), lineWidth: 0.5))
+			RoundedRectangle(cornerRadius: DeckStyle.Radius.card)
+				.stroke(call.isError ? Color.red.opacity(0.4) : Color.deckSeparator, lineWidth: 0.5))
 	}
 
 	private var header: some View {
@@ -97,7 +101,7 @@ struct ToolCallCard: View {
 		return call.output.count > limit ? String(call.output.prefix(limit)) + "\n…" : call.output
 	}
 
-	static func icon(for tool: String) -> String {
+	public static func icon(for tool: String) -> String {
 		switch tool {
 		case "Bash": return "terminal"
 		case "Read": return "doc.text"
@@ -114,11 +118,16 @@ struct ToolCallCard: View {
 }
 
 /// Monospaced, scrollable block for commands and tool output.
-struct CodeBlock: View {
+public struct CodeBlock: View {
 	let text: String
 	var tint: Color = .primary
 
-	var body: some View {
+	public init(text: String, tint: Color = .primary) {
+		self.text = text
+		self.tint = tint
+	}
+
+	public var body: some View {
 		ScrollView(.horizontal, showsIndicators: false) {
 			Text(text)
 				.font(.caption.monospaced())
@@ -128,6 +137,6 @@ struct CodeBlock: View {
 		}
 		.frame(maxHeight: 260)
 		.padding(8)
-		.background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+		.background(Color.deckTertiaryGroupedBackground, in: RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 	}
 }

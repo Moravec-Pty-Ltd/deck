@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// The dev servers configured for the session's project (the web Servers tab):
 /// live state, ports, preview link, setup progress, start/stop/restart, and

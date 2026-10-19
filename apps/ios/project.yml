@@ -29,6 +29,8 @@ targets:
       - package: DeckKit
         product: DeckKit
       - package: DeckKit
+        product: DeckUI
+      - package: DeckKit
         product: DeckIntents
       # The dev browser. Only the app has one, and it carries SwiftNIO SSH.
       - package: DeckKit
@@ -110,8 +112,6 @@ targets:
     supportedDestinations: [iOS, macCatalyst]
     sources:
       - Apps/DeckShare
-      # RelativeFormat lives here, shared with the app rather than copied.
-      - Apps/Shared
     dependencies:
       - package: DeckKit
         product: DeckKit
