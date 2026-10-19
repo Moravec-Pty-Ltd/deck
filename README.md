@@ -97,6 +97,10 @@ Dev server: `pnpm dev`.
 
 **Configuration**: Variables are loaded from a `.env` file in the repo root by `vite dev` (dev server) and via `node --env-file=.env build/index.js` (production). Explicit environment variables (set inline or exported) always take precedence over `.env` values.
 
+## Native apps
+
+The iPhone, iPad, Apple Watch and Mac clients live in [`apps/ios`](apps/ios/README.md): SwiftUI over deck's agent API, with Siri, Live Activities, a share extension and the voice operator. They build with XcodeGen and ship to TestFlight with fastlane; see that README.
+
 ## Remote access (Tailscale)
 
 Bind loopback and front it with Tailscale `serve` so the tailnet is the access boundary:
@@ -163,7 +167,7 @@ on-device model in a browser, and running one beside deck to serve one tab cost
 more than it was worth. On the phone the thinking is done by Apple's on-device
 model (iOS 26+), so nothing runs on the deck machine and the conversation never
 leaves the device. Siri covers the same ground for one-shot commands; see the
-[deck-ios README](https://github.com/Moravec-Pty-Ltd/deck-ios).
+[iOS app README](apps/ios/README.md).
 
 An Apple Watch still asks deck to think for it: watchOS ships Apple's model
 framework but marks the model itself unavailable. That is the only thing left

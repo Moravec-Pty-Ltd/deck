@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>production</string>
+	<!-- Mac Catalyst runs sandboxed. The dev browser opens a loopback SOCKS5
+	     listener and connects out to the deck machine, which the sandbox
+	     refuses silently without both of these. Ignored on iOS. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<!-- A downloaded operator model holds its weights in memory: 1.7 GB for the
+	     suggested one. iOS kills an app at a far lower default, and MLX maps
+	     the weights rather than copying them, which wants the larger address
+	     space. Both are available to any app and need nothing in the portal. -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)tech.moravec.deck</string>
+	</array>
+</dict>
+</plist>

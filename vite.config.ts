@@ -69,5 +69,10 @@ function tailscaleServe(): Plugin | false {
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit(), tailscaleServe()],
-	server: { allowedHosts: ['.ts.net'], port: PORT }
+	server: {
+		allowedHosts: ['.ts.net'],
+		port: PORT,
+		// apps/ios builds gigabytes of Swift output in-tree; vite has no business watching it.
+		watch: { ignored: ['**/apps/**'] }
+	}
 });
