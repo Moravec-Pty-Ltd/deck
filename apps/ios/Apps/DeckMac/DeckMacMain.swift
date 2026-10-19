@@ -17,6 +17,7 @@ struct DeckMacMain: App {
 		WindowGroup(id: MacWindow.main) {
 			MacRootView()
 				.environment(store)
+				.macMainWindow()
 				.frame(minWidth: 760, minHeight: 480)
 				.task { store.start() }
 		}

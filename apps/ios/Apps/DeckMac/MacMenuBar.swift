@@ -1,67 +1,64 @@
 import AppKit
 import SwiftUI
-import Observation
 import DeckKit
 
-/// A session something outside the main window asked to show, and whether a
-/// sessions window is on screen to show it.
+/// Opens deck's windows from outside them: the menu bar and notification taps.
 @MainActor
-@Observable
-final class MacOpenRequest {
-	static let shared = MacOpenRequest()
-	var sessionId: String?
-	var openWindows = 0
-}
+struct MacOpener {
+	/// Main windows on screen, signed in or not.
+	static var mainWindows = 0
 
-@MainActor
-enum MacOpener {
-	static func open(session id: String) {
-		MacOpenRequest.shared.sessionId = id
-		showMain()
+	let openWindow: OpenWindowAction
+
+	/// Focuses a main window, or opens one when none is left. openWindow on a
+	/// plain WindowGroup always adds a window, so it is only used for the second.
+	func showMain() {
+		NSApp.activate()
+		if Self.mainWindows > 0 {
+			NSApp.windows.filter(\.isMiniaturized).forEach { $0.deminiaturize(nil) }
+		} else {
+			openWindow(id: MacWindow.main)
+		}
 	}
 
-	/// Bring the sessions window forward, reopening one if it was closed. The
-	/// main window group has no scene id to open by, so a reopen goes through
-	/// Launch Services, which hands SwiftUI the same event as a Dock click.
-	static func showMain() {
-		NSApp.activate()
-		if MacOpenRequest.shared.openWindows > 0 {
-			NSApp.windows.filter(\.isMiniaturized).forEach { $0.deminiaturize(nil) }
+	/// Selects the session in the main window, or with none open gives it a
+	/// window of its own (focusing the one it already has).
+	func open(session id: String) {
+		guard Self.mainWindows > 0 else {
+			NSApp.activate()
+			openWindow(id: MacWindow.session, value: id)
 			return
 		}
-		NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration())
+		showMain()
+		NotificationCenter.default.post(name: .deckOpenSession, object: id)
+	}
+
+	/// Shows the run in the main window's inbox; with none open, its phase
+	/// session's window when it has one.
+	func open(run id: String, phaseSession: String?) {
+		if Self.mainWindows > 0 {
+			showMain()
+			NotificationCenter.default.post(name: .deckOpenRun, object: id)
+		} else if let phaseSession {
+			open(session: phaseSession)
+		} else {
+			showMain()
+		}
 	}
 }
 
 extension View {
-	/// Lets the menu bar and notifications pick this window's session.
-	func macOpenTarget(selection: Binding<MacPane?>) -> some View {
-		modifier(MacOpenTarget(selection: selection))
-	}
-}
-
-private struct MacOpenTarget: ViewModifier {
-	@Environment(DeckStore.self) private var store
-	@Binding var selection: MacPane?
-
-	func body(content: Content) -> some View {
-		content
-			.onAppear {
-				MacOpenRequest.shared.openWindows += 1
-				MacPushManager.shared.configure(store: store)
-			}
-			.onDisappear { MacOpenRequest.shared.openWindows -= 1 }
-			.onChange(of: MacOpenRequest.shared.sessionId, initial: true) { _, id in
-				guard let id else { return }
-				selection = .session(id)
-				MacOpenRequest.shared.sessionId = nil
-			}
+	/// Counts this window as a main window for MacOpener.
+	func macMainWindow() -> some View {
+		onAppear { MacOpener.mainWindows += 1 }
+			.onDisappear { MacOpener.mainWindows -= 1 }
 	}
 }
 
 /// The menu bar icon: a count when something needs you.
 struct MenuBarIcon: View {
 	@Environment(DeckStore.self) private var store
+	@Environment(\.openWindow) private var openWindow
 
 	var body: some View {
 		let badge = MenuBarDigest(asks: store.asks, sessions: store.sessions, runs: store.runs).badge
@@ -69,7 +66,7 @@ struct MenuBarIcon: View {
 			Image(systemName: badge == nil ? "rectangle.stack" : "questionmark.bubble.fill")
 			if let badge { Text(badge) }
 		}
-		.task { MacPushManager.shared.configure(store: store) }
+		.task { MacPushManager.shared.configure(store: store, opener: MacOpener(openWindow: openWindow)) }
 		.accessibilityLabel(badge.map { "deck, \($0) waiting" } ?? "deck")
 	}
 }
@@ -77,6 +74,7 @@ struct MenuBarIcon: View {
 struct MenuBarContent: View {
 	@Environment(DeckStore.self) private var store
 	@Environment(\.dismiss) private var dismiss
+	@Environment(\.openWindow) private var openWindow
 	@State private var answering: Set<String> = []
 	@State private var failure: String?
 
@@ -174,7 +172,7 @@ struct MenuBarContent: View {
 		HStack {
 			Button("Open deck") {
 				dismiss()
-				MacOpener.showMain()
+				MacOpener(openWindow: openWindow).showMain()
 			}
 			Spacer()
 			Button("Quit") { NSApp.terminate(nil) }
@@ -191,7 +189,7 @@ struct MenuBarContent: View {
 
 	private func open(_ sessionId: String) {
 		dismiss()
-		MacOpener.open(session: sessionId)
+		MacOpener(openWindow: openWindow).open(session: sessionId)
 	}
 
 	/// Answers as the ask card does with that one option picked.

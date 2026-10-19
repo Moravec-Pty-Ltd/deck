@@ -30,14 +30,23 @@ final class MacPushManager: NSObject, UNUserNotificationCenterDelegate {
 	static let shared = MacPushManager()
 
 	private weak var store: DeckStore?
+	private var opener: MacOpener?
+	/// A tap that arrived before the menu bar icon handed over an opener.
+	private var pending: AskNotification.Target?
 	private var registered = false
 
 	private override init() { super.init() }
 
-	func configure(store: DeckStore) {
-		guard self.store !== store else { return }
-		self.store = store
-		follow()
+	func configure(store: DeckStore, opener: MacOpener) {
+		self.opener = opener
+		if self.store !== store {
+			self.store = store
+			follow()
+		}
+		if let pending {
+			self.pending = nil
+			open(pending)
+		}
 	}
 
 	/// Re-checks on every sign-in and server answer, since the capability is
@@ -113,17 +122,16 @@ final class MacPushManager: NSObject, UNUserNotificationCenterDelegate {
 	}
 
 	private func open(_ target: AskNotification.Target) {
+		guard let opener else {
+			pending = target
+			return
+		}
 		switch target {
 		case .session(let id):
-			MacOpener.open(session: id)
+			opener.open(session: id)
 		case .run(let runId):
-			// The Mac has no runs board: open the run's phase session when it has one.
 			let ask = store?.asks.first { $0.runId == runId && $0.sessionId != runId }
-			if let ask {
-				MacOpener.open(session: ask.sessionId)
-			} else {
-				MacOpener.showMain()
-			}
+			opener.open(run: runId, phaseSession: ask?.sessionId)
 		}
 	}
 }
