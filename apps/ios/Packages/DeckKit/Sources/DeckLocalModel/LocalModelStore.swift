@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import DeckKit
 
 #if canImport(MLXFoundationModels)
 import FoundationModels
@@ -45,15 +46,17 @@ public final class LocalModelStore {
 	/// Whether this device can run a downloaded model at all.
 	public enum Support: Equatable, Sendable {
 		case supported
-		/// Third-party models plug into FoundationModels only from iOS 27.
+		/// Third-party models plug into FoundationModels only from iOS and macOS 27.
 		case systemTooOld
 		/// No MLX here, which is every platform but iOS, macOS and visionOS.
 		case platformUnsupported
 
-		public var reason: String? {
+		public var reason: String? { reason(on: .current) }
+
+		public func reason(on platform: AppPlatform) -> String? {
 			switch self {
 			case .supported: nil
-			case .systemTooOld: "Running your own model needs iOS 27 or later."
+			case .systemTooOld: "Running your own model needs \(platform.systemName) 27 or later."
 			case .platformUnsupported: "This device cannot run a downloaded model."
 			}
 		}

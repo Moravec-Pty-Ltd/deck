@@ -198,6 +198,10 @@ targets:
       # The dev browser's tab chip, web view host and tunnel form.
       - path: Apps/DeckApp/Views/BrowserParts.swift
       - path: Apps/DeckApp/Views/TunnelSheet.swift
+      # The operator, without the phone's wake word.
+      - path: Apps/DeckApp/Support/OperatorController.swift
+      - path: Apps/DeckApp/Views/OperatorView.swift
+      - path: Apps/DeckApp/Views/LocalModelView.swift
     dependencies:
       - package: DeckKit
         product: DeckKit
@@ -207,6 +211,8 @@ targets:
         product: DeckIntents
       - package: DeckKit
         product: DeckBrowser
+      - package: DeckKit
+        product: DeckLocalModel
     info:
       path: Apps/DeckMac/Info.plist
       properties:
@@ -215,6 +221,8 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSApplicationCategoryType: public.app-category.developer-tools
         ITSAppUsesNonExemptEncryption: false
+        NSMicrophoneUsageDescription: deck records what you say in voice mode and sends it to your deck server for transcription.
+        NSSpeechRecognitionUsageDescription: deck recognises speech on this Mac for voice commands. Nothing is sent to Apple.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           # Dev servers are plain http, and through the tunnel they load from

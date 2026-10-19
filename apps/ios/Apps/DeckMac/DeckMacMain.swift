@@ -24,6 +24,13 @@ struct DeckMacMain: App {
 			MacBrowserView().environment(store)
 		}
 		.keyboardShortcut("b", modifiers: [.command, .shift])
+
+		Window("Operator", id: "operator") {
+			OperatorView()
+				.environment(store)
+				.frame(minWidth: 420, minHeight: 480)
+		}
+		.keyboardShortcut("o", modifiers: [.command, .shift])
 	}
 }
 

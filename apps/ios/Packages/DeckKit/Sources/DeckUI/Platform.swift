@@ -69,7 +69,7 @@ extension Color {
 extension View {
 	/// An inline navigation title where the platform has one; macOS has no
 	/// large titles to opt out of.
-	func deckInlineNavigationTitle() -> some View {
+	public func deckInlineNavigationTitle() -> some View {
 		#if canImport(UIKit)
 		navigationBarTitleDisplayMode(.inline)
 		#else

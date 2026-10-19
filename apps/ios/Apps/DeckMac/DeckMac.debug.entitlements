@@ -6,6 +6,8 @@
 	<string>development</string>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<!-- The dev browser opens a loopback SOCKS5 listener for its tunnel, which

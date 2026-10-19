@@ -9,6 +9,7 @@ struct MacSessionDetail: View {
 	@Environment(DeckStore.self) private var store
 	@State private var viewModel: SessionDetailViewModel?
 	@State private var terminal: TerminalPoller?
+	@State private var voice: VoiceController?
 	@State private var draft = ""
 	@State private var sending = false
 
@@ -21,6 +22,10 @@ struct MacSessionDetail: View {
 				TerminalView(poller: terminal)
 			} else if let viewModel {
 				transcript(viewModel)
+				if let voice, voice.enabled {
+					Divider()
+					VoiceBar(voice: voice)
+				}
 				Divider()
 				footer(viewModel)
 			} else {
@@ -40,9 +45,27 @@ struct MacSessionDetail: View {
 					.keyboardShortcut(".", modifiers: .command)
 				}
 			}
+			if !isTerminal, let voice, voice.canRead {
+				ToolbarItem {
+					Button {
+						if voice.enabled { voice.disable() } else { voice.enable() }
+					} label: {
+						Label(voice.enabled ? "Voice Off" : "Voice On", systemImage: voice.enabled ? "waveform.circle.fill" : "waveform.circle")
+					}
+					.help(voice.enabled ? "Turn voice mode off" : "Turn voice mode on")
+				}
+			}
 		}
 		.onAppear(perform: begin)
-		.onDisappear { viewModel?.leave() }
+		// The mic serves one thing at a time: a session's voice mode pauses the
+		// operator, which comes back when this ends.
+		.onChange(of: voice?.enabled ?? false) { _, on in
+			if on { OperatorController.shared.pause() } else { OperatorController.shared.resume() }
+		}
+		.onDisappear {
+			viewModel?.leave()
+			if voice?.enabled != true { OperatorController.shared.resume() }
+		}
 		.alert(
 			"Something went wrong",
 			isPresented: Binding(
@@ -61,6 +84,10 @@ struct MacSessionDetail: View {
 			if terminal == nil, let client = store.client { terminal = .shell(client: client, sessionId: sessionId) }
 		} else if viewModel?.isPolling != true {
 			viewModel?.startPolling()
+		}
+		if voice == nil, session?.kind != "shell", let controller = viewModel?.voiceController() {
+			voice = controller
+			if controller.capabilities == nil { Task { await controller.loadCapabilities() } }
 		}
 	}
 

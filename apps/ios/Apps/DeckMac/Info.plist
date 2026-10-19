@@ -31,5 +31,9 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>deck records what you say in voice mode and sends it to your deck server for transcription.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>deck recognises speech on this Mac for voice commands. Nothing is sent to Apple.</string>
 </dict>
 </plist>
