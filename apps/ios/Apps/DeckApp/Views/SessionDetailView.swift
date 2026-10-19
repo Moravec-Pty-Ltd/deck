@@ -52,6 +52,9 @@ struct SessionDetailView: View {
 	@State private var focused = false
 	@State private var highlightedId: String?
 
+	/// What this screen reads from deck beyond the baseline routes.
+	private static let needs: [DeckCapability] = [.stream, .history, .images, .files]
+
 	private var session: SessionDigest? {
 		store.sessions.first { $0.id == sessionId }
 	}
@@ -75,6 +78,7 @@ struct SessionDetailView: View {
 
 	var body: some View {
 		content
+			.safeAreaInset(edge: .top, spacing: 0) { ServerTooOldBanner(needs: Self.needs) }
 			.navigationTitle(title)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar { toolbarContent }
@@ -116,7 +120,7 @@ struct SessionDetailView: View {
 				}
 				if viewModel?.isPolling != true { viewModel?.startPolling() }
 				Task { await store.refreshKinds() }
-				if voice == nil, isAgentSession, let controller = viewModel?.voiceController() {
+				if voice == nil, isAgentSession, store.supports(.speech), let controller = viewModel?.voiceController() {
 					voice = controller
 					if controller.capabilities == nil { Task { await controller.loadCapabilities() } }
 				}
@@ -208,15 +212,19 @@ struct SessionDetailView: View {
 					Label("Rename", systemImage: "pencil")
 				}
 				.accessibilityIdentifier("renameSession")
-				Button {
-					showChanges = true
-				} label: {
-					Label("Changes", systemImage: "plus.forwardslash.minus")
+				if store.supports(.diff) {
+					Button {
+						showChanges = true
+					} label: {
+						Label("Changes", systemImage: "plus.forwardslash.minus")
+					}
 				}
-				Button {
-					showServers = true
-				} label: {
-					Label("Dev servers", systemImage: "server.rack")
+				if store.supports(.servers) {
+					Button {
+						showServers = true
+					} label: {
+						Label("Dev servers", systemImage: "server.rack")
+					}
 				}
 				// Extend this session into a schedule (deck#235): the form opens
 				// already pointed at it, so the prompt comes back here every run
@@ -626,24 +634,26 @@ struct SessionDetailView: View {
 				.frame(height: 56)
 			}
 			HStack(alignment: .bottom, spacing: 8) {
-				Menu {
-					if store.quickMessages.isEmpty {
-						Text("No quick messages")
-					}
-					ForEach(store.quickMessages) { message in
-						Button(message.displayLabel) {
-							Task { await viewModel.sendQuickMessage(text: message.text) }
+				if store.supports(.quickMessages) {
+					Menu {
+						if store.quickMessages.isEmpty {
+							Text("No quick messages")
 						}
-					}
-					Divider()
-					Button {
-						showQuickManage = true
+						ForEach(store.quickMessages) { message in
+							Button(message.displayLabel) {
+								Task { await viewModel.sendQuickMessage(text: message.text) }
+							}
+						}
+						Divider()
+						Button {
+							showQuickManage = true
+						} label: {
+							Label("Manage…", systemImage: "slider.horizontal.3")
+						}
 					} label: {
-						Label("Manage…", systemImage: "slider.horizontal.3")
+						Image(systemName: "text.append")
+							.font(.title2)
 					}
-				} label: {
-					Image(systemName: "text.append")
-						.font(.title2)
 				}
 				PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
 					Image(systemName: "photo.on.rectangle")

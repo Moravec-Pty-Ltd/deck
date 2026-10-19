@@ -48,7 +48,7 @@ struct SessionDetailView: View {
 					.tint(.orange)
 				}
 
-				if live.kind != "shell" {
+				if live.kind != "shell", store.supports(.speech), store.supports(.stream) {
 					Button {
 						router.path.append(VoiceRoute(session: live))
 					} label: {

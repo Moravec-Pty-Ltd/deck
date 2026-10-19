@@ -141,8 +141,13 @@ final class RunStubServer: @unchecked Sendable {
 			// deck walks the expression; the stub only has to answer in its
 			// shape, so the form's Save button stops waiting on it.
 			return (200, ["cron": "", "next": [Self.now + 3_600_000]], 0)
+		case ("GET", "/api/agent"):
+			return (200, ["version": "stub", "capabilities": [
+				"stream", "history", "images", "files", "diff", "servers", "speech", "operator", "search", "user",
+				"quick-messages", "project-config", "git"
+			]], 0)
 		case ("GET", "/api/agent/sessions"), ("GET", "/api/agent/projects"), ("GET", "/api/agent/kinds"),
-			("GET", "/api/quick-messages"), ("GET", "/api/projects"):
+			("GET", "/api/agent/quick-messages"), ("GET", "/api/agent/projects/config"):
 			return (200, [], 0)
 		default:
 			break

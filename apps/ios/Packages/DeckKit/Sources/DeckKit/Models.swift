@@ -228,7 +228,7 @@ public struct Transcript: Codable, Sendable {
 	public let cost: SessionCost?
 }
 
-/// A contiguous slice of raw transcript events (GET /api/sessions/{id}/transcript):
+/// A contiguous slice of raw transcript events (GET /api/agent/sessions/{id}/history):
 /// `events[k]` is absolute index `start + k`.
 public struct TranscriptSlice: Decodable, Sendable {
 	public let start: Int
@@ -503,7 +503,7 @@ public struct ModelChoice: Codable, Hashable, Sendable {
 	}
 }
 
-/// What one automation lane spawns with (GET/POST /api/projects `automation`).
+/// What one automation lane spawns with (GET/PATCH /api/agent/projects/config `automation`).
 /// Every field optional: unset falls back to the project's remembered pick.
 public struct AutomationAgent: Codable, Hashable, Sendable {
 	public var kind: String?
@@ -560,8 +560,8 @@ public struct ProjectAutomation: Codable, Hashable, Sendable {
 	}
 }
 
-/// The browser-API project record (GET /api/projects), for what the agent
-/// digest omits: the display name to preserve on save, and automation config.
+/// A project's full stored record (GET /api/agent/projects/config), for what
+/// the discovery list omits: the display name and automation config.
 public struct ProjectDetail: Codable, Sendable {
 	public let path: String
 	public let name: String?
@@ -685,7 +685,7 @@ public struct StartDefaults: Sendable {
 
 // MARK: - Git
 
-/// An existing worktree of a project (GET /api/git/worktrees). The main entry
+/// An existing worktree of a project (GET /api/agent/git/worktrees). The main entry
 /// is the repository itself, which the start sheet leaves out.
 public struct WorktreeEntry: Codable, Hashable, Identifiable, Sendable {
 	public var id: String { path }
@@ -696,7 +696,7 @@ public struct WorktreeEntry: Codable, Hashable, Identifiable, Sendable {
 	public var name: String { (path as NSString).lastPathComponent }
 }
 
-/// One changed file in a session's diff against its base (GET /api/sessions/{id}/diff).
+/// One changed file in a session's diff against its base (GET /api/agent/sessions/{id}/diff).
 public struct DiffFile: Codable, Hashable, Identifiable, Sendable {
 	public var id: String { path }
 	public let path: String

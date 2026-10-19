@@ -117,3 +117,29 @@ struct PRStatusBadge: View {
 		}
 	}
 }
+
+/// Says the deck server is older than the app when it lacks something `needs`
+/// names. Those features are hidden on the screen; this says why.
+struct ServerTooOldBanner: View {
+	@Environment(DeckStore.self) private var store
+	var needs: [DeckCapability] = DeckCapability.allCases
+
+	var body: some View {
+		let missing = store.missing(needs)
+		if !missing.isEmpty {
+			Label {
+				Text("This deck server is older than the app, so \(missing.map(\.label).formatted(.list(type: .and))) \(missing.count == 1 ? "is" : "are") hidden. Update deck to get \(missing.count == 1 ? "it" : "them") back.")
+					.font(.footnote)
+					.frame(maxWidth: .infinity, alignment: .leading)
+			} icon: {
+				Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+			}
+			.foregroundStyle(.orange)
+			.padding(.horizontal, 12)
+			.padding(.vertical, 8)
+			.background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+			.padding(.horizontal)
+			.accessibilityIdentifier("serverTooOld")
+		}
+	}
+}

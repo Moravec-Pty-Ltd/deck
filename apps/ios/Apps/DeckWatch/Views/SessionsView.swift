@@ -9,9 +9,17 @@ struct SessionsView: View {
 			if store.activeSessions.isEmpty {
 				ContentUnavailableView("No sessions yet", systemImage: "bolt.horizontal.circle")
 			} else {
-				List(store.activeSessions) { session in
-					NavigationLink(value: session) {
-						SessionRow(session: session, needsYou: hasAsk(session))
+				List {
+					let missing = store.missing([.stream, .speech, .voiceOperator, .quickMessages])
+					if !missing.isEmpty {
+						Text("deck is older than this app: update it for \(missing.map(\.label).formatted(.list(type: .and))).")
+							.font(.caption2)
+							.foregroundStyle(.orange)
+					}
+					ForEach(store.activeSessions) { session in
+						NavigationLink(value: session) {
+							SessionRow(session: session, needsYou: hasAsk(session))
+						}
 					}
 				}
 			}

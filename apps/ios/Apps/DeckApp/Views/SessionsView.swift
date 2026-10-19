@@ -302,6 +302,7 @@ struct SessionsView: View {
 				.listStyle(.plain)
 			}
 		}
+		.safeAreaInset(edge: .top, spacing: 0) { ServerTooOldBanner() }
 		.navigationTitle("Sessions")
 		.searchable(text: $query, prompt: "Search sessions")
 		.onChange(of: query) { _, text in runSearch(text) }
@@ -465,7 +466,8 @@ struct SessionsView: View {
 	private func runSearch(_ text: String) {
 		searchTask?.cancel()
 		let q = text.trimmingCharacters(in: .whitespaces)
-		guard q.count >= 2 else {
+		// Without transcript search the field still filters the list by title.
+		guard q.count >= 2, store.supports(.search) else {
 			hits = []
 			searching = false
 			return

@@ -10,7 +10,10 @@ Siri drives the same actions through App Intents.
 - `Packages/DeckKit` - shared package
   - `DeckKit`: agent API models + client (contract: deck's `GET /llms.txt`,
     v2.0.0), Keychain credential store, QR sign-in parser, observable
-    `DeckStore` with a resumable event-log long-poll loop
+    `DeckStore` with a resumable event-log long-poll loop. It calls only
+    `/api/agent/*` routes (plus push registration), and reads the server's
+    capability tokens from `GET /api/agent`: a feature the server doesn't
+    advertise is hidden, with a banner saying deck needs updating
   - `DeckIntents`: Siri App Intents (entities: sessions, projects, open issues,
     open PRs; intents: start work, start review, start a session from a spoken
     instruction, answer, attention check, send prompt, status, stop)
@@ -118,7 +121,7 @@ mid-sentence. Reading continues behind the lock screen for the session you
 turned it on for; the watch reads while its Voice screen is open.
 
 It needs deck configured with a speech server (deck's **Projects > Voice
-mode**); the button only appears when `GET /api/speech` reports one. The phone
+mode**); the button only appears when `GET /api/agent/speech` reports one. The phone
 never talks to the speech server directly.
 
 ## Operator
@@ -364,7 +367,7 @@ wrote) shows it under the text: images as previews that open a full-screen
 gallery of the message's images (swipe between them, pinch to zoom, share),
 other files as chips that fetch the file and open it in Quick Look. deck
 serves only files inside a registered project or its worktrees
-(`/api/sessions/<id>/files`); anything else stays plain text.
+(`/api/agent/sessions/<id>/files`); anything else stays plain text.
 
 ## iPad and Mac
 

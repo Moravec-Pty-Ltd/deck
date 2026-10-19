@@ -15,7 +15,7 @@ struct OperatorEntry: Identifiable {
 }
 
 /// The hands-free operator on the phone: a VoiceController whose spoken
-/// takes go to `/api/operator` instead of a session, with a wake word in
+/// takes go to `/api/agent/operator` instead of a session, with a wake word in
 /// front of the open mic. Turned on, the mic monitors continuously: the
 /// wake-word recogniser reads the tap, and the energy detector records a
 /// take only while the gate is open, which "hey deck" opens and an 8 s

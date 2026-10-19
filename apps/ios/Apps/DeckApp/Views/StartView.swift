@@ -493,13 +493,13 @@ struct StartConfirmSheet: View {
 		baseBranch = defaults.base ?? ""
 		if firstPrompt.isEmpty { firstPrompt = defaults.firstPrompt ?? "" }
 		seedModel()
-		if !isReview, let client = store.client {
+		if !isReview, store.supports(.git), let client = store.client {
 			branches = (try? await client.branches(repo: project.path)) ?? []
 		}
 	}
 
 	private func loadWorktrees() async {
-		guard let client = store.client else { return }
+		guard let client = store.client, store.supports(.git) else { return }
 		worktrees = ((try? await client.worktrees(repo: project.path)) ?? []).filter { $0.isMain != true }
 		if !worktrees.contains(where: { $0.path == existingWorktree }) {
 			existingWorktree = worktrees.first?.path ?? ""

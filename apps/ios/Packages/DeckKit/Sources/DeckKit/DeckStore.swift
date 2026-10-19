@@ -37,6 +37,8 @@ public final class DeckStore {
 	/// start surface opens.
 	public private(set) var startDefaultsByProject: [String: ProjectStartDefaults] = [:]
 	public private(set) var userLogin: String?
+	/// What the server advertises on GET /api/agent. Nil until it first answers.
+	public private(set) var serverInfo: ServerInfo?
 	private var seq: Int?
 	private var eventTask: Task<Void, Never>?
 
@@ -54,6 +56,22 @@ public final class DeckStore {
 	public var isSignedIn: Bool { client != nil }
 
 	public var awaitingCount: Int { asks.count }
+
+	/// Whether the server offers a feature. Assumed until the server has said,
+	/// so screens don't flicker on launch; a screen whose feature turns out to
+	/// be missing hides it rather than calling a route that isn't there.
+	public func supports(_ capability: DeckCapability) -> Bool {
+		serverInfo?.supports(capability) ?? true
+	}
+
+	/// The capabilities in `needs` the server is known to lack.
+	public func missing(_ needs: [DeckCapability]) -> [DeckCapability] {
+		serverInfo?.missing(needs) ?? []
+	}
+
+	/// The server is older than this app: it lacks something the app uses, and
+	/// those features are hidden until deck is updated.
+	public var serverTooOld: Bool { !missing(DeckCapability.allCases).isEmpty }
 
 	/// The runs board: what needs you first, finished runs last.
 	public var board: [RunDigest] { RunBoard.sorted(runs) }
@@ -91,6 +109,7 @@ public final class DeckStore {
 		asks = []
 		runs = []
 		overseer = nil
+		serverInfo = nil
 		connection = .signedOut
 	}
 
@@ -107,18 +126,28 @@ public final class DeckStore {
 		Task { await refreshRuns() }
 		Task { await refreshProjects() }
 		Task { await refreshKinds() }
-		Task { await refreshQuickMessages() }
-		Task { await refreshProjectDetails() }
-		Task { await refreshUser() }
+		// These routes are capability-gated, so they wait for the server's answer.
+		Task {
+			await refreshServerInfo()
+			await refreshQuickMessages()
+			await refreshProjectDetails()
+			await refreshUser()
+		}
+	}
+
+	/// Ask the server what it supports. A failure keeps what was known before.
+	public func refreshServerInfo() async {
+		guard let client else { return }
+		if let info = try? await client.serverInfo() { serverInfo = info }
 	}
 
 	public func refreshQuickMessages() async {
-		guard let client else { return }
+		guard let client, supports(.quickMessages) else { return }
 		if let fresh = try? await client.quickMessages() { quickMessages = fresh }
 	}
 
 	public func refreshUser() async {
-		guard let client else { return }
+		guard let client, supports(.user) else { return }
 		if let login = try? await client.currentUserLogin() { userLogin = login }
 	}
 
@@ -130,7 +159,7 @@ public final class DeckStore {
 	}
 
 	public func refreshProjectDetails() async {
-		guard let client else { return }
+		guard let client, supports(.projectConfig) else { return }
 		if let fresh = try? await client.projectDetails() {
 			projectDetails = Dictionary(uniqueKeysWithValues: fresh.map { ($0.path, $0) })
 		}
@@ -157,8 +186,7 @@ public final class DeckStore {
 	/// Save a project's automation config and keep the local record current.
 	public func saveAutomation(projectPath: String, automation: ProjectAutomation) async throws {
 		guard let client else { throw DeckError.notConfigured }
-		let project = projectDetails[projectPath] ?? ProjectDetail(path: projectPath, name: nil, group: nil, automation: nil)
-		projectDetails[projectPath] = try await client.saveAutomation(project: project, automation: automation)
+		projectDetails[projectPath] = try await client.saveAutomation(projectPath: projectPath, automation: automation)
 	}
 
 	public func changeEffort(sessionId: String, effort: String?) async throws {

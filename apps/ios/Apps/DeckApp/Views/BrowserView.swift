@@ -265,7 +265,7 @@ struct BrowserView: View {
 	}
 
 	private func currentServers() async -> [ServerRuntime]? {
-		guard let client = store.client else { return nil }
+		guard let client = store.client, store.supports(.servers) else { return nil }
 		if let sessionId { return try? await client.servers(sessionId: sessionId) }
 
 		// Across every session: one call says which have anything running, and

@@ -154,23 +154,13 @@ struct ProjectsSettingsView: View {
 			ForEach(ProjectGroups.grouped(store.projects)) { entry in
 				Section(entry.name) {
 					ForEach(entry.projects) { project in
-						NavigationLink(value: project) {
-							VStack(alignment: .leading, spacing: 2) {
-								Text(project.name)
-								HStack(spacing: 6) {
-									Text(project.path)
-										.font(.caption)
-										.foregroundStyle(.secondary)
-										.lineLimit(1)
-										.truncationMode(.head)
-								}
-								if let automation = store.projectDetails[project.path]?.automation,
-									automation.work == true || automation.review == true {
-									HStack(spacing: 4) {
-										if automation.work == true { Chip(text: "auto work", color: .blue) }
-										if automation.review == true { Chip(text: "auto review", color: .purple) }
-									}
-								}
+						Group {
+							// Automation lives on the project config route; a deck
+							// without it lists the projects with nowhere to go.
+							if store.supports(.projectConfig) {
+								NavigationLink(value: project) { row(project) }
+							} else {
+								row(project)
 							}
 						}
 						// Hiding takes the project's sessions out of the session
@@ -188,6 +178,7 @@ struct ProjectsSettingsView: View {
 				}
 			}
 		}
+		.safeAreaInset(edge: .top, spacing: 0) { ServerTooOldBanner(needs: [.projectConfig]) }
 		.navigationTitle("Projects")
 		.navigationDestination(for: DeckProject.self) { project in
 			ProjectAutomationView(project: project)
@@ -196,6 +187,26 @@ struct ProjectsSettingsView: View {
 			await store.refreshProjects()
 			await store.refreshProjectDetails()
 			await store.refreshKinds()
+		}
+	}
+
+	private func row(_ project: DeckProject) -> some View {
+		VStack(alignment: .leading, spacing: 2) {
+			Text(project.name)
+			HStack(spacing: 6) {
+				Text(project.path)
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(1)
+					.truncationMode(.head)
+			}
+			if let automation = store.projectDetails[project.path]?.automation,
+				automation.work == true || automation.review == true {
+				HStack(spacing: 4) {
+					if automation.work == true { Chip(text: "auto work", color: .blue) }
+					if automation.review == true { Chip(text: "auto review", color: .purple) }
+				}
+			}
 		}
 	}
 
