@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Project } from '$lib/types';
-import { buildProjectRecord } from './project-record-core';
+import { buildProjectRecord, homeRegistrationRefusal } from './project-record-core';
 
 const stored: Project = {
 	name: 'Example',
@@ -54,5 +54,22 @@ describe('buildProjectRecord', () => {
 	it('validates a sent dev config', () => {
 		const dev = { servers: [{ name: 'web', run: 'pnpm dev' }] };
 		expect(buildProjectRecord({ dev }, stored.path, stored).dev).toMatchObject({ servers: [{ name: 'web' }] });
+	});
+});
+
+describe('homeRegistrationRefusal', () => {
+	const home = '/home/me';
+
+	it.each([
+		['/home/me', 'cannot register the home directory itself'],
+		['/home/me/.secrets', 'cannot register a hidden (dot) directory under the home directory'],
+		['/home/me/.deck/x', 'cannot register a hidden (dot) directory under the home directory'],
+		['/home/me/code/.hidden', 'cannot register a hidden (dot) directory under the home directory']
+	])('refuses %s', (dir, message) => {
+		expect(homeRegistrationRefusal(dir, home)).toBe(message);
+	});
+
+	it.each(['/home/me/code/app', '/home/me/a.b', '/home/meow/.x', '/srv/.data/app'])('allows %s', (dir) => {
+		expect(homeRegistrationRefusal(dir, home)).toBeNull();
 	});
 });

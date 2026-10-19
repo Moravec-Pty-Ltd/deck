@@ -1,11 +1,12 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import { error, json } from '@sveltejs/kit';
 import type { Project } from '$lib/types';
 import { addProject, listProjects, removeProject } from './store';
 import { completeDirs, expandTilde } from './fsutil';
 import { isPickerAllowed } from './confine';
 import { objectBody } from './http';
-import { buildProjectRecord } from './project-record-core';
+import { buildProjectRecord, homeRegistrationRefusal } from './project-record-core';
 
 // Project registration and config handlers, each shared verbatim by a browser
 // route under /api/projects (or /api/fs) and its agent API twin, so the two
@@ -38,14 +39,27 @@ function build(body: Record<string, unknown>, dir: string, existing?: Project): 
 	}
 }
 
+// A new project's stored path: canonical, so a symlink can't later be swapped
+// to point the registration somewhere else.
+function newProjectDir(dir: string): string {
+	if (!isPickerAllowed(dir)) error(403, 'path is outside the allowed directories');
+	const real = fs.realpathSync(dir);
+	const refusal = homeRegistrationRefusal(real, fs.realpathSync(os.homedir()));
+	if (refusal) error(403, refusal);
+	return real;
+}
+
 // Register a directory, or re-save one already registered. Registering widens
 // confinement (confine.ts projectRoots) to the new directory, so it must already
-// sit where the path picker may look: $HOME or a registered project.
+// sit where the path picker may look: $HOME or a registered project. A re-save
+// keeps the record's stored path, so it widens nothing.
 export async function registerProjectRoute({ request }: Pick<ProjectEvent, 'request'>): Promise<Response> {
 	const body = await objectBody(request);
 	const dir = resolveDir(body.path);
-	if (!isPickerAllowed(dir)) error(403, 'path is outside the allowed directories');
-	const project = build(body, dir, findProject(dir));
+	let existing = findProject(dir);
+	const target = existing?.path ?? newProjectDir(dir);
+	existing ??= findProject(target);
+	const project = build(body, target, existing);
 	addProject(project);
 	return json(project, { status: 201 });
 }

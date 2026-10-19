@@ -13,7 +13,7 @@ vi.spyOn(os, 'homedir').mockReturnValue(home);
 
 const { registerProjectRoute, removeProjectRoute, projectConfigRoute, patchProjectConfigRoute, completeDirsRoute } =
 	await import('./project-record');
-const { listProjects } = await import('./store');
+const { addProject, listProjects } = await import('./store');
 
 afterAll(() => {
 	restoreEnv();
@@ -103,5 +103,41 @@ describe('removeProjectRoute', () => {
 		expect(await removeProjectRoute({ url: at(`path=${encodeURIComponent(app)}`) }).json()).toEqual({ ok: true });
 		expect(listProjects()).toEqual([]);
 		expect(await status(() => removeProjectRoute({ url: at('') }))).toBe(400);
+	});
+});
+
+describe('registerProjectRoute refusals and canonical paths', () => {
+	const post = (p: string) => registerProjectRoute({ request: send('POST', { path: p }) });
+
+	it('refuses $HOME and any dot-directory under it', async () => {
+		fs.mkdirSync(path.join(home, '.secrets'));
+		fs.mkdirSync(path.join(home, 'code', '.hidden', 'app'), { recursive: true });
+		for (const p of ['~', '~/', '~/.secrets', path.join(home, 'code', '.hidden', 'app')]) {
+			expect(await status(() => post(p))).toBe(403);
+		}
+		expect(listProjects()).toEqual([]);
+	});
+
+	it('refuses a symlink that resolves to a dot-directory', async () => {
+		fs.symlinkSync(path.join(home, '.secrets'), path.join(home, 'innocent'));
+		expect(await status(() => post('~/innocent'))).toBe(403);
+		expect(listProjects()).toEqual([]);
+	});
+
+	it('stores the canonical path and re-saves it through the link', async () => {
+		fs.symlinkSync(app, path.join(home, 'app-link'));
+		expect(await (await post('~/app-link')).json()).toMatchObject({ path: app, name: 'app' });
+		await registerProjectRoute({ request: send('POST', { path: '~/app-link', group: 'g' }) });
+		expect(listProjects()).toEqual([{ name: 'app', path: app, group: 'g' }]);
+		removeProjectRoute({ url: at(`path=${encodeURIComponent(app)}`) });
+	});
+
+	it('still re-saves a record stored under its old, non-canonical path', async () => {
+		const legacy = path.join(home, 'app-link');
+		addProject({ name: 'Legacy', path: legacy });
+		const res = await registerProjectRoute({ request: send('POST', { path: legacy, template: 't' }) });
+		expect(await res.json()).toEqual({ name: 'Legacy', path: legacy, template: 't' });
+		expect(listProjects()).toEqual([{ name: 'Legacy', path: legacy, template: 't' }]);
+		removeProjectRoute({ url: at(`path=${encodeURIComponent(legacy)}`) });
 	});
 });

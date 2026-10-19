@@ -74,9 +74,28 @@ describe('cloneProjectRoute', () => {
 		expect(fs.readdirSync(outside)).toEqual([]);
 	});
 
+	it('403s a destination in a dot-directory under $HOME, cloning nothing', async () => {
+		fs.mkdirSync(path.join(home, '.config'));
+		fs.symlinkSync(path.join(home, '.config'), path.join(home, 'config-link'));
+		for (const parent of ['~/.config', '~/config-link']) {
+			expect(await status(() => clone({ url: `${URL_BASE}widget.git`, parent }))).toBe(403);
+		}
+		expect(await status(() => clone({ url: `${URL_BASE}.widget.git`, parent: '~' }))).toBe(403);
+		expect(fs.readdirSync(path.join(home, '.config'))).toEqual([]);
+		expect(listProjects()).toHaveLength(1);
+	});
+
+	it('stores the real path when the parent is a symlink', async () => {
+		fs.mkdirSync(path.join(home, 'code'));
+		fs.symlinkSync(path.join(home, 'code'), path.join(home, 'code-link'));
+		const res = await clone({ url: `${URL_BASE}widget.git`, parent: '~/code-link' });
+		expect((await res.json()).path).toBe(path.join(home, 'code', 'widget'));
+		expect(listProjects().map((p) => p.path)).toContain(path.join(home, 'code', 'widget'));
+	});
+
 	it('400s a local-path url and a failed clone, registering nothing', async () => {
 		expect(await status(() => clone({ url: path.join(remotes, 'widget.git'), parent: home }))).toBe(400);
 		expect(await status(() => clone({ url: `${URL_BASE}missing.git`, parent: home }))).toBe(400);
-		expect(listProjects()).toHaveLength(1);
+		expect(listProjects()).toHaveLength(2);
 	});
 });

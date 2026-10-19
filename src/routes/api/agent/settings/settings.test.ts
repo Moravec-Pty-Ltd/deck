@@ -77,6 +77,25 @@ describe('agent settings', () => {
 		expect(JSON.parse(fs.readFileSync(file, 'utf8')).operator.apiKey).toBeUndefined();
 	});
 
+	it('PATCH refuses a key file outside ~/.secrets without writing', async () => {
+		const before = fs.readFileSync(file, 'utf8');
+		for (const apiKeyFile of ['/etc/hosts', '~/.secrets/../.ssh/id_ed25519', 'relative/key']) {
+			const res = await call(PATCH, { body: { operator: { apiKeyFile } } }).catch((e) => e);
+			expect(res).toMatchObject({ status: 400, body: { message: 'operator.apiKeyFile must be a file inside ~/.secrets/' } });
+		}
+		expect(fs.readFileSync(file, 'utf8')).toBe(before);
+	});
+
+	it('PATCH accepts a key file inside ~/.secrets', async () => {
+		const body = await (await call(PATCH, { body: { operator: { apiKeyFile: '~/.secrets/deck-test-key' } } })).json();
+		expect(body.operator.apiKeyFile).toBe('~/.secrets/deck-test-key');
+	});
+
+	it('PATCH drops the stored key when the url moves to another origin', async () => {
+		const body = await (await call(PATCH, { body: { operator: { url: 'https://other.example/v1' } } })).json();
+		expect(body.operator).toEqual({ url: 'https://other.example/v1', hasApiKey: false });
+	});
+
 	it('PATCH rejects an unknown block without writing', async () => {
 		const before = fs.readFileSync(file, 'utf8');
 		expect(await status(() => call(PATCH, { body: { modelProfiles: [] } }))).toBe(400);

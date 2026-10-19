@@ -26,6 +26,19 @@ function basename(dir: string): string {
 	return dir.replace(/\/+$/, '').split('/').pop() || dir;
 }
 
+// Registering a directory makes everything under it readable through the
+// project endpoints, so $HOME itself and anything under a dot-directory of it
+// (~/.secrets, ~/.deck, ~/code/.hidden) stay off limits. Both paths canonical.
+export function homeRegistrationRefusal(dir: string, home: string): string | null {
+	if (dir === home) return 'cannot register the home directory itself';
+	if (!dir.startsWith(home + '/')) return null;
+	const hidden = dir
+		.slice(home.length + 1)
+		.split('/')
+		.some((segment) => segment.startsWith('.'));
+	return hidden ? 'cannot register a hidden (dot) directory under the home directory' : null;
+}
+
 export function buildProjectRecord(
 	body: Record<string, unknown>,
 	dir: string,

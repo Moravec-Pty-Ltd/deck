@@ -47,7 +47,12 @@ export function parseTerminalInput(body: Record<string, unknown>): TerminalInput
 	if (new TextEncoder().encode(body.text).length > TEXT_MAX_BYTES) {
 		return { error: `text is over ${TEXT_MAX_BYTES} bytes` };
 	}
-	return { text: body.text, submit: body.submit !== false };
+	const submit = body.submit !== false;
+	// tmux types a newline as Enter, so it would run the line submit:false holds back.
+	if (!submit && /[\r\n]/.test(body.text)) {
+		return { error: 'text with submit false must not contain a newline: it would press Enter' };
+	}
+	return { text: body.text, submit };
 }
 
 // ?lines= falls back to a default page and is held to SNAPSHOT_LINES_MAX; ?h= is

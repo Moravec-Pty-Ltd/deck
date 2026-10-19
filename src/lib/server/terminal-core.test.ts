@@ -8,7 +8,8 @@ describe('parseTerminalInput', () => {
 		[{ text: 'ls -la' }, { text: 'ls -la', submit: true }],
 		[{ text: 'partial', submit: false }, { text: 'partial', submit: false }],
 		[{ text: '' }, { text: '', submit: true }],
-		[{ text: 'x'.repeat(TEXT_MAX_BYTES) }, { text: 'x'.repeat(TEXT_MAX_BYTES), submit: true }]
+		[{ text: 'x'.repeat(TEXT_MAX_BYTES) }, { text: 'x'.repeat(TEXT_MAX_BYTES), submit: true }],
+		[{ text: 'echo a\necho b' }, { text: 'echo a\necho b', submit: true }]
 	])('accepts %j', (body, want) => {
 		expect(parseTerminalInput(body)).toEqual(want);
 	});
@@ -21,7 +22,9 @@ describe('parseTerminalInput', () => {
 		[{}, 'text or key is required'],
 		[{ text: 42 }, 'text or key is required'],
 		[{ text: 'x'.repeat(TEXT_MAX_BYTES + 1) }, `text is over ${TEXT_MAX_BYTES} bytes`],
-		[{ text: 'é'.repeat(TEXT_MAX_BYTES / 2 + 1) }, `text is over ${TEXT_MAX_BYTES} bytes`]
+		[{ text: 'é'.repeat(TEXT_MAX_BYTES / 2 + 1) }, `text is over ${TEXT_MAX_BYTES} bytes`],
+		[{ text: 'rm -rf x\n', submit: false }, 'text with submit false must not contain a newline: it would press Enter'],
+		[{ text: 'a\rb', submit: false }, 'text with submit false must not contain a newline: it would press Enter']
 	])('rejects %j', (body, message) => {
 		expect(parseTerminalInput(body)).toEqual({ error: message });
 	});

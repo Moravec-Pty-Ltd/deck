@@ -8,6 +8,7 @@ import { AGENT_BINARIES } from './agents/binaries';
 import { agentAvailability } from './agents/available';
 import { installSkill, listSkillStatuses } from './skills';
 import { decidePairing, listPending } from './pairing';
+import { resolveSecretsFile, SECRETS_FILE_RULE } from './secrets-file';
 
 // Settings-page handlers. The agent API's settings PATCH names only the blocks
 // it changes and the server merges it into the file as it is on disk, so two
@@ -22,6 +23,8 @@ export function agentSettingsRoute(): Response {
 export async function patchSettingsRoute({ request }: { request: Request }): Promise<Response> {
 	const parsed = parseSettingsPatch(await objectBody(request));
 	if (!parsed.ok) error(400, parsed.message);
+	const keyFile = parsed.patch.blocks.operator?.apiKeyFile;
+	if (typeof keyFile === 'string' && !resolveSecretsFile(keyFile)) error(400, SECRETS_FILE_RULE);
 	return json(redactSettings(saveSettings(mergeSettings(readSettings(), parsed.patch))));
 }
 

@@ -1,9 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { listProjects, addProject } from './store';
 import { expandTilde } from './fsutil';
 import { isPickerAllowed } from './confine';
+import { homeRegistrationRefusal } from './project-record-core';
 import { repoNameFromUrl, isCloneUrlSafe } from '$lib/repo-url';
 import { cloneRepo } from './git';
 
@@ -62,12 +64,17 @@ function requireRepoName(url: string): string {
 }
 
 // The parent must be an existing dir inside the picker boundary ($HOME or a
-// project root); the derived <parent>/<repoName> dest sits under it. The path is
-// kept as the user gave it (not canonicalised), matching how POST /api/projects
-// stores a registered path; confine.ts canonicalises project roots at check time.
-function requireParent(parent: string): void {
+// project root); the derived <parent>/<repoName> dest sits under it. Returns the
+// parent's real path, so the project is stored canonical as POST /api/projects
+// stores one, and the dest is held to the same registration rule (no dot-
+// directory under $HOME, in the parent or the repo name).
+function requireParent(parent: string, repoName: string): string {
 	if (!parent || !isDir(parent)) error(400, 'parent is not a directory');
 	if (!isPickerAllowed(parent)) error(403, 'parent is outside the allowed directories');
+	const real = fs.realpathSync(parent);
+	const refusal = homeRegistrationRefusal(path.join(real, repoName), fs.realpathSync(os.homedir()));
+	if (refusal) error(403, refusal);
+	return real;
 }
 
 // Defensive backstop: dest must be a direct child of parent, in case a repoName
@@ -99,10 +106,10 @@ export async function cloneProjectRoute({ request }: { request: Request }): Prom
 	const raw = await request.json().catch(() => error(400, 'invalid JSON body'));
 	const { url, parent, name, group } = readBody(raw);
 	const repoName = requireRepoName(url);
-	requireParent(parent);
+	const realParent = requireParent(parent, repoName);
 
-	const dest = path.join(parent, repoName);
-	requireChildOfParent(parent, dest);
+	const dest = path.join(realParent, repoName);
+	requireChildOfParent(realParent, dest);
 	requireFreeDest(dest);
 
 	try {

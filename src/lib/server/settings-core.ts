@@ -131,9 +131,34 @@ function setOrDelete(target: Record<string, unknown>, key: string, value: unknow
 	else target[key] = value;
 }
 
+function originOf(url: unknown): string | undefined {
+	if (typeof url !== 'string') return undefined;
+	try {
+		return new URL(url).origin;
+	} catch {
+		return undefined;
+	}
+}
+
+// Moving the operator to another origin must not carry the stored credential
+// along, or anyone who can PATCH could point the key at a host they control.
+// A credential the same patch supplies is the caller's own and stays.
+function guardOperatorPatch(current: DeckSettings['operator'], patch: FieldPatch): FieldPatch {
+	if (typeof patch.url !== 'string' || !current) return patch;
+	const before = originOf(current.url);
+	if (before !== undefined && before === originOf(patch.url)) return patch;
+	const out = { ...patch };
+	for (const key of ['apiKey', 'apiKeyFile'] as const) {
+		if (current[key] && !Object.hasOwn(patch, key)) out[key] = null;
+	}
+	return out;
+}
+
 export function mergeSettings(current: DeckSettings, patch: SettingsPatch): DeckSettings {
 	const next: Record<string, unknown> = { ...current };
-	for (const [name, blockPatch] of Object.entries(patch.blocks)) {
+	const blocks = { ...patch.blocks };
+	if (blocks.operator) blocks.operator = guardOperatorPatch(current.operator, blocks.operator);
+	for (const [name, blockPatch] of Object.entries(blocks)) {
 		const key = name as BlockName;
 		setOrDelete(next, key, mergeBlock(current[key], blockPatch ?? null));
 	}

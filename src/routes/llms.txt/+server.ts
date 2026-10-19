@@ -207,8 +207,11 @@ else is a 403).
 
 \`{ "path": "~/code/example", "name"?: "example", "group"?: "apps" }\` registers
 an existing directory (\`~\` expands; a missing or non-directory path is a 400,
-one outside \`$HOME\` and the registered projects a 403). Posting a path that is
-already registered re-saves it: every field you omit keeps its stored value.
+one outside \`$HOME\` and the registered projects a 403, and so is \`$HOME\`
+itself or any path under it with a dot-directory in it, such as
+\`~/.secrets\`). A new project is stored under its canonical path, symlinks
+resolved. Posting a path that is already registered re-saves it: every field
+you omit keeps its stored value.
 Optional fields as for \`PATCH /api/agent/projects/config\`. Returns the full
 stored record, 201.
 
@@ -242,7 +245,9 @@ for an unregistered path.
 \`{ "url": "https://github.com/acme/repo.git", "parent": "~/code", "name"?, "group"? }\`
 clones into \`<parent>/<repo name>\` and registers the result (201, the stored
 record). \`url\` must be https, ssh, git or scp-style; \`parent\` an existing
-directory under \`$HOME\` or a registered project (403 otherwise). 409 when
+directory under \`$HOME\` or a registered project (403 otherwise, and 403 when
+the destination would sit in a dot-directory under \`$HOME\`, as for POST
+/api/agent/projects). The project is stored under its real path. 409 when
 the destination exists and is not an empty directory, or is already
 registered; 400 with git's stderr when the clone fails, and nothing is
 registered then.
@@ -598,7 +603,8 @@ answers \`{ "text": "(session is dead)", "dead": true }\`.
 
 \`{ "text": "ls -la", "submit"?: true }\` types literal text (at most 4096
 UTF-8 bytes) and presses Enter unless \`submit\` is false; empty text with
-submit is a bare Enter. \`{ "key": "C-c" }\` presses one key instead, by its
+submit is a bare Enter. With \`submit: false\` the text must not contain a
+carriage return or newline (it would press Enter anyway): that is a 400. \`{ "key": "C-c" }\` presses one key instead, by its
 tmux name: Enter, Escape, Tab, BTab, BSpace, DC, Space, Up, Down, Left, Right,
 Home, End, PPage, NPage, or C-a through C-z. Any other key is a 400. Returns
 \`{ "ok": true }\`; read the result with GET a moment later.
@@ -1034,7 +1040,12 @@ clears the block. Fields: \`speech { ttsUrl, sttUrl, voice }\`,
 (\`apiKey\` is write-only), \`autoCompact { enabled: boolean, percent: number }\`
 (\`percent\` is clamped to 50..95), \`zedSshTarget: "user@host[:port]" | null\`.
 An unknown key or a wrongly typed field is a 400 and nothing is written.
-Returns the redacted settings, as GET.
+\`operator.apiKeyFile\` must name a file inside \`~/.secrets/\` (after \`~\`
+expansion and following symlinks); anything else is a 400, and the operator
+refuses to read a stored key file outside it. Changing \`operator.url\` to a
+different origin (scheme, host and port) drops the stored \`apiKey\` and
+\`apiKeyFile\` unless the same PATCH sets them, so a key can't be redirected
+to another host. Returns the redacted settings, as GET.
 
 ### POST /api/agent/settings/speech/detect
 

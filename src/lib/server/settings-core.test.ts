@@ -86,6 +86,38 @@ describe('mergeSettings', () => {
 		expect(mergeSettings({}, patchOf({ autoCompact: { enabled: false } })).autoCompact).toEqual({ enabled: false });
 	});
 
+	it('drops the stored key and key file when the url moves to another origin', () => {
+		const current: DeckSettings = { operator: { ...stored.operator, apiKeyFile: '~/.secrets/model-key' } };
+		const next = mergeSettings(current, patchOf({ operator: { url: 'https://attacker.example/v1' } }));
+		expect(next.operator).toEqual({ url: 'https://attacker.example/v1', model: 'm', provider: 'openai' });
+	});
+
+	it.each([
+		['another port', 'http://127.0.0.1:3002/v1'],
+		['another scheme', 'https://127.0.0.1:3001/v1'],
+		['an unparseable url', 'not a url']
+	])('treats %s as another origin', (_label, url) => {
+		expect(mergeSettings(stored, patchOf({ operator: { url } })).operator?.apiKey).toBeUndefined();
+	});
+
+	it('keeps the key when the url stays on the same origin', () => {
+		const next = mergeSettings(stored, patchOf({ operator: { url: 'http://127.0.0.1:3001/v2' } }));
+		expect(next.operator?.apiKey).toBe(SECRET);
+	});
+
+	it('keeps a key or key file the same patch supplies', () => {
+		const current: DeckSettings = { operator: { url: 'http://127.0.0.1:3001/v1', apiKey: SECRET, apiKeyFile: '~/.secrets/a' } };
+		const next = mergeSettings(current, patchOf({ operator: { url: 'https://other.example/v1', apiKey: 'new', apiKeyFile: '~/.secrets/b' } }));
+		expect(next.operator).toEqual({ url: 'https://other.example/v1', apiKey: 'new', apiKeyFile: '~/.secrets/b' });
+		const keyOnly = mergeSettings(current, patchOf({ operator: { url: 'https://other.example/v1', apiKey: 'new' } }));
+		expect(keyOnly.operator).toEqual({ url: 'https://other.example/v1', apiKey: 'new' });
+	});
+
+	it('drops the stored key when a url is set where none was stored', () => {
+		const next = mergeSettings({ operator: { apiKey: SECRET } }, patchOf({ operator: { url: 'https://other.example/v1' } }));
+		expect(next.operator).toEqual({ url: 'https://other.example/v1' });
+	});
+
 	it('leaves the input untouched', () => {
 		const before = JSON.stringify(stored);
 		mergeSettings(stored, patchOf({ operator: { apiKey: 'new' }, speech: null }));
