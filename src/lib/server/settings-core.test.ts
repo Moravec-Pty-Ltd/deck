@@ -49,6 +49,7 @@ describe('parseSettingsPatch', () => {
 		[{ speech: { nope: 'x' } }, 'unknown field speech.nope'],
 		[{ operator: { provider: 'other' } }, 'invalid operator.provider'],
 		[{ operator: { apiKey: 5 } }, 'invalid operator.apiKey'],
+		[{ operator: { url: 'not a url' } }, 'invalid operator.url'],
 		[{ autoCompact: { enabled: 'yes' } }, 'invalid autoCompact.enabled'],
 		[{ autoCompact: { percent: Number.NaN } }, 'invalid autoCompact.percent'],
 		[{ zedSshTarget: 3 }, 'invalid zedSshTarget']
@@ -94,8 +95,7 @@ describe('mergeSettings', () => {
 
 	it.each([
 		['another port', 'http://127.0.0.1:3002/v1'],
-		['another scheme', 'https://127.0.0.1:3001/v1'],
-		['an unparseable url', 'not a url']
+		['another scheme', 'https://127.0.0.1:3001/v1']
 	])('treats %s as another origin', (_label, url) => {
 		expect(mergeSettings(stored, patchOf({ operator: { url } })).operator?.apiKey).toBeUndefined();
 	});

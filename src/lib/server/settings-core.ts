@@ -39,14 +39,14 @@ export function redactSettings(s: DeckSettings): AgentSettingsView {
 	return view;
 }
 
-type FieldType = 'string' | 'boolean' | 'number' | readonly string[];
+type FieldType = 'string' | 'url' | 'boolean' | 'number' | readonly string[];
 
 // The blocks an agent may PATCH and the fields each holds. Everything else in
 // the file (model profiles, remembered picks) is the web's to manage.
 const BLOCKS = {
 	speech: { ttsUrl: 'string', sttUrl: 'string', voice: 'string' },
 	operator: {
-		url: 'string',
+		url: 'url',
 		model: 'string',
 		provider: ['openai', 'anthropic'],
 		apiKey: 'string',
@@ -73,6 +73,7 @@ function isObject(v: unknown): v is Record<string, unknown> {
 function fieldOk(type: FieldType, v: unknown): boolean {
 	if (Array.isArray(type)) return typeof v === 'string' && type.includes(v);
 	if (type === 'number') return typeof v === 'number' && Number.isFinite(v);
+	if (type === 'url') return typeof v === 'string' && (!v.trim() || URL.canParse(v.trim()));
 	return typeof v === type;
 }
 
