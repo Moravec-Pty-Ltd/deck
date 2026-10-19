@@ -657,6 +657,59 @@ schedule. 409 while the previous run is still going.
 
 Forget the schedule. The sessions it has already started are kept.
 
+## Issue sources
+
+Where a project's issues come from (\`GET /api/agent/issues\`): a GitHub repo,
+a Linear team or a ClickUp list. Linear and ClickUp need an API key. **Keys are
+write-only**: one goes in on a POST and is kept in the OS keyring, and no
+response, list or error message ever carries a key value back. A key saved for
+one project can be reused by another through its \`credentialId\`, so it only
+needs entering once. Capability token: \`issue-sources\`.
+
+### GET /api/agent/credentials?type=linear|clickup
+
+The saved keys, labels only, one entry per distinct key (\`type\` optional):
+
+\`\`\`json
+[{ "id": "<credentialId>", "type": "linear", "label": "someone@example.com", "projects": ["example"] }]
+\`\`\`
+
+\`label\` is who the key authenticates as when known, else the team or the
+provider name. A key is listed while at least one source uses it.
+
+### POST /api/agent/projects/sources/lookup
+
+Provider lookups for filling in a new source before saving it:
+\`{ "type": "linear" | "clickup", "action": "...", "apiKey" | "credentialId", ...ids }\`.
+Linear actions: \`me\`, \`teams\`, \`states\` (+ \`teamId\`). ClickUp actions:
+\`me\`, \`teams\`, \`spaces\` (+ \`teamId\`), \`folders\` (+ \`spaceId\`),
+\`lists\` (+ \`folderId\` or \`spaceId\`), \`statuses\` (+ \`listId\`). Returns
+the provider's rows as JSON. Pass a saved \`credentialId\` instead of an
+\`apiKey\` to look up with a key you never see. A provider failure (most often
+a bad key) is a 400 whose message is the provider's, with the key cut out.
+
+### POST /api/agent/projects/sources
+
+Add a source to a registered project; 201 with the stored source (its
+\`credentialId\`, never the key). Body by \`type\`:
+
+- \`github\`: \`{ "projectPath", "type": "github", "owner", "repo" }\`
+- \`linear\`: \`{ "projectPath", "type": "linear", "teamId", "teamName"?,
+	"assigneeEmail"?, "stateIds"?: [...] }\`
+- \`clickup\`: \`{ "projectPath", "type": "clickup", "teamId", "spaceId",
+	"listId", "assigneeUserId": <number>, "folderId"?, "statuses"?: [...],
+	"teamName"?, "spaceName"?, "folderName"?, "listName"?, "assigneeName"? }\`
+
+Linear and ClickUp also take exactly one of \`apiKey\` (stored under a new
+credential) or \`credentialId\` (reuse a saved key; nothing is written). 400 on
+a missing field or a \`credentialId\` that is no longer saved, 404 on an
+unregistered \`projectPath\`.
+
+### DELETE /api/agent/projects/sources?project=<path>&id=<sourceId>
+
+Remove a source. Its key goes from the keyring too, unless another source still
+uses it. Returns \`{ "ok": true }\`; 404 on an unregistered project.
+
 ## Push notifications
 
 Native iOS/watchOS clients register a device token to receive the same nudges

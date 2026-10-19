@@ -25,7 +25,10 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./sessions/[id]/files/+server'), () => import('./agent/sessions/[id]/files/+server'), ['GET', 'POST']],
 	[() => import('./sessions/[id]/diff/+server'), () => import('./agent/sessions/[id]/diff/+server'), ['GET']],
 	[() => import('./sessions/[id]/model/+server'), () => import('./agent/sessions/[id]/model/+server'), ['POST']],
-	[() => import('./sessions/[id]/restart/+server'), () => import('./agent/sessions/[id]/restart/+server'), ['POST']]
+	[() => import('./sessions/[id]/restart/+server'), () => import('./agent/sessions/[id]/restart/+server'), ['POST']],
+	[() => import('./projects/credentials/+server'), () => import('./agent/credentials/+server'), ['GET']],
+	[() => import('./projects/sources/+server'), () => import('./agent/projects/sources/+server'), ['POST', 'DELETE']],
+	[() => import('./issues/meta/+server'), () => import('./agent/projects/sources/lookup/+server'), ['POST']]
 ];
 
 describe('browser and agent routes share one handler', () => {
