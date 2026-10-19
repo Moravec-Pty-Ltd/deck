@@ -114,12 +114,22 @@ struct SessionDetailView: View {
 		return sessionId
 	}
 
+	/// Send and stop for ⌘Return and ⌘. (see DeckCommands).
+	private var keyboardActions: DeckSessionActions {
+		let canSend = !isSending && !isTerminal
+			&& (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty)
+		return DeckSessionActions(
+			send: canSend ? { if let viewModel { sendComposer(viewModel) } } : nil,
+			stop: session?.status == .running ? { Task { await viewModel?.stop() } } : nil)
+	}
+
 	var body: some View {
 		content
 			.safeAreaInset(edge: .top, spacing: 0) { ServerTooOldBanner(needs: Self.needs) }
 			.navigationTitle(title)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar { toolbarContent }
+			.focusedSceneValue(\.deckSession, keyboardActions)
 			.sheet(isPresented: $showDeleteSheet) {
 				DeleteSessionSheet(hasWorktree: session?.worktree != nil) { deleteWorktree, deleteBranch in
 					Task {

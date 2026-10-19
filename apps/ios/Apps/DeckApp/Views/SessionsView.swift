@@ -13,6 +13,10 @@ struct SessionsView: View {
 	@Environment(HingeMonitor.self) private var hinge
 	@Environment(\.horizontalSizeClass) private var sizeClass
 	@Binding var deepLinkSessionId: String?
+	/// A keyboard shortcut or palette pick for the list, handled then cleared.
+	@Binding var command: SessionsCommand?
+	/// Which session is open, reported up for the palette's stop action.
+	@Binding var openSessionId: String?
 	/// Opens the Settings tab where there is a sidebar to show it; nil pushes
 	/// Settings over the list instead.
 	var openSettingsTab: (() -> Void)?
@@ -34,6 +38,7 @@ struct SessionsView: View {
 	@State private var pushSettings = false
 	@State private var columns = NavigationSplitViewVisibility.all
 	@State private var showReviews = false
+	@FocusState private var searchFocused: Bool
 
 	/// The session that is open, at a message when it came from a search hit.
 	struct SessionTarget: Hashable {
@@ -82,6 +87,12 @@ struct SessionsView: View {
 		.onChange(of: open) { _, open in
 			if !wide, path.last != open { path = open.map { [$0] } ?? [] }
 			if open == nil { models.close() }
+			openSessionId = open?.sessionId
+		}
+		.onChange(of: command) { _, command in
+			guard let command else { return }
+			self.command = nil
+			handle(command)
 		}
 		.onChange(of: deepLinkSessionId) { _, sessionId in
 			guard let sessionId else { return }
@@ -145,6 +156,24 @@ struct SessionsView: View {
 		let q = query.trimmingCharacters(in: .whitespaces)
 		guard !q.isEmpty else { return list }
 		return SessionSearch.byName(q, in: list)
+	}
+
+	private func handle(_ command: SessionsCommand) {
+		switch command {
+		case .focusSearch:
+			// The field lives on the list, which a pushed session or a hidden
+			// sidebar covers.
+			if !wide { open = nil }
+			columns = .all
+			searchFocused = true
+		case .step(let offset):
+			let ids = listedSessions.map(\.id)
+			if let next = SessionStepper.step(from: open?.sessionId, by: offset, in: ids) {
+				open = SessionTarget(sessionId: next)
+			}
+		case .openSettings:
+			if let openSettingsTab { openSettingsTab() } else { open = nil; pushSettings = true }
+		}
 	}
 
 	private var isFiltering: Bool {
@@ -268,6 +297,7 @@ struct SessionsView: View {
 		}
 		.navigationTitle("Sessions")
 		.searchable(text: $query, prompt: "Search sessions")
+		.searchFocused($searchFocused)
 		.onChange(of: query) { _, text in runSearch(text) }
 		.refreshable { await store.refreshSessions() }
 		.toolbar {
@@ -539,6 +569,13 @@ struct SessionsView: View {
 			deleteError = error.localizedDescription
 		}
 	}
+}
+
+/// What the window asks of the sessions list from the keyboard or the palette.
+enum SessionsCommand: Equatable {
+	case focusSearch
+	case step(Int)
+	case openSettings
 }
 
 /// The open session's model, kept across folds and unfolds (which lay the

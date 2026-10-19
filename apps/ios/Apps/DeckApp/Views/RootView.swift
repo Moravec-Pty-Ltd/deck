@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 struct RootView: View {
 	@Environment(DeckStore.self) private var store
@@ -63,6 +64,12 @@ struct MainTabView: View {
 	@State private var selectedTab: Destination = .sessions
 	@State private var deepLinkSessionId: String?
 	@State private var deepLinkRunId: String?
+	@State private var sessionsCommand: SessionsCommand?
+	@State private var openSessionId: String?
+	@State private var showPalette = false
+	/// What the palette picked, run once it has gone so a search field or a
+	/// sheet has somewhere to appear.
+	@State private var picked: PaletteItem?
 
 	/// With a sidebar to hold it, the gear opens the Settings tab. A phone's
 	/// tab bar has no room for a sixth tab (iOS buries it under "More"), so
@@ -74,7 +81,11 @@ struct MainTabView: View {
 	var body: some View {
 		TabView(selection: $selectedTab) {
 			Tab("Sessions", systemImage: "list.bullet.rectangle", value: .sessions) {
-				SessionsView(deepLinkSessionId: $deepLinkSessionId, openSettingsTab: openSettingsTab)
+				SessionsView(
+					deepLinkSessionId: $deepLinkSessionId,
+					command: $sessionsCommand,
+					openSessionId: $openSessionId,
+					openSettingsTab: openSettingsTab)
 			}
 
 			Tab("Inbox", systemImage: "tray", value: .inbox) {
@@ -104,6 +115,15 @@ struct MainTabView: View {
 		}
 		.tabViewStyle(.sidebarAdaptable)
 		.modifier(PairingPrompt())
+		.focusedSceneValue(\.deckScene, DeckSceneActions(
+			openPalette: { showPalette = true },
+			newSession: { selectedTab = .start },
+			focusSearch: { sendToSessions(.focusSearch) },
+			previousSession: { sendToSessions(.step(-1)) },
+			nextSession: { sendToSessions(.step(1)) }))
+		.sheet(isPresented: $showPalette, onDismiss: runPicked) {
+			CommandPaletteView(index: paletteIndex) { picked = $0 }
+		}
 		// Narrowing to compact while on Settings would leave no tab selected.
 		.onChange(of: sizeClass) { _, size in
 			if size == .compact, selectedTab == .settings { selectedTab = .sessions }
@@ -118,5 +138,54 @@ struct MainTabView: View {
 			deepLinkRunId = runId
 			selectedTab = .inbox
 		}
+	}
+
+	private func sendToSessions(_ command: SessionsCommand) {
+		selectedTab = .sessions
+		sessionsCommand = command
+	}
+
+	private var paletteIndex: PaletteIndex {
+		var actions: [PaletteAction] = [.newSession, .searchSessions]
+		if let openSessionId, store.sessions.first(where: { $0.id == openSessionId })?.status == .running {
+			actions.append(.stopTurn)
+		}
+		actions += [.previousSession, .nextSession, .inbox, .voiceOperator, .browser, .settings]
+		return PaletteIndex(actions: actions, sessions: store.activeSessions)
+	}
+
+	private func runPicked() {
+		guard let item = picked else { return }
+		picked = nil
+		switch item {
+		case .session(let session):
+			deepLinkSessionId = session.id
+			selectedTab = .sessions
+		case .action(let action):
+			perform(action)
+		}
+	}
+
+	private func perform(_ action: PaletteAction) {
+		switch action.id {
+		case PaletteAction.newSession.id: selectedTab = .start
+		case PaletteAction.searchSessions.id: sendToSessions(.focusSearch)
+		case PaletteAction.previousSession.id: sendToSessions(.step(-1))
+		case PaletteAction.nextSession.id: sendToSessions(.step(1))
+		case PaletteAction.inbox.id: selectedTab = .inbox
+		case PaletteAction.voiceOperator.id: selectedTab = .voiceOperator
+		case PaletteAction.browser.id: selectedTab = .browser
+		case PaletteAction.settings.id: openSettings()
+		case PaletteAction.stopTurn.id:
+			guard let openSessionId else { return }
+			Task { try? await store.stop(sessionId: openSessionId) }
+		default: break
+		}
+	}
+
+	/// Settings is a tab only where there is a sidebar; on a phone it lives
+	/// behind the Sessions list's gear.
+	private func openSettings() {
+		if sizeClass == .regular { selectedTab = .settings } else { sendToSessions(.openSettings) }
 	}
 }
