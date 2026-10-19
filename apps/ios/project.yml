@@ -195,6 +195,9 @@ targets:
       # The detail screen's model is plain Foundation over DeckStore, so the
       # Mac reads the transcript through the same code as the phone.
       - path: Apps/DeckApp/Support/SessionDetailViewModel.swift
+      # The dev browser's tab chip, web view host and tunnel form.
+      - path: Apps/DeckApp/Views/BrowserParts.swift
+      - path: Apps/DeckApp/Views/TunnelSheet.swift
     dependencies:
       - package: DeckKit
         product: DeckKit
@@ -202,6 +205,8 @@ targets:
         product: DeckUI
       - package: DeckKit
         product: DeckIntents
+      - package: DeckKit
+        product: DeckBrowser
     info:
       path: Apps/DeckMac/Info.plist
       properties:
@@ -212,6 +217,9 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+          # Dev servers are plain http, and through the tunnel they load from
+          # the deck.localhost sentinel, which ATS does not treat as loopback.
+          NSAllowsArbitraryLoadsInWebContent: true
     settings:
       base:
         # Shared with the iOS app, so one App Store record carries both.

@@ -301,6 +301,13 @@ so a URL that looks right can still be the wrong host underneath. And the
 machine's SSH host key is trusted on first use, so a rebuilt machine fails with
 both fingerprints until you forget it in the tunnel sheet.
 
+On the Mac the browser is its own window (Window > Browser, Shift-Command-B)
+with the same tabs, address bar and tunnel sheet. Deck may run on that very
+Mac, though, and then there is no tunnel: when the deck origin's host is
+loopback (`localhost`, `127.0.0.1`, `::1`) the dev servers are local, so pages
+load directly and the lock button is gone. `LoopbackHost.isDirect` decides it;
+a tailnet name or a LAN address still means another machine and the tunnel.
+
 Testing the tunnel end to end needs an SSH server, so that test skips without
 one. Any server with password auth and forwarding will do:
 
@@ -414,8 +421,7 @@ composer (Command-Return sends), Stop (Command-.), and a terminal for
 shell sessions. Sign Out is in the app menu.
 
 Not yet: starting sessions, runs, schedules, settings, notifications and a menu
-bar item, multiple windows, attachments, the dev browser and the on-device
-operator. The share extension is deferred; Live Activities, widgets and the
+bar item, multiple windows, attachments and the on-device operator. The share extension is deferred; Live Activities, widgets and the
 hinge are phone-only and stay that way.
 
 The app is sandboxed with network client and server access (the server half is

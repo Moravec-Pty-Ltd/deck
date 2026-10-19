@@ -8,7 +8,7 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- The dev browser (a later item) opens a loopback SOCKS5 listener, which
+	<!-- The dev browser opens a loopback SOCKS5 listener for its tunnel, which
 	     the sandbox refuses silently without this. -->
 	<key>com.apple.security.network.server</key>
 	<true/>

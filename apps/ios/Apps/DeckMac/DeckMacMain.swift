@@ -18,6 +18,12 @@ struct DeckMacMain: App {
 					.disabled(!store.isSignedIn)
 			}
 		}
+
+		// Listed in the Window menu, so it needs no button of its own.
+		Window("Browser", id: "browser") {
+			MacBrowserView().environment(store)
+		}
+		.keyboardShortcut("b", modifiers: [.command, .shift])
 	}
 }
 
