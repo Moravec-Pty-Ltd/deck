@@ -26,7 +26,7 @@ public struct CommandPaletteView: View {
 					.textFieldStyle(.roundedBorder)
 					.autocorrectionDisabled()
 					.focused($fieldFocused)
-					.onSubmit { pick(at: highlighted) }
+					.onSubmit { pick(at: PaletteIndex.highlight(highlighted, count: results.count)) }
 					.onKeyPress(.downArrow) { move(1) }
 					.onKeyPress(.upArrow) { move(-1) }
 					.accessibilityIdentifier("paletteField")
@@ -46,6 +46,9 @@ public struct CommandPaletteView: View {
 		}
 		.onAppear { fieldFocused = true }
 		.onChange(of: query) { _, _ in highlighted = 0 }
+		.onChange(of: results.map(\.id)) { _, ids in
+			highlighted = PaletteIndex.highlight(highlighted, count: ids.count)
+		}
 	}
 
 	private var resultList: some View {
@@ -100,8 +103,7 @@ public struct CommandPaletteView: View {
 	}
 
 	private func move(_ by: Int) -> KeyPress.Result {
-		guard !results.isEmpty else { return .handled }
-		highlighted = min(max(highlighted + by, 0), results.count - 1)
+		highlighted = PaletteIndex.highlight(highlighted, by: by, count: results.count)
 		return .handled
 	}
 

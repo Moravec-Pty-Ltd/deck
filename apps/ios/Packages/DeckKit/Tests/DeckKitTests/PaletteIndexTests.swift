@@ -71,4 +71,12 @@ final class PaletteIndexTests: XCTestCase {
 		XCTAssertEqual(SessionStepper.step(from: "gone", by: 1, in: list), "a")
 		XCTAssertNil(SessionStepper.step(from: nil, by: 1, in: []))
 	}
+
+	func testHighlightStaysOnTheResults() {
+		XCTAssertEqual(PaletteIndex.highlight(1, by: 1, count: 3), 2)
+		XCTAssertEqual(PaletteIndex.highlight(2, by: 1, count: 3), 2)
+		XCTAssertEqual(PaletteIndex.highlight(0, by: -1, count: 3), 0)
+		XCTAssertEqual(PaletteIndex.highlight(5, count: 2), 1)
+		XCTAssertEqual(PaletteIndex.highlight(5, count: 0), 0)
+	}
 }

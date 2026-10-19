@@ -93,6 +93,13 @@ public struct PaletteIndex: Sendable {
 			.map(\.2)
 	}
 
+	/// The highlighted row kept on the results: `offset` moved `by` rows, held
+	/// to the list so a shrinking result set never leaves it past the end.
+	public static func highlight(_ offset: Int, by: Int = 0, count: Int) -> Int {
+		guard count > 0 else { return 0 }
+		return min(max(offset + by, 0), count - 1)
+	}
+
 	private static func rank(_ item: PaletteItem, against query: SessionSearch.Query) -> Int? {
 		switch item {
 		case .action(let action):

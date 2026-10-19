@@ -163,8 +163,7 @@ struct SessionsView: View {
 		case .focusSearch:
 			// The field lives on the list, which a pushed session or a hidden
 			// sidebar covers.
-			if !wide { open = nil }
-			columns = .all
+			if wide { columns = .all } else { open = nil }
 			searchFocused = true
 		case .step(let offset):
 			let ids = listedSessions.map(\.id)
