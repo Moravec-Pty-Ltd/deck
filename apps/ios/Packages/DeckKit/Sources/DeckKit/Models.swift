@@ -397,6 +397,53 @@ public struct EventsResponse: Codable, Sendable {
 
 public struct APIErrorBody: Codable, Sendable {
 	public let message: String
+	/// Set on a create's 409 for a leftover branch (see WorktreeConflict).
+	public let code: String?
+	public let branch: String?
+}
+
+/// What deck does about a worktree branch an earlier session left behind:
+/// `reuse` checks it out as it stands, `recreate` deletes it and branches
+/// again from the base. Mirrors the web's src/lib/worktree-conflict.ts.
+public enum WorktreeFix: String, CaseIterable, Sendable {
+	case reuse
+	case recreate
+
+	public var label: String {
+		self == .reuse ? "Use the existing branch" : "Delete it and start fresh"
+	}
+
+	public func detail(branch: String) -> String {
+		self == .reuse
+			? "Check \(branch) out as it stands, keeping any commits on it."
+			: "Delete \(branch) and branch again from the base. Commits on it that are not pushed are lost."
+	}
+}
+
+/// A create's 409 for a leftover worktree branch, answerable by retrying the
+/// same body with `worktree.onExisting`.
+public struct WorktreeConflict: Equatable, Sendable {
+	public enum Code: String, Sendable {
+		case branchExists = "branch-exists"
+		case staleWorktree = "stale-worktree"
+	}
+
+	public let code: Code
+	public let branch: String
+	public let message: String
+
+	public init(code: Code, branch: String, message: String) {
+		self.code = code
+		self.branch = branch
+		self.message = message
+	}
+
+	/// Only a 409 whose code is one of ours: a 409 from elsewhere (a busy turn)
+	/// must not be offered a fix that cannot help.
+	init?(status: Int, body: APIErrorBody?) {
+		guard status == 409, let body, let raw = body.code, let code = Code(rawValue: raw) else { return nil }
+		self.init(code: code, branch: body.branch ?? "", message: body.message)
+	}
 }
 
 /// A saved canned composer message. `text` may contain [tokens] that deck
@@ -419,15 +466,18 @@ public struct QuickMessage: Codable, Identifiable, Hashable, Sendable {
 }
 
 /// New-branch/worktree options for a work session.
-public struct WorktreeOptions: Sendable {
+public struct WorktreeOptions: Equatable, Sendable {
 	public var branch: String?
 	public var newBranch: Bool
 	public var base: String?
+	/// The answer to an earlier 409 for this branch; nil on a first attempt.
+	public var onExisting: WorktreeFix?
 
-	public init(branch: String? = nil, newBranch: Bool = true, base: String? = nil) {
+	public init(branch: String? = nil, newBranch: Bool = true, base: String? = nil, onExisting: WorktreeFix? = nil) {
 		self.branch = branch
 		self.newBranch = newBranch
 		self.base = base
+		self.onExisting = onExisting
 	}
 
 	/// A fresh worktree on a new branch, named the way deck's web modal names it:
@@ -444,6 +494,7 @@ public struct WorktreeOptions: Sendable {
 		var dict: [String: Any] = ["newBranch": newBranch]
 		if let branch, !branch.isEmpty { dict["branch"] = branch }
 		if let base, !base.isEmpty { dict["base"] = base }
+		if let onExisting { dict["onExisting"] = onExisting.rawValue }
 		return dict
 	}
 }

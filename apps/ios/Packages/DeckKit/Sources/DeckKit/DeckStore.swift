@@ -579,6 +579,13 @@ public final class DeckStore {
 		return response
 	}
 
+	/// One create from a StartPlan. The caller refreshes once the batch is in,
+	/// rather than once per session.
+	public func createSession(_ request: CreateSessionRequest, idempotencyKey: String) async throws -> String {
+		guard let client else { throw DeckError.notConfigured }
+		return try await client.createSession(request, idempotencyKey: idempotencyKey).id
+	}
+
 	/// Start a review session for a PR.
 	@discardableResult
 	public func startReview(

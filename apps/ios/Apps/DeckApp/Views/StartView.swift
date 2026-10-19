@@ -252,11 +252,25 @@ struct StartConfirmSheet: View {
 	@State private var worktrees: [WorktreeEntry] = []
 	@State private var existingWorktree = ""
 	@State private var isSubmitting = false
-	@State private var idempotencyKey = UUID().uuidString
+	@State private var additionalPRIds: Set<String> = []
+	@State private var splitPerIssue = false
+	/// Kept across retries so each item keeps its idempotency key and a retry
+	/// only re-sends the creates that did not land.
+	@State private var plan: StartPlan?
+	@State private var showConflict = false
 	@State private var errorMessage: String?
 	@State private var confirmingExpensive = false
 
 	private var isReview: Bool { if case .pr = kind { return true }; return false }
+
+	/// One session per issue needs a fresh worktree for each, as on the web.
+	private var canSplit: Bool { !additionalIssueIds.isEmpty && worktreeMode == .newBranch }
+	private var isSplitting: Bool { splitPerIssue && canSplit }
+
+	private var sessionCount: Int {
+		if isReview { return 1 + additionalPRIds.count }
+		return isSplitting ? 1 + additionalIssueIds.count : 1
+	}
 
 	private var availableKinds: [String] {
 		let kinds = store.kinds.filter { $0.available && $0.kind != "shell" }.map(\.kind)
@@ -321,15 +335,32 @@ struct StartConfirmSheet: View {
 						Section("Additional issues") {
 							DisclosureGroup("\(additionalIssueIds.count) selected") {
 								ForEach(others) { issue in
-									Toggle(isOn: Binding(
-										get: { additionalIssueIds.contains(issue.id) },
-										set: { selected in
-											if selected { additionalIssueIds.insert(issue.id) }
-											else { additionalIssueIds.remove(issue.id) }
-										})) { IssueRow(issue: issue) }
+									Toggle(isOn: member(issue.id, of: $additionalIssueIds)) { IssueRow(issue: issue) }
 										.disabled(additionalIssueIds.count >= 9 && !additionalIssueIds.contains(issue.id))
 								}
 							}
+							if canSplit {
+								Toggle("One session per issue", isOn: $splitPerIssue)
+									.accessibilityIdentifier("splitPerIssue")
+							}
+						}
+					}
+				}
+
+				if case .pr(let primary) = kind {
+					let others = (store.prsByProject[project.path] ?? []).filter { $0.id != primary.id }
+					if !others.isEmpty {
+						Section {
+							DisclosureGroup("\(additionalPRIds.count) selected") {
+								ForEach(others) { pr in
+									Toggle(isOn: member(pr.id, of: $additionalPRIds)) { PRRow(pr: pr) }
+										.disabled(additionalPRIds.count >= 9 && !additionalPRIds.contains(pr.id))
+								}
+							}
+						} header: {
+							Text("More PRs")
+						} footer: {
+							Text("Each PR gets its own review session.")
 						}
 					}
 				}
@@ -385,21 +416,25 @@ struct StartConfirmSheet: View {
 
 				if !isReview {
 					Section {
-						TextField("Title (defaults to the first words of the prompt)", text: Binding(
-							get: { title.isEmpty ? effectiveTitle : title },
-							set: { title = $0 }))
-							.accessibilityIdentifier("sessionTitle")
+						if !isSplitting {
+							TextField("Title (defaults to the first words of the prompt)", text: Binding(
+								get: { title.isEmpty ? effectiveTitle : title },
+								set: { title = $0 }))
+								.accessibilityIdentifier("sessionTitle")
+						}
 						Picker("Worktree", selection: $worktreeMode) {
 							Text("New branch").tag(StartWorktreeMode.newBranch)
 							Text("Existing").tag(StartWorktreeMode.existing)
 							Text("None").tag(StartWorktreeMode.none)
 						}
-						if worktreeMode == .newBranch {
+						if worktreeMode == .newBranch && !isSplitting {
 							TextField("Branch name (defaults to title)", text: Binding(
 								get: { effectiveBranch },
 								set: { branchName = $0; branchDirty = true }))
 								.textInputAutocapitalization(.never)
 								.autocorrectionDisabled()
+						}
+						if worktreeMode == .newBranch {
 							if baseChoices.isEmpty {
 								TextField("Base branch (optional)", text: $baseBranch)
 									.textInputAutocapitalization(.never)
@@ -437,6 +472,18 @@ struct StartConfirmSheet: View {
 						.foregroundStyle(.secondary)
 				}
 
+				if let plan, plan.items.count > 1 {
+					Section("Sessions") {
+						ForEach(plan.items) { item in
+							HStack {
+								Text(item.label).font(.body.monospaced())
+								Spacer()
+								StartItemStatus(status: item.status)
+							}
+						}
+					}
+				}
+
 				if let errorMessage {
 					Section {
 						Text(errorMessage)
@@ -452,8 +499,8 @@ struct StartConfirmSheet: View {
 					Button("Cancel") { dismiss() }
 				}
 				ToolbarItem(placement: .confirmationAction) {
-					Button(isSubmitting ? "Starting…" : "Start") {
-						if pickIsExpensive {
+					Button(isSubmitting ? "Starting…" : (hasFailures ? "Retry" : "Start")) {
+						if pickIsExpensive && !hasFailures {
 							confirmingExpensive = true
 						} else {
 							Task { await start() }
@@ -469,6 +516,14 @@ struct StartConfirmSheet: View {
 				Text("\(effectiveModel() ?? "") is an expensive model. Start this session on it anyway?")
 			}
 			.task { await setup() }
+			.alert(conflictTitle, isPresented: $showConflict) {
+				ForEach(WorktreeFix.allCases, id: \.self) { fix in
+					Button(fix.label, role: fix == .recreate ? .destructive : nil) { resolveConflicts(fix) }
+				}
+				Button("Cancel", role: .cancel) {}
+			} message: {
+				Text(conflictText)
+			}
 			.onChange(of: agentKind) { _, _ in seedModel() }
 			.onChange(of: worktreeMode) { _, mode in
 				if mode == .existing { Task { await loadWorktrees() } }
@@ -484,7 +539,37 @@ struct StartConfirmSheet: View {
 		}
 	}
 
+	private var hasFailures: Bool {
+		guard let plan else { return false }
+		return !plan.failures.isEmpty || !plan.conflicts.isEmpty
+	}
+
+	private var conflictTitle: String {
+		(plan?.conflicts.count ?? 0) > 1 ? "Branches already exist" : "Branch already exists"
+	}
+
+	private var conflictText: String {
+		let conflicts = plan?.conflicts ?? []
+		let found = conflicts.map(\.message).joined(separator: "\n")
+		guard conflicts.count == 1, let branch = conflicts.first?.branch else {
+			return found + "\n\nYour choice applies to each of them."
+		}
+		let fixes = WorktreeFix.allCases.map { "\($0.label): \($0.detail(branch: branch))" }
+		return ([found] + fixes).joined(separator: "\n\n")
+	}
+
+	private func member(_ id: String, of set: Binding<Set<String>>) -> Binding<Bool> {
+		Binding(
+			get: { set.wrappedValue.contains(id) },
+			set: { selected in
+				if selected { set.wrappedValue.insert(id) } else { set.wrappedValue.remove(id) }
+			})
+	}
+
 	private var worktreeFooter: String {
+		if isSplitting {
+			return "Each issue gets its own session and worktree, on a new branch named after the issue."
+		}
 		switch worktreeMode {
 		case .newBranch: return "Runs in a fresh git worktree on a new branch."
 		case .existing: return "Runs in a worktree that already exists, on its current branch."
@@ -505,6 +590,10 @@ struct StartConfirmSheet: View {
 		case .pr(let pr): target = "PR #\(pr.number)"
 		}
 		let modelSuffix = effectiveModel().map { " · \($0)" } ?? ""
+		if sessionCount > 1 {
+			let per = isReview ? "PR" : "issue"
+			return "Starts \(sessionCount) \(agentKind)\(modelSuffix) sessions, one per \(per), each in its own worktree."
+		}
 		let place: String
 		if isReview {
 			place = "in a worktree checked out from the PR"
@@ -582,52 +671,110 @@ struct StartConfirmSheet: View {
 	}
 
 	private func start() async {
-		isSubmitting = true
 		errorMessage = nil
+		let fresh = buildPlan()
+		plan = plan.map { $0.carrying(into: fresh) } ?? fresh
+		await run()
+	}
+
+	private func buildPlan() -> StartPlan {
+		var base = CreateSessionRequest(mode: isReview ? .review : .work, cwd: project.path)
 		let prompt = firstPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-		let permission: String? = agentKind == "claude" ? (yolo ? "bypassPermissions" : "acceptEdits") : nil
-		let providerValue = (agentKind == "pi" && !provider.isEmpty) ? provider : nil
-		let effortValue = (agentKind == "claude" && !effort.isEmpty) ? effort : nil
-		do {
-			let response: CreateSessionResponse
-			switch kind {
-			case .prompt, .issue:
-				let worktree: WorktreeOptions? = worktreeMode == .newBranch
-					? .newBranch(named: effectiveBranch, base: baseBranch.isEmpty ? nil : baseBranch)
-					: nil
-				// An existing worktree is just a different starting directory; the
-				// server runs the session there with no worktree of its own.
-				let cwd = worktreeMode == .existing && !existingWorktree.isEmpty ? existingWorktree : nil
-				response = try await store.startWork(
-					issue: primaryIssue,
-					additionalIssues: (store.issuesByProject[project.path] ?? []).filter { additionalIssueIds.contains($0.id) },
-					project: project,
-					prompt: prompt.isEmpty ? nil : prompt,
-					kind: agentKind,
-					title: effectiveTitle.isEmpty ? nil : effectiveTitle,
-					model: effectiveModel(),
-					provider: providerValue,
-					effort: effortValue,
-					permissionMode: permission,
-					worktree: worktree,
-					cwd: cwd,
-					idempotencyKey: idempotencyKey)
-			case .pr(let pr):
-				response = try await store.startReview(
-					pr: pr, project: project,
-					prompt: prompt.isEmpty ? nil : prompt,
-					kind: agentKind,
-					model: effectiveModel(),
-					provider: providerValue,
-					effort: effortValue,
-					permissionMode: permission,
-					idempotencyKey: idempotencyKey)
-			}
-			onCreated(response.id)
-			dismiss()
-		} catch {
-			errorMessage = error.localizedDescription
+		base.prompt = prompt.isEmpty ? nil : prompt
+		base.kind = agentKind
+		base.model = effectiveModel()
+		base.provider = (agentKind == "pi" && !provider.isEmpty) ? provider : nil
+		base.effort = (agentKind == "claude" && !effort.isEmpty) ? effort : nil
+		base.permissionMode = agentKind == "claude" ? (yolo ? "bypassPermissions" : "acceptEdits") : nil
+		switch kind {
+		case .pr(let pr):
+			let more = (store.prsByProject[project.path] ?? []).filter { additionalPRIds.contains($0.id) && $0.id != pr.id }
+			return .review(base, prs: [pr] + more)
+		case .prompt, .issue:
+			let baseRef = baseBranch.isEmpty ? nil : baseBranch
+			base.title = effectiveTitle.isEmpty ? nil : effectiveTitle
+			// Split names each branch after its issue, so it needs no name here.
+			base.worktree = isSplitting
+				? WorktreeOptions(newBranch: true, base: baseRef)
+				: (worktreeMode == .newBranch ? .newBranch(named: effectiveBranch, base: baseRef) : nil)
+			// An existing worktree is just a different starting directory; the
+			// server runs the session there with no worktree of its own.
+			if worktreeMode == .existing && !existingWorktree.isEmpty { base.cwd = existingWorktree }
+			let more = (store.issuesByProject[project.path] ?? []).filter { additionalIssueIds.contains($0.id) }
+			return .work(base, issues: primaryIssue.map { [$0] + more } ?? [], split: isSplitting)
 		}
+	}
+
+	/// Send every create not yet made, concurrently so one slow worktree does
+	/// not hold up the rest, then finish, ask about a conflict, or say what failed.
+	private func run() async {
+		guard var current = plan else { return }
+		isSubmitting = true
+		let batch = current.begin()
+		plan = current
+		let store = store
+		await withTaskGroup(of: (String, StartPlan.Status).self) { group in
+			for item in batch {
+				group.addTask {
+					do {
+						let id = try await store.createSession(item.request, idempotencyKey: item.idempotencyKey)
+						return (item.id, .created(id: id))
+					} catch {
+						return (item.id, StartPlan.status(for: error))
+					}
+				}
+			}
+			for await (id, status) in group { plan?.record(id, status) }
+		}
+		await store.refreshSessions()
 		isSubmitting = false
+		report()
+	}
+
+	private func report() {
+		guard let plan else { return }
+		if plan.isFinished, let first = plan.createdIds.first {
+			onCreated(first)
+			dismiss()
+			return
+		}
+		if !plan.conflicts.isEmpty { showConflict = true }
+		if plan.items.count == 1, let failure = plan.failures.first {
+			errorMessage = failure.message
+		} else if !plan.failures.isEmpty {
+			errorMessage = "Started \(plan.createdIds.count) of \(plan.items.count). Retry starts only the ones that failed."
+		}
+	}
+
+	private func resolveConflicts(_ fix: WorktreeFix) {
+		plan?.resolveConflicts(with: fix)
+		Task { await run() }
+	}
+}
+
+/// Where one create of a multi-session start has got to.
+private struct StartItemStatus: View {
+	let status: StartPlan.Status
+
+	var body: some View {
+		switch status {
+		case .pending:
+			Text("Waiting").foregroundStyle(.secondary)
+		case .running:
+			ProgressView()
+		case .created:
+			Image(systemName: "checkmark.circle.fill")
+				.foregroundStyle(.green)
+				.accessibilityLabel("Started")
+		case .failed(let message):
+			Text(message)
+				.font(.caption)
+				.foregroundStyle(.red)
+				.lineLimit(2)
+		case .conflict:
+			Text("Branch exists")
+				.font(.caption)
+				.foregroundStyle(.orange)
+		}
 	}
 }

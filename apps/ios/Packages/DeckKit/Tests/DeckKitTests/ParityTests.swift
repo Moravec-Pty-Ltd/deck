@@ -147,6 +147,54 @@ final class ParityTests: XCTestCase {
 		try await client.sendQuickMessage(sessionId: "example", text: "[issue_body]")
 	}
 
+	func testConflictRetrySendsOnExistingUnderTheSameKey() async {
+		var request = CreateSessionRequest(mode: .work, cwd: "/path/to/project")
+		request.worktree = WorktreeOptions(branch: "EX-1", base: "main", onExisting: .recreate)
+		let recorder = Recorder()
+		RequestStub.status = 201
+		RequestStub.handler = { sent in
+			recorder.sent.append(Sent(
+				method: sent.httpMethod ?? "", path: sent.url?.path ?? "", query: nil,
+				accept: sent.value(forHTTPHeaderField: "Idempotency-Key"), contentType: nil, keys: nil,
+				json: try? JSONSerialization.jsonObject(with: Self.bodyData(sent))))
+			return Data(#"{"id":"example","url":"https://example.test/s/example"}"#.utf8)
+		}
+		_ = try? await Self.stubbedClient().createSession(request, idempotencyKey: "item-a")
+		XCTAssertEqual(recorder.sent.first?.path, "/api/agent/sessions")
+		XCTAssertEqual(recorder.sent.first?.accept, "item-a", "the Idempotency-Key header")
+		let worktree = (recorder.sent.first?.json as? [String: Any])?["worktree"] as? [String: Any]
+		XCTAssertEqual(worktree?["onExisting"] as? String, "recreate")
+		XCTAssertEqual(worktree?["branch"] as? String, "EX-1")
+	}
+
+	func testABranchConflictDecodesIntoTheConflict() async {
+		RequestStub.status = 409
+		RequestStub.handler = { _ in
+			Data(#"{"message":"The branch EX-1 already exists.","code":"branch-exists","branch":"EX-1"}"#.utf8)
+		}
+		do {
+			_ = try await Self.stubbedClient().createSession(CreateSessionRequest(mode: .work, cwd: "/path/to/project"))
+			XCTFail("a 409 must throw")
+		} catch DeckError.worktreeConflict(let conflict) {
+			XCTAssertEqual(conflict, WorktreeConflict(code: .branchExists, branch: "EX-1", message: "The branch EX-1 already exists."))
+		} catch {
+			XCTFail("expected a worktree conflict, got \(error)")
+		}
+	}
+
+	func testABusy409StaysAnHTTPError() async {
+		RequestStub.status = 409
+		RequestStub.handler = { _ in Data(#"{"message":"a turn is already running"}"#.utf8) }
+		do {
+			_ = try await Self.stubbedClient().createSession(CreateSessionRequest(mode: .work, cwd: "/path/to/project"))
+			XCTFail("a 409 must throw")
+		} catch DeckError.http(let status, _) {
+			XCTAssertEqual(status, 409)
+		} catch {
+			XCTFail("expected a plain HTTP error, got \(error)")
+		}
+	}
+
 	func testReviewPreservesBaseBranch() async throws {
 		let client = client { _, body in
 			XCTAssertEqual((body["worktree"] as? [String: String])?["base"], "release")

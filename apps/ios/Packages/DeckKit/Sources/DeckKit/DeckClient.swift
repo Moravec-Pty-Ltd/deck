@@ -4,10 +4,14 @@ public enum DeckError: Error, LocalizedError {
 	case http(status: Int, message: String)
 	case invalidResponse
 	case notConfigured
+	/// A create's 409 for a leftover worktree branch (code and branch), which
+	/// the caller can answer with `WorktreeOptions.onExisting`.
+	case worktreeConflict(WorktreeConflict)
 
 	public var errorDescription: String? {
 		switch self {
 		case .http(let status, let message): return "\(message) (HTTP \(status))"
+		case .worktreeConflict(let conflict): return conflict.message
 		case .invalidResponse: return "Invalid response from deck"
 		case .notConfigured: return "deck is not signed in"
 		}
@@ -201,28 +205,17 @@ public final class DeckClient: @unchecked Sendable {
 		additionalIssues: [DeckIssue] = [],
 		idempotencyKey: String? = nil
 	) async throws -> CreateSessionResponse {
-		var body: [String: Any] = ["mode": "work", "cwd": cwd]
-		if let prompt { body["prompt"] = prompt }
-		if let kind { body["kind"] = kind }
-		if let title { body["title"] = title }
-		if let model { body["model"] = model }
-		if let provider { body["provider"] = provider }
-		if let effort { body["effort"] = effort }
-		if let permissionMode { body["permissionMode"] = permissionMode }
-		if let worktree { body["worktree"] = worktree.json }
-		if let issue {
-			func fields(_ issue: DeckIssue) -> [String: Any] {
-				var result: [String: Any] = ["source": issue.source, "id": issue.issueId]
-				if let url = issue.url { result["url"] = url }
-				if let sourceId = issue.sourceId { result["sourceId"] = sourceId }
-				return result
-			}
-			body["issue"] = fields(issue)
-			if !additionalIssues.isEmpty {
-				body["issues"] = ([issue] + additionalIssues).map(fields)
-			}
-		}
-		return try await post("/api/agent/sessions", json: body, idempotencyKey: idempotencyKey)
+		var request = CreateSessionRequest(mode: .work, cwd: cwd)
+		request.prompt = prompt
+		request.kind = kind
+		request.title = title
+		request.model = model
+		request.provider = provider
+		request.effort = effort
+		request.permissionMode = permissionMode
+		request.worktree = worktree
+		request.issues = issue.map { [$0] + additionalIssues } ?? []
+		return try await createSession(request, idempotencyKey: idempotencyKey)
 	}
 
 	public func createReviewSession(
@@ -236,18 +229,22 @@ public final class DeckClient: @unchecked Sendable {
 		permissionMode: String? = nil,
 		idempotencyKey: String? = nil
 	) async throws -> CreateSessionResponse {
-		var prBody: [String: Any] = ["repo": pr.repo, "number": pr.number]
-		if let url = pr.url { prBody["url"] = url }
-		if let title = pr.title { prBody["title"] = title }
-		var body: [String: Any] = ["mode": "review", "cwd": cwd, "pr": prBody]
-		if let base = pr.baseRefName { body["worktree"] = ["base": base] }
-		if let prompt { body["prompt"] = prompt }
-		if let kind { body["kind"] = kind }
-		if let model { body["model"] = model }
-		if let provider { body["provider"] = provider }
-		if let effort { body["effort"] = effort }
-		if let permissionMode { body["permissionMode"] = permissionMode }
-		return try await post("/api/agent/sessions", json: body, idempotencyKey: idempotencyKey)
+		var request = CreateSessionRequest(mode: .review, cwd: cwd)
+		request.pr = pr
+		request.prompt = prompt
+		request.kind = kind
+		request.model = model
+		request.provider = provider
+		request.effort = effort
+		request.permissionMode = permissionMode
+		return try await createSession(request, idempotencyKey: idempotencyKey)
+	}
+
+	/// POST /api/agent/sessions. A leftover worktree branch throws
+	/// `DeckError.worktreeConflict`; retry under the same key with
+	/// `worktree.onExisting` set.
+	public func createSession(_ request: CreateSessionRequest, idempotencyKey: String? = nil) async throws -> CreateSessionResponse {
+		try await post("/api/agent/sessions", json: request.json, idempotencyKey: idempotencyKey)
 	}
 
 	@discardableResult
@@ -642,8 +639,11 @@ public final class DeckClient: @unchecked Sendable {
 	private func check(data: Data, response: URLResponse) throws {
 		guard let http = response as? HTTPURLResponse else { throw DeckError.invalidResponse }
 		guard (200..<300).contains(http.statusCode) else {
-			let message = (try? decoder.decode(APIErrorBody.self, from: data))?.message ?? "deck request failed"
-			throw DeckError.http(status: http.statusCode, message: message)
+			let body = try? decoder.decode(APIErrorBody.self, from: data)
+			if let conflict = WorktreeConflict(status: http.statusCode, body: body) {
+				throw DeckError.worktreeConflict(conflict)
+			}
+			throw DeckError.http(status: http.statusCode, message: body?.message ?? "deck request failed")
 		}
 	}
 }
