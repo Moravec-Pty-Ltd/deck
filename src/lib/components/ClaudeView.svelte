@@ -19,6 +19,7 @@
 	import ToolRun from './ToolRun.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
+	import SkillPicker from './SkillPicker.svelte';
 	import VoiceBar from './VoiceBar.svelte';
 	import { VoiceSession } from '$lib/voice.svelte';
 	import { agentGet, agentPost, sessionPath } from '$lib/agent-api';
@@ -670,6 +671,15 @@
 		}
 	}
 
+	let skillPicker = $state<SkillPicker>();
+	let composerInput = $state<HTMLTextAreaElement>();
+	// Set when the message's leading /command came from the skill list, so the
+	// send asks the server to resolve it against this machine's skills.
+	let skillChosen = $state(false);
+	$effect(() => {
+		if (!input.startsWith('/')) skillChosen = false;
+	});
+
 	async function send() {
 		if (!canSend) return;
 		// Only guard the cross-session case; same-session sends are unaffected.
@@ -696,7 +706,7 @@
 		clearDraft();
 		atBottom = true;
 		try {
-			await postMessage(text, images, prev.uploads);
+			await postMessage(text, images, prev.uploads, skillChosen);
 		} catch (err) {
 			input = prev.input;
 			attachments = prev.attachments;
@@ -708,9 +718,15 @@
 
 	// With files, the upload route sends the turn itself, naming where each file
 	// landed under the text (the share extension's message), images still inline.
-	async function postMessage(text: string, images: { media_type: string; data: string }[], files: File[]) {
+	async function postMessage(
+		text: string,
+		images: { media_type: string; data: string }[],
+		files: File[],
+		skills: boolean
+	) {
 		const inline = images.length ? images : undefined;
-		if (!files.length) return agentPost(sessionPath(session.id, 'message'), { text, images: inline });
+		if (!files.length)
+			return agentPost(sessionPath(session.id, 'message'), { text, images: inline, skills: skills || undefined });
 		const encoded = await Promise.all(
 			files.map(async (f) => ({ name: f.name, data: toBase64(await f.arrayBuffer()) }))
 		);
@@ -738,6 +754,7 @@
 	}
 
 	function onKeydown(e: KeyboardEvent) {
+		if (skillPicker?.handleKey(e)) return;
 		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
 			send();
@@ -937,7 +954,7 @@
 
 	<!-- -mx-2 cancels the session pane's side padding so the composer and its
 	     top border run edge to edge. -->
-	<div class="-mx-2 border-t border-base-300 bg-base-100 p-2 sm:p-3">
+	<div class="relative -mx-2 border-t border-base-300 bg-base-100 p-2 sm:p-3">
 		{#if crossSession}
 			<div class="mb-2 flex items-center gap-1 text-xs opacity-70">
 				<ArrowLeftRight size={12} />
@@ -982,6 +999,7 @@
 			<p class="mb-2 text-xs text-error" role="alert">{uploadError}</p>
 		{/if}
 		<textarea
+			bind:this={composerInput}
 			class="textarea block min-h-18 w-full"
 			rows="3"
 			style="height: calc(4.5em + 1.5rem + 3px)"
@@ -1021,6 +1039,14 @@
 				>
 					<Paperclip size={16} />
 				</button>
+
+				<SkillPicker
+					bind:this={skillPicker}
+					bind:text={input}
+					cwd={session.cwd}
+					textarea={composerInput}
+					onpick={() => (skillChosen = true)}
+				/>
 
 				{#if status === 'running'}
 					<button class="btn btn-error" onclick={interrupt} aria-label="Interrupt">
