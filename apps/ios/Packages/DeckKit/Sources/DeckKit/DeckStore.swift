@@ -37,6 +37,8 @@ public final class DeckStore {
 	/// start surface opens.
 	public private(set) var startDefaultsByProject: [String: ProjectStartDefaults] = [:]
 	public private(set) var userLogin: String?
+	/// The server's expensive-model list, from the last defaults it sent.
+	public private(set) var expensiveModels: [String] = []
 	/// What the server advertises on GET /api/agent. Nil until it first answers.
 	public private(set) var serverInfo: ServerInfo?
 	private var seq: Int?
@@ -173,6 +175,7 @@ public final class DeckStore {
 		guard let client else { return nil }
 		if let fresh = try? await client.startDefaults(project: projectPath) {
 			startDefaultsByProject[projectPath] = fresh
+			if let list = fresh.expensiveModels { expensiveModels = list }
 		}
 		return startDefaultsByProject[projectPath]
 	}
@@ -240,6 +243,34 @@ public final class DeckStore {
 	public func changeModel(sessionId: String, model: String?) async throws {
 		guard let client else { throw DeckError.notConfigured }
 		try await client.changeModel(sessionId: sessionId, model: model)
+		await refreshSessions()
+	}
+
+	/// Fetch the expensive-model list if it hasn't arrived yet. It rides on a
+	/// project's start defaults, so any registered project answers it.
+	public func loadExpensiveModels(projectPath: String? = nil) async {
+		guard supports(.expensiveModels), expensiveModels.isEmpty,
+			let path = projectPath ?? projects.first?.path else { return }
+		await loadStartDefaults(projectPath: path)
+	}
+
+	/// Whether picking `model` for a `kind` session should confirm first, by
+	/// the server's list and its marked model rows.
+	public func needsExpensiveConfirm(model: String?, provider: String? = nil, kind: String, current: String? = nil) -> Bool {
+		guard supports(.expensiveModels) else { return false }
+		let rows = kinds.first { $0.kind == kind }?.models ?? []
+		return ExpensiveModels.needsConfirm(model: model, provider: provider, current: current, list: expensiveModels, rows: rows)
+	}
+
+	public func restart(sessionId: String) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await client.restart(sessionId: sessionId)
+		await refreshSessions()
+	}
+
+	public func dismissPR(sessionId: String) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await client.dismissPR(sessionId: sessionId)
 		await refreshSessions()
 	}
 

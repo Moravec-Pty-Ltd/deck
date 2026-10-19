@@ -37,6 +37,10 @@ struct SessionDetailView: View {
 	@State private var showDeleteSheet = false
 	@State private var showMergeSheet = false
 	@State private var showModelSheet = false
+	/// The model picked in the sheet, acted on once the sheet has gone so an
+	/// expensive-model confirm has somewhere to present.
+	@State private var modelPick: ModelPick?
+	@State private var pendingExpensiveModel: String?
 	@State private var showEffortSheet = false
 	@State private var showQuickManage = false
 	@State private var showRenameSheet = false
@@ -65,6 +69,24 @@ struct SessionDetailView: View {
 	private var isAgentSession: Bool {
 		guard let kind = session?.kind else { return false }
 		return kind != "shell"
+	}
+
+	/// Switch to the model picked in the sheet, asking first when the server
+	/// marks it expensive.
+	private func applyModelPick() {
+		guard let pick = modelPick else { return }
+		modelPick = nil
+		if let kind = session?.kind, store.needsExpensiveConfirm(model: pick.model, kind: kind, current: session?.model) {
+			pendingExpensiveModel = pick.model
+		} else {
+			Task { await viewModel?.changeModel(pick.model) }
+		}
+	}
+
+	private func openModelSheet() {
+		let project = session.flatMap { SessionProject.owning($0, in: store.projects) }
+		Task { await store.loadExpensiveModels(projectPath: project?.path) }
+		showModelSheet = true
 	}
 
 	private func compact() async {
@@ -106,16 +128,30 @@ struct SessionDetailView: View {
 			.sheet(isPresented: $showSchedule) {
 				NavigationStack { SchedulesView(startFor: sessionId) }
 			}
-			.sheet(isPresented: $showModelSheet) {
-				if let viewModel, let kind = session?.kind {
+			.sheet(isPresented: $showModelSheet, onDismiss: applyModelPick) {
+				if let kind = session?.kind {
 					ModelPickerSheet(
 						kind: kind,
 						current: session?.model,
 						available: store.knownModels(for: kind)
 					) { model in
-						Task { await viewModel.changeModel(model) }
+						modelPick = ModelPick(model: model)
 					}
 				}
+			}
+			.alert(
+				"Expensive model",
+				isPresented: Binding(
+					get: { pendingExpensiveModel != nil },
+					set: { if !$0 { pendingExpensiveModel = nil } })
+			) {
+				Button("Cancel", role: .cancel) {}
+				Button("Switch anyway") {
+					let model = pendingExpensiveModel
+					Task { await viewModel?.changeModel(model) }
+				}
+			} message: {
+				Text("\(pendingExpensiveModel ?? "") is an expensive model. Switch this session to it anyway?")
 			}
 			.onAppear {
 				if viewModel == nil {
@@ -186,7 +222,7 @@ struct SessionDetailView: View {
 					}
 					.disabled(session?.status == .running)
 					Button {
-						showModelSheet = true
+						openModelSheet()
 					} label: {
 						Label(session?.model.map { "Model: \($0)" } ?? "Change model", systemImage: "cpu")
 					}
@@ -208,6 +244,16 @@ struct SessionDetailView: View {
 					}
 					.disabled(session?.status == .running || compacting)
 					.accessibilityIdentifier("compactSession")
+				}
+				if session?.kind == "claude" {
+					// deck restarts only an idle session (a running turn is a 409).
+					Button {
+						Task { await viewModel?.restart() }
+					} label: {
+						Label("Restart claude", systemImage: "arrow.clockwise")
+					}
+					.disabled(session?.status == .running)
+					.accessibilityIdentifier("restartSession")
 				}
 				Button {
 					showRenameSheet = true
@@ -255,6 +301,14 @@ struct SessionDetailView: View {
 					} label: {
 						Label("PR #\(pr.number ?? 0)", systemImage: "arrow.triangle.pull")
 					}
+				}
+				if session?.pr != nil, store.supports(.prDismiss) {
+					Button {
+						Task { await viewModel?.dismissPR() }
+					} label: {
+						Label("Dismiss PR", systemImage: "xmark.circle")
+					}
+					.accessibilityIdentifier("dismissPR")
 				}
 				Button(role: .destructive) {
 					showDeleteSheet = true
@@ -967,4 +1021,9 @@ struct QuestionCard: View {
 		.background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
 		.overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5))
 	}
+}
+
+/// A pick from the model sheet; `model` nil is "back to the default".
+private struct ModelPick {
+	let model: String?
 }

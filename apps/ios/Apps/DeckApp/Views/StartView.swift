@@ -228,6 +228,7 @@ struct StartConfirmSheet: View {
 	@State private var isSubmitting = false
 	@State private var idempotencyKey = UUID().uuidString
 	@State private var errorMessage: String?
+	@State private var confirmingExpensive = false
 
 	private var isReview: Bool { if case .pr = kind { return true }; return false }
 
@@ -426,10 +427,20 @@ struct StartConfirmSheet: View {
 				}
 				ToolbarItem(placement: .confirmationAction) {
 					Button(isSubmitting ? "Starting…" : "Start") {
-						Task { await start() }
+						if pickIsExpensive {
+							confirmingExpensive = true
+						} else {
+							Task { await start() }
+						}
 					}
 					.disabled(isSubmitting || (worktreeMode == .existing && existingWorktree.isEmpty))
 				}
+			}
+			.alert("Expensive model", isPresented: $confirmingExpensive) {
+				Button("Cancel", role: .cancel) {}
+				Button("Start anyway") { Task { await start() } }
+			} message: {
+				Text("\(effectiveModel() ?? "") is an expensive model. Start this session on it anyway?")
 			}
 			.task { await setup() }
 			.onChange(of: agentKind) { _, _ in seedModel() }
@@ -525,6 +536,12 @@ struct StartConfirmSheet: View {
 			model = ""
 			customModel = choice.model
 		}
+	}
+
+	/// The server's list arrives with the defaults `setup` fetches.
+	private var pickIsExpensive: Bool {
+		store.needsExpensiveConfirm(
+			model: effectiveModel(), provider: agentKind == "pi" ? provider : nil, kind: agentKind)
 	}
 
 	private func effectiveModel() -> String? {

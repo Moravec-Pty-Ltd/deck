@@ -345,6 +345,16 @@ final class ParityTests: XCTestCase {
 		assertShape(sent, "POST", "/api/agent/sessions/example/compact", keys: [])
 	}
 
+	func testRestartHasNoBrowserFallback() async {
+		let sent = await requests(status: 404) { try await $0.restart(sessionId: "example") }
+		assertShape(sent, "POST", "/api/agent/sessions/example/restart", keys: [])
+	}
+
+	func testDismissingAPRDeletesItWithNoBody() async {
+		let sent = await requests { try await $0.dismissPR(sessionId: "example") }
+		assertShape(sent, "DELETE", "/api/agent/sessions/example/pr", keys: nil)
+	}
+
 	func testRenameHasNoBrowserFallback() async {
 		let sent = await requests(status: 404) { _ = try await $0.rename(sessionId: "example", title: "New") }
 		assertShape(sent, "POST", "/api/agent/sessions/example/title", keys: ["title"])

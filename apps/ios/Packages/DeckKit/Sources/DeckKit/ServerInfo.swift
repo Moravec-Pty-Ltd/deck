@@ -17,6 +17,8 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 	case quickMessages = "quick-messages"
 	case projectConfig = "project-config"
 	case git
+	case prDismiss = "pr-dismiss"
+	case expensiveModels = "expensive-models"
 
 	/// What the feature is called where a banner names what is missing.
 	public var label: String {
@@ -34,6 +36,8 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 		case .quickMessages: return "quick messages"
 		case .projectConfig: return "project automation"
 		case .git: return "branches and worktrees"
+		case .prDismiss: return "dismissing a PR"
+		case .expensiveModels: return "the expensive-model check"
 		}
 	}
 }

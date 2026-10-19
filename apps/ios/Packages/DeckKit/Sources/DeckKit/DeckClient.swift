@@ -301,6 +301,19 @@ public final class DeckClient: @unchecked Sendable {
 		_ = try await postRaw("/api/agent/sessions/\(sessionId)/compact", json: [:])
 	}
 
+	/// Drop a claude session's process so the next message respawns it with
+	/// the current CLI config and resumes the conversation. Idle-only and
+	/// claude-only server-side (409 while a turn runs, 400 for other kinds).
+	public func restart(sessionId: String) async throws {
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/restart", json: [:])
+	}
+
+	/// Forget the PR captured on a session. The next PR link the agent prints
+	/// captures one again.
+	public func dismissPR(sessionId: String) async throws {
+		_ = try await requestData("DELETE", "/api/agent/sessions/\(sessionId)/pr")
+	}
+
 	/// Rename a session. Returns the id it now has: renaming an unregistered
 	/// tmux terminal renames the tmux session, so deck's derived id moves with
 	/// it and the caller has to follow.

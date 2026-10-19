@@ -16,6 +16,8 @@ public struct DeckProject: Codable, Hashable, Identifiable, Sendable {
 public struct KindModel: Codable, Hashable, Sendable {
 	public let provider: String?
 	public let model: String
+	/// Set by the server on a premium model worth a confirm before using it.
+	public let expensive: Bool?
 }
 
 public struct AgentKind: Codable, Hashable, Identifiable, Sendable {
@@ -611,12 +613,19 @@ public struct ProjectStartDefaults: Codable, Hashable, Sendable {
 	public let base: String?
 	public let prompts: StartPrompts
 	public let kinds: [String: KindStartDefaults]
+	/// The server's expensive-model list (see `ExpensiveModels`). Absent on a
+	/// deck that does not advertise `expensive-models`.
+	public let expensiveModels: [String]?
 
-	public init(path: String, base: String? = nil, prompts: StartPrompts = StartPrompts(), kinds: [String: KindStartDefaults] = [:]) {
+	public init(
+		path: String, base: String? = nil, prompts: StartPrompts = StartPrompts(),
+		kinds: [String: KindStartDefaults] = [:], expensiveModels: [String]? = nil
+	) {
 		self.path = path
 		self.base = base
 		self.prompts = prompts
 		self.kinds = kinds
+		self.expensiveModels = expensiveModels
 	}
 }
 
