@@ -455,21 +455,21 @@
 
 	$effect(() => {
 		if (worktreeMode === 'new' && effectiveCwd) {
-			fetch(`/api/agent/git/branches?repo=${encodeURIComponent(effectiveCwd)}`)
-				.then((r) => r.json())
-				.then((b: string[]) => (branches = Array.isArray(b) ? b : []));
+			agentGet<string[]>(agentPath(`git/branches?repo=${encodeURIComponent(effectiveCwd)}`))
+				.then((b) => (branches = Array.isArray(b) ? b : []))
+				.catch(() => (branches = []));
 		}
 	});
 
 	$effect(() => {
 		if (worktreeMode === 'existing' && effectiveCwd) {
-			fetch(`/api/agent/git/worktrees?repo=${encodeURIComponent(effectiveCwd)}`)
-				.then((r) => r.json())
-				.then((w: Worktree[]) => {
+			agentGet<Worktree[]>(agentPath(`git/worktrees?repo=${encodeURIComponent(effectiveCwd)}`))
+				.then((w) => {
 					existingWorktrees = Array.isArray(w) ? w.filter((x) => !x.isMain) : [];
 					if (!existingWorktrees.some((x) => x.path === existingWorktreeDir))
 						existingWorktreeDir = existingWorktrees[0]?.path ?? '';
-				});
+				})
+				.catch(() => (existingWorktrees = []));
 		}
 	});
 

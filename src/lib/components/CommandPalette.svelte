@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { agentDelete, agentPost, sessionPath } from '$lib/agent-api';
+	import { agentDelete, agentGet, agentPath, agentPost, sessionPath } from '$lib/agent-api';
 	import {
 		buildCommands,
 		filterCommands,
@@ -122,8 +122,8 @@
 	// Pull the switch-list + current session's servers whenever the palette opens
 	// (and after an action mutates them). Cheap and on-demand, no new poller.
 	async function loadData() {
-		const sRes = await fetch('/api/agent/sessions').catch(() => null);
-		if (sRes?.ok) sessions = await sRes.json();
+		const list = await agentGet<SessionView[]>(agentPath('sessions')).catch(() => null);
+		if (list) sessions = list;
 		sessionServers = currentId ? await fetchServers(currentId).catch(() => []) : [];
 	}
 
