@@ -5,8 +5,18 @@ import DeckKit
 /// Opens deck's windows from outside them: the menu bar and notification taps.
 @MainActor
 struct MacOpener {
-	/// Main windows on screen, signed in or not.
-	static var mainWindows = 0
+	/// Every main window that has appeared; weak, so a closed one drops out.
+	private static let tracked = NSHashTable<NSWindow>.weakObjects()
+
+	static func track(_ window: NSWindow) { tracked.add(window) }
+
+	/// The main windows open right now, read from AppKit at the moment of use
+	/// rather than counted from SwiftUI's appear and disappear. Unhides the app
+	/// first, since a hidden app's windows all read as not visible.
+	static func mainWindows() -> [NSWindow] {
+		if NSApp.isHidden { NSApp.unhide(nil) }
+		return tracked.allObjects.filter { $0.isVisible || $0.isMiniaturized }
+	}
 
 	let openWindow: OpenWindowAction
 
@@ -14,17 +24,18 @@ struct MacOpener {
 	/// plain WindowGroup always adds a window, so it is only used for the second.
 	func showMain() {
 		NSApp.activate()
-		if Self.mainWindows > 0 {
-			NSApp.windows.filter(\.isMiniaturized).forEach { $0.deminiaturize(nil) }
-		} else {
+		guard let window = Self.mainWindows().first else {
 			openWindow(id: MacWindow.main)
+			return
 		}
+		if window.isMiniaturized { window.deminiaturize(nil) }
+		window.makeKeyAndOrderFront(nil)
 	}
 
 	/// Selects the session in the main window, or with none open gives it a
 	/// window of its own (focusing the one it already has).
 	func open(session id: String) {
-		guard Self.mainWindows > 0 else {
+		guard !Self.mainWindows().isEmpty else {
 			NSApp.activate()
 			openWindow(id: MacWindow.session, value: id)
 			return
@@ -36,7 +47,7 @@ struct MacOpener {
 	/// Shows the run in the main window's inbox; with none open, its phase
 	/// session's window when it has one.
 	func open(run id: String, phaseSession: String?) {
-		if Self.mainWindows > 0 {
+		if !Self.mainWindows().isEmpty {
 			showMain()
 			NotificationCenter.default.post(name: .deckOpenRun, object: id)
 		} else if let phaseSession {
@@ -48,10 +59,21 @@ struct MacOpener {
 }
 
 extension View {
-	/// Counts this window as a main window for MacOpener.
+	/// Marks this view's window as a main window for MacOpener.
 	func macMainWindow() -> some View {
-		onAppear { MacOpener.mainWindows += 1 }
-			.onDisappear { MacOpener.mainWindows -= 1 }
+		background(MainWindowTracker())
+	}
+}
+
+private struct MainWindowTracker: NSViewRepresentable {
+	func makeNSView(context: Context) -> NSView { TrackingView() }
+	func updateNSView(_ nsView: NSView, context: Context) {}
+
+	private final class TrackingView: NSView {
+		override func viewDidMoveToWindow() {
+			super.viewDidMoveToWindow()
+			if let window { MacOpener.track(window) }
+		}
 	}
 }
 

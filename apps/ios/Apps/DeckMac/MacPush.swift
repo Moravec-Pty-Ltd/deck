@@ -37,12 +37,15 @@ final class MacPushManager: NSObject, UNUserNotificationCenterDelegate {
 
 	private override init() { super.init() }
 
+	/// Safe to call on every appearance of the menu bar icon: only the first
+	/// call takes the opener and opens a tap that arrived before it.
 	func configure(store: DeckStore, opener: MacOpener) {
-		self.opener = opener
 		if self.store !== store {
 			self.store = store
 			follow()
 		}
+		guard self.opener == nil else { return }
+		self.opener = opener
 		if let pending {
 			self.pending = nil
 			open(pending)

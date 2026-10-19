@@ -55,7 +55,7 @@ extension NotificationAnswer {
 		let answers = structured ? [StructuredAnswer(header: header, labels: [label])] : []
 		let response = try await client.answer(sessionId: sessionId, text: text, askId: askId, answers: answers)
 		if !response.ok, let reason = response.reason {
-			throw DeckError.http(status: 200, message: reason)
+			throw DeckError.answerDeclined(reason: reason)
 		}
 	}
 
