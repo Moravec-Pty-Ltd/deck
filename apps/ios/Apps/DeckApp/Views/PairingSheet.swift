@@ -26,7 +26,7 @@ struct PairingSheet: View {
 				.padding()
 			}
 			.navigationTitle("Sign-in request")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Later") { dismiss() }

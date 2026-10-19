@@ -3,11 +3,6 @@ import UIKit
 import UserNotifications
 import DeckKit
 
-extension Notification.Name {
-	static let deckOpenSession = Notification.Name("deck.openSession")
-	static let deckOpenRun = Notification.Name("deck.openRun")
-}
-
 /// Owns notification authorization/registration and hands the APNs device
 /// token to deck's push registration endpoint (a deck-specific extension to
 /// the agent API, not part of DeckKit's core client surface it doesn't wrap).

@@ -20,7 +20,7 @@ struct ReviewsView: View {
 				}
 			}
 			.navigationTitle("Reviews")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.refreshable { await store.refreshReviews() }
 			.toolbar {
 				ToolbarItem(placement: .confirmationAction) {

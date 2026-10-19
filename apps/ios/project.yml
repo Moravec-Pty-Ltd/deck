@@ -202,6 +202,22 @@ targets:
       - path: Apps/DeckApp/Support/OperatorController.swift
       - path: Apps/DeckApp/Views/OperatorView.swift
       - path: Apps/DeckApp/Views/LocalModelView.swift
+      # Inbox, runs, schedules, start, the session sheets and the settings
+      # forms: plain SwiftUI over DeckStore, shared rather than ported.
+      - path: Apps/DeckApp/Views/InboxView.swift
+      - path: Apps/DeckApp/Views/RunViews.swift
+      - path: Apps/DeckApp/Views/SchedulesView.swift
+      - path: Apps/DeckApp/Views/StartView.swift
+      - path: Apps/DeckApp/Views/StartRunView.swift
+      - path: Apps/DeckApp/Views/AutomationView.swift
+      - path: Apps/DeckApp/Views/ProjectsSettingsView.swift
+      - path: Apps/DeckApp/Views/ServerSettingsView.swift
+      - path: Apps/DeckApp/Views/ReviewsView.swift
+      - path: Apps/DeckApp/Views/PairingSheet.swift
+      - path: Apps/DeckApp/Views/ChangesSheet.swift
+      - path: Apps/DeckApp/Views/SessionSheets.swift
+      - path: Apps/DeckApp/Views/ServersSheet.swift
+      - path: Apps/DeckApp/Views/FileAttachments.swift
     dependencies:
       - package: DeckKit
         product: DeckKit

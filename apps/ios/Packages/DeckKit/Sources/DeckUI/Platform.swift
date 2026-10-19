@@ -80,11 +80,22 @@ extension View {
 
 extension View {
 	/// A field for paths, urls and names: no autocapitalisation or autocorrect.
-	func deckPlainInput() -> some View {
+	public func deckPlainInput() -> some View {
 		#if os(iOS)
 		textInputAutocapitalization(.never).autocorrectionDisabled()
 		#else
 		autocorrectionDisabled()
+		#endif
+	}
+}
+
+extension View {
+	/// Inset grouped where iOS has it; macOS lists have no such style.
+	public func deckInsetGroupedList() -> some View {
+		#if os(iOS)
+		listStyle(.insetGrouped)
+		#else
+		listStyle(.inset)
 		#endif
 	}
 }

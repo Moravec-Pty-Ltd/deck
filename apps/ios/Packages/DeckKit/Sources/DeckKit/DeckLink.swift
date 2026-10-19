@@ -21,3 +21,10 @@ public enum DeckLink {
 		sessionId(from: url.absoluteString)
 	}
 }
+
+extension Notification.Name {
+	/// Open a session (object: its id) or a run (object: its id) in whichever
+	/// window is listening: posted by a notification tap, a link or a schedule.
+	public static let deckOpenSession = Notification.Name("deck.openSession")
+	public static let deckOpenRun = Notification.Name("deck.openRun")
+}
