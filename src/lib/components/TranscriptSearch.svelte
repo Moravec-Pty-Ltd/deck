@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { agentGet, agentPath } from '$lib/agent-api';
 	import { Search, User, Bot, MessageSquare, X } from '@lucide/svelte';
 	import type { SessionView } from '$lib/session-view';
 	import type { NameMatch, SearchHit } from '$lib/search-core';
@@ -47,8 +48,7 @@
 
 	async function loadSessions() {
 		try {
-			const res = await fetch('/api/agent/sessions');
-			if (res.ok) sessions = await res.json();
+			sessions = await agentGet<SessionView[]>(agentPath('sessions'));
 		} catch {
 			// A failed list just means no name matches; the transcript search still runs.
 		}
@@ -75,12 +75,14 @@
 	async function run(q: string) {
 		busy = true;
 		try {
-			const res = await fetch(`/api/agent/search?q=${encodeURIComponent(q)}&limit=40`);
-			if (!res.ok) return;
-			const body = (await res.json()) as { hits: SearchHit[]; truncated: boolean };
+			const body = await agentGet<{ hits: SearchHit[]; truncated: boolean }>(
+				agentPath(`search?q=${encodeURIComponent(q)}&limit=40`)
+			);
 			hits = body.hits;
 			truncated = body.truncated;
 			searched = q;
+		} catch {
+			// A failed scan keeps the last results; the name matches still show.
 		} finally {
 			busy = false;
 		}

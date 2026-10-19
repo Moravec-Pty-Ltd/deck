@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { agentDelete, agentPost, sessionPath } from '$lib/agent-api';
 	import {
 		buildCommands,
 		filterCommands,
@@ -71,24 +72,16 @@
 	);
 
 	// Review and merge are separate agent routes, named by the payload's action.
-	async function sessionPr(path: string, init: RequestInit) {
+	async function sessionPr(send: (id: string) => Promise<unknown>) {
 		if (!currentSession) throw new Error('no session');
-		const res = await fetch(`/api/agent/sessions/${encodeURIComponent(currentSession.id)}/${path}`, init);
-		if (!res.ok) {
-			const data = await res.json().catch(() => null);
-			throw new Error(data?.message || 'action failed');
-		}
+		await send(currentSession.id);
 		await loadData();
 	}
 
 	const prPost = ({ action, ...body }: PrActionPayload) =>
-		sessionPr(action, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(body)
-		});
+		sessionPr((id) => agentPost(sessionPath(id, action), body));
 
-	const prDismiss = () => sessionPr('pr', { method: 'DELETE' });
+	const prDismiss = () => sessionPr((id) => agentDelete(sessionPath(id, 'pr')));
 
 	function context(): CommandContext {
 		return {

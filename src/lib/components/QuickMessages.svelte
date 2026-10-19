@@ -3,6 +3,7 @@
 	import type { QuickMessage } from '$lib/types';
 	import { MessageSquareText, Plus, Trash2, ArrowUp, ArrowDown, Settings2 } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
+	import { AgentApiError, agentGet, agentPath, agentRequest } from '$lib/agent-api';
 
 	// The composer's quick-message popover (issue #45): a button next to send that
 	// lists the system-wide canned messages; clicking one fires it immediately via
@@ -24,8 +25,7 @@
 
 	async function load() {
 		try {
-			const res = await fetch('/api/agent/quick-messages');
-			if (res.ok) messages = await res.json();
+			messages = await agentGet<QuickMessage[]>(agentPath('quick-messages'));
 		} catch {
 			// best-effort; an empty list just shows the empty state
 		}
@@ -77,19 +77,10 @@
 			.map((m) => ({ id: m.id, label: m.label.trim() || undefined, text: m.text.trim() }))
 			.filter((m) => m.text);
 		try {
-			const res = await fetch('/api/agent/quick-messages', {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(payload)
-			});
-			if (!res.ok) {
-				err = 'save failed';
-				return;
-			}
-			messages = await res.json();
+			messages = await agentRequest<QuickMessage[]>(agentPath('quick-messages'), { method: 'PUT', body: payload });
 			managing = false;
-		} catch {
-			err = 'network error';
+		} catch (e) {
+			err = e instanceof AgentApiError ? 'save failed' : 'network error';
 		} finally {
 			saving = false;
 		}

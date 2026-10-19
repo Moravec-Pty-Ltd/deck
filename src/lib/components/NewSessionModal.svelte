@@ -55,6 +55,7 @@
 		SlidersHorizontal
 	} from '@lucide/svelte';
 	import { goto } from '$app/navigation';
+	import { agentGet, agentPath } from '$lib/agent-api';
 	import PathInput from './PathInput.svelte';
 	import IssuePicker from './IssuePicker.svelte';
 	import PrPicker from './PrPicker.svelte';
@@ -197,9 +198,8 @@
 		void loadAgentKinds();
 		const p = preset;
 		worktreeModeDirty = !!(p?.kind || p?.cwd);
-		fetch('/api/agent/settings')
-			.then((r) => (r.ok ? r.json() : {}))
-			.then((s: AgentSettingsView) => (settings = s ?? {}))
+		agentGet<AgentSettingsView>(agentPath('settings'))
+			.then((s) => (settings = s ?? {}))
 			.catch(() => {});
 		fetch('/api/projects')
 			.then((r) => r.json())
@@ -442,9 +442,10 @@
 		const path = open ? selectedProject?.path : undefined;
 		if (!path) return;
 		const seq = ++defaultsSeq;
-		fetch(`/api/agent/defaults?project=${encodeURIComponent(path)}`)
-			.then((r) => (r.ok ? r.json() : null))
-			.then((d: (ProjectStartDefaults & { expensiveModels?: string[] }) | null) => {
+		agentGet<ProjectStartDefaults & { expensiveModels?: string[] }>(
+			agentPath(`defaults?project=${encodeURIComponent(path)}`)
+		)
+			.then((d) => {
 				if (seq !== defaultsSeq || !d) return;
 				startDefaults = d;
 				if (Array.isArray(d.expensiveModels)) expensiveModels = d.expensiveModels;

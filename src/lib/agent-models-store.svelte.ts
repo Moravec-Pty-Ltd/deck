@@ -1,5 +1,6 @@
 import type { AgentKind, ModelChoice } from '$lib/types';
 import { isListableKind } from '$lib/models';
+import { agentGet, agentPath } from '$lib/agent-api';
 
 // Shared read-through cache of GET /api/agent/kinds: which agent CLIs are
 // installed and the models each reports. The Projects page can show a work and
@@ -30,12 +31,8 @@ export function agentAvailability(): Partial<Record<AgentKind, boolean>> | null 
 
 export function loadAgentKinds(): Promise<void> {
 	if (rows) return Promise.resolve();
-	inflight ??= fetch('/api/agent/kinds')
-		.then((r) => {
-			if (!r.ok) throw new Error(`kinds ${r.status}`);
-			return r.json();
-		})
-		.then((list: KindRow[]) => {
+	inflight ??= agentGet<KindRow[]>(agentPath('kinds'))
+		.then((list) => {
 			rows = Array.isArray(list) ? list : [];
 		})
 		// A missing CLI answers 200 with available:false, so a failure here is the
