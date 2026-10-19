@@ -188,7 +188,8 @@ export function pickOption(answer: string, options: string[]): string | null {
 // ?limit= on the history route: 50 by default, clamped to 1..200, so a
 // garbage or negative value can't read the whole log.
 export function historyLimit(raw: string | null): number {
-	const n = Math.floor(Number(raw ?? 50));
+	if (raw == null || raw.trim() === '') return 50;
+	const n = Math.floor(Number(raw));
 	if (!Number.isFinite(n)) return 50;
 	return Math.min(Math.max(n, 1), 200);
 }

@@ -183,6 +183,8 @@ describe('pickOption', () => {
 describe('historyLimit', () => {
 	it.each([
 		[null, 50],
+		['', 50],
+		['  ', 50],
 		['20', 20],
 		['5000', 200],
 		['0', 1],
