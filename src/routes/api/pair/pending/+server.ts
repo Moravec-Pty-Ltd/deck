@@ -1,9 +1,6 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { listPending } from '$lib/server/pairing';
+import { pendingPairingsRoute } from '$lib/server/settings';
 
-// Authed (not in PUBLIC_PATHS): the live access requests the current browser may
-// approve. The home page reads this on its poll to surface an approval prompt.
-export const GET: RequestHandler = async () => {
-	return json({ pending: listPending() });
-};
+// Authed (not in PUBLIC_PATHS): the home page reads this on its poll to surface
+// an approval prompt. Same handler as the agent API's GET /api/agent/pairing.
+export const GET: RequestHandler = pendingPairingsRoute;

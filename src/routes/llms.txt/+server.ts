@@ -932,6 +932,72 @@ The morabot PR reviewer's state from the monitor's last poll: \`{ "status":
 "pr", "headSha", "phase", "message", "url", "failedAt" }] }\`. \`unconfigured\`
 means no reviewer is set up on this machine.
 
+## Settings
+
+App-wide preferences (\`~/.deck/settings.json\`). Gate on the \`settings\`
+capability. Deck-spawned agents may read and change these too.
+
+### GET /api/agent/settings
+
+\`\`\`json
+{ "speech": { "ttsUrl": "http://127.0.0.1:8000", "sttUrl": "...", "voice": "..." },
+  "operator": { "url": "...", "model": "...", "provider": "openai", "apiKeyFile": "...", "hasApiKey": true },
+  "modelProfiles": [{ "id": "local", "label": "Local", "model": "...", "envKeys": ["ANTHROPIC_BASE_URL"] }],
+  "lastModels": { "claude": { "model": "opus" } }, "lastEffort": "high",
+  "zedSshTarget": "user@host", "autoCompact": { "enabled": true, "percent": 80 } }
+\`\`\`
+
+Secrets never leave the server: the operator key reads only as \`hasApiKey\`,
+and a model profile's env only as its variable names (\`envKeys\`). Each block
+is absent when unset.
+
+### PATCH /api/agent/settings
+
+\`{ "speech"?, "operator"?, "autoCompact"?, "zedSshTarget"? }\`: send only what
+you change; the server merges it into the file as it is now. Within a block an
+omitted field keeps its value (a PATCH without \`apiKey\` keeps the stored key),
+a field set to \`null\` or \`""\` clears it, and a whole block set to \`null\`
+clears the block. Fields: \`speech { ttsUrl, sttUrl, voice }\`,
+\`operator { url, model, provider: "openai" | "anthropic", apiKey, apiKeyFile }\`
+(\`apiKey\` is write-only), \`autoCompact { enabled: boolean, percent: number }\`
+(\`percent\` is clamped to 50..95), \`zedSshTarget: "user@host[:port]" | null\`.
+An unknown key or a wrongly typed field is a 400 and nothing is written.
+Returns the redacted settings, as GET.
+
+### POST /api/agent/settings/speech/detect
+
+Probe for a local speech server on this machine:
+\`{ "found": true, "url", "voices": [...], "voice", "stt": true }\` or
+\`{ "found": false }\`. Nothing is saved; PATCH \`speech\` with what you want.
+
+### GET /api/agent/settings/skill
+
+The shipped deck skill's install state per harness:
+\`[{ "kind": "claude", "available": true, "supported": true, "installed": true,
+"installedVersion": "...", "shippedVersion": "...", "upToDate": true }]\`.
+
+### POST /api/agent/settings/skill
+
+\`{ "kind": "claude" }\`: install or update the deck skill for that harness.
+Returns its row as above; 400 for an unknown or unsupported kind.
+
+## Pairing
+
+A new device asks for access through the public pairing flow and shows a
+six-digit code; a signed-in client approves it. Gate on the \`pairing\`
+capability, and follow the \`pairing\` event (see the event log) instead of
+polling.
+
+### GET /api/agent/pairing
+
+Live requests: \`{ "pending": [{ "id": "...", "code": "123456" }] }\`. Check
+the code against the one the new device shows before approving.
+
+### POST /api/agent/pairing/{id}
+
+\`{ "approve": true }\` (or \`false\` to deny). Returns \`{ "ok": true }\`;
+\`ok\` is false when the request expired or was already decided.
+
 ## Push notifications
 
 Native iOS/watchOS clients register a device token to receive the same nudges
@@ -990,6 +1056,8 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 	fetch \`GET /api/agent/runs/{id}\` for its digest;
 	\`sessionId\` carries the run id)
 - \`run-deleted\`: { runId } (a run was removed; drop it from your list)
+- \`pairing\`: { pairingId, code?, state: pending|approved|denied } (a device asked
+	for access, or a request was decided; \`sessionId\` carries the pairing id)
 
 Apply deltas idempotently: after a gap re-snapshot (or bootstrap) an overlapping
 event may repeat state the snapshot already reflects.

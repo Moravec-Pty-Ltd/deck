@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { pinEnv } from '$lib/server/test-env';
 
-// Every browser route under /api/sessions/[id] that has an agent API twin must
+// Every browser route that has an agent API twin must
 // export the very same handler function, so the two surfaces cannot drift. Add
 // a row when a shared route lands.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-adapters-'));
@@ -47,7 +47,10 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./sessions/[id]/zed/+server'), () => import('./agent/sessions/[id]/zed/+server'), ['GET']],
 	[() => import('./quick-messages/+server'), () => import('./agent/quick-messages/+server'), ['GET', 'PUT']],
 	[() => import('./search/+server'), () => import('./agent/search/+server'), ['GET']],
-	[() => import('./user/+server'), () => import('./agent/user/+server'), ['GET']]
+	[() => import('./user/+server'), () => import('./agent/user/+server'), ['GET']],
+	[() => import('./speech/detect/+server'), () => import('./agent/settings/speech/detect/+server'), ['POST']],
+	[() => import('./skills/+server'), () => import('./agent/settings/skill/+server'), ['GET', 'POST']],
+	[() => import('./pair/pending/+server'), () => import('./agent/pairing/+server'), ['GET']]
 ];
 
 describe('browser and agent routes share one handler', () => {

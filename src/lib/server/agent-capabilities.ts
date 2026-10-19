@@ -23,6 +23,8 @@ export const AGENT_CAPABILITIES: readonly string[] = [
 	'user',
 	'expensive-models',
 	'terminal',
+	'settings',
+	'pairing',
 ];
 
 export function agentInfo(): { version: string | null; capabilities: string[] } {
