@@ -71,9 +71,14 @@ public struct PairingClient: Sendable {
 		guard let url = components?.url else { throw URLError(.badURL) }
 		let (data, response) = try await session.data(from: url)
 		try Self.check(response)
-		let status = (try? JSONDecoder().decode([String: String].self, from: data))?["status"]
+		// A body that doesn't read is a server fault, not a request deck forgot.
+		let status = try JSONDecoder().decode(StatusBody.self, from: data).status
 		let headers = (response as? HTTPURLResponse)?.allHeaderFields ?? [:]
 		return Self.claim(status: status, headers: headers, url: url)
+	}
+
+	private struct StatusBody: Decodable {
+		let status: String
 	}
 
 	static func claim(status: String?, headers: [AnyHashable: Any], url: URL) -> PairingClaim {
