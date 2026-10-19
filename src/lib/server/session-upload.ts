@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { objectBody, sessionOr404 } from './http';
 import { persistUpload } from './uploads';
 import { sendAgentMessage } from './send-agent-message';
+import { imageKindError, parseImages } from './message-core';
 import { MAX_UPLOAD_FILES, sharedFileMessage, uploadTooLarge } from '$lib/upload-core';
 
 // Share one or more files with a session. Shared verbatim by
@@ -50,6 +51,10 @@ export async function uploadToSession(event: {
 	const session = await sessionOr404(event.params.id!);
 	const body = await objectBody(event.request);
 	const files = parseFiles(body.files);
+	// The send below would refuse these images; refuse them before any file is
+	// written, so a rejected share leaves nothing on disk.
+	const imageRefusal = imageKindError(session.kind, parseImages(body.images));
+	if (imageRefusal) error(400, imageRefusal);
 
 	// Size was settled before anything was written (see parseFile), so nothing
 	// oversized ever reaches the disk to be cleaned up afterwards.

@@ -15,3 +15,9 @@ export function parseImages(raw: unknown): ImageInput[] {
 		.slice(0, 8);
 }
 
+
+// The per-turn runners of the other kinds accept text only, and an attachment
+// must never be dropped silently.
+export function imageKindError(kind: string, images: ImageInput[]): string | null {
+	return images.length && kind !== 'claude' ? 'image attachments require a claude session' : null;
+}
