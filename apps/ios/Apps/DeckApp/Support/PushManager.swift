@@ -97,7 +97,7 @@ final class PushManager: NSObject, UNUserNotificationCenterDelegate {
 				Task { @MainActor in
 					NotificationCenter.default.post(name: .deckOpenRun, object: runId)
 				}
-			} else if let sessionId = Self.extractSessionId(from: urlString) {
+			} else if let sessionId = DeckLink.sessionId(from: urlString) {
 				Task { @MainActor in
 					NotificationCenter.default.post(name: .deckOpenSession, object: sessionId)
 				}
@@ -163,15 +163,6 @@ final class PushManager: NSObject, UNUserNotificationCenterDelegate {
 		guard let components = URLComponents(string: urlString) else { return nil }
 		let parts = components.path.split(separator: "/").map(String.init)
 		guard let index = parts.firstIndex(of: "runs"), parts.indices.contains(index + 1) else { return nil }
-		return parts[index + 1]
-	}
-
-	/// Pulls `<id>` out of a session URL's `/s/<id>` path, e.g.
-	/// `http://localhost:4818/s/c_abc123`.
-	nonisolated static func extractSessionId(from urlString: String) -> String? {
-		guard let components = URLComponents(string: urlString) else { return nil }
-		let parts = components.path.split(separator: "/").map(String.init)
-		guard let index = parts.firstIndex(of: "s"), parts.indices.contains(index + 1) else { return nil }
 		return parts[index + 1]
 	}
 }

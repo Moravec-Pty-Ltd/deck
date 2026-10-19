@@ -25,6 +25,8 @@ struct SessionDetailView: View {
 
 	@State private var viewModel: SessionDetailViewModel?
 	@State private var composerText = ""
+	/// The phone layout's height, which caps how tall a pending question grows.
+	@State private var stackedHeight: CGFloat = 0
 	@State private var isSending = false
 	@AppStorage("condensedTranscript") private var condensedTranscript = true
 	@State private var composerFieldId = 0
@@ -336,7 +338,7 @@ struct SessionDetailView: View {
 			if session?.status == .running {
 				workingIndicator
 			}
-			askCard(viewModel)
+			askCard(viewModel, available: stackedHeight)
 			if let voice, voice.enabled {
 				Divider()
 				VoiceBar(voice: voice)
@@ -344,6 +346,7 @@ struct SessionDetailView: View {
 			Divider()
 			composer(viewModel)
 		}
+		.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { stackedHeight = $0 }
 	}
 
 	/// Half open on a table: the transcript stands on the upper half, voice
@@ -376,7 +379,8 @@ struct SessionDetailView: View {
 						.frame(maxHeight: viewModel.pendingAsk == nil ? .infinity : nil)
 					}
 					if viewModel.pendingAsk != nil {
-						ScrollView { askCard(viewModel) }
+						askCard(viewModel, available: geometry.size.height - upperHeight(in: geometry))
+						Spacer(minLength: 0)
 					} else if composerFocused || voice == nil {
 						Spacer(minLength: 0)
 					}
@@ -456,9 +460,9 @@ struct SessionDetailView: View {
 	}
 
 	@ViewBuilder
-	private func askCard(_ viewModel: SessionDetailViewModel) -> some View {
+	private func askCard(_ viewModel: SessionDetailViewModel, available: CGFloat) -> some View {
 		if let ask = viewModel.pendingAsk {
-			AskCard(ask: ask) { draft in
+			AskCard(ask: ask, maxQuestionsHeight: available > 0 ? available / 2 : nil) { draft in
 				Task { await viewModel.answer(ask: ask, draft: draft) }
 			}
 			.id(ask.id)
@@ -966,17 +970,38 @@ struct QuestionCard: View {
 
 struct AskCard: View {
 	let ask: DeckAsk
+	/// The most height the questions take before they scroll, so a long ask
+	/// never pushes the send button and the composer off screen.
+	var maxQuestionsHeight: CGFloat?
 	var onAnswer: (AskAnswerDraft) -> Void
 
 	@State private var draft: AskAnswerDraft
 
-	init(ask: DeckAsk, onAnswer: @escaping (AskAnswerDraft) -> Void) {
+	init(ask: DeckAsk, maxQuestionsHeight: CGFloat? = nil, onAnswer: @escaping (AskAnswerDraft) -> Void) {
 		self.ask = ask
+		self.maxQuestionsHeight = maxQuestionsHeight
 		self.onAnswer = onAnswer
 		_draft = State(initialValue: AskAnswerDraft(questions: ask.questions))
 	}
 
 	var body: some View {
+		VStack(alignment: .leading, spacing: 12) {
+			// Short asks keep their natural height; only one that overflows the
+			// cap becomes a scroll view.
+			ViewThatFits(in: .vertical) {
+				questions
+				ScrollView { questions }
+			}
+			.frame(maxHeight: maxQuestionsHeight)
+			Button("Send answers") {
+				onAnswer(draft)
+			}
+			.buttonStyle(.borderedProminent)
+			.disabled(!draft.isComplete)
+		}
+	}
+
+	private var questions: some View {
 		VStack(alignment: .leading, spacing: 12) {
 			ForEach(Array(ask.questions.enumerated()), id: \.offset) { index, question in
 				VStack(alignment: .leading, spacing: 8) {
@@ -1007,12 +1032,8 @@ struct AskCard: View {
 						.textFieldStyle(.roundedBorder)
 				}
 			}
-			Button("Send answers") {
-				onAnswer(draft)
-			}
-			.buttonStyle(.borderedProminent)
-			.disabled(!draft.isComplete)
 		}
+		.frame(maxWidth: .infinity, alignment: .leading)
 	}
 }
 

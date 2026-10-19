@@ -37,7 +37,7 @@ struct RootView: View {
 		}
 		// A Live Activity tap opens its session (deck://s/<id>).
 		.onOpenURL { url in
-			guard url.scheme == "deck", let id = url.pathComponents.last, url.host == "s" else { return }
+			guard url.scheme == "deck", let id = DeckLink.sessionId(from: url) else { return }
 			NotificationCenter.default.post(name: .deckOpenSession, object: id)
 		}
 		// Sessions that start running while the app is open get a card; the
