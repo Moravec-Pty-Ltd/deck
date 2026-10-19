@@ -7,6 +7,7 @@ import {
 	backoffMs,
 	cursorWentBack,
 	feedUrl,
+	readFeed,
 	type FeedEvent
 } from './session-feed-core';
 
@@ -178,5 +179,37 @@ describe('feedUrl', () => {
 describe('backoffMs', () => {
 	it('doubles from 1s and caps at 30s', () => {
 		expect([1, 2, 3, 4, 5, 6, 10].map(backoffMs)).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+	});
+});
+
+describe('readFeed', () => {
+	const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+	it('returns the response of a live read', async () => {
+		const body = await readFeed(async () => ok({ events: [], seq: 4 }), null, new AbortController().signal);
+		expect(body).toEqual({ events: [], seq: 4 });
+	});
+
+	it('drops a response that lands after the read was aborted', async () => {
+		const ctrl = new AbortController();
+		let release!: () => void;
+		const gate = new Promise<void>((r) => (release = r));
+		const pending = readFeed(
+			async () => {
+				await gate;
+				return ok({ snapshot: [row('stale')], seq: 1 });
+			},
+			base(),
+			ctrl.signal
+		);
+		ctrl.abort();
+		release();
+		expect(await pending).toBeNull();
+	});
+
+	it('throws on a failed read', async () => {
+		await expect(
+			readFeed(async () => new Response('', { status: 500 }), null, new AbortController().signal)
+		).rejects.toThrow('feed 500');
 	});
 });

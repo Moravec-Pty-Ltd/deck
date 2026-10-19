@@ -132,3 +132,18 @@ export function feedUrl(state: FeedState | null): string {
 export function backoffMs(failures: number): number {
 	return Math.min(30_000, 1000 * 2 ** Math.max(0, failures - 1));
 }
+
+// One feed request. Resolves to null once the signal is aborted, even when the
+// response itself still arrives (a fetch that ignores the signal, or a body that
+// lands after the abort): an aborted read was asked for under a stale cursor.
+export async function readFeed(
+	fetcher: (url: string, init: { signal: AbortSignal }) => Promise<Response>,
+	state: FeedState | null,
+	signal: AbortSignal
+): Promise<FeedResponse | null> {
+	const res = await fetcher(feedUrl(state), { signal });
+	if (signal.aborted) return null;
+	if (!res.ok) throw new Error(`feed ${res.status}`);
+	const body = (await res.json()) as FeedResponse;
+	return signal.aborted ? null : body;
+}

@@ -3,7 +3,7 @@ import {
 	applyResponse,
 	backoffMs,
 	cursorWentBack,
-	feedUrl,
+	readFeed,
 	type FeedResponse,
 	type FeedState
 } from '$lib/session-feed-core';
@@ -63,20 +63,18 @@ class SessionFeed {
 
 	async #step(signal: AbortSignal) {
 		try {
-			const body = await this.#read(signal);
-			// A resync landed while this was in flight: its cursor is stale.
-			if (signal.aborted) return;
-			this.#take(body);
+			const body = await readFeed(fetch, this.#state, signal);
+			// Null, or no longer the loop's request: a resync landed while this was
+			// in flight, so its cursor is stale.
+			if (body && this.#current(signal)) this.#take(body);
 			this.#failures = 0;
 		} catch {
 			await this.#backoff(signal);
 		}
 	}
 
-	async #read(signal: AbortSignal): Promise<FeedResponse> {
-		const res = await fetch(feedUrl(this.#state), { signal });
-		if (!res.ok) throw new Error(`feed ${res.status}`);
-		return res.json();
+	#current(signal: AbortSignal): boolean {
+		return !signal.aborted && this.#ctrl?.signal === signal;
 	}
 
 	async #backoff(signal: AbortSignal) {
