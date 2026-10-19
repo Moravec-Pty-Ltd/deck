@@ -53,10 +53,9 @@
 		void load();
 	});
 
-	// Blank fields clear on the server; the key is sent only when there is a new
-	// one to store (or null to remove it), so saving never needs the stored value.
-	// The stored key is never sent back to the page, so an empty field means
-	// "keep it": send apiKey only to set a newly typed key or to remove one.
+	// Blank fields clear on the server. The stored key never reaches the page, so
+	// an empty key field means "keep it": apiKey goes only to set a newly typed
+	// key, or as null to remove one.
 	async function save(removeKey = false) {
 		const typed = apiKey.trim();
 		const key: { apiKey?: string | null } = {};
