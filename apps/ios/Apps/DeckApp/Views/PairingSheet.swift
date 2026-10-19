@@ -66,7 +66,8 @@ struct PairingPrompt: ViewModifier {
 	func body(content: Content) -> some View {
 		content.sheet(isPresented: Binding(
 			get: { hasNew },
-			set: { if !$0 { deferred.formUnion(store.pairingRequests.map(\.id)) } }
+			// Replaced rather than added to: an id that has left the list can't come back.
+			set: { if !$0 { deferred = Set(store.pairingRequests.map(\.id)) } }
 		)) {
 			PairingSheet()
 		}
