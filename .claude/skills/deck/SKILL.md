@@ -76,6 +76,17 @@ POST /api/agent/sessions/<id>/merge       {"method":"squash|merge|rebase","delet
 DELETE /api/agent/sessions/<id>           {"deleteWorktree":true,"deleteBranch":true}
 ```
 
+Terminals (tmux shell sessions; check for the `terminal` capability on `GET /api/agent`):
+
+```sh
+POST /api/agent/sessions                  {"mode":"shell","cwd":"/path/to/project","command"?:"npm run dev","title"?:"..."}
+GET  /api/agent/sessions/<id>/terminal    ?lines=500&h=<tag>  # screen text; same h back -> {"unchanged":true}
+POST /api/agent/sessions/<id>/terminal    {"text":"ls","submit"?:true} | {"key":"C-c"}  # named tmux keys only
+```
+
+The token drives every terminal deck lists, including the user's own tmux
+sessions (`managed: false`). Only type into a terminal you started or were asked to.
+
 ## Workflow runs
 
 deck can run the dev and review loops itself: one fresh session per phase, every

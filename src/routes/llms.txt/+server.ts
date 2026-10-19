@@ -201,8 +201,9 @@ A session is the unit of work: one agent (kind: claude|pi|codex|opencode) or
 shell in a working directory, optionally in its own git worktree. Statuses:
 running | idle | error | dead.
 \`awaitingInput: true\` means the session is blocked on a question (see Asks).
-Shell sessions appear in digests and the event log for monitoring, but the
-agent API cannot create or drive them (kind "shell" is rejected on create).
+Shell sessions (tmux terminals) are started with create's \`mode: "shell"\` and
+driven through /terminal (see Terminals); the agent-session endpoints
+(message, stop, answer, stream) do not apply to them.
 
 ### GET /api/agent/sessions
 
@@ -333,6 +334,18 @@ idempotent replay).
 
 Review mode fetches the PR head into a worktree and seeds the session with the
 PR, so the review/merge endpoints below work on it.
+
+\`\`\`json
+{ "mode": "shell",
+	"cwd": "/path/to/project",          // required; an existing directory
+	"command": "npm run dev",           // optional; runs instead of the login shell
+	"title": "...",                     // optional; untitled shells get a generated name
+	"worktree": { "branch": "my-branch", "newBranch": true }  // optional, as in work mode
+}
+\`\`\`
+
+Shell mode starts a deck-managed tmux terminal and no agent turn; \`kind\` must
+not be "shell" in work or review mode. Drive it with /terminal below.
 
 In both modes, an omitted or blank \`prompt\` defaults to the project's
 configured first-prompt template (work) / review prompt (review), the same
@@ -486,6 +499,37 @@ for a session with no directory.
 
 \`{ "deleteWorktree": true, "deleteBranch": true }\` (JSON body, or query
 \`?worktree=1&branch=1\`) — stop everything and remove the session.
+
+## Terminals
+
+A shell session is a tmux pane: read its screen and type into it. These routes
+answer 400 for an agent session and 404 for an unknown id. Capability token:
+\`terminal\`.
+
+**Disclosure**: any holder of the token can drive every shell session deck
+lists, including deck-spawned agents (they have \`$DECK_TOKEN\`) and including
+terminals deck did not start (\`managed: false\`: the machine's other tmux
+sessions, which may have a person attached). Typed text runs as the user who
+runs deck, with no confirmation. Only drive a terminal you started, or one you
+were asked to.
+
+### GET /api/agent/sessions/{id}/terminal?lines=<n>&h=<tag>
+
+The pane's current screen: \`{ "text": "<ANSI text>", "cleared": false,
+"dead": false, "h": "<tag>" }\`. \`lines\` is the scrollback depth (default
+500, at most 5000). Pass the last \`h\` back to poll cheaply: an unchanged pane
+answers \`{ "unchanged": true, "h" }\`. \`cleared: true\` means the program
+cleared the screen and \`text\` is its last non-empty output. A dead session
+answers \`{ "text": "(session is dead)", "dead": true }\`.
+
+### POST /api/agent/sessions/{id}/terminal
+
+\`{ "text": "ls -la", "submit"?: true }\` types literal text (at most 4096
+UTF-8 bytes) and presses Enter unless \`submit\` is false; empty text with
+submit is a bare Enter. \`{ "key": "C-c" }\` presses one key instead, by its
+tmux name: Enter, Escape, Tab, BTab, BSpace, DC, Space, Up, Down, Left, Right,
+Home, End, PPage, NPage, or C-a through C-z. Any other key is a 400. Returns
+\`{ "ok": true }\`; read the result with GET a moment later.
 
 ## Completion semantics
 
