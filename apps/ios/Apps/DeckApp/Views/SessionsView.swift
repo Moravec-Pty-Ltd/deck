@@ -475,10 +475,12 @@ struct SessionsView: View {
 		searching = true
 		searchTask = Task {
 			try? await Task.sleep(for: .milliseconds(300))
-			guard !Task.isCancelled, let client = store.client else { return }
-			if let response = try? await client.search(query: q) {
-				hits = response.hits
-			}
+			guard !Task.isCancelled else { return }
+			let response = try? await store.client?.search(query: q)
+			// A newer keystroke owns the results now; a late answer would
+			// put back hits the field has already cleared.
+			guard !Task.isCancelled else { return }
+			if let response { hits = response.hits }
 			searching = false
 		}
 	}

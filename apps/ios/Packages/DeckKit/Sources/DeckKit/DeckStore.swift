@@ -129,9 +129,10 @@ public final class DeckStore {
 		// These routes are capability-gated, so they wait for the server's answer.
 		Task {
 			await refreshServerInfo()
-			await refreshQuickMessages()
-			await refreshProjectDetails()
-			await refreshUser()
+			async let quick: Void = refreshQuickMessages()
+			async let details: Void = refreshProjectDetails()
+			async let user: Void = refreshUser()
+			_ = await (quick, details, user)
 		}
 	}
 
