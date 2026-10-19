@@ -44,6 +44,8 @@ struct SettingsView: View {
 					.accessibilityIdentifier("openOperatorModel")
 				}
 
+				ServerSettingsLink()
+
 				Section("Diagnostics") {
 					Button {
 						Task { await sendTestRequest() }

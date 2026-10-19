@@ -607,6 +607,140 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(sent.first?.accept, "text/event-stream")
 	}
 
+	// MARK: - Server settings
+
+	private static let redactedSettings = #"""
+	{"speech":{"ttsUrl":"http://127.0.0.1:3000","sttUrl":"http://127.0.0.1:3000","voice":"example"},
+	"operator":{"url":"http://127.0.0.1:3001/v1","model":"example-model","provider":"openai","apiKeyFile":"/path/to/key-file","hasApiKey":true},
+	"modelProfiles":[{"id":"local","label":"Local","model":"example","envKeys":["ANTHROPIC_BASE_URL"]}],
+	"lastModels":{"claude":{"model":"opus"}},"lastEffort":"high",
+	"zedSshTarget":"user@example.test","autoCompact":{"enabled":true,"percent":85}}
+	"""#
+
+	func testRedactedServerSettingsDecode() throws {
+		let s = try JSONDecoder().decode(ServerSettings.self, from: Data(Self.redactedSettings.utf8))
+		XCTAssertEqual(s.speech, SpeechServerSettings(ttsUrl: "http://127.0.0.1:3000", sttUrl: "http://127.0.0.1:3000", voice: "example"))
+		XCTAssertEqual(s.operator?.provider, .openai)
+		XCTAssertEqual(s.operator?.hasApiKey, true)
+		XCTAssertEqual(s.operator?.apiKeyFile, "/path/to/key-file")
+		XCTAssertEqual(s.modelProfiles?.first?.envKeys, ["ANTHROPIC_BASE_URL"])
+		XCTAssertEqual(s.zedSshTarget, "user@example.test")
+		XCTAssertEqual(s.autoCompact, AutoCompactSettings(enabled: true, percent: 85))
+
+		let empty = try JSONDecoder().decode(ServerSettings.self, from: Data("{}".utf8))
+		XCTAssertNil(empty.operator)
+		let unknownProvider = try JSONDecoder().decode(OperatorServerSettings.self, from: Data(#"{"provider":"other"}"#.utf8))
+		XCTAssertNil(unknownProvider.provider)
+		XCTAssertFalse(unknownProvider.hasApiKey)
+	}
+
+	func testServerSettingsReadTheAgentRoute() async {
+		let sent = await requests(reply: Self.redactedSettings) { _ = try await $0.serverSettings() }
+		assertShape(sent, "GET", "/api/agent/settings")
+	}
+
+	func testEachServerSettingsSaveSendsOnlyItsBlock() async {
+		let saves: [(ServerSettingsPatch, String)] = [
+			(.speech(SpeechServerSettings(ttsUrl: " http://127.0.0.1:3000 ")), "speech"),
+			(.operator(url: "", model: "", provider: nil, apiKeyFile: "", key: .keep), "operator"),
+			(.autoCompact(AutoCompactSettings(enabled: true, percent: 80)), "autoCompact"),
+			(.zedSshTarget("user@example.test"), "zedSshTarget")
+		]
+		for (patch, block) in saves {
+			let sent = await requests(reply: "{}") { try await $0.patchServerSettings(patch) }
+			assertShape(sent, "PATCH", "/api/agent/settings", keys: [block])
+		}
+		let speech = await requests(reply: "{}") { try await $0.patchServerSettings(.speech(SpeechServerSettings(ttsUrl: " http://127.0.0.1:3000 "))) }
+		let block = (speech.first?.json as? [String: Any])?["speech"] as? [String: Any]
+		XCTAssertEqual(block?["ttsUrl"] as? String, "http://127.0.0.1:3000")
+		XCTAssertEqual(block?["sttUrl"] as? String, "", "a blank field clears on the server")
+	}
+
+	private func operatorBlock(_ key: OperatorKeyChange) async -> [String: Any]? {
+		let sent = await requests(reply: "{}") {
+			try await $0.patchServerSettings(.operator(url: "http://127.0.0.1:3001/v1", model: "m", provider: nil, apiKeyFile: "", key: key))
+		}
+		return (sent.first?.json as? [String: Any])?["operator"] as? [String: Any]
+	}
+
+	func testOperatorKeyIsSentOnlyWhenReplacedOrRemoved() async {
+		let kept = await operatorBlock(.keep)
+		XCTAssertEqual(kept?.keys.sorted(), ["apiKeyFile", "model", "provider", "url"], "no apiKey: the stored key is kept")
+		XCTAssertTrue(kept?["provider"] is NSNull, "no provider: read from the URL")
+
+		let replaced = await operatorBlock(.replace(" example-key "))
+		XCTAssertEqual(replaced?["apiKey"] as? String, "example-key")
+
+		let removed = await operatorBlock(.remove)
+		XCTAssertTrue(removed?.keys.contains("apiKey") == true)
+		XCTAssertTrue(removed?["apiKey"] is NSNull)
+	}
+
+	func testAutoCompactIsClampedAndABlankZedTargetClears() {
+		let compact = ServerSettingsPatch.autoCompact(AutoCompactSettings(enabled: true, percent: 99)).json["autoCompact"] as? [String: Any]
+		XCTAssertEqual(compact?["percent"] as? Int, 95)
+		XCTAssertEqual(AutoCompactSettings.clamp(10), 50)
+		XCTAssertTrue(ServerSettingsPatch.zedSshTarget("  ").json["zedSshTarget"] is NSNull)
+	}
+
+	@MainActor
+	func testTheModelSendsTheKeyOnlyWhenTypedAndKeepsOtherDrafts() async {
+		let recorder = Recorder()
+		RequestStub.status = 200
+		RequestStub.handler = { request in
+			let data = Self.bodyData(request)
+			let json = data.isEmpty ? nil : try? JSONSerialization.jsonObject(with: data)
+			recorder.sent.append(Sent(method: request.httpMethod ?? "GET", path: request.url?.path ?? "", query: nil, accept: nil, contentType: nil, keys: (json as? [String: Any]).map { $0.keys.sorted() }, json: json))
+			if request.url?.path == "/api/agent/settings/skill" { return Data("[]".utf8) }
+			return Data(Self.redactedSettings.utf8)
+		}
+		let model = ServerSettingsModel(client: Self.stubbedClient())
+		await model.load()
+		XCTAssertTrue(model.hasApiKey)
+		XCTAssertEqual(model.newApiKey, "", "the stored key is never fetched into the form")
+
+		model.zedSshTarget = "unsaved@example.test"
+		model.operatorModel = "other-model"
+		await model.saveOperator()
+		var body = (recorder.sent.last?.json as? [String: Any])?["operator"] as? [String: Any]
+		XCTAssertEqual(recorder.sent.last?.keys, ["operator"])
+		XCTAssertNil(body?["apiKey"])
+		XCTAssertEqual(model.zedSshTarget, "unsaved@example.test", "saving one block leaves another's draft alone")
+
+		model.replacingKey = true
+		model.newApiKey = "example-key"
+		await model.saveOperator()
+		body = (recorder.sent.last?.json as? [String: Any])?["operator"] as? [String: Any]
+		XCTAssertEqual(body?["apiKey"] as? String, "example-key")
+		XCTAssertEqual(model.newApiKey, "", "cleared once saved")
+		XCTAssertFalse(model.replacingKey)
+
+		await model.removeApiKey()
+		body = (recorder.sent.last?.json as? [String: Any])?["operator"] as? [String: Any]
+		XCTAssertTrue(body?["apiKey"] is NSNull)
+	}
+
+	func testSpeechDetectAndSkillInstallUseTheAgentRoutes() async {
+		let detect = await requests(reply: #"{"found":false}"#) { _ = try await $0.detectSpeechServer() }
+		assertShape(detect, "POST", "/api/agent/settings/speech/detect", keys: [])
+		let list = await requests(reply: "[]") { _ = try await $0.skillStatuses() }
+		assertShape(list, "GET", "/api/agent/settings/skill")
+		let install = await requests(reply: #"{"kind":"claude","available":true,"supported":true,"installed":true,"installedVersion":"1","shippedVersion":"1","upToDate":true}"#) {
+			_ = try await $0.installSkill(kind: "claude")
+		}
+		assertShape(install, "POST", "/api/agent/settings/skill", keys: ["kind"])
+	}
+
+	func testSkillStatusSummaries() throws {
+		let rows = try JSONDecoder().decode([SkillInstallStatus].self, from: Data(#"""
+		[{"kind":"claude","available":true,"supported":true,"installed":true,"installedVersion":"1","shippedVersion":"2","upToDate":false},
+		{"kind":"codex","available":false,"supported":true,"installed":false,"installedVersion":null,"shippedVersion":"2","upToDate":false},
+		{"kind":"pi","available":true,"supported":true,"installed":false,"installedVersion":null,"shippedVersion":"2","upToDate":false}]
+		"""#.utf8))
+		XCTAssertEqual(rows.map(\.summary), ["v1 installed, v2 available", "Not installed on the server", "Skill not installed"])
+		XCTAssertEqual(rows.map(\.canInstall), [true, false, true])
+	}
+
 	// MARK: - Capability gating
 
 	func testServerInfoReadsTheCapabilities() async throws {
