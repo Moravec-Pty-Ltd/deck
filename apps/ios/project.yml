@@ -223,7 +223,6 @@ targets:
         CFBundleIconName: AppIcon
         ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: deck records what you say in voice mode and sends it to your deck server for transcription.
-        NSSpeechRecognitionUsageDescription: deck recognises speech on this Mac for voice commands. Nothing is sent to Apple.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           # Dev servers are plain http, and through the tunnel they load from

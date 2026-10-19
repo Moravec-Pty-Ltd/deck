@@ -18,6 +18,15 @@ public struct PairingTicket: Decodable, Equatable, Sendable {
 	}
 
 	public var expiry: Date { Date(timeIntervalSince1970: expiresAt / 1000) }
+
+	/// The longest a client waits for approval before giving up.
+	public static let pollLimit: TimeInterval = 5 * 60
+
+	/// When to stop polling a request made at `start`: the ticket's own expiry,
+	/// or five minutes on, whichever is sooner.
+	public func pollDeadline(from start: Date) -> Date {
+		min(expiry, start.addingTimeInterval(Self.pollLimit))
+	}
 }
 
 /// One poll of GET /api/pair/status.

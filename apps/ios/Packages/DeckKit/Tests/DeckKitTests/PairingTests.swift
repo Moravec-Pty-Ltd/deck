@@ -11,6 +11,14 @@ final class PairingTests: XCTestCase {
 		XCTAssertEqual(ticket.expiry, Date(timeIntervalSince1970: 1_700_000_000))
 	}
 
+	func testPollingStopsAtTheTicketExpiryOrFiveMinutes() {
+		let start = Date(timeIntervalSince1970: 1_700_000_000)
+		let soon = PairingTicket(secret: "s", code: "1", expiresAt: (start.timeIntervalSince1970 + 60) * 1000)
+		XCTAssertEqual(soon.pollDeadline(from: start), start.addingTimeInterval(60))
+		let late = PairingTicket(secret: "s", code: "1", expiresAt: (start.timeIntervalSince1970 + 3600) * 1000)
+		XCTAssertEqual(late.pollDeadline(from: start), start.addingTimeInterval(300))
+	}
+
 	func testAnApprovalCarriesTheCookieToken() {
 		let headers = ["Set-Cookie": "deck_token=t0ken; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000"]
 		XCTAssertEqual(PairingClient.claim(status: "approved", headers: headers, url: url), .approved(token: "t0ken"))

@@ -115,7 +115,8 @@ struct MacSignInView: View {
 		do {
 			let ticket = try await client.request()
 			self.ticket = ticket
-			while !Task.isCancelled {
+			let deadline = ticket.pollDeadline(from: .now)
+			while Date.now < deadline {
 				try await Task.sleep(for: .seconds(2))
 				let claim = try await client.status(secret: ticket.secret)
 				if claim != .pending {
@@ -123,6 +124,8 @@ struct MacSignInView: View {
 					return
 				}
 			}
+			try Task.checkCancellation()
+			finish(.expired, baseURL: client.baseURL)
 		} catch is CancellationError {
 			return
 		} catch {
@@ -139,7 +142,7 @@ struct MacSignInView: View {
 		case .denied:
 			errorMessage = "The request was denied."
 		case .expired:
-			errorMessage = "The request expired. Ask again."
+			errorMessage = "The request expired before anyone approved it. Request access to try again."
 		case .unknown, .pending:
 			errorMessage = "deck no longer knows this request. Ask again."
 		}
