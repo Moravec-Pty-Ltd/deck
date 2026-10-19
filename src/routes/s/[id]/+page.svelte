@@ -28,6 +28,7 @@
 	import { goto } from '$app/navigation';
 	import { Menu, X, Ticket } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { agentGet, sessionPath } from '$lib/agent-api';
 	import { transcriptMode } from '$lib/transcript-mode.svelte';
 	import {
 		clampSidebarWidth,
@@ -142,9 +143,7 @@
 	// Lightweight badge/visibility probe: meta only, no patch build.
 	async function loadDiffMeta() {
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/diff?meta=1`);
-			if (!res.ok) return;
-			const data = await res.json();
+			const data = await agentGet<{ git: boolean; meta?: { fileCount: number } }>(`${sessionPath(session.id, 'diff')}?meta=1`);
 			gitRepo = !!data.git;
 			changedCount = data.git ? (data.meta?.fileCount ?? 0) : null;
 			if (!gitRepo && tab === 'changes') tab = transcriptTab;

@@ -41,7 +41,7 @@ export interface CommandContext {
 	serverAction: (name: string, action: ServerAction) => Promise<void>;
 	// Switch the current session's model (POST /api/sessions/[id]/model).
 	setModel: (model: string) => Promise<void>;
-	// Restart the current claude session's process (POST /api/sessions/[id]/restart).
+	// Restart the current claude session's process (POST /api/agent/sessions/[id]/restart).
 	restartSession: () => Promise<void>;
 }
 

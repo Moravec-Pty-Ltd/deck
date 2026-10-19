@@ -2,17 +2,13 @@ import { SvelteSet } from 'svelte/reactivity';
 import type { SessionView } from '$lib/session-view';
 import { ownsWorktreeBranch } from '$lib/pr';
 import { batchErrorMessage, deleteSequentially } from '$lib/delete-flow-core';
+import { agentDelete, sessionPath } from '$lib/agent-api';
 
 export async function requestDelete(
 	id: string,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
 ): Promise<void> {
-	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
-		method: 'DELETE',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(opts)
-	});
-	if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+	await agentDelete(sessionPath(id), opts);
 }
 
 // Shared session-delete flow for the home list and the session-view sidebar:

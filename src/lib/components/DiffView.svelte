@@ -3,6 +3,7 @@
 	import type { DeckSession } from '$lib/types';
 	import type { DiffFile, DiffFileStatus } from '$lib/diff';
 	import { RefreshCw, Columns2, Rows2 } from '@lucide/svelte';
+	import { agentGet, sessionPath } from '$lib/agent-api';
 
 	let {
 		session,
@@ -126,10 +127,7 @@
 		loading = true;
 		errMsg = null;
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/diff`);
-			if (my !== token) return;
-			if (!res.ok) throw new Error(`diff request failed (${res.status})`);
-			const data = await res.json();
+			const data = await agentGet<{ git: boolean; meta?: typeof meta; patch?: string }>(sessionPath(session.id, 'diff'));
 			if (my !== token) return;
 			if (!data.git) {
 				meta = null;
@@ -139,7 +137,7 @@
 				onCount?.(null);
 				return;
 			}
-			meta = data.meta;
+			meta = data.meta ?? null;
 			patch = data.patch ?? '';
 			onCount?.(meta?.fileCount ?? 0);
 			render();

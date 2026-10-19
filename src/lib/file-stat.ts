@@ -1,4 +1,5 @@
 import { MAX_PATHS_PER_MESSAGE, type FileInfo } from './files-core';
+import { agentPost, sessionPath } from './agent-api';
 
 // Asks deck which files a message's mentions point at. Every bubble asks on
 // its own, so answers are remembered per session and the asks made in one
@@ -11,7 +12,7 @@ const known = new Map<string, Promise<FileInfo | null>>();
 const queued = new Map<string, Map<string, Settle>>();
 
 export function fileUrl(sessionId: string, path: string, download = false): string {
-	const url = `/api/sessions/${encodeURIComponent(sessionId)}/files?path=${encodeURIComponent(path)}`;
+	const url = `${sessionPath(sessionId, 'files')}?path=${encodeURIComponent(path)}`;
 	return download ? `${url}&download=1` : url;
 }
 
@@ -58,13 +59,7 @@ async function flush(sessionId: string) {
 
 async function ask(sessionId: string, paths: string[]): Promise<Map<string, FileInfo> | null> {
 	try {
-		const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/files`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ paths })
-		});
-		if (!res.ok) return null;
-		const body = (await res.json()) as { files: FileInfo[] };
+		const body = await agentPost<{ files: FileInfo[] }>(sessionPath(sessionId, 'files'), { paths });
 		return new Map(body.files.map((f) => [f.path, f]));
 	} catch {
 		return null;

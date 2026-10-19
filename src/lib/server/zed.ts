@@ -3,7 +3,7 @@ import { error, json } from '@sveltejs/kit';
 import { composeZedSshCommand } from '$lib/zed-command-core';
 import { getStoredSession, readSettings } from './store';
 
-// GET handler shared by /api/sessions/[id]/zed and /api/agent/sessions/[id]/zed:
+// GET handler for /api/agent/sessions/[id]/zed:
 // the `zed ssh://...` command that opens this session's cwd on the deck host
 // (see zed-command-core). Composed server-side because it needs the deck
 // server's user and the request hostname; the web fetches it at page load so the

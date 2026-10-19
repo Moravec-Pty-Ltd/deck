@@ -21,6 +21,7 @@
 	import QuickMessages from './QuickMessages.svelte';
 	import VoiceBar from './VoiceBar.svelte';
 	import { VoiceSession } from '$lib/voice.svelte';
+	import { agentGet, agentPost, sessionPath } from '$lib/agent-api';
 	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight, AudioLines } from '@lucide/svelte';
 	import {
 		isCrossSession,
@@ -183,11 +184,7 @@
 		answers: { header: string; labels: string[] }[]
 	) {
 		atBottom = true;
-		await fetch(`/api/sessions/${encodeURIComponent(session.id)}/answer`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ text, toolUseId: id, answers })
-		});
+		await agentPost(sessionPath(session.id, 'answer'), { text, askId: id, answers }).catch(() => {});
 	}
 
 	// Voice mode: reads new replies and questions aloud and sends what you say,
@@ -197,11 +194,7 @@
 	const voice = new VoiceSession({
 		send: async (text) => {
 			atBottom = true;
-			await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text })
-			});
+			await agentPost(sessionPath(session.id, 'message'), { text }).catch(() => {});
 		},
 		answer: answerQuestion,
 		interrupt: () => interrupt()
@@ -260,7 +253,7 @@
 		const connect = () => {
 			clearTimeout(retry);
 			source?.close();
-			const es = new EventSource(`/api/sessions/${encodeURIComponent(id)}/events`);
+			const es = new EventSource(sessionPath(id, 'stream'));
 			source = es;
 			// Recent history arrives as several small frames (the server can't push
 			// one big frame reliably). Reassemble the serialized payload by `seq`,
@@ -539,11 +532,10 @@
 		if (loadingOlder || baseIndex <= 0) return;
 		loadingOlder = true;
 		try {
-			const res = await fetch(
-				`/api/sessions/${encodeURIComponent(session.id)}/transcript?before=${baseIndex}&limit=${HYDRATE_CHUNK}`
-			);
-			if (!res.ok) return;
-			const slice: { start: number; events: AnyEvent[] } = await res.json();
+			const slice = await agentGet<{ start: number; events: AnyEvent[] }>(
+				`${sessionPath(session.id, 'history')}?before=${baseIndex}&limit=${HYDRATE_CHUNK}`
+			).catch(() => null);
+			if (!slice) return;
 			const added = baseIndex - slice.start;
 			if (added <= 0) {
 				baseIndex = slice.start;
@@ -680,12 +672,7 @@
 		clearDraft();
 		atBottom = true;
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text, images: images.length ? images : undefined })
-			});
-			if (!res.ok) throw new Error(`send failed: ${res.status}`);
+			await agentPost(sessionPath(session.id, 'message'), { text, images: images.length ? images : undefined });
 		} catch {
 			input = prev.input;
 			attachments = prev.attachments;
@@ -701,12 +688,8 @@
 	async function sendQuickMessage(text: string) {
 		atBottom = true;
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text, expand: true })
-			});
-			if (res.ok) return;
+			await agentPost(sessionPath(session.id, 'message'), { text, expand: true });
+			return;
 		} catch {
 			// fall through to restore the text below
 		}
@@ -714,11 +697,7 @@
 	}
 
 	async function interrupt() {
-		await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ action: 'interrupt' })
-		});
+		await agentPost(sessionPath(session.id, 'stop')).catch(() => {});
 	}
 
 	function onKeydown(e: KeyboardEvent) {
@@ -787,7 +766,7 @@
 				<div class="mb-2 flex flex-wrap gap-2">
 					{#each event.images as img, k (k)}
 						<img
-							src={img.file ? `/api/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(img.file)}` : `data:${img.media_type};base64,${img.data}`}
+							src={img.file ? sessionPath(session.id, 'images', img.file) : `data:${img.media_type};base64,${img.data}`}
 							loading="lazy"
 							alt="attachment"
 							class="max-h-40 rounded-box border border-base-300"

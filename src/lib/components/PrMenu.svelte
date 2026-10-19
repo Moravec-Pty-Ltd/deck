@@ -4,6 +4,7 @@
 	import { GitPullRequest, X, ExternalLink, GitMerge, ChevronLeft } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
 	import ReviewMarks from './ReviewMarks.svelte';
+	import { agentDelete, agentPost, sessionPath } from '$lib/agent-api';
 
 	// GitHub's overall review decision, shown as a verdict line in the menu header.
 	const VERDICT: Record<PrReviewDecision, { label: string; color?: string }> = {
@@ -79,24 +80,15 @@
 		}
 	});
 
-	async function post(payload: Record<string, unknown>): Promise<boolean> {
+	async function post(action: 'review' | 'merge', payload: Record<string, unknown>): Promise<boolean> {
 		busy = true;
 		err = '';
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/pr`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(payload)
-			});
-			if (!res.ok) {
-				const data = await res.json().catch(() => null);
-				err = data?.message || 'action failed';
-				return false;
-			}
+			await agentPost(sessionPath(id, action), payload);
 			onChange();
 			return true;
-		} catch {
-			err = 'network error';
+		} catch (e) {
+			err = e instanceof TypeError ? 'network error' : e instanceof Error ? e.message : 'action failed';
 			return false;
 		} finally {
 			busy = false;
@@ -104,7 +96,7 @@
 	}
 
 	async function submitReview() {
-		if (await post({ action: 'review', decision, body: message })) {
+		if (await post('review', { decision, body: message })) {
 			message = '';
 			open = false;
 		}
@@ -124,7 +116,7 @@
 		// teardown; the worktree + session go via onMerged. Whether to force past
 		// branch protection is decided server-side from the synced state, not sent.
 		const removeRemote = worktree ? teardown && createdBranch : deleteBranch;
-		if (await post({ action: 'merge', method, deleteBranch: removeRemote })) {
+		if (await post('merge', { method, deleteBranch: removeRemote })) {
 			open = false;
 			if (worktree && teardown) onMerged?.();
 		}
@@ -133,7 +125,7 @@
 	async function dismiss() {
 		busy = true;
 		try {
-			await fetch(`/api/sessions/${encodeURIComponent(id)}/pr`, { method: 'DELETE' });
+			await agentDelete(sessionPath(id, 'pr'));
 		} catch {
 			// best-effort: the next poll keeps the chip if the dismiss didn't land
 		}

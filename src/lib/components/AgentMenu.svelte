@@ -2,6 +2,7 @@
 	import { AGENT_KINDS, type SessionKind } from '$lib/types';
 	import { ArrowLeftRight, Check, RotateCw } from '@lucide/svelte';
 	import { restartSession } from '$lib/session-restart';
+	import { agentPost, sessionPath } from '$lib/agent-api';
 	import Popover from './Popover.svelte';
 	import { menuAction } from '$lib/menu-action.svelte';
 
@@ -21,15 +22,7 @@
 	function switchTo(next: string) {
 		if (disabled || act.busy) return;
 		void act.run(async () => {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/agent`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ kind: next })
-			});
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({}));
-				throw new Error(body.message ?? 'agent switch failed');
-			}
+			await agentPost(sessionPath(id, 'agent'), { kind: next });
 		}, () => { open = false; onChange(); }, 'agent switch failed');
 	}
 
