@@ -6,9 +6,9 @@ import { updateSession } from './store';
 import { DEMO, demoTerminalText } from './demo';
 import { parseSnapshotQuery, parseTerminalInput } from './terminal-core';
 
-// A shell session's tmux pane, read and typed into. The browser's /snapshot and
-// the agent API's /terminal GET share terminalSnapshotRoute; the browser's /send
-// (shell branch) and the agent /terminal POST share driveTerminal.
+// A shell session's tmux pane, read and typed into. The agent API's /terminal
+// GET is terminalSnapshotRoute; the browser's /send (shell branch) and the agent
+// /terminal POST share driveTerminal.
 
 interface SessionEvent {
 	params: Partial<Record<string, string>>;

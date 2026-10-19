@@ -123,12 +123,12 @@
 	const hasServers = $derived(myServers.length > 0);
 
 	async function refresh() {
-		// allSettled, not all: a single endpoint failure (e.g. /api/servers) must not
+		// allSettled, not all: a single endpoint failure (e.g. the servers poll) must not
 		// abort the whole refresh and leave projects/sessions stale.
 		const [pRes, sRes, vRes, rRes] = await Promise.allSettled([
 			fetch('/api/projects'),
 			fetch('/api/sessions'),
-			fetch('/api/servers'),
+			fetch('/api/agent/servers'),
 			fetch('/api/reviews')
 		]);
 		if (pRes.status === 'fulfilled' && pRes.value.ok) projects = await pRes.value.json();

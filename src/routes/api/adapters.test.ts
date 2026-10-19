@@ -24,7 +24,6 @@ const SHARED: [() => Promise<Route>, () => Promise<Route>, string[]][] = [
 	[() => import('./sessions/[id]/images/[file]/+server'), () => import('./agent/sessions/[id]/images/[file]/+server'), ['GET']],
 	[() => import('./sessions/[id]/files/+server'), () => import('./agent/sessions/[id]/files/+server'), ['GET', 'POST']],
 	[() => import('./sessions/[id]/diff/+server'), () => import('./agent/sessions/[id]/diff/+server'), ['GET']],
-	[() => import('./sessions/[id]/snapshot/+server'), () => import('./agent/sessions/[id]/terminal/+server'), ['GET']],
 	[() => import('./sessions/[id]/model/+server'), () => import('./agent/sessions/[id]/model/+server'), ['POST']],
 	[() => import('./sessions/[id]/restart/+server'), () => import('./agent/sessions/[id]/restart/+server'), ['POST']],
 	[() => import('./projects/credentials/+server'), () => import('./agent/credentials/+server'), ['GET']],

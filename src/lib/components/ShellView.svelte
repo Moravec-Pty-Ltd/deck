@@ -12,8 +12,8 @@
 	// atBottom bookkeeping and re-pin once it's shown again.
 	let {
 		session,
-		snapshotPath = `/api/sessions/${encodeURIComponent(session.id)}/snapshot`,
-		sendPath = `/api/sessions/${encodeURIComponent(session.id)}/send`,
+		snapshotPath = `/api/agent/sessions/${encodeURIComponent(session.id)}/terminal`,
+		sendPath = `/api/agent/sessions/${encodeURIComponent(session.id)}/terminal`,
 		readonly = false,
 		visible = true
 	}: {
