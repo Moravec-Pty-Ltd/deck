@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { DeleteFlow } from '$lib/delete-flow.svelte';
 	import { ownsWorktreeBranch } from '$lib/pr';
+	import Modal from './Modal.svelte';
 
 	// Confirm modal for deleting sessions: one worktree session (home list or
 	// session view), or the homepage's whole selection (`flow.batch`, issue #211).
@@ -27,6 +28,12 @@
 		return `${picked} of ${total} live in a git worktree; the rest are unaffected by the options below.`;
 	});
 
+	let heading = $derived(
+		flow.batch
+			? `Remove ${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'}`
+			: `Remove "${flow.target?.title ?? ''}"`
+	);
+
 	function close() {
 		flow.target = null;
 		flow.batch = null;
@@ -39,50 +46,41 @@
 	}
 </script>
 
-{#if sessions.length > 0}
-	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-		<div class="modal-box max-w-sm">
-			{#if flow.batch}
-				<h3 class="mb-2 text-lg font-semibold">
-					Remove {sessions.length} {sessions.length === 1 ? 'session' : 'sessions'}
-				</h3>
-				<p class="mb-3 text-sm opacity-70">Kills every selected session. {batchNote}</p>
-			{:else if flow.target}
-				<h3 class="mb-2 text-lg font-semibold">Remove "{flow.target.title}"</h3>
-				<p class="mb-3 text-sm opacity-70">
-					Kills the session. This session lives in a git worktree on branch
-					<span class="font-mono">{flow.target.worktree?.branch}</span>.
-				</p>
-			{/if}
-			{#if worktrees.length > 0}
-				<div class="space-y-2">
-					<label class="label cursor-pointer justify-start gap-2">
-						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={flow.worktree} />
-						<span>Delete the worktree</span>
-					</label>
-					<label class="label cursor-pointer justify-start gap-2">
-						<input
-							type="checkbox"
-							class="checkbox checkbox-sm"
-							bind:checked={flow.branch}
-							disabled={!flow.worktree || !ownsBranch}
-						/>
-						<span>
-							Delete the branch
-							{#if !ownsBranch}
-								<span class="opacity-50">(existing branch, kept)</span>
-							{:else if flow.batch}
-								<span class="opacity-50">(only where deck created it)</span>
-							{/if}
-						</span>
-					</label>
-				</div>
-			{/if}
-			<div class="modal-action">
-				<button class="btn" onclick={close}>Cancel</button>
-				<button class="btn btn-error" onclick={confirm}>Remove</button>
-			</div>
+<Modal open={sessions.length > 0} onclose={close} title={heading}>
+	{#if flow.batch}
+		<p class="mb-3 text-sm opacity-70">Kills every selected session. {batchNote}</p>
+	{:else if flow.target}
+		<p class="mb-3 text-sm opacity-70">
+			Kills the session. This session lives in a git worktree on branch
+			<span class="font-mono">{flow.target.worktree?.branch}</span>.
+		</p>
+	{/if}
+	{#if worktrees.length > 0}
+		<div class="space-y-2">
+			<label class="label cursor-pointer justify-start gap-2">
+				<input type="checkbox" class="checkbox checkbox-sm" bind:checked={flow.worktree} />
+				<span>Delete the worktree</span>
+			</label>
+			<label class="label cursor-pointer justify-start gap-2">
+				<input
+					type="checkbox"
+					class="checkbox checkbox-sm"
+					bind:checked={flow.branch}
+					disabled={!flow.worktree || !ownsBranch}
+				/>
+				<span>
+					Delete the branch
+					{#if !ownsBranch}
+						<span class="opacity-50">(existing branch, kept)</span>
+					{:else if flow.batch}
+						<span class="opacity-50">(only where deck created it)</span>
+					{/if}
+				</span>
+			</label>
 		</div>
-		<button class="modal-backdrop" onclick={close} aria-label="close"></button>
-	</div>
-{/if}
+	{/if}
+	{#snippet footer()}
+		<button class="btn" onclick={close}>Cancel</button>
+		<button class="btn btn-error" onclick={confirm}>Remove</button>
+	{/snippet}
+</Modal>

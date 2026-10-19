@@ -153,9 +153,8 @@
 	}
 
 	// Escape leaves select mode, but not from under anything else that owns the key:
-	// this page's div-modals (which would be stranded over a list that's no longer
-	// selecting) and the command palette, a native <dialog> whose own Escape neither
-	// marks the event handled nor stops it bubbling up here.
+	// an open dialog (this page's modals, the command palette), whose own Escape
+	// neither marks the event handled nor stops it bubbling up here.
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key !== 'Escape' || e.defaultPrevented) return;
 		if (!selectMode || modalOpen || qrOpen || del.target || del.batch) return;

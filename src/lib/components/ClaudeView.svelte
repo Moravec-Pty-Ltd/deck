@@ -19,6 +19,7 @@
 	import ToolRun from './ToolRun.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
+	import Modal from './Modal.svelte';
 	import SkillPicker from './SkillPicker.svelte';
 	import VoiceBar from './VoiceBar.svelte';
 	import { VoiceSession } from '$lib/voice.svelte';
@@ -1061,25 +1062,23 @@
 		</div>
 	</div>
 
-	{#if pendingSend}
-		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-			<div class="modal-box max-w-sm">
-				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
-					<ArrowLeftRight size={18} class="text-warning" /> Send to a different session?
-				</h3>
-				<p class="mb-3 text-sm opacity-70">
-					This draft was started in <span class="font-semibold">{originTitle}</span>. Send it to
-					<span class="font-semibold">{session.title}</span>?{#if attachedCount}
-						(with {attachedCount} attachment{attachedCount > 1 ? 's' : ''}){/if}
-				</p>
-				<div class="modal-action">
-					<button class="btn" onclick={() => (pendingSend = false)}>Cancel</button>
-					<button class="btn btn-primary" onclick={confirmSend}>Send</button>
-				</div>
-			</div>
-			<button class="modal-backdrop" onclick={() => (pendingSend = false)} aria-label="close"></button>
-		</div>
-	{/if}
+	<Modal
+		open={pendingSend}
+		onclose={() => (pendingSend = false)}
+		title="Send to a different session?"
+		icon={ArrowLeftRight}
+		iconClass="text-warning"
+	>
+		<p class="mb-3 text-sm opacity-70">
+			This draft was started in <span class="font-semibold">{originTitle}</span>. Send it to
+			<span class="font-semibold">{session.title}</span>?{#if attachedCount}
+				(with {attachedCount} attachment{attachedCount > 1 ? 's' : ''}){/if}
+		</p>
+		{#snippet footer()}
+			<button class="btn" onclick={() => (pendingSend = false)}>Cancel</button>
+			<button class="btn btn-primary" onclick={confirmSend}>Send</button>
+		{/snippet}
+	</Modal>
 </div>
 
 <style>

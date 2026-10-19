@@ -17,6 +17,7 @@
 	import { restartSession } from '$lib/session-restart';
 	import { loadSettings } from '$lib/settings-store';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import { DIALOG_CLASS } from './Modal.svelte';
 	import { Search, CornerDownLeft, ChevronLeft, TriangleAlert } from '@lucide/svelte';
 
 	// Global Cmd+K palette. Rendered once in the layout; `open` is toggled by the
@@ -269,7 +270,7 @@
 
 <dialog
 	bind:this={dialogEl}
-	class="modal modal-bottom sm:modal-middle"
+	class={DIALOG_CLASS}
 	aria-label="Command palette"
 	oncancel={onCancel}
 	onclose={() => (open = false)}

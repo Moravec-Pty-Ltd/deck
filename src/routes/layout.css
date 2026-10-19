@@ -275,6 +275,24 @@ h3,
 	}
 }
 
+/* ── dialogs (Modal.svelte, plus CommandPalette and TranscriptSearch on the same
+   daisyUI .modal classes). The dialog takes focus itself on open; the box is the
+   visible surface, so no ring around the whole viewport. */
+dialog.modal:focus-visible {
+	outline: none;
+}
+/* Modal unmounts its body as it closes, so skip daisyUI's fade-out rather than
+   fade an empty box. */
+.deck-modal:not([open]) {
+	display: none;
+	transition: none;
+}
+@media (max-width: 39.99rem) {
+	.deck-modal-box {
+		padding-bottom: max(1.5rem, calc(1rem + env(safe-area-inset-bottom)));
+	}
+}
+
 /* A workflow run's active phase: a slow opacity breath, never a bounce. Stopped
    by the reduced-motion and e-ink rules below. */
 .phase-pulse {

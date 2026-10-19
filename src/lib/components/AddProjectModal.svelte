@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Modal from './Modal.svelte';
 		import { repoNameFromUrl, isCloneUrlSafe } from '$lib/repo-url';
 	import PathInput from './PathInput.svelte';
 
@@ -116,82 +117,74 @@
 	}
 </script>
 
-{#if open}
-	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-		<div class="modal-box max-w-lg">
-			<h3 class="mb-4 text-lg font-semibold">Add a project</h3>
+<Modal {open} onclose={() => (open = false)} title="Add a project" class="max-w-lg">
+	<fieldset class="fieldset">
+		<legend class="fieldset-legend">Repo URL <span class="opacity-50">(optional)</span></legend>
+		<input
+			class="input w-full"
+			placeholder="https://github.com/acme/web.git (cloned into the path below)"
+			bind:value={newRepoUrl}
+			onkeydown={(e) => e.key === 'Enter' && add()}
+		/>
+	</fieldset>
 
-			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Repo URL <span class="opacity-50">(optional)</span></legend>
-				<input
-					class="input w-full"
-					placeholder="https://github.com/acme/web.git (cloned into the path below)"
-					bind:value={newRepoUrl}
-					onkeydown={(e) => e.key === 'Enter' && add()}
-				/>
-			</fieldset>
-
-			<fieldset class="fieldset">
-				<legend class="fieldset-legend">{cloning ? 'Parent directory' : 'Path'}</legend>
-				<PathInput
-					class="input w-full"
-					placeholder="/absolute/path or ~/path"
-					bind:value={newPath}
-					onenter={add}
-				/>
-				{#if cloning}
-					<p class="fieldset-label text-xs">
-						{#if clonePreview}
-							→ clones into <span class="font-mono">{clonePreview}</span>
-						{:else if !repoName}
-							enter a valid repo url to derive the folder name
-						{:else}
-							choose the parent directory to clone into
-						{/if}
-					</p>
+	<fieldset class="fieldset">
+		<legend class="fieldset-legend">{cloning ? 'Parent directory' : 'Path'}</legend>
+		<PathInput
+			class="input w-full"
+			placeholder="/absolute/path or ~/path"
+			bind:value={newPath}
+			onenter={add}
+		/>
+		{#if cloning}
+			<p class="fieldset-label text-xs">
+				{#if clonePreview}
+					→ clones into <span class="font-mono">{clonePreview}</span>
+				{:else if !repoName}
+					enter a valid repo url to derive the folder name
+				{:else}
+					choose the parent directory to clone into
 				{/if}
-			</fieldset>
+			</p>
+		{/if}
+	</fieldset>
 
-			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Name <span class="opacity-50">(optional)</span></legend>
-				<input
-					class="input w-full"
-					placeholder="defaults to directory name"
-					bind:value={newName}
-					oninput={() => (nameEdited = true)}
-				/>
-			</fieldset>
+	<fieldset class="fieldset">
+		<legend class="fieldset-legend">Name <span class="opacity-50">(optional)</span></legend>
+		<input
+			class="input w-full"
+			placeholder="defaults to directory name"
+			bind:value={newName}
+			oninput={() => (nameEdited = true)}
+		/>
+	</fieldset>
 
-			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Group <span class="opacity-50">(optional)</span></legend>
-				<input
-					class="input w-full"
-					placeholder="e.g. acme"
-					list="add-project-groups"
-					bind:value={newGroup}
-				/>
-				<datalist id="add-project-groups">
-					{#each groupSuggestions as g (g)}
-						<option value={g}></option>
-					{/each}
-				</datalist>
-			</fieldset>
+	<fieldset class="fieldset">
+		<legend class="fieldset-legend">Group <span class="opacity-50">(optional)</span></legend>
+		<input
+			class="input w-full"
+			placeholder="e.g. acme"
+			list="add-project-groups"
+			bind:value={newGroup}
+		/>
+		<datalist id="add-project-groups">
+			{#each groupSuggestions as g (g)}
+				<option value={g}></option>
+			{/each}
+		</datalist>
+	</fieldset>
 
-			{#if errorMsg}
-				<div class="alert alert-error mt-3 py-2 text-sm">{errorMsg}</div>
-			{/if}
-
-			<div class="modal-action">
-				<button class="btn" onclick={() => (open = false)}>Cancel</button>
-				<button
-					class="btn btn-primary"
-					onclick={add}
-					disabled={busy || !newPath.trim() || (cloning && !repoName)}
-				>
-					{busy ? (cloning ? 'Cloning...' : 'Adding...') : 'Add'}
-				</button>
-			</div>
-		</div>
-		<button class="modal-backdrop" onclick={() => (open = false)} aria-label="close"></button>
-	</div>
-{/if}
+	{#if errorMsg}
+		<div class="alert alert-error mt-3 py-2 text-sm">{errorMsg}</div>
+	{/if}
+	{#snippet footer()}
+		<button class="btn" onclick={() => (open = false)}>Cancel</button>
+		<button
+			class="btn btn-primary"
+			onclick={add}
+			disabled={busy || !newPath.trim() || (cloning && !repoName)}
+		>
+			{busy ? (cloning ? 'Cloning...' : 'Adding...') : 'Add'}
+		</button>
+	{/snippet}
+</Modal>

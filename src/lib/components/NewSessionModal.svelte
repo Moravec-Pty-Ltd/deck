@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Modal from './Modal.svelte';
 	import { isAgentKind } from '$lib/types';
 	import type {
 		AgentIssue,
@@ -395,9 +396,8 @@
 			.join(' · ')
 	);
 
-	// If the pick stops being expensive while the confirm is open (a background
-	// control stays reachable behind the div-modal), drop the stale dialog so an
-	// "Expensive model" prompt never lingers on a now-cheap selection (issue #134).
+	// If the pick stops being expensive while the confirm is open, drop the stale
+	// dialog so an "Expensive model" prompt never lingers on a now-cheap selection (issue #134).
 	$effect(() => {
 		if (confirmingExpensive && !expensivePick) {
 			confirmingExpensive = false;
@@ -709,6 +709,11 @@
 		}
 	}
 
+	function cancelExpensive() {
+		confirmingExpensive = false;
+		confirmedExpensive = false;
+	}
+
 	// Answer the conflict and try once more. The choice is cleared either way, so
 	// a later create in the same modal starts from a clean slate.
 	function resolveConflict(fix: WorktreeFix) {
@@ -718,470 +723,450 @@
 	}
 </script>
 
-{#if open}
-	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-		<div class="modal-box max-w-lg overflow-x-hidden">
-			<h3 class="mb-4 text-lg font-semibold">New session</h3>
-
-			<!-- New (start work on an issue) vs Review (check out a PR). The active
-			     pick is the modal's one orange selection. -->
-			<div class="mb-3 flex gap-1.5" role="group" aria-label="Mode">
-				<button
-					class="btn btn-sm {mode === 'issue' ? 'btn-primary' : ''}"
-					aria-pressed={mode === 'issue'}
-					onclick={() => pickMode('issue')}>New</button
-				>
-				<button
-					class="btn btn-sm {mode === 'pr' ? 'btn-primary' : ''}"
-					aria-pressed={mode === 'pr'}
-					onclick={() => pickMode('pr')}>Review</button
-				>
-			</div>
-
-			<div class="join mb-4 w-full" role="group" aria-label="Agent">
-				{#each shownKinds as k (k.id)}
-					<button
-						class="btn join-item flex-1 px-2 {kind === k.id ? 'btn-active' : ''}"
-						aria-pressed={kind === k.id}
-						onclick={() => (kind = k.id)}
-					>
-						<k.icon size={16} /> <span class="hidden sm:inline">{k.label}</span>
-					</button>
-				{/each}
-			</div>
-
-			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Project</legend>
-				<select class="select w-full" bind:value={cwd} disabled={busy}>
-					{#each projectGroups as pg (pg.name)}
-						<optgroup label={pg.name}>
-							{#each pg.projects as p (p.path)}
-								<option value={p.path}>{p.name} ({p.path})</option>
-							{/each}
-						</optgroup>
-					{/each}
-					<option value="__custom">Custom path...</option>
-				</select>
-				{#if cwd === '__custom'}
-					<PathInput placeholder="/absolute/path or ~/path" bind:value={customCwd} />
-				{/if}
-				<datalist id="new-session-project-groups">
-					{#each groupSuggestions as g (g)}
-						<option value={g}></option>
-					{/each}
-				</datalist>
-				{#if addingProject}
-					<div class="mt-1 flex w-full gap-1">
-						<div class="min-w-0 flex-1">
-							<PathInput
-								class="input input-sm w-full"
-								placeholder="register a project path"
-								bind:value={newProjectPath}
-								onenter={addProject}
-							/>
-						</div>
-						<button class="btn btn-sm" onclick={addProject}>Add</button>
-					</div>
-					{#if newProjectPath.trim()}
-						<input
-							class="input input-sm w-full"
-							placeholder="group (optional)"
-							list="new-session-project-groups"
-							bind:value={newProjectGroup}
-						/>
-						<textarea
-							class="textarea textarea-sm w-full"
-							rows="2"
-							placeholder="template first prompt for this project (optional)"
-							bind:value={newProjectTemplate}
-						></textarea>
-						<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
-					{/if}
-				{:else}
-					<button
-						class="btn btn-ghost btn-xs mt-1 gap-1 self-start opacity-70"
-						onclick={() => (addingProject = true)}
-					>
-						<Plus size={13} /> Register a project
-					</button>
-				{/if}
-			</fieldset>
-
-			<fieldset class="fieldset">
-				<legend class="fieldset-legend">
-					Title {#if !titleRequired}<span class="opacity-50">(optional)</span>{/if}
-				</legend>
-				<div class="flex w-full gap-1">
-					<input
-						class="input min-w-0 flex-1 {titleRequired && !title.trim() ? 'input-error' : ''}"
-						placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
-						bind:value={title}
-					/>
-					{#if projectHasSources && !reviewMode}
-						<button
-							class="btn {showPicker ? 'btn-active' : ''}"
-							onclick={() => (showPicker = !showPicker)}
-						>
-							<Ticket size={16} /> <span class="hidden sm:inline">From issue</span>
-						</button>
-					{/if}
-				</div>
-				{#if pickedIssues.length}
-					<div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
-						<span class="opacity-60">issue{pickedIssues.length > 1 ? 's' : ''}:</span>
-						{#each pickedIssues as i (issueKey(i))}
-							<button
-								class="btn btn-ghost btn-xs gap-1 font-mono"
-								onclick={() => pickIssue(i)}
-								title="remove {i.id}"
-							>
-								{shortIssueId(i.source, i.id)} <X size={12} />
-							</button>
-						{/each}
-					</div>
-				{/if}
-				{#if !reviewMode && pickedIssues.length > 1 && worktreeMode === 'new'}
-					<label class="label mt-1 cursor-pointer justify-start gap-2">
-						<input type="checkbox" class="checkbox checkbox-sm" bind:checked={split} disabled={busy} />
-						<span class="text-xs">Split into {pickedIssues.length} sessions (one per issue)</span>
-					</label>
-				{/if}
-				{#each pickedIssues as i (issueKey(i))}
-					{#if i.blockers.length}
-						<div class="alert alert-warning mt-1 items-start py-1 text-xs">
-							<TriangleAlert size={14} class="mt-0.5 shrink-0" />
-							<div class="min-w-0">
-								<div class="font-medium">
-									<span class="font-mono" title={i.id}>{shortIssueId(i.source, i.id)}</span>:
-									{i.blockers.length} incomplete blocker(s) — you can still start.
-								</div>
-								{#each i.blockers as b (b.id)}
-									<div class="truncate" title={b.id}>
-										<span class="font-mono">{shortIssueId(i.source, b.id)}</span>
-										{b.title}
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/if}
-				{/each}
-				{#if showPicker && selectedProject}
-					<div class="mt-1">
-						<IssuePicker project={selectedProject} selected={pickedIssues} onpick={pickIssue} />
-					</div>
-				{/if}
-			</fieldset>
-
-			{#if reviewMode}
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Pull request{pickedPrs.length > 1 ? 's' : ''}</legend>
-					{#if pickedPrs.length}
-						<div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
-							<span class="opacity-60">reviewing:</span>
-							{#each pickedPrs as pr (prKey(pr))}
-								<button
-									class="btn btn-ghost btn-xs gap-1 font-mono"
-									onclick={() => pickPr(pr)}
-									title="remove"
-								>
-									#{pr.number} <X size={12} />
-								</button>
-							{/each}
-						</div>
-						{#if pickedPrs.length > 1}
-							<p class="mt-1 text-xs opacity-50">creates one review session per PR</p>
-						{/if}
-					{/if}
-					{#if selectedProject}
-						<div class="mt-1">
-							<PrPicker project={selectedProject} picked={pickedPrs} onpick={pickPr} />
-						</div>
-					{:else}
-						<p class="text-xs opacity-60">pick a project first</p>
-					{/if}
-				</fieldset>
-			{/if}
-
-			{#if kind === 'shell'}
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Shell</legend>
-					<input
-						class="input w-full"
-						placeholder="command (optional, default: your shell)"
-						bind:value={command}
-					/>
-				</fieldset>
-			{:else}
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">First prompt <span class="opacity-50">(optional)</span></legend>
-					<textarea
-						class="textarea w-full"
-						rows="3"
-						placeholder="first prompt (optional, starts immediately)"
-						bind:value={prompt}
-						oninput={() => (promptDirty = true)}
-					></textarea>
-					{#if !promptDirty && (reviewMode ? selectedProject?.reviewPrompt : selectedProject?.template)}
-						<p class="text-xs opacity-50">
-							prefilled from {selectedProject?.name}
-							{reviewMode ? 'review prompt' : 'template'}
-						</p>
-					{:else if reviewMode}
-						<p class="text-xs opacity-50">placeholders: {REVIEW_PLACEHOLDERS} [cwd]</p>
-					{:else}
-						<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
-					{/if}
-				</fieldset>
-			{/if}
-
-			{#if hasOptions}
-				<!-- Worktree, model, and permission controls: right by default, so they
-				     start folded behind a digest of what will happen. -->
-				<div class="mt-3 rounded-box border border-base-300">
-					<button
-						class="flex w-full items-center gap-2 px-3 py-2 text-left"
-						onclick={() => (showOptions = !showOptions)}
-						aria-expanded={showOptions}
-					>
-						<SlidersHorizontal size={14} class="shrink-0 opacity-70" />
-						<span class="text-sm font-medium">Options</span>
-						<span class="min-w-0 flex-1 truncate text-right text-xs opacity-60">{optionsSummary}</span>
-						<ChevronDown
-							size={14}
-							class="shrink-0 opacity-70 transition-transform {showOptions ? 'rotate-180' : ''}"
-						/>
-					</button>
-					{#if showOptions}
-						<div class="border-t border-base-300 px-3 pb-3">
-							{#if !reviewMode}
-								<fieldset class="fieldset">
-									<legend class="fieldset-legend">Worktree</legend>
-									<div class="join w-full">
-										<button
-											class="btn join-item btn-sm flex-1 {worktreeMode === 'none' ? 'btn-active' : ''}"
-											aria-pressed={worktreeMode === 'none'}
-											onclick={() => setMode('none')}>None</button
-										>
-										<button
-											class="btn join-item btn-sm flex-1 {worktreeMode === 'existing' ? 'btn-active' : ''}"
-											aria-pressed={worktreeMode === 'existing'}
-											onclick={() => setMode('existing')}>Existing</button
-										>
-										<button
-											class="btn join-item btn-sm flex-1 {worktreeMode === 'new' ? 'btn-active' : ''}"
-											aria-pressed={worktreeMode === 'new'}
-											onclick={() => setMode('new')}>New</button
-										>
-									</div>
-									{#if worktreeMode === 'existing'}
-										{#if existingWorktrees.length}
-											<select class="select w-full" bind:value={existingWorktreeDir}>
-												{#each existingWorktrees as w (w.path)}
-													<option value={w.path}>{w.branch} — {w.path}</option>
-												{/each}
-											</select>
-										{:else}
-											<p class="text-xs opacity-60">no existing worktrees for this repo</p>
-										{/if}
-									{:else if worktreeMode === 'new'}
-										<input
-											class="input w-full"
-											placeholder="branch name (defaults to title)"
-											bind:value={branch}
-											oninput={() => (branchDirty = true)}
-										/>
-										<label class="label cursor-pointer justify-start gap-2">
-											<input type="checkbox" class="checkbox checkbox-sm" bind:checked={newBranch} />
-											<span>New branch</span>
-										</label>
-										{#if newBranch}
-											<select class="select w-full" bind:value={base} onchange={() => (baseDirty = true)}>
-												<option value="">base: default branch</option>
-												{#if base && !branches.includes(base)}
-													<option value={base}>base: {base}</option>
-												{/if}
-												{#each branches as b (b)}
-													<option value={b}>base: {b}</option>
-												{/each}
-											</select>
-										{/if}
-									{/if}
-								</fieldset>
-							{/if}
-							{#if isAgentKind(kind)}
-								<fieldset class="fieldset">
-									<legend class="fieldset-legend">Model</legend>
-									{#if kind === 'claude'}
-										<select class="select w-full" bind:value={model} onchange={() => (modelDirty = true)}>
-											{#each claudeModelOptions(settings) as m (m.value)}
-												<option value={m.value}>{m.label}</option>
-											{/each}
-										</select>
-										<select
-											class="select w-full"
-											bind:value={effort}
-											onchange={() => (modelDirty = true)}
-											aria-label="Reasoning effort"
-										>
-											{#each ['', ...EFFORT_LEVELS] as e (e)}
-												<option value={e}>{effortLabel(e)} effort</option>
-											{/each}
-										</select>
-										<label class="label cursor-pointer justify-start gap-2">
-											<input type="checkbox" class="checkbox checkbox-sm" bind:checked={yolo} />
-											<span>YOLO mode (bypass permissions)</span>
-										</label>
-									{:else if kind === 'pi'}
-										<ComboInput
-											bind:value={provider}
-											options={piProviders}
-											placeholder="provider (optional, e.g. anthropic, google)"
-											ariaLabel="Provider"
-											oninput={() => (modelDirty = true)}
-										/>
-										<ComboInput
-											bind:value={model}
-											options={piModels}
-											placeholder="model (optional, pi pattern or id)"
-											ariaLabel="Model"
-											oninput={() => (modelDirty = true)}
-										/>
-									{:else if kind === 'opencode'}
-										<ComboInput
-											bind:value={model}
-											options={modelIds}
-											placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
-											ariaLabel="Model"
-											oninput={() => (modelDirty = true)}
-										/>
-									{:else if kind === 'codex'}
-										<ComboInput
-											bind:value={model}
-											options={modelIds}
-											placeholder="model (optional, e.g. gpt-6-astra)"
-											ariaLabel="Model"
-											oninput={() => (modelDirty = true)}
-										/>
-									{:else}
-										<input
-											class="input w-full"
-											placeholder="model (optional, e.g. gpt-5-codex)"
-											bind:value={model}
-											oninput={() => (modelDirty = true)}
-										/>
-									{/if}
-								</fieldset>
-							{/if}
-						</div>
-					{/if}
-				</div>
-			{/if}
-
-			{#if expensivePick}
-				<!-- Outside the collapse: the cost flag must be visible while Options is
-				     folded, since the remembered default can itself be expensive. -->
-				<div class="alert alert-warning mt-3 items-start py-1 text-xs">
-					<TriangleAlert size={14} class="mt-0.5 shrink-0" />
-					<span>
-						<span class="font-mono">{pickedModelLabel}</span> is an expensive model; you'll be asked
-						to confirm before it starts.
-					</span>
-				</div>
-			{/if}
-
-			{#if errorMsg}
-				<div class="alert alert-error mt-3 py-2 text-sm">{errorMsg}</div>
-			{/if}
-
-			<div class="modal-action">
-				<!-- Closing is disabled while a create is in flight: the request is already
-				     committing server-side, so a stray close would let a later success still
-				     navigate after the user thought they cancelled. -->
-				<button class="btn" onclick={() => (open = false)} disabled={busy}>Cancel</button>
-				<button
-					class="btn btn-primary"
-					onclick={create}
-					disabled={busy || (titleRequired && !title.trim()) || (reviewMode && !pickedPrs.length)}
-				>
-					{busy ? createProgress || 'Creating...' : 'Create'}
-				</button>
-			</div>
-		</div>
+<Modal
+	{open}
+	onclose={() => (open = false)}
+	title="New session"
+	class="max-w-lg overflow-x-hidden"
+	dismissible={!busy}
+>
+	<!-- New (start work on an issue) vs Review (check out a PR). The active
+	     pick is the modal's one orange selection. -->
+	<div class="mb-3 flex gap-1.5" role="group" aria-label="Mode">
 		<button
-			class="modal-backdrop"
-			onclick={() => (open = false)}
-			disabled={busy}
-			aria-label="close"
-		></button>
+			class="btn btn-sm {mode === 'issue' ? 'btn-primary' : ''}"
+			aria-pressed={mode === 'issue'}
+			onclick={() => pickMode('issue')}>New</button
+		>
+		<button
+			class="btn btn-sm {mode === 'pr' ? 'btn-primary' : ''}"
+			aria-pressed={mode === 'pr'}
+			onclick={() => pickMode('pr')}>Review</button
+		>
 	</div>
 
-	{#if conflict}
-		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-			<div class="modal-box max-w-md">
-				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
-					<TriangleAlert size={18} class="text-warning" /> That branch is already there
-				</h3>
-				<p class="mb-3 text-sm opacity-70">{conflictMessage(conflict.kind, conflict.branch)}</p>
-				<div class="space-y-2">
-					{#each WORKTREE_FIXES as fix (fix)}
-						<button
-							class="w-full rounded-box border border-base-300 px-3 py-2 text-left hover:border-base-content/30 {fix ===
-							'recreate'
-								? 'hover:border-error/50'
-								: ''}"
-							disabled={busy}
-							onclick={() => resolveConflict(fix)}
-						>
-							<div class="text-sm font-medium {fix === 'recreate' ? 'text-error' : ''}">
-								{fixLabel(fix)}
+	<div class="join mb-4 w-full" role="group" aria-label="Agent">
+		{#each shownKinds as k (k.id)}
+			<button
+				class="btn join-item flex-1 px-2 {kind === k.id ? 'btn-active' : ''}"
+				aria-pressed={kind === k.id}
+				onclick={() => (kind = k.id)}
+			>
+				<k.icon size={16} /> <span class="hidden sm:inline">{k.label}</span>
+			</button>
+		{/each}
+	</div>
+
+	<fieldset class="fieldset">
+		<legend class="fieldset-legend">Project</legend>
+		<select class="select w-full" bind:value={cwd} disabled={busy}>
+			{#each projectGroups as pg (pg.name)}
+				<optgroup label={pg.name}>
+					{#each pg.projects as p (p.path)}
+						<option value={p.path}>{p.name} ({p.path})</option>
+					{/each}
+				</optgroup>
+			{/each}
+			<option value="__custom">Custom path...</option>
+		</select>
+		{#if cwd === '__custom'}
+			<PathInput placeholder="/absolute/path or ~/path" bind:value={customCwd} />
+		{/if}
+		<datalist id="new-session-project-groups">
+			{#each groupSuggestions as g (g)}
+				<option value={g}></option>
+			{/each}
+		</datalist>
+		{#if addingProject}
+			<div class="mt-1 flex w-full gap-1">
+				<div class="min-w-0 flex-1">
+					<PathInput
+						class="input input-sm w-full"
+						placeholder="register a project path"
+						bind:value={newProjectPath}
+						onenter={addProject}
+					/>
+				</div>
+				<button class="btn btn-sm" onclick={addProject}>Add</button>
+			</div>
+			{#if newProjectPath.trim()}
+				<input
+					class="input input-sm w-full"
+					placeholder="group (optional)"
+					list="new-session-project-groups"
+					bind:value={newProjectGroup}
+				/>
+				<textarea
+					class="textarea textarea-sm w-full"
+					rows="2"
+					placeholder="template first prompt for this project (optional)"
+					bind:value={newProjectTemplate}
+				></textarea>
+				<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
+			{/if}
+		{:else}
+			<button
+				class="btn btn-ghost btn-xs mt-1 gap-1 self-start opacity-70"
+				onclick={() => (addingProject = true)}
+			>
+				<Plus size={13} /> Register a project
+			</button>
+		{/if}
+	</fieldset>
+
+	<fieldset class="fieldset">
+		<legend class="fieldset-legend">
+			Title {#if !titleRequired}<span class="opacity-50">(optional)</span>{/if}
+		</legend>
+		<div class="flex w-full gap-1">
+			<input
+				class="input min-w-0 flex-1 {titleRequired && !title.trim() ? 'input-error' : ''}"
+				placeholder={titleRequired ? 'required' : 'auto-named after a starship if blank'}
+				bind:value={title}
+			/>
+			{#if projectHasSources && !reviewMode}
+				<button
+					class="btn {showPicker ? 'btn-active' : ''}"
+					onclick={() => (showPicker = !showPicker)}
+				>
+					<Ticket size={16} /> <span class="hidden sm:inline">From issue</span>
+				</button>
+			{/if}
+		</div>
+		{#if pickedIssues.length}
+			<div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
+				<span class="opacity-60">issue{pickedIssues.length > 1 ? 's' : ''}:</span>
+				{#each pickedIssues as i (issueKey(i))}
+					<button
+						class="btn btn-ghost btn-xs gap-1 font-mono"
+						onclick={() => pickIssue(i)}
+						title="remove {i.id}"
+					>
+						{shortIssueId(i.source, i.id)} <X size={12} />
+					</button>
+				{/each}
+			</div>
+		{/if}
+		{#if !reviewMode && pickedIssues.length > 1 && worktreeMode === 'new'}
+			<label class="label mt-1 cursor-pointer justify-start gap-2">
+				<input type="checkbox" class="checkbox checkbox-sm" bind:checked={split} disabled={busy} />
+				<span class="text-xs">Split into {pickedIssues.length} sessions (one per issue)</span>
+			</label>
+		{/if}
+		{#each pickedIssues as i (issueKey(i))}
+			{#if i.blockers.length}
+				<div class="alert alert-warning mt-1 items-start py-1 text-xs">
+					<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+					<div class="min-w-0">
+						<div class="font-medium">
+							<span class="font-mono" title={i.id}>{shortIssueId(i.source, i.id)}</span>:
+							{i.blockers.length} incomplete blocker(s) — you can still start.
+						</div>
+						{#each i.blockers as b (b.id)}
+							<div class="truncate" title={b.id}>
+								<span class="font-mono">{shortIssueId(i.source, b.id)}</span>
+								{b.title}
 							</div>
-							<div class="text-xs opacity-60">{fixDetail(fix, conflict.branch)}</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		{/each}
+		{#if showPicker && selectedProject}
+			<div class="mt-1">
+				<IssuePicker project={selectedProject} selected={pickedIssues} onpick={pickIssue} />
+			</div>
+		{/if}
+	</fieldset>
+
+	{#if reviewMode}
+		<fieldset class="fieldset">
+			<legend class="fieldset-legend">Pull request{pickedPrs.length > 1 ? 's' : ''}</legend>
+			{#if pickedPrs.length}
+				<div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
+					<span class="opacity-60">reviewing:</span>
+					{#each pickedPrs as pr (prKey(pr))}
+						<button
+							class="btn btn-ghost btn-xs gap-1 font-mono"
+							onclick={() => pickPr(pr)}
+							title="remove"
+						>
+							#{pr.number} <X size={12} />
 						</button>
 					{/each}
 				</div>
-				<div class="modal-action">
-					<button class="btn btn-sm" onclick={() => (conflict = null)}>Cancel</button>
+				{#if pickedPrs.length > 1}
+					<p class="mt-1 text-xs opacity-50">creates one review session per PR</p>
+				{/if}
+			{/if}
+			{#if selectedProject}
+				<div class="mt-1">
+					<PrPicker project={selectedProject} picked={pickedPrs} onpick={pickPr} />
 				</div>
-			</div>
+			{:else}
+				<p class="text-xs opacity-60">pick a project first</p>
+			{/if}
+		</fieldset>
+	{/if}
+
+	{#if kind === 'shell'}
+		<fieldset class="fieldset">
+			<legend class="fieldset-legend">Shell</legend>
+			<input
+				class="input w-full"
+				placeholder="command (optional, default: your shell)"
+				bind:value={command}
+			/>
+		</fieldset>
+	{:else}
+		<fieldset class="fieldset">
+			<legend class="fieldset-legend">First prompt <span class="opacity-50">(optional)</span></legend>
+			<textarea
+				class="textarea w-full"
+				rows="3"
+				placeholder="first prompt (optional, starts immediately)"
+				bind:value={prompt}
+				oninput={() => (promptDirty = true)}
+			></textarea>
+			{#if !promptDirty && (reviewMode ? selectedProject?.reviewPrompt : selectedProject?.template)}
+				<p class="text-xs opacity-50">
+					prefilled from {selectedProject?.name}
+					{reviewMode ? 'review prompt' : 'template'}
+				</p>
+			{:else if reviewMode}
+				<p class="text-xs opacity-50">placeholders: {REVIEW_PLACEHOLDERS} [cwd]</p>
+			{:else}
+				<p class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}</p>
+			{/if}
+		</fieldset>
+	{/if}
+
+	{#if hasOptions}
+		<!-- Worktree, model, and permission controls: right by default, so they
+		     start folded behind a digest of what will happen. -->
+		<div class="mt-3 rounded-box border border-base-300">
+			<button
+				class="flex w-full items-center gap-2 px-3 py-2 text-left"
+				onclick={() => (showOptions = !showOptions)}
+				aria-expanded={showOptions}
+			>
+				<SlidersHorizontal size={14} class="shrink-0 opacity-70" />
+				<span class="text-sm font-medium">Options</span>
+				<span class="min-w-0 flex-1 truncate text-right text-xs opacity-60">{optionsSummary}</span>
+				<ChevronDown
+					size={14}
+					class="shrink-0 opacity-70 transition-transform {showOptions ? 'rotate-180' : ''}"
+				/>
+			</button>
+			{#if showOptions}
+				<div class="border-t border-base-300 px-3 pb-3">
+					{#if !reviewMode}
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Worktree</legend>
+							<div class="join w-full">
+								<button
+									class="btn join-item btn-sm flex-1 {worktreeMode === 'none' ? 'btn-active' : ''}"
+									aria-pressed={worktreeMode === 'none'}
+									onclick={() => setMode('none')}>None</button
+								>
+								<button
+									class="btn join-item btn-sm flex-1 {worktreeMode === 'existing' ? 'btn-active' : ''}"
+									aria-pressed={worktreeMode === 'existing'}
+									onclick={() => setMode('existing')}>Existing</button
+								>
+								<button
+									class="btn join-item btn-sm flex-1 {worktreeMode === 'new' ? 'btn-active' : ''}"
+									aria-pressed={worktreeMode === 'new'}
+									onclick={() => setMode('new')}>New</button
+								>
+							</div>
+							{#if worktreeMode === 'existing'}
+								{#if existingWorktrees.length}
+									<select class="select w-full" bind:value={existingWorktreeDir}>
+										{#each existingWorktrees as w (w.path)}
+											<option value={w.path}>{w.branch} — {w.path}</option>
+										{/each}
+									</select>
+								{:else}
+									<p class="text-xs opacity-60">no existing worktrees for this repo</p>
+								{/if}
+							{:else if worktreeMode === 'new'}
+								<input
+									class="input w-full"
+									placeholder="branch name (defaults to title)"
+									bind:value={branch}
+									oninput={() => (branchDirty = true)}
+								/>
+								<label class="label cursor-pointer justify-start gap-2">
+									<input type="checkbox" class="checkbox checkbox-sm" bind:checked={newBranch} />
+									<span>New branch</span>
+								</label>
+								{#if newBranch}
+									<select class="select w-full" bind:value={base} onchange={() => (baseDirty = true)}>
+										<option value="">base: default branch</option>
+										{#if base && !branches.includes(base)}
+											<option value={base}>base: {base}</option>
+										{/if}
+										{#each branches as b (b)}
+											<option value={b}>base: {b}</option>
+										{/each}
+									</select>
+								{/if}
+							{/if}
+						</fieldset>
+					{/if}
+					{#if isAgentKind(kind)}
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Model</legend>
+							{#if kind === 'claude'}
+								<select class="select w-full" bind:value={model} onchange={() => (modelDirty = true)}>
+									{#each claudeModelOptions(settings) as m (m.value)}
+										<option value={m.value}>{m.label}</option>
+									{/each}
+								</select>
+								<select
+									class="select w-full"
+									bind:value={effort}
+									onchange={() => (modelDirty = true)}
+									aria-label="Reasoning effort"
+								>
+									{#each ['', ...EFFORT_LEVELS] as e (e)}
+										<option value={e}>{effortLabel(e)} effort</option>
+									{/each}
+								</select>
+								<label class="label cursor-pointer justify-start gap-2">
+									<input type="checkbox" class="checkbox checkbox-sm" bind:checked={yolo} />
+									<span>YOLO mode (bypass permissions)</span>
+								</label>
+							{:else if kind === 'pi'}
+								<ComboInput
+									bind:value={provider}
+									options={piProviders}
+									placeholder="provider (optional, e.g. anthropic, google)"
+									ariaLabel="Provider"
+									oninput={() => (modelDirty = true)}
+								/>
+								<ComboInput
+									bind:value={model}
+									options={piModels}
+									placeholder="model (optional, pi pattern or id)"
+									ariaLabel="Model"
+									oninput={() => (modelDirty = true)}
+								/>
+							{:else if kind === 'opencode'}
+								<ComboInput
+									bind:value={model}
+									options={modelIds}
+									placeholder="model (optional, provider/model e.g. anthropic/claude-sonnet-4-5)"
+									ariaLabel="Model"
+									oninput={() => (modelDirty = true)}
+								/>
+							{:else if kind === 'codex'}
+								<ComboInput
+									bind:value={model}
+									options={modelIds}
+									placeholder="model (optional, e.g. gpt-6-astra)"
+									ariaLabel="Model"
+									oninput={() => (modelDirty = true)}
+								/>
+							{:else}
+								<input
+									class="input w-full"
+									placeholder="model (optional, e.g. gpt-5-codex)"
+									bind:value={model}
+									oninput={() => (modelDirty = true)}
+								/>
+							{/if}
+						</fieldset>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	{/if}
 
-	{#if confirmingExpensive}
-		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-			<div class="modal-box max-w-sm">
-				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
-					<TriangleAlert size={18} class="text-warning" /> Expensive model
-				</h3>
-				<p class="mb-3 text-sm opacity-70">
-					<span class="font-mono">{pickedModelLabel}</span> is an expensive model. Start this session on
-					it anyway?
-				</p>
-				<div class="modal-action">
-					<button
-						class="btn"
-						onclick={() => {
-							confirmingExpensive = false;
-							confirmedExpensive = false;
-						}}>Cancel</button
-					>
-					<button
-						class="btn btn-warning"
-						disabled={busy}
-						onclick={() => {
-							confirmedExpensive = true;
-							create();
-						}}>Start anyway</button
-					>
-				</div>
-			</div>
-			<button
-				class="modal-backdrop"
-				onclick={() => {
-					confirmingExpensive = false;
-					confirmedExpensive = false;
-				}}
-				aria-label="close"
-			></button>
+	{#if expensivePick}
+		<!-- Outside the collapse: the cost flag must be visible while Options is
+		     folded, since the remembered default can itself be expensive. -->
+		<div class="alert alert-warning mt-3 items-start py-1 text-xs">
+			<TriangleAlert size={14} class="mt-0.5 shrink-0" />
+			<span>
+				<span class="font-mono">{pickedModelLabel}</span> is an expensive model; you'll be asked
+				to confirm before it starts.
+			</span>
 		</div>
 	{/if}
-{/if}
+
+	{#if errorMsg}
+		<div class="alert alert-error mt-3 py-2 text-sm">{errorMsg}</div>
+	{/if}
+	{#snippet footer()}
+			<!-- Closing is disabled while a create is in flight: the request is already
+			     committing server-side, so a stray close would let a later success still
+			     navigate after the user thought they cancelled. -->
+			<button class="btn" onclick={() => (open = false)} disabled={busy}>Cancel</button>
+			<button
+				class="btn btn-primary"
+				onclick={create}
+				disabled={busy || (titleRequired && !title.trim()) || (reviewMode && !pickedPrs.length)}
+			>
+				{busy ? createProgress || 'Creating...' : 'Create'}
+			</button>
+	{/snippet}
+</Modal>
+
+<Modal
+	open={open && !!conflict}
+	onclose={() => (conflict = null)}
+	title="That branch is already there"
+	icon={TriangleAlert}
+	iconClass="text-warning"
+	class="max-w-md"
+>
+	{#if conflict}
+		<p class="mb-3 text-sm opacity-70">{conflictMessage(conflict.kind, conflict.branch)}</p>
+		<div class="space-y-2">
+			{#each WORKTREE_FIXES as fix (fix)}
+				<button
+					class="w-full rounded-box border border-base-300 px-3 py-2 text-left hover:border-base-content/30 {fix ===
+					'recreate'
+						? 'hover:border-error/50'
+						: ''}"
+					disabled={busy}
+					onclick={() => resolveConflict(fix)}
+				>
+					<div class="text-sm font-medium {fix === 'recreate' ? 'text-error' : ''}">
+						{fixLabel(fix)}
+					</div>
+					<div class="text-xs opacity-60">{fixDetail(fix, conflict.branch)}</div>
+				</button>
+			{/each}
+		</div>
+	{/if}
+	{#snippet footer()}
+		<button class="btn btn-sm" onclick={() => (conflict = null)}>Cancel</button>
+	{/snippet}
+</Modal>
+
+<Modal
+	open={open && confirmingExpensive}
+	onclose={cancelExpensive}
+	title="Expensive model"
+	icon={TriangleAlert}
+	iconClass="text-warning"
+>
+	<p class="mb-3 text-sm opacity-70">
+		<span class="font-mono">{pickedModelLabel}</span> is an expensive model. Start this session on
+		it anyway?
+	</p>
+	{#snippet footer()}
+		<button class="btn" onclick={cancelExpensive}>Cancel</button>
+		<button
+			class="btn btn-warning"
+			disabled={busy}
+			onclick={() => {
+				confirmedExpensive = true;
+				create();
+			}}>Start anyway</button
+		>
+	{/snippet}
+</Modal>
