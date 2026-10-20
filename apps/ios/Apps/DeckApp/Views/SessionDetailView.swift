@@ -561,11 +561,8 @@ struct SessionDetailView: View {
 	}
 
 	private var workingIndicator: some View {
-		HStack(spacing: 8) {
-			ProgressView().controlSize(.small)
-			Text("Working…")
-				.font(.footnote)
-				.foregroundStyle(.secondary)
+		HStack {
+			WorkingLabel()
 			Spacer()
 		}
 		.padding(.horizontal)
@@ -624,17 +621,9 @@ struct SessionDetailView: View {
 					loadOlderKeepingPlace(viewModel)
 				}
 			}
-			// Only the reader's own scrolling decides whether the end is
-			// followed. The pin below moves the offset too, and while the lazy
-			// stack is still estimating heights its idea of the distance to the
-			// end is unreliable, so judging that from every offset change would
-			// let a pin that landed short switch following off.
-			.onScrollPhaseChange { old, phase, context in
-				let userMoved = phase == .interacting || phase == .decelerating || (phase == .idle && old != .animating)
-				guard userMoved else { return }
-				let geometry = context.geometry
-				viewModel.isNearBottom = geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height < 120
-			}
+			// Older rows arriving above the reader hold their place rather than
+			// pulling the view to the end.
+			.followsTranscriptEnd(isNearBottom: Bindable(viewModel).isNearBottom, proxy: proxy, paused: anchorId != nil)
 			.onChange(of: viewModel.didLoadOnce) { _, loaded in
 				guard loaded, let focusIndex, !focused else { return }
 				focused = true
@@ -648,17 +637,6 @@ struct SessionDetailView: View {
 						highlightedId = nil
 					}
 				}
-			}
-			// Whatever makes the content taller while the reader is at the end
-			// (the snapshot landing, lazy rows taking their real height, an
-			// image or preview arriving, streamed text) keeps the end in view; a
-			// reader who scrolled up stays put. Reacting to the size rather than
-			// the item count is what makes opening a session land on the latest
-			// message: one scroll at load time aims at estimated heights and
-			// ends up short of it.
-			.onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, height in
-				guard height != old, viewModel.isNearBottom, anchorId == nil else { return }
-				proxy.scrollTo("bottom", anchor: .bottom)
 			}
 			.onChange(of: viewModel.items.count) { _, _ in
 				// Older rows arriving above the reader hold their place.

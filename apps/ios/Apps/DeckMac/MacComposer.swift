@@ -4,11 +4,14 @@ import DeckKit
 import DeckUI
 
 /// The session's message field: quick messages, images (picked, pasted with
-/// the paste control, or dropped on it), the text, and Send.
+/// the paste control, or dropped on it), the text, and Send, under a working
+/// status with Stop while a turn runs.
 struct MacComposer: View {
 	@Binding var draft: String
 	@Binding var images: [DeckImage]
 	let sending: Bool
+	var working = false
+	var onStop: () -> Void = {}
 	var onSend: () -> Void
 	var onQuickMessage: (String) -> Void
 	var onManageQuickMessages: () -> Void
@@ -25,6 +28,7 @@ struct MacComposer: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 6) {
+			if working { status }
 			if !images.isEmpty {
 				ScrollView(.horizontal, showsIndicators: false) {
 					HStack(spacing: 8) {
@@ -59,6 +63,17 @@ struct MacComposer: View {
 					.stroke(Color.accentColor, lineWidth: 2)
 					.padding(4)
 			}
+		}
+	}
+
+	private var status: some View {
+		HStack {
+			WorkingLabel()
+			Spacer()
+			// ⌘. is the Session menu's Stop (DeckCommands).
+			Button("Stop", systemImage: "stop.circle", action: onStop)
+				.controlSize(.small)
+				.help("Stop this turn (⌘.)")
 		}
 	}
 

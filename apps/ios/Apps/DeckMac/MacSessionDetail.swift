@@ -241,24 +241,23 @@ struct MacSessionDetail: View {
 					if !viewModel.streamingText.isEmpty {
 						MacBubble(text: viewModel.streamingText, isUser: false, viewModel: nil)
 					}
+					if isWorking(viewModel) {
+						MacWorkingRow()
+					}
 					Color.clear.frame(height: 1).id("bottom")
 				}
 				.padding()
 				.frame(maxWidth: 860)
 				.frame(maxWidth: .infinity)
 			}
-			.onChange(of: viewModel.items.count) { _, _ in
-				if viewModel.isNearBottom { proxy.scrollTo("bottom", anchor: .bottom) }
-			}
-			.onChange(of: viewModel.streamingText) { _, _ in
-				if viewModel.isNearBottom { proxy.scrollTo("bottom", anchor: .bottom) }
-			}
-			.onScrollGeometryChange(for: Bool.self) { geometry in
-				geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 80
-			} action: { _, nearBottom in
-				viewModel.isNearBottom = nearBottom
-			}
+			.followsTranscriptEnd(isNearBottom: Bindable(viewModel).isNearBottom, proxy: proxy)
 		}
+	}
+
+	/// A turn is under way and not stopped on a question, whose card already
+	/// says what the session is waiting for.
+	private func isWorking(_ viewModel: SessionDetailViewModel) -> Bool {
+		!isTerminal && session?.status == .running && viewModel.pendingAsk == nil
 	}
 
 	@ViewBuilder
@@ -279,6 +278,8 @@ struct MacSessionDetail: View {
 			draft: $draft,
 			images: $images,
 			sending: sending,
+			working: isWorking(viewModel),
+			onStop: { Task { await viewModel.stop() } },
 			onSend: { send(viewModel) },
 			onQuickMessage: { text in Task { await viewModel.sendQuickMessage(text: text) } },
 			onManageQuickMessages: { sheet = .quickMessages })
@@ -325,6 +326,20 @@ private struct MacTranscriptRow: View {
 				.font(.caption)
 				.foregroundStyle(level == .error ? .red : level == .warning ? .orange : .secondary)
 				.frame(maxWidth: .infinity, alignment: level == .info ? .center : .leading)
+		}
+	}
+}
+
+/// The last row while a turn runs, so a reply that has not started streaming
+/// yet still shows the session is busy.
+private struct MacWorkingRow: View {
+	var body: some View {
+		HStack {
+			WorkingLabel()
+				.padding(.horizontal, 10)
+				.padding(.vertical, 8)
+				.background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
+			Spacer(minLength: 60)
 		}
 	}
 }
