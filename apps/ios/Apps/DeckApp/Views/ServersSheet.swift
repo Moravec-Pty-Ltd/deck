@@ -17,6 +17,9 @@ struct ServersSheet: View {
 
 	@Environment(DeckStore.self) private var store
 	@Environment(\.dismiss) private var dismiss
+	#if os(macOS)
+	@Environment(\.openWindow) private var openWindow
+	#endif
 
 	@State private var servers: [ServerRuntime]?
 	@State private var busy: Set<String> = []
@@ -44,19 +47,19 @@ struct ServersSheet: View {
 							}
 						}
 					}
-					.listStyle(.insetGrouped)
+					.deckInsetGroupedList()
 				} else {
 					ProgressView()
 				}
 			}
 			.navigationTitle("Dev servers")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Done") { dismiss() }
 				}
 				ToolbarItem(placement: .primaryAction) {
-					NavigationLink(value: BrowserRoute(focus: nil)) {
+					browserLink(focus: nil) {
 						Label("Browser", systemImage: "globe")
 					}
 				}
@@ -64,9 +67,11 @@ struct ServersSheet: View {
 			.navigationDestination(for: String.self) { name in
 				ServerLogsView(sessionId: sessionId, name: name)
 			}
+			#if os(iOS)
 			.navigationDestination(for: BrowserRoute.self) { route in
 				BrowserView(sessionId: sessionId, focus: route.focus)
 			}
+			#endif
 			.task { await poll() }
 			.alert("Something went wrong", isPresented: Binding(
 				get: { errorMessage != nil },
@@ -99,7 +104,7 @@ struct ServersSheet: View {
 			// Deliberately not openURL: that address is loopback on the deck
 			// machine, so Safari here would resolve it to this device and find
 			// nothing. deck's own browser tunnels it instead.
-			NavigationLink(value: BrowserRoute(focus: preview)) {
+			browserLink(focus: preview) {
 				Label(preview, systemImage: "globe")
 					.font(.footnote)
 					.lineLimit(1)
@@ -221,60 +226,52 @@ struct ServersSheet: View {
 	}
 }
 
-/// The tail of a dev server's tmux pane, refreshed every couple of seconds
-/// using the same change tag the web log pane sends back.
+/// The tail of a dev server's tmux pane, ANSI colours and all, polled with
+/// the same change tag the web log pane sends back.
+extension ServersSheet {
+	/// The dev browser: pushed here on iOS, its own window on the Mac (which
+	/// shows every dev server's tab, so there is nothing to focus).
+	@ViewBuilder
+	fileprivate func browserLink(focus: String?, @ViewBuilder label: () -> some View) -> some View {
+		#if os(iOS)
+		NavigationLink(value: BrowserRoute(focus: focus), label: label)
+		#else
+		Button(action: { openWindow(id: "browser") }, label: label)
+		#endif
+	}
+}
+
 struct ServerLogsView: View {
 	let sessionId: String
 	let name: String
 
 	@Environment(DeckStore.self) private var store
-	@State private var text = ""
-	@State private var tag: String?
-	@State private var dead = false
-	@State private var loaded = false
+	@State private var poller: TerminalPoller?
 
 	var body: some View {
-		ScrollViewReader { proxy in
-			ScrollView([.vertical, .horizontal]) {
-				Text(text.isEmpty && loaded ? "(no output)" : text)
-					.font(.caption.monospaced())
-					.textSelection(.enabled)
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.padding()
-					.id("logs")
+		Group {
+			if let poller {
+				TerminalView(poller: poller, emptyText: "(no output)")
+			} else {
+				ProgressView()
 			}
-			.onChange(of: text) { _, _ in proxy.scrollTo("logs", anchor: .bottom) }
-		}
-		.overlay {
-			if !loaded { ProgressView() }
 		}
 		.safeAreaInset(edge: .bottom) {
-			if dead {
+			if poller?.dead == true {
 				Text("Not running")
 					.font(.footnote)
 					.foregroundStyle(.secondary)
 					.padding(8)
 					.frame(maxWidth: .infinity)
-					.background(.thinMaterial)
+					.deckGlass(in: Rectangle())
 			}
 		}
 		.navigationTitle(name)
-		.navigationBarTitleDisplayMode(.inline)
-		.task { await poll() }
-	}
-
-	private func poll() async {
-		guard let client = store.client else { return }
-		while !Task.isCancelled {
-			if let logs = try? await client.serverLogs(sessionId: sessionId, name: name, tag: tag) {
-				if logs.unchanged != true {
-					text = logs.text ?? ""
-					tag = logs.h
-				}
-				dead = logs.dead ?? false
-				loaded = true
+		.deckInlineNavigationTitle()
+		.onAppear {
+			if poller == nil, let client = store.client {
+				poller = .serverLogs(client: client, sessionId: sessionId, name: name)
 			}
-			try? await Task.sleep(for: .seconds(2))
 		}
 	}
 }

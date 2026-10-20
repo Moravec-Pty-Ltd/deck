@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Check, KeyRound, MessageSquareText } from '@lucide/svelte';
+	import { Check, KeyRound } from '@lucide/svelte';
 	import { fetchSettings, patchSettings } from '$lib/settings-patch';
 
 	// Somewhere to start from: the local model that fits a small machine, the
@@ -7,7 +7,7 @@
 	const PRESETS: { label: string; url: string; model: string; provider: '' | 'openai' | 'anthropic'; apiKeyFile?: string }[] = [
 		{ label: 'Local (light)', url: 'http://127.0.0.1:17498/v1', model: 'mlx-community/Qwen3.5-9B-MLX-4bit', provider: 'openai' },
 		{ label: 'Local (large)', url: 'http://127.0.0.1:17498/v1', model: 'mlx-community/Qwen3.5-35B-A3B-4bit', provider: 'openai' },
-		{ label: 'Tailnet', url: 'http://strix-halo:8000/v1', model: '', provider: 'openai' },
+		{ label: 'Tailnet', url: 'http://gpu-box:8000/v1', model: '', provider: 'openai' },
 		{ label: 'Claude', url: 'https://api.anthropic.com/v1', model: 'claude-haiku-4-5-20251001', provider: 'anthropic', apiKeyFile: '~/.secrets/anthropic.env' }
 	];
 
@@ -45,7 +45,7 @@
 			status = await fetch('/api/agent/operator').then((r) => (r.ok ? r.json() : null));
 			loaded = true;
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'failed to load operator settings';
+			message = e instanceof Error ? e.message : "Couldn't load operator settings";
 		}
 	}
 
@@ -71,7 +71,7 @@
 			saved = true;
 			await load();
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'save failed';
+			message = e instanceof Error ? e.message : 'Save failed';
 		} finally {
 			busy = false;
 		}
@@ -80,17 +80,15 @@
 
 <div class="card border border-base-300 bg-base-100">
 	<div class="card-body gap-3 p-4">
-		<h2 class="m-0 flex items-center gap-2 text-base font-semibold">
-			<MessageSquareText size={16} /> Watch operator
-			{#if status}
-				<span class="badge badge-sm {status.configured ? 'badge-success' : 'badge-ghost'}">{status.configured ? 'on' : 'off'}</span>
-			{/if}
-		</h2>
-		<p class="m-0 text-sm opacity-70">
-			The hands-free operator: a model that talks with you and drives sessions (status, replies,
-			messages, answers, starting and stopping). Any chat endpoint with tool calling, OpenAI-shaped
-			(a local mlx_lm.server or llama-server, a machine on your tailnet, most hosted models) or
-			Anthropic-shaped (Claude). Voice mode above supplies the ears and voice.
+		{#if status}
+			<div>
+				<span class="badge badge-sm {status.configured ? 'badge-success' : 'badge-ghost'}">{status.configured ? 'Configured' : 'Not configured'}</span>
+			</div>
+		{/if}
+		<p class="m-0 text-xs opacity-70">
+			Any chat endpoint with tool calling: OpenAI-shaped (a local mlx_lm.server or llama-server, a
+			machine on your tailnet, most hosted models) or Anthropic-shaped (Claude). The Voice section
+			supplies its ears and voice.
 		</p>
 		<div class="flex flex-wrap gap-2">
 			{#each PRESETS as preset (preset.label)}
@@ -152,7 +150,7 @@
 			<div class="flex flex-wrap items-center gap-2">
 				<button class="btn btn-sm btn-primary" onclick={() => save()} disabled={busy}>Save</button>
 				{#if saved}
-					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
+					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> Saved</span>
 				{/if}
 				{#if message}
 					<span class="text-xs opacity-70">{message}</span>

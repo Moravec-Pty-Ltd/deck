@@ -49,6 +49,14 @@ extension Color {
 		#endif
 	}
 
+	static var deckBackground: Color {
+		#if canImport(UIKit)
+		Color(.systemBackground)
+		#else
+		Color(nsColor: .textBackgroundColor)
+		#endif
+	}
+
 	static var deckSeparator: Color {
 		#if canImport(UIKit)
 		Color(.separator)
@@ -61,11 +69,33 @@ extension Color {
 extension View {
 	/// An inline navigation title where the platform has one; macOS has no
 	/// large titles to opt out of.
-	func deckInlineNavigationTitle() -> some View {
+	public func deckInlineNavigationTitle() -> some View {
 		#if canImport(UIKit)
 		navigationBarTitleDisplayMode(.inline)
 		#else
 		self
+		#endif
+	}
+}
+
+extension View {
+	/// A field for paths, urls and names: no autocapitalisation or autocorrect.
+	public func deckPlainInput() -> some View {
+		#if os(iOS)
+		textInputAutocapitalization(.never).autocorrectionDisabled()
+		#else
+		autocorrectionDisabled()
+		#endif
+	}
+}
+
+extension View {
+	/// Inset grouped where iOS has it; macOS lists have no such style.
+	public func deckInsetGroupedList() -> some View {
+		#if os(iOS)
+		listStyle(.insetGrouped)
+		#else
+		listStyle(.inset)
 		#endif
 	}
 }

@@ -154,8 +154,8 @@
 					value={voice.settings.chattiness}
 					onchange={(e) => voice.updateSettings({ ...voice.settings, chattiness: (e.currentTarget as HTMLSelectElement).value as 'every-update' | 'final-only' })}
 				>
-					<option value="every-update">every update</option>
-					<option value="final-only">final reply only</option>
+					<option value="every-update">Every update</option>
+					<option value="final-only">Final reply only</option>
 				</select>
 			</label>
 			<label class="flex items-center gap-2">
@@ -176,9 +176,9 @@
 						value={voice.settings.sensitivity}
 						onchange={(e) => voice.updateSettings({ ...voice.settings, sensitivity: (e.currentTarget as HTMLSelectElement).value as 'low' | 'medium' | 'high' })}
 					>
-						<option value="low">low</option>
-						<option value="medium">medium</option>
-						<option value="high">high</option>
+						<option value="low">Low</option>
+						<option value="medium">Medium</option>
+						<option value="high">High</option>
 					</select>
 				</label>
 			{/if}

@@ -27,7 +27,7 @@ struct StartConfirmationView: View {
 		VStack(spacing: 12) {
 			if started {
 				Image(systemName: "checkmark.circle.fill")
-					.font(.system(size: 36))
+					.font(.largeTitle)
 					.foregroundStyle(.green)
 				Text("Started")
 			} else {

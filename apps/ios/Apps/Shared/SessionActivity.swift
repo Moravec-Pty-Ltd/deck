@@ -7,7 +7,6 @@ import DeckKit
 /// Island show, and the button they offer. Compiled into both the app (which
 /// starts and updates the activity) and the widget extension (which renders
 /// it). `ContentState` mirrors the `content-state` deck pushes, key for key.
-#if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
 struct SessionActivityAttributes: ActivityAttributes {
 	struct ContentState: Codable, Hashable {
 		var status: String
@@ -44,4 +43,3 @@ struct StopSessionActivityIntent: LiveActivityIntent {
 		return .result()
 	}
 }
-#endif

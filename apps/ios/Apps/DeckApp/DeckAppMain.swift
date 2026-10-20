@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 @main
 struct DeckAppMain: App {
@@ -25,5 +26,6 @@ struct DeckAppMain: App {
 					PushManager.shared.requestAuthorizationAndRegister()
 				}
 		}
+		.commands { DeckCommands() }
 	}
 }

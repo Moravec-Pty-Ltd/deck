@@ -23,14 +23,14 @@
 		if (disabled || act.busy) return;
 		void act.run(async () => {
 			await agentPost(sessionPath(id, 'agent'), { kind: next });
-		}, () => { open = false; onChange(); }, 'agent switch failed');
+		}, () => { open = false; onChange(); }, 'Agent switch failed');
 	}
 
 	// Restart the claude process in place (see server/session-restart.ts). Lives
 	// here rather than as another header control.
 	function restart() {
 		if (disabled || act.busy) return;
-		void act.run(() => restartSession(id), () => { open = false; onChange(); }, 'restart failed');
+		void act.run(() => restartSession(id), () => { open = false; onChange(); }, 'Restart failed');
 	}
 </script>
 
@@ -51,7 +51,7 @@
 			{#if kind === 'claude'}
 				<li><div class="divider my-1"></div></li>
 				<li><button onclick={restart} disabled={act.busy} title="Reload changed CLAUDE.md, settings, skills, or MCP config. The conversation continues.">
-					<RotateCw size={14} /> Restart claude
+					<RotateCw size={14} /> Restart Claude
 				</button></li>
 			{/if}
 		</ul>

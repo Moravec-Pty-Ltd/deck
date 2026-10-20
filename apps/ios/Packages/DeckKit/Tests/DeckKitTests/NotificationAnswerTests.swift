@@ -42,4 +42,14 @@ final class NotificationAnswerTests: XCTestCase {
 		XCTAssertFalse(answer.structured)
 		XCTAssertEqual(answer.header, "Answer")
 	}
+
+	func testADeclinedAnswerShowsDecksReasonAlone() throws {
+		let info = try userInfo(#"{ "ask": { "sessionId": "c_1", "header": "Colour", "options": ["Red"], "questions": 1 } }"#)
+		let answer = try XCTUnwrap(NotificationAnswer(userInfo: info, optionSlot: 0, typed: nil))
+		let declined = DeckError.answerDeclined(reason: "That question was already answered.")
+		XCTAssertEqual(declined.localizedDescription, "That question was already answered.")
+		XCTAssertEqual(DeckError.message(for: declined), "That question was already answered.")
+		XCTAssertEqual(answer.failureBody(for: declined), "\"Red\": That question was already answered.")
+		XCTAssertEqual(answer.failureBody(for: DeckError.http(status: 409, message: "Run is not blocked")), "\"Red\": Run is not blocked")
+	}
 }

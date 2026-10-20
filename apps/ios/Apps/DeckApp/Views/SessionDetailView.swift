@@ -25,6 +25,7 @@ struct SessionDetailView: View {
 	@Environment(\.dismiss) private var dismiss
 
 	@State private var viewModel: SessionDetailViewModel?
+	@State private var terminal: TerminalPoller?
 	@State private var composerText = ""
 	/// The phone layout's height, which caps how tall a pending question grows.
 	@State private var stackedHeight: CGFloat = 0
@@ -37,6 +38,10 @@ struct SessionDetailView: View {
 	@State private var showDeleteSheet = false
 	@State private var showMergeSheet = false
 	@State private var showModelSheet = false
+	/// The model picked in the sheet, acted on once the sheet has gone so an
+	/// expensive-model confirm has somewhere to present.
+	@State private var modelPick: ModelPick?
+	@State private var pendingExpensiveModel: String?
 	@State private var showEffortSheet = false
 	@State private var showQuickManage = false
 	@State private var showRenameSheet = false
@@ -67,6 +72,36 @@ struct SessionDetailView: View {
 		return kind != "shell"
 	}
 
+	/// Switch to the model picked in the sheet, asking first when the server
+	/// marks it expensive. A pick can beat the list's first load, so it waits
+	/// for that load (a no-op once the list is in) before deciding.
+	private func applyModelPick() {
+		guard let pick = modelPick else { return }
+		modelPick = nil
+		Task {
+			await loadExpensiveModels()
+			if let kind = session?.kind, store.needsExpensiveConfirm(model: pick.model, kind: kind, current: session?.model) {
+				pendingExpensiveModel = pick.model
+			} else {
+				await viewModel?.changeModel(pick.model)
+			}
+		}
+	}
+
+	private func loadExpensiveModels() async {
+		let project = session.flatMap { SessionProject.owning($0, in: store.projects) }
+		await store.loadExpensiveModels(projectPath: project?.path)
+	}
+
+	private func openModelSheet() {
+		Task { await loadExpensiveModels() }
+		showModelSheet = true
+	}
+
+	private var isTerminal: Bool {
+		session?.kind == "shell" && store.supports(.terminal)
+	}
+
 	private func compact() async {
 		compacting = true
 		defer { compacting = false }
@@ -79,12 +114,25 @@ struct SessionDetailView: View {
 		return sessionId
 	}
 
+	/// Send, stop and compact for ⌘Return, ⌘. and ⇧⌘K (see DeckCommands).
+	private var keyboardActions: DeckSessionActions {
+		let canSend = !isSending && !isTerminal
+			&& (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty)
+		let canCompact = session?.kind == "claude" && session?.context != nil
+			&& session?.status != .running && !compacting
+		return DeckSessionActions(
+			send: canSend ? { if let viewModel { sendComposer(viewModel) } } : nil,
+			stop: session?.status == .running ? { Task { await viewModel?.stop() } } : nil,
+			compact: canCompact ? { Task { await compact() } } : nil)
+	}
+
 	var body: some View {
 		content
 			.safeAreaInset(edge: .top, spacing: 0) { ServerTooOldBanner(needs: Self.needs) }
 			.navigationTitle(title)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar { toolbarContent }
+			.focusedSceneValue(\.deckSession, keyboardActions)
 			.sheet(isPresented: $showDeleteSheet) {
 				DeleteSessionSheet(hasWorktree: session?.worktree != nil) { deleteWorktree, deleteBranch in
 					Task {
@@ -106,22 +154,39 @@ struct SessionDetailView: View {
 			.sheet(isPresented: $showSchedule) {
 				NavigationStack { SchedulesView(startFor: sessionId) }
 			}
-			.sheet(isPresented: $showModelSheet) {
-				if let viewModel, let kind = session?.kind {
+			.sheet(isPresented: $showModelSheet, onDismiss: applyModelPick) {
+				if let kind = session?.kind {
 					ModelPickerSheet(
 						kind: kind,
 						current: session?.model,
 						available: store.knownModels(for: kind)
 					) { model in
-						Task { await viewModel.changeModel(model) }
+						modelPick = ModelPick(model: model)
 					}
 				}
+			}
+			.alert(
+				"Expensive model",
+				isPresented: Binding(
+					get: { pendingExpensiveModel != nil },
+					set: { if !$0 { pendingExpensiveModel = nil } })
+			) {
+				Button("Cancel", role: .cancel) {}
+				Button("Switch anyway") {
+					let model = pendingExpensiveModel
+					Task { await viewModel?.changeModel(model) }
+				}
+			} message: {
+				Text("\(pendingExpensiveModel ?? "") is an expensive model. Switch this session to it anyway?")
 			}
 			.onAppear {
 				if viewModel == nil {
 					viewModel = shared ?? SessionDetailViewModel(sessionId: sessionId, store: store)
 				}
-				if viewModel?.isPolling != true { viewModel?.startPolling() }
+				if viewModel?.isPolling != true, session?.kind != "shell" { viewModel?.startPolling() }
+				if terminal == nil, let client = store.client {
+					terminal = .shell(client: client, sessionId: sessionId)
+				}
 				Task { await store.refreshKinds() }
 				if voice == nil, isAgentSession, store.supports(.speech), let controller = viewModel?.voiceController() {
 					voice = controller
@@ -186,7 +251,7 @@ struct SessionDetailView: View {
 					}
 					.disabled(session?.status == .running)
 					Button {
-						showModelSheet = true
+						openModelSheet()
 					} label: {
 						Label(session?.model.map { "Model: \($0)" } ?? "Change model", systemImage: "cpu")
 					}
@@ -208,6 +273,16 @@ struct SessionDetailView: View {
 					}
 					.disabled(session?.status == .running || compacting)
 					.accessibilityIdentifier("compactSession")
+				}
+				if session?.kind == "claude" {
+					// deck restarts only an idle session (a running turn is a 409).
+					Button {
+						Task { await viewModel?.restart() }
+					} label: {
+						Label("Restart claude", systemImage: "arrow.clockwise")
+					}
+					.disabled(session?.status == .running)
+					.accessibilityIdentifier("restartSession")
 				}
 				Button {
 					showRenameSheet = true
@@ -256,6 +331,14 @@ struct SessionDetailView: View {
 						Label("PR #\(pr.number ?? 0)", systemImage: "arrow.triangle.pull")
 					}
 				}
+				if session?.pr != nil, store.supports(.prDismiss) {
+					Button {
+						Task { await viewModel?.dismissPR() }
+					} label: {
+						Label("Dismiss PR", systemImage: "xmark.circle")
+					}
+					.accessibilityIdentifier("dismissPR")
+				}
 				Button(role: .destructive) {
 					showDeleteSheet = true
 				} label: {
@@ -273,7 +356,9 @@ struct SessionDetailView: View {
 	private var content: some View {
 		if let viewModel {
 			Group {
-				if hinge.isTabletop {
+				if isTerminal, let terminal {
+					TerminalView(poller: terminal)
+				} else if hinge.isTabletop {
 					tabletop(viewModel)
 				} else {
 					stacked(viewModel)
@@ -405,7 +490,8 @@ struct SessionDetailView: View {
 	private var voiceInvitation: some View {
 		VStack(spacing: 12) {
 			Image(systemName: "waveform.circle")
-				.font(.system(size: 44))
+				.font(.largeTitle)
+				.imageScale(.large)
 				.foregroundStyle(.secondary)
 			if let voice, voice.canRead {
 				Button("Start voice mode") { voice.enable() }
@@ -468,7 +554,9 @@ struct SessionDetailView: View {
 			}
 			.id(ask.id)
 			.padding()
-			.background(.thinMaterial)
+			.deckGlass()
+			.padding(.horizontal, 8)
+			.padding(.vertical, 4)
 		}
 	}
 
@@ -503,7 +591,7 @@ struct SessionDetailView: View {
 								.id(group.id)
 								.overlay {
 									if highlightedId == group.id {
-										RoundedRectangle(cornerRadius: 12)
+										RoundedRectangle(cornerRadius: DeckStyle.Radius.card)
 											.stroke(Color.accentColor, lineWidth: 2)
 											.padding(-4)
 									}
@@ -515,7 +603,7 @@ struct SessionDetailView: View {
 							MarkdownText(viewModel.streamingText)
 								.padding(10)
 								.background(Color(.secondarySystemBackground))
-								.clipShape(RoundedRectangle(cornerRadius: 12))
+								.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 							Spacer(minLength: 40)
 						}
 						.id("streaming")
@@ -701,6 +789,7 @@ struct SessionDetailView: View {
 			}
 		}
 		.padding()
+		.deckGlass(in: Rectangle())
 		.disabled(isSending)
 		.onChange(of: photoItems) { _, items in
 			Task { await loadPhotos(items) }
@@ -714,7 +803,7 @@ struct SessionDetailView: View {
 					.resizable()
 					.scaledToFill()
 					.frame(width: 48, height: 48)
-					.clipShape(RoundedRectangle(cornerRadius: 6))
+					.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 			}
 			Button {
 				attachedImages.removeAll { $0.id == image.id }
@@ -883,43 +972,8 @@ struct TranscriptBubble: View {
 			}
 			.padding(10)
 			.background(isUser ? Color.accentColor.opacity(0.15) : Color(.secondarySystemBackground))
-			.clipShape(RoundedRectangle(cornerRadius: 12))
+			.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 			if !isUser { Spacer(minLength: 40) }
-		}
-	}
-}
-
-/// A thumbnail of an attachment the message carried, fetched through the
-/// authenticated client (a plain AsyncImage can't send the token).
-struct AttachmentImage: View {
-	let image: TranscriptImage
-	var viewModel: SessionDetailViewModel?
-
-	@State private var uiImage: UIImage?
-	@State private var failed = false
-
-	var body: some View {
-		Group {
-			if let uiImage {
-				Image(uiImage: uiImage)
-					.resizable()
-					.scaledToFill()
-			} else if failed {
-				Image(systemName: "photo")
-					.foregroundStyle(.secondary)
-			} else {
-				ProgressView().controlSize(.small)
-			}
-		}
-		.frame(width: 96, height: 96)
-		.clipShape(RoundedRectangle(cornerRadius: 8))
-		.task(id: image) {
-			guard uiImage == nil else { return }
-			if let data = await viewModel?.imageData(for: image), let loaded = UIImage(data: data) {
-				uiImage = loaded
-			} else {
-				failed = true
-			}
 		}
 	}
 }
@@ -964,7 +1018,12 @@ struct QuestionCard: View {
 		}
 		.padding(10)
 		.frame(maxWidth: .infinity, alignment: .leading)
-		.background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-		.overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5))
+		.background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
+		.overlay(RoundedRectangle(cornerRadius: DeckStyle.Radius.card).stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5))
 	}
+}
+
+/// A pick from the model sheet; `model` nil is "back to the default".
+private struct ModelPick {
+	let model: String?
 }

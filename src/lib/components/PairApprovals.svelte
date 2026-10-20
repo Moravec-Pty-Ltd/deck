@@ -9,6 +9,9 @@
 
 	const POLL_MS = 5000;
 
+	// Settings passes a line to show when nothing is waiting; the home page shows nothing.
+	let { empty = '' }: { empty?: string } = $props();
+
 	// Approval prompts for devices requesting access (issue #150, phase 2). A
 	// person confirms the code shown matches the device in front of them, then
 	// approves or denies. Polls the agent pairing route on its own rather than
@@ -81,4 +84,6 @@
 			</div>
 		{/each}
 	</div>
+{:else if empty}
+	<p class="m-0 text-xs opacity-60">{empty}</p>
 {/if}

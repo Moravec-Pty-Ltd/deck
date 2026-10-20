@@ -144,7 +144,7 @@ final class RunStubServer: @unchecked Sendable {
 		case ("GET", "/api/agent"):
 			return (200, ["version": "stub", "capabilities": [
 				"stream", "history", "images", "files", "diff", "servers", "speech", "operator", "search", "user",
-				"quick-messages", "project-config", "git"
+				"quick-messages", "project-config", "git", "pr-dismiss", "expensive-models"
 			]], 0)
 		case ("GET", "/api/agent/sessions"), ("GET", "/api/agent/projects"), ("GET", "/api/agent/kinds"),
 			("GET", "/api/agent/quick-messages"), ("GET", "/api/agent/projects/config"):

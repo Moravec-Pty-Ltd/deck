@@ -6,6 +6,7 @@
 	import type { NameMatch, SearchHit } from '$lib/search-core';
 	import { MIN_QUERY_CHARS, matchSessionNames } from '$lib/search-core';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import { DIALOG_CLASS } from './Modal.svelte';
 	import { relativeTime } from '$lib/time';
 
 	// Search, leading with session names: most of the time you know which
@@ -113,11 +114,9 @@
 
 <dialog
 	bind:this={dialogEl}
-	class="modal"
+	class={DIALOG_CLASS}
+	aria-label="Search sessions"
 	onclose={close}
-	onclick={(e) => {
-		if (e.target === dialogEl) close();
-	}}
 >
 	<div class="modal-box flex max-h-[80vh] w-full max-w-2xl flex-col p-0" role="document">
 		<label class="input flex w-full items-center gap-2 rounded-none border-0 border-b border-base-300 focus-within:outline-none">
@@ -179,4 +178,7 @@
 			{/if}
 		</ul>
 	</div>
+	<form method="dialog" class="modal-backdrop">
+		<button tabindex="-1" aria-label="Close">close</button>
+	</form>
 </dialog>

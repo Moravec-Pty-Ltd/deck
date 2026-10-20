@@ -16,7 +16,18 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 	case user
 	case quickMessages = "quick-messages"
 	case projectConfig = "project-config"
+	case projectsWrite = "projects-write"
+	case clone
+	case fsComplete = "fs-complete"
 	case git
+	case prDismiss = "pr-dismiss"
+	case expensiveModels = "expensive-models"
+	case terminal
+	case settings
+	case pairing
+	case reviews
+	case issueSources = "issue-sources"
+	case apnsMacos = "apns-macos"
 
 	/// What the feature is called where a banner names what is missing.
 	public var label: String {
@@ -32,8 +43,19 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 		case .search: return "transcript search"
 		case .user: return "merge on your own PRs"
 		case .quickMessages: return "quick messages"
-		case .projectConfig: return "project automation"
+		case .projectConfig: return "project settings"
+		case .projectsWrite: return "adding and removing projects"
+		case .clone: return "cloning a project"
+		case .fsComplete: return "folder suggestions"
 		case .git: return "branches and worktrees"
+		case .prDismiss: return "dismissing a PR"
+		case .expensiveModels: return "the expensive-model check"
+		case .terminal: return "terminals"
+		case .settings: return "server settings"
+		case .pairing: return "approving new devices"
+		case .reviews: return "PR reviews"
+		case .issueSources: return "issue sources"
+		case .apnsMacos: return "notifications on a Mac"
 		}
 	}
 }

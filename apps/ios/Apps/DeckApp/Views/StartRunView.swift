@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// Start a workflow run. The app could watch and steer runs but not begin one,
 /// so this is the missing half: pick a project, a workflow, and the issue or PR
@@ -56,7 +57,7 @@ struct StartRunView: View {
 				}
 			}
 			.navigationTitle("Start a run")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }.disabled(starting)
@@ -94,8 +95,7 @@ struct StartRunView: View {
 				}
 			}
 			TextField("Base branch (optional)", text: $base)
-				.textInputAutocapitalization(.never)
-				.autocorrectionDisabled()
+				.deckPlainInput()
 		}
 	}
 
