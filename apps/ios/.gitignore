@@ -13,3 +13,4 @@ fastlane/test_output/
 *.pkg
 *.dSYM.zip
 fastlane/README.md
+build/

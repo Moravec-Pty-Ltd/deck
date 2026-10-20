@@ -89,6 +89,8 @@ platform :ios do
       issuer_id: ENV.fetch("ASC_ISSUER_ID"),
       filepath: File.expand_path(ENV.fetch("ASC_KEY_PATH"))
     )
+    # produce needs an Apple ID to create a record; with one already there,
+    # only the macOS platform is missing, and the API key can add that.
     produce(
       app_identifier: APP_ID,
       app_name: "deck",
@@ -96,7 +98,7 @@ platform :ios do
       platforms: %w[ios osx],
       skip_itc: false,
       skip_devcenter: false
-    )
+    ) unless Spaceship::ConnectAPI::App.find(APP_ID)
     ensure_mac_platform
   end
 end
