@@ -1,66 +1,32 @@
-import type { CostSummary } from '$lib/session-cost-core';
-import type {
-	DeckSession,
-	Issue,
-	Project,
-	PullRequest,
-	SessionIssue,
-	SessionKind,
-	SessionPR,
-	SessionStatus
-} from '$lib/types';
+import type { AgentIssue, AgentPr, DeckSession, Issue, Project, PullRequest } from '$lib/types';
+import { publicCost, type AgentSessionDigest } from '$lib/session-view';
 import { isAgentKind } from '$lib/types';
 import { baseUrl } from './config';
 import { sessionLastResult, transcriptContext, transcriptCostSummary } from './transcript';
 import type { ContextUsage } from '$lib/context-core';
-
-// The monitor-facing view of one session, served by /api/agent/sessions and as
-// the /api/agent/events snapshot. A projection of DeckSession plus the cost
-// total (which otherwise lives only inside the per-session SSE snapshot), with
-// internal plumbing fields (tmux names, backfill markers, resume ids) dropped
-// so the documented contract stays stable if those change.
-export interface AgentSessionDigest {
-	id: string;
-	url: string;
-	kind: SessionKind;
-	title: string;
-	cwd: string;
-	status: SessionStatus;
-	awaitingInput: boolean;
-	createdAt: number;
-	lastActiveAt: number;
-	model?: string;
-	effort?: DeckSession['effort'];
-	worktree?: DeckSession['worktree'];
-	issues?: SessionIssue[];
-	pr?: SessionPR;
-	cost?: PublicCost;
-	// How full the context window is. Omitted for a session that has not reported
-	// a window yet (nothing to show a percentage against).
-	context?: ContextUsage;
-	// True when the session is in the "Hidden" section, either because it was
-	// hidden itself or because its project was. Omitted when it isn't.
-	hidden?: boolean;
-	// The session's most recent assistant reply, attached only when requested (the
-	// single-session GET), since it reads the transcript. Omitted on the list/feed
-	// digests, which stay cheap. null means "no text produced yet".
-	lastResult?: string | null;
-}
-
-// The documented shape of `cost`. CostSummary also carries `lastReportedCost`,
-// the running total claude last reported, which exists only so a fold can
-// resume; it is fold state, not a figure, so it stays off the contract.
-export type PublicCost = Omit<CostSummary, 'lastReportedCost'>;
-
-function publicCost({ costUsd, turns, durationMs, results }: CostSummary): PublicCost {
-	return { costUsd, turns, durationMs, results };
-}
 
 // A session that has produced no figures yet carries no `context` at all,
 // rather than a `{ used: 0, window: 0 }` a consumer would have to special-case.
 function definedContext(id: string): ContextUsage | undefined {
 	const context = transcriptContext(id);
 	return context.used > 0 || context.window > 0 ? context : undefined;
+}
+
+// Omitted rather than undefined when unset, so they only appear on a session
+// that carries them.
+function runtimeFields(s: DeckSession): Pick<AgentSessionDigest, 'provider' | 'permissionMode'> {
+	return {
+		...(s.provider ? { provider: s.provider } : {}),
+		...(s.permissionMode ? { permissionMode: s.permissionMode } : {})
+	};
+}
+
+function shellFlags(s: DeckSession): Pick<AgentSessionDigest, 'managed' | 'attached'> {
+	if (s.kind !== 'shell') return {};
+	return {
+		...(s.managed !== undefined ? { managed: s.managed } : {}),
+		...(s.attached !== undefined ? { attached: s.attached } : {})
+	};
 }
 
 export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): AgentSessionDigest {
@@ -76,6 +42,8 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		lastActiveAt: s.lastActiveAt,
 		model: s.model,
 		effort: s.effort,
+		...runtimeFields(s),
+		...shellFlags(s),
 		worktree: s.worktree,
 		issues: s.issues ?? (s.issue ? [s.issue] : undefined),
 		pr: s.pr,
@@ -108,33 +76,21 @@ export function projectDigest(p: Project): AgentProject {
 	return { path: p.path, name: p.name, group: p.group, hidden: p.hidden || undefined };
 }
 
-// Maps onto create's `issue { source, sourceId, id, url }`.
-export interface AgentIssue {
-	source: SessionIssue['source'];
-	sourceId: string;
-	id: string;
-	title: string;
-	url: string;
-}
-
 export function issueDigest(i: Issue): AgentIssue {
-	return { source: i.sourceType, sourceId: i.sourceId, id: i.id, title: i.title, url: i.url };
-}
-
-// Maps onto review's `pr { repo, number }`; the rest is context for picking one.
-export interface AgentPr {
-	repo: string;
-	number: number;
-	title: string;
-	url: string;
-	headRefName: string;
-	baseRefName: string;
-	isDraft: boolean;
-	author: string;
+	return {
+		source: i.sourceType,
+		sourceId: i.sourceId,
+		id: i.id,
+		title: i.title,
+		url: i.url,
+		updatedAt: i.updatedAt,
+		blockers: i.blockers
+	};
 }
 
 export function prDigest(p: PullRequest): AgentPr {
 	return {
+		sourceId: p.sourceId,
 		repo: p.repo,
 		number: p.number,
 		title: p.title,
@@ -142,6 +98,7 @@ export function prDigest(p: PullRequest): AgentPr {
 		headRefName: p.headRefName,
 		baseRefName: p.baseRefName,
 		isDraft: p.isDraft,
-		author: p.author
+		author: p.author,
+		updatedAt: p.updatedAt
 	};
 }

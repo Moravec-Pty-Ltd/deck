@@ -35,3 +35,29 @@ it('retains the legacy single issue and an explicit raw prompt', async () => {
 	await create({ issue, prompt: '[issue_title]: [issue_body]' });
 	expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ issues: [issue], prompt: '[issue_title]: [issue_body]' }));
 });
+
+it('starts a shell with mode shell, passing only the terminal fields', async () => {
+	const worktree = { branch: 'example', newBranch: true };
+	const res = await create({ mode: 'shell', command: ' npm run dev ', title: 'dev', worktree, prompt: 'ignored' });
+	expect(res.status).toBe(201);
+	expect(mocks.create).toHaveBeenCalledWith({ kind: 'shell', cwd: '/path/to/project', title: 'dev', command: 'npm run dev', worktree });
+});
+
+it('carries a shell\'s optional issues and PR context', async () => {
+	vi.mocked((await import('$lib/server/create-session')).parsePr).mockReturnValue({ repo: 'acme/web', number: 7 } as never);
+	const issues = [{ source: 'github', sourceId: 'source-a', id: 'acme/web#1', url: '' }];
+	const pr = { repo: 'acme/web', number: 7 };
+	await create({ mode: 'shell', issues, pr, worktree: { fromPr: 7 } });
+	expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ kind: 'shell', issues, pr, worktree: { fromPr: 7 } }));
+});
+
+it.each([
+	[{ mode: 'shell', pr: { repo: 'x' } }, 'shell mode requires a valid pr { repo: "owner/repo", number }'],
+	[{ mode: 'shell', command: 1 }, 'command must be a string'],
+	[{ mode: 'shell', title: ['x'] }, 'title must be a string'],
+	[{ kind: 'shell' }, "start a shell with mode 'shell'"],
+	[{ mode: 'toString' }, "mode must be 'work', 'review' or 'shell'"]
+])('rejects %j', async (body, message) => {
+	await expect(create(body)).rejects.toMatchObject({ status: 400, body: { message } });
+	expect(mocks.create).not.toHaveBeenCalled();
+});

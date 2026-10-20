@@ -1,6 +1,6 @@
 // Thin client + pure state predicates for dev-server control, shared by the
-// header Run button, the command palette, and (potentially) the Servers tab so
-// all three drive the same /api/sessions/[id]/servers[/name] endpoints one way.
+// header Run button, the command palette, and the Servers tab so all three
+// drive the same /api/agent/sessions/[id]/servers[/name] endpoints one way.
 // The predicates are node-free and unit-tested; the fetch helpers are the only
 // impure part.
 import type { ServerRuntime, ServerState } from './types';
@@ -24,13 +24,21 @@ export function isInFlight(state: ServerState): boolean {
 	return state === 'setup' || state === 'starting';
 }
 
+export function sessionServersPath(id: string): string {
+	return `/api/agent/sessions/${encodeURIComponent(id)}/servers`;
+}
+
 export function serverActionPath(id: string, name: string): string {
-	return `/api/sessions/${encodeURIComponent(id)}/servers/${encodeURIComponent(name)}`;
+	return `${sessionServersPath(id)}/${encodeURIComponent(name)}`;
+}
+
+export function serverLogsPath(id: string, name: string): string {
+	return `${serverActionPath(id, name)}/logs`;
 }
 
 // The configured servers + live status for a session's worktree.
 export async function fetchServers(id: string): Promise<ServerRuntime[]> {
-	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/servers`);
+	const res = await fetch(sessionServersPath(id));
 	if (!res.ok) throw new Error(`request failed (${res.status})`);
 	const data = await res.json();
 	return data.servers ?? [];

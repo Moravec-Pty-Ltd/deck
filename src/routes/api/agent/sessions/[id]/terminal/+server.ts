@@ -1,0 +1,7 @@
+import type { RequestHandler } from './$types';
+import { terminalInputRoute, terminalSnapshotRoute } from '$lib/server/terminal';
+
+// POST types into the pane the same way the browser's /send does for a shell.
+// See terminal.ts.
+export const GET: RequestHandler = terminalSnapshotRoute;
+export const POST: RequestHandler = terminalInputRoute;

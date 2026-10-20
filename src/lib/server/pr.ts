@@ -5,6 +5,7 @@
 // sync is best-effort (any failure leaves the last-known state on the chip);
 // actions surface gh's error to the caller.
 import { execFile } from 'node:child_process';
+import { error, json } from '@sveltejs/kit';
 import { promisify } from 'node:util';
 import {
 	buildPrSyncQuery,
@@ -76,7 +77,7 @@ async function ghAction(args: string[]): Promise<void> {
 // cached, so a transient gh error can be retried, and returns null so callers
 // fall back to allow rather than block on an unknown identity.
 let mePromise: Promise<string | null> | null = null;
-export function currentUser(): Promise<string | null> {
+function currentUser(): Promise<string | null> {
 	if (!mePromise) {
 		mePromise = exec('gh', ['api', 'user', '--jq', '.login'], { timeout: GH_TIMEOUT_MS })
 			.then(({ stdout }) => {
@@ -90,6 +91,25 @@ export function currentUser(): Promise<string | null> {
 			});
 	}
 	return mePromise;
+}
+
+// GET handler for /api/user and /api/agent/user: the gh login, so a client can
+// gate merge to your own PRs (deck also captures PRs you're only reviewing).
+// `login` is null when gh can't resolve it; the client then allows the merge
+// and the server enforces the guard.
+export async function currentUserRoute(): Promise<Response> {
+	return json({ login: await currentUser() });
+}
+
+// DELETE /api/agent/sessions/[id]/pr:
+// dismiss the captured PR chip. Capture is forward-only, so the next GitHub PR
+// link an agent prints repopulates it; the one-time backfill won't bring the
+// dismissed link back because its scan marker (prBackfilled) is already set.
+export function dismissPrRoute({ params }: { params: Partial<Record<string, string>> }): Response {
+	const id = params.id ?? '';
+	if (!getStoredSession(id)) error(404, 'session not found');
+	updateSession(id, { pr: undefined });
+	return json({ ok: true });
 }
 
 interface SyncItem {

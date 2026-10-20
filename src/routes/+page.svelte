@@ -1,5 +1,8 @@
 <script lang="ts">
-	import type { DeckSession, NewSessionPreset, Project, SessionKind } from '$lib/types';
+	import type { NewSessionPreset, Project, SessionKind } from '$lib/types';
+	import { KIND_LABELS } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
+	import { liveSessions } from '$lib/session-feed.svelte';
 	import { deriveGroup, relativeTime, shortPath } from '$lib/time';
 	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
 	import { visibleSessions } from '$lib/hidden-core';
@@ -14,20 +17,21 @@
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
-	import PairApprovals, { type PendingPairing } from '$lib/components/PairApprovals.svelte';
-	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, FolderCog, Workflow, Clock, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff } from '@lucide/svelte';
+	import PairApprovals from '$lib/components/PairApprovals.svelte';
+	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
-	let sessions = $state<DeckSession[]>([]);
 	let projects = $state<Project[]>([]);
 	let filter = $state<'all' | SessionKind>('all');
 	let modalOpen = $state(false);
 	let preset = $state<NewSessionPreset | null>(null);
-	let loaded = $state(false);
+	let projectsLoaded = $state(false);
 	let qrOpen = $state(false);
-	let pending = $state<PendingPairing[]>([]);
+	const { feed, refresh } = liveSessions(refreshOthers);
+	const sessions = $derived(feed.sessions);
+	const loaded = $derived(feed.loaded && projectsLoaded);
 
 	// Multi-select for batch removal (issue #211). `anchor` is the last row clicked
 	// in select mode, which a shift-click extends the range from.
@@ -54,23 +58,12 @@
 		modalOpen = true;
 	}
 
-	async function refresh() {
-		const [sRes, pRes, pairRes] = await Promise.all([
-			fetch('/api/sessions'),
-			fetch('/api/projects'),
-			fetch('/api/pair/pending')
-		]);
-		if (sRes.ok) sessions = await sRes.json();
+	// Sessions come from the live feed; projects still poll.
+	async function refreshOthers() {
+		const pRes = await fetch('/api/projects');
 		if (pRes.ok) projects = await pRes.json();
-		if (pairRes.ok) pending = (await pairRes.json()).pending;
-		loaded = true;
+		projectsLoaded = true;
 	}
-
-	$effect(() => {
-		refresh();
-		const interval = setInterval(refresh, 5000);
-		return () => clearInterval(interval);
-	});
 
 	const listed = $derived(filter === 'all' ? sessions : sessions.filter((s) => s.kind === filter));
 
@@ -121,7 +114,7 @@
 			: flattenVisibleGroups(groups, (n) => collapse.has(n))
 	);
 
-	// Keep the selection to rows that are actually on the list: the 5s poll can
+	// Keep the selection to rows that are actually on the list: the live feed can
 	// remove a session under it, and switching the kind filter can hide one, either
 	// of which would otherwise leave a stale id in the Remove count and in the batch.
 	// Leave select mode outright once there's nothing left to select.
@@ -161,9 +154,8 @@
 	}
 
 	// Escape leaves select mode, but not from under anything else that owns the key:
-	// this page's div-modals (which would be stranded over a list that's no longer
-	// selecting) and the command palette, a native <dialog> whose own Escape neither
-	// marks the event handled nor stops it bubbling up here.
+	// an open dialog (this page's modals, the command palette), whose own Escape
+	// neither marks the event handled nor stops it bubbling up here.
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key !== 'Escape' || e.defaultPrevented) return;
 		if (!selectMode || modalOpen || qrOpen || del.target || del.batch) return;
@@ -175,13 +167,13 @@
 	// that want attention (running = brand orange, error = red); idle and dead stay
 	// neutral so a list at rest reads calm. Solid vs hollow keeps idle and dead
 	// apart under e-ink, where colour collapses to monochrome.
-	function statusDot(s: DeckSession) {
+	function statusDot(s: SessionView) {
 		if (s.status === 'running') return 'bg-primary';
 		if (s.status === 'error') return 'bg-error';
 		if (s.status === 'dead') return 'border border-base-content/40';
 		return 'bg-base-content/35';
 	}
-	function statusText(s: DeckSession) {
+	function statusText(s: SessionView) {
 		if (s.status === 'running') return 'font-medium text-primary';
 		if (s.status === 'error') return 'font-medium text-error';
 		if (s.status === 'dead') return 'text-base-content/40';
@@ -199,7 +191,7 @@
 					class="btn join-item btn-sm {filter === f ? 'btn-active' : ''}"
 					onclick={() => (filter = f as 'all' | SessionKind)}
 				>
-					{f}
+					{f === 'all' ? 'All' : KIND_LABELS[f as SessionKind]}
 				</button>
 			{/each}
 		</div>
@@ -213,15 +205,6 @@
 		</button>
 	</div>
 	<div class="flex items-center gap-2">
-		<a href="/runs" class="btn btn-ghost btn-sm" aria-label="Workflow runs" title="Runs">
-			<Workflow size={16} />
-		</a>
-		<a href="/schedules" class="btn btn-ghost btn-sm" aria-label="Scheduled prompts" title="Schedules">
-			<Clock size={16} />
-		</a>
-		<a href="/projects" class="btn btn-ghost btn-sm" aria-label="Manage projects" title="Projects">
-			<FolderCog size={16} />
-		</a>
 		<button
 			class="btn btn-ghost btn-sm"
 			onclick={() => (qrOpen = true)}
@@ -248,9 +231,9 @@
 	</div>
 </div>
 
-<PairApprovals {pending} onchange={refresh} />
+<PairApprovals />
 
-{#snippet row(s: DeckSession)}
+{#snippet row(s: SessionView)}
 	{@const picked = selected.has(s.id)}
 	<div
 		class="flex items-center gap-2 rounded-box border bg-base-100 pr-2 hover:border-base-content/30 sm:gap-3 sm:pr-3 {selectMode
@@ -396,7 +379,7 @@
 		class="mb-3 flex flex-wrap items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2"
 	>
 		<button class="btn btn-ghost btn-sm" onclick={toggleAll} disabled={visibleOrder.length === 0}>
-			{allSelected(visibleOrder, selected) ? 'Deselect All' : 'Select All'}
+			{allSelected(visibleOrder, selected) ? 'Deselect all' : 'Select all'}
 		</button>
 		<span class="text-sm opacity-60">{selected.size} selected</span>
 		<button
@@ -410,7 +393,7 @@
 {/if}
 
 {#if !loaded}
-	<p class="p-8 text-center opacity-60">Loading sessions...</p>
+	<p class="p-8 text-center opacity-60">Loading sessions…</p>
 {:else if listed.length === 0}
 	<div class="rounded-box border border-base-300 bg-base-100 p-10 text-center">
 		<p class="mb-3 opacity-70">No sessions yet.</p>

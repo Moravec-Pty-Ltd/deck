@@ -1,6 +1,9 @@
 import type { RequestHandler } from './$types';
 import { baseUrl } from '$lib/server/config';
 import { shippedSkillVersion } from '$lib/server/skills';
+import { AGENT_CAPABILITIES } from '$lib/server/agent-capabilities';
+import { MIN_QUERY_CHARS } from '$lib/search-core';
+import { SEARCH_LIMIT_MAX } from '$lib/server/search';
 
 // The canonical machine-facing contract for deck's agent API (issue #127,
 // llmstxt.org convention): everything an external agent needs to drive and
@@ -41,6 +44,8 @@ Every /api error is a JSON body \`{ "message": "..." }\` with an HTTP status:
   project set (project confinement).
 - \`404\` — unknown session / project / route.
 - \`409\`: conflict (a turn is already in flight, e.g. a model switch mid-turn).
+  A worktree create that hits a leftover branch is a 409 too, with extra
+  fields: see POST /api/agent/sessions.
 
 Parse \`message\` for the reason; don't rely on the status alone.
 
@@ -48,6 +53,14 @@ Parse \`message\` for the reason; don't rely on the status alone.
 
 Read-only projections, stable regardless of deck's internal storage. Use these
 to form valid create/review calls without any out-of-band values.
+
+### GET /api/agent
+
+What this server supports: \`{ "version": "<skill version>", "capabilities": ["stream", ...] }\`.
+Each capability token names an agent route or behaviour added after the
+baseline; a client should check for a token before relying on what it names,
+and treat a 404 here as a server older than every token. Tokens are only ever
+added. Current tokens: ${AGENT_CAPABILITIES.map((t) => `\`${t}\``).join(', ')}.
 
 ### GET /api/agent/projects
 
@@ -80,6 +93,9 @@ Which agent CLIs are installed here and the models each enumerates:
  { "kind": "pi", "available": false, "models": [{ "provider": "...", "model": "..." }] }]
 \`\`\`
 
+A model row carries \`expensive: true\` when it is a premium model worth a
+cost confirm before you start or switch to it (absent otherwise).
+
 Pick a kind with \`available: true\` (an unavailable kind 400s at spawn).
 \`model\` on create is free-text; an empty \`models\` list means pass any id the
 CLI accepts.
@@ -90,11 +106,13 @@ Open issues for a project (\`project\` = a discovery \`path\`; \`&refresh=1\`
 bypasses the 60s cache). Each row maps onto \`create\`'s \`issue\`:
 
 \`\`\`json
-{ "issues": [{ "source": "github", "sourceId": "...", "id": "owner/repo#1", "title": "...", "url": "..." }],
+{ "issues": [{ "source": "github", "sourceId": "...", "id": "owner/repo#1", "title": "...", "url": "...",
+	"updatedAt": 1700000000000, "blockers": [{ "id": "owner/repo#2", "title": "..." }] }],
   "errors": [{ "sourceId": "...", "message": "..." }] }
 \`\`\`
 
 Pass \`{ source, sourceId, id, url }\` straight through as \`create\`'s \`issue\`.
+\`updatedAt\` is epoch ms; \`blockers\` lists the open issues this one waits on.
 
 ### GET /api/agent/prs?project=<path>
 
@@ -102,8 +120,9 @@ Open PRs awaiting your review for a project. Each row carries \`review\`'s
 \`pr { repo, number }\` plus context for picking one:
 
 \`\`\`json
-{ "prs": [{ "repo": "owner/repo", "number": 42, "title": "...", "url": "...",
-	"headRefName": "feat", "baseRefName": "main", "isDraft": false, "author": "..." }],
+{ "prs": [{ "sourceId": "...", "repo": "owner/repo", "number": 42, "title": "...", "url": "...",
+	"headRefName": "feat", "baseRefName": "main", "isDraft": false, "author": "...",
+	"updatedAt": 1700000000000 }],
   "errors": [] }
 \`\`\`
 
@@ -143,14 +162,144 @@ configured; an empty \`model\` means the CLI picks. Send these values on create
 to start exactly what the web modal would, or override any of them. 404 for a
 path that isn't a registered project.
 
+The response also carries \`"expensiveModels": ["fable", ...]\`: the premium
+models the web asks you to confirm before using. A model counts as expensive
+when any entry is a case-insensitive substring of its id or its provider, so a
+client can apply the same confirm to a free-text model it is about to send.
+
+### GET /api/agent/user
+
+\`{ "login": "octocat" }\`: the GitHub login deck's \`gh\` is signed in as, or
+\`null\` when gh can't resolve it. Use it to offer merge only on your own PRs
+(deck also captures PRs you are only reviewing).
+
+### GET /api/agent/search?q=<text>&limit=<n>
+
+Full-text search over what was said in every agent session. \`q\` is a
+case-insensitive substring, at least ${MIN_QUERY_CHARS} characters (shorter is a 400);
+\`limit\` defaults to 30 and is capped at ${SEARCH_LIMIT_MAX}.
+
+\`\`\`json
+{ "query": "...", "truncated": false,
+  "hits": [{ "sessionId": "...", "title": "...", "index": 42, "role": "user|assistant", "snippet": "...", "at": 1700000000000 }] }
+\`\`\`
+
+\`index\` is the event's absolute transcript index: open the session there
+with \`/s/{id}?at={index}\`, or page to it with /history.
+
+### GET /api/agent/quick-messages
+
+The user's canned messages, \`[{ "id": "...", "label"?: "...", "text": "..." }]\`,
+for a one-tap send to a session.
+
+### PUT /api/agent/quick-messages
+
+Replace the whole list with the same shape (up to 200; \`id\` and \`text\`
+required, a blank \`label\` is dropped). Returns the stored list; a schema
+mismatch is a 400.
+
+## Projects
+
+Register, configure and remove the projects that confine every worktree, git
+and file operation. A deck-spawned agent may do this too: registering a
+directory widens what deck will run git against, so it is limited to
+directories under \`$HOME\` or inside an already registered project (anything
+else is a 403).
+
+### POST /api/agent/projects
+
+\`{ "path": "~/code/example", "name"?: "example", "group"?: "apps" }\` registers
+an existing directory (\`~\` expands; a missing or non-directory path is a 400,
+one outside \`$HOME\` and the registered projects a 403, and so is \`$HOME\`
+itself or any path under it with a dot-directory in it, such as
+\`~/.secrets\`). A new project is stored under its canonical path, symlinks
+resolved. Posting a path that is already registered re-saves it: every field
+you omit keeps its stored value.
+Optional fields as for \`PATCH /api/agent/projects/config\`. Returns the full
+stored record, 201.
+
+### DELETE /api/agent/projects?path=<path>
+
+Unregister a project. Its directory, worktrees and sessions are untouched; its
+issue-source keys go unless another project's source still uses them. Returns
+\`{ "ok": true }\`.
+
+### GET /api/agent/projects/config?path=<path>
+
+A project's full stored record: \`{ name, path, group?, hidden?, template?,
+reviewPrompt?, lastBase?, lastModels?, lastEffort?, sources?, dev?, automation? }\`.
+\`template\` and \`reviewPrompt\` are the first-prompt templates for work and
+review sessions, \`dev\` the dev-server config, \`automation\` the background
+feed config. Without \`path\`, an array of every record. 404 for an
+unregistered path.
+
+### PATCH /api/agent/projects/config
+
+\`{ "path": "<registered path>", ...fields }\` edits a project. Only the fields
+you send change: \`name\`, \`group\`, \`template\`, \`reviewPrompt\`,
+\`lastBase\` (strings; a blank clears, a non-string is a 400), \`dev\` and
+\`automation\` (validated; a bad shape is a 400 naming the problem). \`hidden\`
+has its own route, sources theirs, and the remembered model picks are written
+by session creates, so those are ignored here. Returns the updated record; 404
+for an unregistered path.
+
+\`dev\` replaces the whole dev-server config (see Dev servers). Every key is
+optional; step and server \`cwd\` are relative to the worktree:
+
+\`\`\`json
+{
+	"copyFromMain": [".env"],
+	"setup": [{ "label": "install", "run": "pnpm i", "cwd"?: "." }],
+	"servers": [{ "name": "web", "run": "pnpm dev", "cwd"?: "apps/web",
+		"setup"?: [<step>], "ports"?: [{ "port": 5173, "label"?: "app", "primary"?: true }],
+		"readyPattern"?: "Local:\\\\s+(http\\\\S+)" }]
+}
+\`\`\`
+
+Server names must be unique (also after tmux sanitising) and \`readyPattern\`
+must compile as a regex; a port is an integer 1-65535.
+
+### POST /api/agent/projects/clone
+
+\`{ "url": "https://github.com/acme/repo.git", "parent": "~/code", "name"?, "group"? }\`
+clones into \`<parent>/<repo name>\` and registers the result (201, the stored
+record). \`url\` must be https, ssh, git or scp-style; \`parent\` an existing
+directory under \`$HOME\` or a registered project (403 otherwise, and 403 when
+the destination would sit in a dot-directory under \`$HOME\`, as for POST
+/api/agent/projects). The project is stored under its real path. 409 when
+the destination exists and is not an empty directory, or is already
+registered; 400 with git's stderr when the clone fails, and nothing is
+registered then.
+
+### GET /api/agent/fs/complete?q=<partial path>
+
+Directory completions for a path being typed, as \`["~/code/example", ...]\`
+(up to 40, \`~\`-collapsed; hidden directories only when the last segment
+starts with \`.\`). Confined to \`$HOME\` and the registered projects: anything
+else returns \`[]\`.
+
+### GET /api/agent/git/branches?repo=<path>
+
+Branch names (local and remote, \`origin/\` stripped, deduplicated) for a
+registered project or one of its worktrees, as \`["main", "feat", ...]\`.
+\`[]\` for a path outside the project set or not a git repo; 400 without
+\`repo\`.
+
+### GET /api/agent/git/worktrees?repo=<path>
+
+\`[{ "path": "/path/to/project", "branch": "main", "isMain": true }, ...]\`, the
+repo's worktrees, main working tree first. Same confinement and errors as
+branches.
+
 ## Sessions
 
 A session is the unit of work: one agent (kind: claude|pi|codex|opencode) or
 shell in a working directory, optionally in its own git worktree. Statuses:
 running | idle | error | dead.
 \`awaitingInput: true\` means the session is blocked on a question (see Asks).
-Shell sessions appear in digests and the event log for monitoring, but the
-agent API cannot create or drive them (kind "shell" is rejected on create).
+Shell sessions (tmux terminals) are started with create's \`mode: "shell"\` and
+driven through /terminal (see Terminals); the agent-session endpoints
+(message, stop, answer, stream) do not apply to them.
 
 ### GET /api/agent/sessions
 
@@ -172,6 +321,11 @@ Digest of every session:
 }]
 \`\`\`
 
+Present only when set: \`provider\` (pi's provider, the other kinds carry it
+inside \`model\`), \`permissionMode\` (acceptEdits | bypassPermissions | default |
+plan), and on shell sessions \`managed\` (deck owns the tmux session) and
+\`attached\` (a terminal client is attached to it).
+
 \`hidden\` is present only on a hidden session, whether it was hidden itself or
 its project was. A client that lists sessions should keep those out of its main
 list and offer them in a "Hidden" section instead.
@@ -192,6 +346,62 @@ Readable turn output — what the session actually said:
 
 Bounded to the recent tail. The digest tells you a turn finished; this tells you
 what it produced.
+
+### GET /api/agent/sessions/{id}/stream
+
+Server-sent events for one agent session's raw transcript (what the web and
+native session views render). 404 when unknown, 400 for a shell session.
+Events:
+
+- \`snapshot\`: \`{ "seq", "n", "data" }\`, the recent history split into \`n\`
+	frames. Concatenate \`data\` in \`seq\` order and parse it as
+	\`{ "start", "total", "cost", "context", "events": [...] }\`: \`events\` are the
+	transcript lines from index \`start\` of \`total\`.
+- \`status\`: the session status (running | idle | error | dead) on open and on
+	every change.
+- \`transcript\`: one live raw event, appended after the snapshot.
+- \`ping\`: a heartbeat every 25s; a stream silent for longer is dead, reconnect.
+
+Opening the stream also kicks a background refresh of the session's PR, which
+arrives through the digest and event log. Raw events are the CLI's own
+stream-json lines plus deck's \`deck.*\` markers; they are less stable than
+the digest and transcript projections above.
+
+### GET /api/agent/sessions/{id}/history?before=<index>&limit=<n>
+
+Older raw events for back-scroll: \`{ "start", "events": [...] }\`, the lines
+\`[start, before)\` oldest first. \`before\` defaults to the end of the
+transcript; \`limit\` defaults to 200 and is capped at 1000. Page backwards by
+passing the previous \`start\` as the next \`before\` until \`start\` is 0.
+
+### GET /api/agent/sessions/{id}/images/{file}
+
+The bytes of an image attached to a user message, named by the \`file\` the
+transcript's \`deck.user\` event carries. Immutable, so cache it. 404 when the
+session or image is unknown.
+
+### POST /api/agent/sessions/{id}/files
+
+\`{ "paths": ["/path/to/project/out.png", "notes.md"] }\` — which of the files a
+message mentions exist and can be served: \`{ "files": [{ "path", "name",
+"size", "mime", "image" }] }\` (\`path\` as sent, so you can match it back). Relative paths resolve from the session's cwd. Only
+regular files inside a registered project or its worktrees are listed; anything
+else is silently absent. Up to 20 paths are checked per call.
+
+### GET /api/agent/sessions/{id}/files?path=<path>&download=1
+
+Serve one of those files, inline (or as an attachment with \`download=1\`), with
+an \`etag\` (send \`If-None-Match\` for a 304). 404 for a path outside the
+registered projects or a missing file.
+
+### GET /api/agent/sessions/{id}/diff?meta=1
+
+The session's worktree changes against its base branch. \`{ "git": false }\` when
+the cwd is not a git repository; otherwise \`{ "git": true, "patch": "<unified
+diff>", "meta" }\`, or with \`meta=1\` just \`{ "git": true, "meta" }\`. \`meta\` is
+\`{ "baseRef", "baseResolved", "truncated", "fileCount", "additions",
+"deletions", "files": [{ "path", "status", "additions", "deletions", "binary",
+"oldPath"? }] }\`; \`truncated\` means the patch was trimmed (about 5 MB).
 
 ### POST /api/agent/sessions
 
@@ -221,6 +431,19 @@ idempotent replay).
 Review mode fetches the PR head into a worktree and seeds the session with the
 PR, so the review/merge endpoints below work on it.
 
+\`\`\`json
+{ "mode": "shell",
+	"cwd": "/path/to/project",          // required; an existing directory
+	"command": "npm run dev",           // optional; runs instead of the login shell
+	"title": "...",                     // optional; untitled shells get a generated name
+	"worktree": { "branch": "my-branch", "newBranch": true },  // optional, as in work mode; or { "fromPr": 42 } for a PR's head
+	"issues": [...], "pr": { "repo": "owner/repo", "number": 42 }  // optional context, shaped as in work / review mode
+}
+\`\`\`
+
+Shell mode starts a deck-managed tmux terminal and no agent turn; \`kind\` must
+not be "shell" in work or review mode. Drive it with /terminal below.
+
 In both modes, an omitted or blank \`prompt\` defaults to the project's
 configured first-prompt template (work) / review prompt (review), the same
 default the web new-session modal prefills, so the session's first turn still
@@ -232,6 +455,19 @@ over the legacy single \`issue\`. Pass raw prompt templates: the server expands
 placeholders and fetches attached issue titles, bodies, comments, and images.
 Preserve discovery's \`sourceId\` so keyed trackers use the correct credential.
 Older clients without it use the project's matching source where unambiguous.
+
+When \`title\` is omitted or blank, a session on exactly one issue is titled
+with its display id (\`#1\` for a GitHub issue, \`ABC-123\` otherwise), else
+with the worktree branch.
+
+**Leftover branch (409)**: when the worktree's branch already exists or a stale
+worktree holds it, create returns 409
+\`{ "message": "...", "code": "branch-exists" | "stale-worktree", "branch": "..." }\`
+instead of touching it. Retry the same body with
+\`"worktree": { ..., "onExisting": "reuse" | "recreate" }\`: \`reuse\` checks the
+existing branch out as it stands (keeping its commits), \`recreate\` deletes it
+and branches again from \`base\` (unpushed commits on it are lost). A second
+failure is reported as is.
 
 **Idempotency**: send \`Idempotency-Key: <key>\` (or body \`"idempotencyKey"\`)
 so a retried create — after a lost 201 — returns the same session (200) instead
@@ -301,9 +537,10 @@ terminal already holds is a 409. A registered session keeps its id.
 
 ### POST /api/agent/sessions/{id}/upload
 
-\`{ "files": [{ "name": "report.pdf", "data": "<base64>" }], "text"?: "..." }\` —
+\`{ "files": [{ "name": "report.pdf", "data": "<base64>" }], "text"?: "...", "images"?: [...] }\` —
 share files with a session. Up to 10 per call, 25 MB each; a bigger one is a 413
-naming its size.
+naming its size. \`images\` takes the send endpoint's shape and goes inline with
+the same turn, so pictures and files can travel in one message.
 
 The files are written under deck's data dir (never into the worktree, so sharing
 cannot dirty a repo) and the session is sent a message naming their absolute
@@ -343,10 +580,55 @@ Returns \`{ "pr": <pr> }\`; a gh failure is a 400 with the message.
 \`{ "method": "squash" | "merge" | "rebase", "deleteBranch": true }\` — merge
 the session's PR (method defaults to squash). Returns \`{ "pr": <pr> }\`.
 
+### DELETE /api/agent/sessions/{id}/pr
+
+Empty body. Dismiss the PR captured on the session (the chip goes away).
+Capture is forward-only: the next GitHub PR link the agent prints captures a PR
+again. Returns \`{ "ok": true }\`.
+
+### GET /api/agent/sessions/{id}/zed
+
+\`{ "command": "zed ssh://user@host/path/to/worktree" }\`: the command that opens
+the session's directory in Zed over SSH on the deck host (the host is the one
+you reached deck on, unless the user set a Zed SSH target). \`command\` is null
+for a session with no directory.
+
 ### DELETE /api/agent/sessions/{id}
 
 \`{ "deleteWorktree": true, "deleteBranch": true }\` (JSON body, or query
 \`?worktree=1&branch=1\`) — stop everything and remove the session.
+
+## Terminals
+
+A shell session is a tmux pane: read its screen and type into it. These routes
+answer 400 for an agent session and 404 for an unknown id. Capability token:
+\`terminal\`.
+
+**Disclosure**: any holder of the token can drive every shell session deck
+lists, including deck-spawned agents (they have \`$DECK_TOKEN\`) and including
+terminals deck did not start (\`managed: false\`: the machine's other tmux
+sessions, which may have a person attached). Typed text runs as the user who
+runs deck, with no confirmation. Only drive a terminal you started, or one you
+were asked to.
+
+### GET /api/agent/sessions/{id}/terminal?lines=<n>&h=<tag>
+
+The pane's current screen: \`{ "text": "<ANSI text>", "cleared": false,
+"dead": false, "h": "<tag>" }\`. \`lines\` is the scrollback depth (default
+500, at most 5000). Pass the last \`h\` back to poll cheaply: an unchanged pane
+answers \`{ "unchanged": true, "h" }\`. \`cleared: true\` means the program
+cleared the screen and \`text\` is its last non-empty output. A dead session
+answers \`{ "text": "(session is dead)", "dead": true }\`.
+
+### POST /api/agent/sessions/{id}/terminal
+
+\`{ "text": "ls -la", "submit"?: true }\` types literal text (at most 4096
+UTF-8 bytes) and presses Enter unless \`submit\` is false; empty text with
+submit is a bare Enter. With \`submit: false\` the text must not contain a
+carriage return or newline (it would press Enter anyway): that is a 400. \`{ "key": "C-c" }\` presses one key instead, by its
+tmux name: Enter, Escape, Tab, BTab, BSpace, DC, Space, Up, Down, Left, Right,
+Home, End, PPage, NPage, or C-a through C-z. Any other key is a 400. Returns
+\`{ "ok": true }\`; read the result with GET a moment later.
 
 ## Completion semantics
 
@@ -587,18 +869,253 @@ schedule. 409 while the previous run is still going.
 
 Forget the schedule. The sessions it has already started are kept.
 
+## Issue sources
+
+Where a project's issues come from (\`GET /api/agent/issues\`): a GitHub repo,
+a Linear team or a ClickUp list. Linear and ClickUp need an API key. **Keys are
+write-only**: one goes in on a POST and is kept in the OS keyring, and no
+response, list or error message ever carries a key value back. A key saved for
+one project can be reused by another through its \`credentialId\`, so it only
+needs entering once. Capability token: \`issue-sources\`.
+
+### GET /api/agent/credentials?type=linear|clickup
+
+The saved keys, labels only, one entry per distinct key (\`type\` optional):
+
+\`\`\`json
+[{ "id": "<credentialId>", "type": "linear", "label": "someone@example.com", "projects": ["example"] }]
+\`\`\`
+
+\`label\` is who the key authenticates as when known, else the team or the
+provider name. A key is listed while at least one source uses it.
+
+### POST /api/agent/projects/sources/lookup
+
+Provider lookups for filling in a new source before saving it:
+\`{ "type": "linear" | "clickup", "action": "...", "apiKey" | "credentialId", ...ids }\`.
+Linear actions: \`me\`, \`teams\`, \`states\` (+ \`teamId\`). ClickUp actions:
+\`me\`, \`teams\`, \`spaces\` (+ \`teamId\`), \`folders\` (+ \`spaceId\`),
+\`lists\` (+ \`folderId\` or \`spaceId\`), \`statuses\` (+ \`listId\`). Returns
+the provider's rows as JSON. Pass a saved \`credentialId\` instead of an
+\`apiKey\` to look up with a key you never see. A provider failure (most often
+a bad key) is a 400 whose message is the provider's, with the key cut out.
+
+### POST /api/agent/projects/sources
+
+Add a source to a registered project; 201 with the stored source (its
+\`credentialId\`, never the key). Body by \`type\`:
+
+- \`github\`: \`{ "projectPath", "type": "github", "owner", "repo" }\`
+- \`linear\`: \`{ "projectPath", "type": "linear", "teamId", "teamName"?,
+	"assigneeEmail"?, "stateIds"?: [...] }\`
+- \`clickup\`: \`{ "projectPath", "type": "clickup", "teamId", "spaceId",
+	"listId", "assigneeUserId": <number>, "folderId"?, "statuses"?: [...],
+	"teamName"?, "spaceName"?, "folderName"?, "listName"?, "assigneeName"? }\`
+
+Linear and ClickUp also take exactly one of \`apiKey\` (stored under a new
+credential) or \`credentialId\` (reuse a saved key; nothing is written). 400 on
+a missing field or a \`credentialId\` that is no longer saved, 404 on an
+unregistered \`projectPath\`.
+
+### DELETE /api/agent/projects/sources?project=<path>&id=<sourceId>
+
+Remove a source. Its key goes from the keyring too, unless another source still
+uses it. Returns \`{ "ok": true }\`; 404 on an unregistered project.
+
+## Dev servers
+
+The dev servers a project configures in its dev config, run per session
+in that session's own worktree. deck resolves the worktree from the stored
+session; no request names a path.
+
+### GET /api/agent/servers
+
+Every session's server states from the monitor's last poll (no fresh probing):
+\`{ "<sessionId>": ["running", "stopped", ...] }\`. A state is one of stopped |
+setup | starting | running | stalled | errored | dead. Sessions without
+configured servers are absent.
+
+### GET /api/agent/sessions/{id}/servers
+
+\`{ "servers": [{ "name", "state", "tmuxName", "ports": [{ "port", "label"?,
+"primary"?, "listening" }], "previewUrl"?, "setup": [{ "label", "state":
+"pending"|"running"|"ok"|"failed", "exitCode"?, "output"? }], "error"?,
+"warning"? }] }\`, probed live. 404 for an unknown session.
+
+### POST /api/agent/sessions/{id}/servers/{name}
+
+\`{ "action": "start" | "stop" | "restart" | "resetup" }\`, or
+\`{ "action": "step", "step": <index>, "label"?: "<step label>" }\` to re-run one
+setup step (\`label\`, when sent, must still match the step at that index, which
+catches a stale step list). Returns the server's runtime as in the list above.
+400 for an unknown action, a bad step, an unknown server, or a bring-up already
+in flight, with the reason in \`message\`.
+
+### GET /api/agent/sessions/{id}/servers/{name}/logs?h=<tag>
+
+A snapshot of the server's terminal pane: \`{ "text", "cleared"?, "dead"?, "h" }\`,
+or \`{ "text": "(not running)", "dead": true }\` when it has no pane. Send the
+last \`h\` back to get \`{ "unchanged": true, "h" }\` when nothing changed, so a
+poller can skip re-rendering. 404 for an unknown session or server.
+
+## Voice
+
+Voice mode reads replies aloud and takes push-to-talk input through a local
+speech server, and the operator is a hands-free assistant over all sessions.
+Both are off until configured in deck's settings.
+
+### GET /api/agent/speech
+
+\`{ "tts": bool, "stt": bool, "voice": "<name>"|null, "voices": [...], "config":
+{ "ttsUrl"?, "sttUrl"?, "voice"? } }\`: which halves are configured and
+answering. Hide voice features when both are false.
+
+### POST /api/agent/speech/segments
+
+\`{ "text": "<markdown reply>" }\` → \`{ "segments": [{ "id", "text" }] }\`, the
+sentences voice mode plays, with code blocks and tables replaced by a short
+spoken marker. Audio is made when a segment is fetched, so play the first while
+fetching the rest. 400 when no text-to-speech server is configured.
+
+### GET /api/agent/speech/audio/{id}
+
+One segment's audio as \`audio/wav\`, synthesised on first fetch. The id is a
+content hash, so the bytes never change: cache it. 404 for an unknown id, 502
+when synthesis fails.
+
+### POST /api/agent/speech/transcribe
+
+The recording as the raw body with its \`audio/*\` (or \`video/*\`,
+\`application/octet-stream\`) content-type, up to 25 MB →
+\`{ "text", "seconds" }\`. 400 when no speech-to-text server is configured or the
+body is empty, 413 when too large, 502 when transcription fails.
+
+### GET /api/agent/operator
+
+\`{ "configured": bool, "model": "<id>"|null, "provider": "anthropic"|"openai", "listening": bool }\`.
+\`listening\` is true while some client holds the events stream open.
+
+### POST /api/agent/operator
+
+\`{ "text": "<utterance>", "source"?: "voice" | "<label>" }\`, one user turn →
+\`{ "text": "<what the operator said>", "actions": [{ "tool", "args",
+"result" }] }\`. The operator can read sessions and act on them (send, answer,
+start), so this drives deck the way the user's voice would.
+
+### GET /api/agent/operator/events
+
+Server-sent events: \`ready\` \`{ "at" }\` on open, then \`announcement\`
+\`{ "text", "sessionId", "kind": "ask"|"turn"|"status", "at" }\` whenever the
+operator speaks unprompted. Holding the stream open turns those announcements
+on; they stop when the last listener leaves.
+
+### GET /api/agent/operator/history?limit=<n>
+
+\`{ "turns": [{ "role": "user"|"assistant", "content", "at", "source"? }] }\`,
+oldest first; \`limit\` defaults to 50, clamped to 1..200.
+
+### POST /api/agent/operator/reset
+
+Start a new conversation. The old log is archived, not deleted:
+\`{ "ok": true, "archived": "<archive path>"|null }\` (null when there was
+nothing to archive).
+
+## Reviews
+
+### GET /api/agent/reviews
+
+The morabot PR reviewer's state from the monitor's last poll: \`{ "status":
+"ok"|"offline"|"unconfigured", "updatedAt"?, "inFlight": { "repo", "pr",
+"headSha", "phase", "startedAt" }|null, "recent": [{ "repo", "pr", "headSha",
+"decision", "reviewId", "url", "reviewedAt" }], "recentErrors": [{ "repo",
+"pr", "headSha", "phase", "message", "url", "failedAt" }] }\`. \`unconfigured\`
+means no reviewer is set up on this machine.
+
+## Settings
+
+App-wide preferences (\`~/.deck/settings.json\`). Gate on the \`settings\`
+capability. Deck-spawned agents may read and change these too.
+
+### GET /api/agent/settings
+
+\`\`\`json
+{ "speech": { "ttsUrl": "http://127.0.0.1:8000", "sttUrl": "...", "voice": "..." },
+  "operator": { "url": "...", "model": "...", "provider": "openai", "apiKeyFile": "...", "hasApiKey": true },
+  "modelProfiles": [{ "id": "local", "label": "Local", "model": "...", "envKeys": ["ANTHROPIC_BASE_URL"] }],
+  "lastModels": { "claude": { "model": "opus" } }, "lastEffort": "high",
+  "zedSshTarget": "user@host", "autoCompact": { "enabled": true, "percent": 80 } }
+\`\`\`
+
+Secrets never leave the server: the operator key reads only as \`hasApiKey\`,
+and a model profile's env only as its variable names (\`envKeys\`). Each block
+is absent when unset.
+
+### PATCH /api/agent/settings
+
+\`{ "speech"?, "operator"?, "autoCompact"?, "zedSshTarget"? }\`: send only what
+you change; the server merges it into the file as it is now. Within a block an
+omitted field keeps its value (a PATCH without \`apiKey\` keeps the stored key),
+a field set to \`null\` or \`""\` clears it, and a whole block set to \`null\`
+clears the block. Fields: \`speech { ttsUrl, sttUrl, voice }\`,
+\`operator { url, model, provider: "openai" | "anthropic", apiKey, apiKeyFile }\`
+(\`apiKey\` is write-only), \`autoCompact { enabled: boolean, percent: number }\`
+(\`percent\` is clamped to 50..95), \`zedSshTarget: "user@host[:port]" | null\`.
+An unknown key or a wrongly typed field is a 400 and nothing is written.
+\`operator.apiKeyFile\` must name a file inside \`~/.secrets/\` (after \`~\`
+expansion and following symlinks); anything else is a 400, and the operator
+refuses to read a stored key file outside it. Changing \`operator.url\` to a
+different origin (scheme, host and port) drops the stored \`apiKey\` and
+\`apiKeyFile\` unless the same PATCH sets them, so a key can't be redirected
+to another host. Returns the redacted settings, as GET.
+
+### POST /api/agent/settings/speech/detect
+
+Probe for a local speech server on this machine:
+\`{ "found": true, "url", "voices": [...], "voice", "stt": true }\` or
+\`{ "found": false }\`. Nothing is saved; PATCH \`speech\` with what you want.
+
+### GET /api/agent/settings/skill
+
+The shipped deck skill's install state per harness:
+\`[{ "kind": "claude", "available": true, "supported": true, "installed": true,
+"installedVersion": "...", "shippedVersion": "...", "upToDate": true }]\`.
+
+### POST /api/agent/settings/skill
+
+\`{ "kind": "claude" }\`: install or update the deck skill for that harness.
+Returns its row as above; 400 for an unknown or unsupported kind.
+
+## Pairing
+
+A new device asks for access through the public pairing flow and shows a
+six-digit code; a signed-in client approves it. Gate on the \`pairing\`
+capability, and follow the \`pairing\` event (see the event log) instead of
+polling.
+
+### GET /api/agent/pairing
+
+Live requests: \`{ "pending": [{ "id": "...", "code": "123456" }] }\`. Check
+the code against the one the new device shows before approving.
+
+### POST /api/agent/pairing/{id}
+
+\`{ "approve": true }\` (or \`false\` to deny). Returns \`{ "ok": true }\`;
+\`ok\` is false when the request expired or was already decided.
+
 ## Push notifications
 
-Native iOS/watchOS clients register a device token to receive the same nudges
+Native iOS, watchOS and macOS clients register a device token to receive the same nudges
 the installed PWA gets over web push (question asked, turn finished, session
 crashed/exited, PR updates). Disabled server-side until an APNs key is
 configured; registering is harmless either way.
 
 ### POST /api/push/apns/register
 
-\`{ "token": "...", "platform": "ios" | "watchos", "env": "development" | "production" }\`,
+\`{ "token": "...", "platform": "ios" | "watchos" | "macos", "env": "development" | "production" }\`,
 upsert this device (\`token\` is the hex APNs device token). Returns
-\`{ "ok": true }\`.
+\`{ "ok": true }\`. \`macos\` is accepted when \`GET /api/agent\` lists the
+\`apns-macos\` capability; the Mac app shares the iOS bundle id, so it is sent
+on the same topic.
 
 ### POST /api/push/apns/unregister
 
@@ -645,6 +1162,8 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 	fetch \`GET /api/agent/runs/{id}\` for its digest;
 	\`sessionId\` carries the run id)
 - \`run-deleted\`: { runId } (a run was removed; drop it from your list)
+- \`pairing\`: { pairingId, code?, state: pending|approved|denied } (a device asked
+	for access, or a request was decided; \`sessionId\` carries the pairing id)
 
 Apply deltas idempotently: after a gap re-snapshot (or bootstrap) an overlapping
 event may repeat state the snapshot already reflects.

@@ -26,7 +26,7 @@
 	async function fetchFor(q: string) {
 		const mine = ++token;
 		try {
-			const res = await fetch(`/api/fs/complete?q=${encodeURIComponent(q)}`);
+			const res = await fetch(`/api/agent/fs/complete?q=${encodeURIComponent(q)}`);
 			const list: string[] = res.ok ? await res.json() : [];
 			if (mine !== token) return; // a newer request superseded this one
 			suggestions = list;
@@ -71,7 +71,9 @@
 			} else {
 				onenter?.();
 			}
-		} else if (e.key === 'Escape') {
+		} else if (e.key === 'Escape' && open) {
+			// Handled here, so an enclosing dialog stays open.
+			e.preventDefault();
 			open = false;
 		} else if (e.key === 'Tab' && active >= 0) {
 			e.preventDefault();

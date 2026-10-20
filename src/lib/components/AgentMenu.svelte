@@ -2,6 +2,7 @@
 	import { AGENT_KINDS, type SessionKind } from '$lib/types';
 	import { ArrowLeftRight, Check, RotateCw } from '@lucide/svelte';
 	import { restartSession } from '$lib/session-restart';
+	import { agentPost, sessionPath } from '$lib/agent-api';
 	import Popover from './Popover.svelte';
 	import { menuAction } from '$lib/menu-action.svelte';
 
@@ -21,23 +22,15 @@
 	function switchTo(next: string) {
 		if (disabled || act.busy) return;
 		void act.run(async () => {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/agent`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ kind: next })
-			});
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({}));
-				throw new Error(body.message ?? 'agent switch failed');
-			}
-		}, () => { open = false; onChange(); }, 'agent switch failed');
+			await agentPost(sessionPath(id, 'agent'), { kind: next });
+		}, () => { open = false; onChange(); }, 'Agent switch failed');
 	}
 
 	// Restart the claude process in place (see server/session-restart.ts). Lives
 	// here rather than as another header control.
 	function restart() {
 		if (disabled || act.busy) return;
-		void act.run(() => restartSession(id), () => { open = false; onChange(); }, 'restart failed');
+		void act.run(() => restartSession(id), () => { open = false; onChange(); }, 'Restart failed');
 	}
 </script>
 
@@ -58,7 +51,7 @@
 			{#if kind === 'claude'}
 				<li><div class="divider my-1"></div></li>
 				<li><button onclick={restart} disabled={act.busy} title="Reload changed CLAUDE.md, settings, skills, or MCP config. The conversation continues.">
-					<RotateCw size={14} /> Restart claude
+					<RotateCw size={14} /> Restart Claude
 				</button></li>
 			{/if}
 		</ul>

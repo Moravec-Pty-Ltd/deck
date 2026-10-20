@@ -1,18 +1,15 @@
+import { confirmAction } from '$lib/confirm.svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import type { DeckSession } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 import { ownsWorktreeBranch } from '$lib/pr';
 import { batchErrorMessage, deleteSequentially } from '$lib/delete-flow-core';
+import { agentDelete, sessionPath } from '$lib/agent-api';
 
 export async function requestDelete(
 	id: string,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
 ): Promise<void> {
-	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
-		method: 'DELETE',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(opts)
-	});
-	if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+	await agentDelete(sessionPath(id), opts);
 }
 
 // Shared session-delete flow for the home list and the session-view sidebar:
@@ -26,10 +23,10 @@ export async function requestDelete(
 // Methods are arrow fields so they can be passed as bare callbacks (e.g.
 // onDelete={flow.request}).
 export class DeleteFlow {
-	target = $state<DeckSession | null>(null);
+	target = $state<SessionView | null>(null);
 	// The homepage's selection, awaiting one confirm for the whole batch (#211).
 	// Mutually exclusive with `target`: only one confirm is ever open.
-	batch = $state<DeckSession[] | null>(null);
+	batch = $state<SessionView[] | null>(null);
 	// Non-null only while a batch is walking, driving its progress readout.
 	progress = $state<{ done: number; total: number } | null>(null);
 	worktree = $state(true);
@@ -39,13 +36,13 @@ export class DeleteFlow {
 
 	constructor(
 		private refresh: () => Promise<void>,
-		private onDeleted: (s: DeckSession) => void = () => {},
+		private onDeleted: (s: SessionView) => void = () => {},
 		private onBatchStart: () => void = () => {}
 	) {}
 
 	// Open the confirm modal for a worktree session; plain sessions just get a
-	// native confirm and delete straight away.
-	request = (s: DeckSession) => {
+	// plain confirm and delete straight away.
+	request = async (s: SessionView) => {
 		if (this.deletingIds.has(s.id)) return;
 		if (s.worktree) {
 			this.worktree = true;
@@ -53,14 +50,20 @@ export class DeleteFlow {
 			this.target = s;
 			return;
 		}
-		if (confirm(`Kill and remove "${s.title}"?`)) this.run(s, {});
+		const ok = await confirmAction({
+			title: `Remove "${s.title}"?`,
+			body: 'Kills the session and removes it from deck.',
+			confirmLabel: 'Remove',
+			danger: true
+		});
+		if (ok) this.run(s, {});
 	};
 
 	// Open the one confirm for a whole selection. The batch sends a single pair of
 	// flags and the server applies each per session, so the branch option only needs
 	// *some* selected branch to be deck-owned (removeSessionWorktree drops it for
 	// the rest) rather than gating the batch on all of them.
-	requestBatch = (list: DeckSession[]) => {
+	requestBatch = (list: SessionView[]) => {
 		const pending = list.filter((s) => !this.deletingIds.has(s.id));
 		if (pending.length === 0) return;
 		this.worktree = true;
@@ -72,7 +75,7 @@ export class DeleteFlow {
 	// one refresh at the end. Every id is marked in-flight up front so each row
 	// shows its spinner and keeps its own delete button disabled for the whole run.
 	runBatch = async (
-		list: DeckSession[],
+		list: SessionView[],
 		opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
 	) => {
 		this.batch = null; // close the confirm immediately; cleanup runs in the background
@@ -101,7 +104,7 @@ export class DeleteFlow {
 		}
 	};
 
-	run = async (s: DeckSession, opts: { deleteWorktree?: boolean; deleteBranch?: boolean }) => {
+	run = async (s: SessionView, opts: { deleteWorktree?: boolean; deleteBranch?: boolean }) => {
 		if (this.deletingIds.has(s.id)) return;
 		this.target = null; // close the confirm modal immediately; cleanup runs in the background
 		this.deletingIds.add(s.id);
@@ -111,7 +114,7 @@ export class DeleteFlow {
 			// session's page navigates to its neighbour here, only now the row is
 			// really gone, so a failed delete instead keeps you on the page with the
 			// error. Finally reconcile the list; a refresh failure is transient (the
-			// 5s poll catches up) and must not be reported as a delete failure.
+			// live feed catches up) and must not be reported as a delete failure.
 			this.error = null;
 			this.onDeleted(s);
 			try {

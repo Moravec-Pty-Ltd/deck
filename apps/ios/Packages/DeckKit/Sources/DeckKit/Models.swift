@@ -16,6 +16,8 @@ public struct DeckProject: Codable, Hashable, Identifiable, Sendable {
 public struct KindModel: Codable, Hashable, Sendable {
 	public let provider: String?
 	public let model: String
+	/// Set by the server on a premium model worth a confirm before using it.
+	public let expensive: Bool?
 }
 
 public struct AgentKind: Codable, Hashable, Identifiable, Sendable {
@@ -228,7 +230,7 @@ public struct Transcript: Codable, Sendable {
 	public let cost: SessionCost?
 }
 
-/// A contiguous slice of raw transcript events (GET /api/sessions/{id}/transcript):
+/// A contiguous slice of raw transcript events (GET /api/agent/sessions/{id}/history):
 /// `events[k]` is absolute index `start + k`.
 public struct TranscriptSlice: Decodable, Sendable {
 	public let start: Int
@@ -384,6 +386,11 @@ public struct DeckEvent: Codable, Sendable {
 	public let runId: String?
 	public let phase: String?
 	public let updatedAt: Double?
+	/// `pairing`: a device asked for access (`state` pending, with its `code`)
+	/// or the request was decided (approved or denied).
+	public let pairingId: String?
+	public let code: String?
+	public let state: String?
 }
 
 public struct EventsResponse: Codable, Sendable {
@@ -395,6 +402,53 @@ public struct EventsResponse: Codable, Sendable {
 
 public struct APIErrorBody: Codable, Sendable {
 	public let message: String
+	/// Set on a create's 409 for a leftover branch (see WorktreeConflict).
+	public let code: String?
+	public let branch: String?
+}
+
+/// What deck does about a worktree branch an earlier session left behind:
+/// `reuse` checks it out as it stands, `recreate` deletes it and branches
+/// again from the base. Mirrors the web's src/lib/worktree-conflict.ts.
+public enum WorktreeFix: String, CaseIterable, Sendable {
+	case reuse
+	case recreate
+
+	public var label: String {
+		self == .reuse ? "Use the existing branch" : "Delete it and start fresh"
+	}
+
+	public func detail(branch: String) -> String {
+		self == .reuse
+			? "Check \(branch) out as it stands, keeping any commits on it."
+			: "Delete \(branch) and branch again from the base. Commits on it that are not pushed are lost."
+	}
+}
+
+/// A create's 409 for a leftover worktree branch, answerable by retrying the
+/// same body with `worktree.onExisting`.
+public struct WorktreeConflict: Equatable, Sendable {
+	public enum Code: String, Sendable {
+		case branchExists = "branch-exists"
+		case staleWorktree = "stale-worktree"
+	}
+
+	public let code: Code
+	public let branch: String
+	public let message: String
+
+	public init(code: Code, branch: String, message: String) {
+		self.code = code
+		self.branch = branch
+		self.message = message
+	}
+
+	/// Only a 409 whose code is one of ours: a 409 from elsewhere (a busy turn)
+	/// must not be offered a fix that cannot help.
+	init?(status: Int, body: APIErrorBody?) {
+		guard status == 409, let body, let raw = body.code, let code = Code(rawValue: raw) else { return nil }
+		self.init(code: code, branch: body.branch ?? "", message: body.message)
+	}
 }
 
 /// A saved canned composer message. `text` may contain [tokens] that deck
@@ -417,15 +471,18 @@ public struct QuickMessage: Codable, Identifiable, Hashable, Sendable {
 }
 
 /// New-branch/worktree options for a work session.
-public struct WorktreeOptions: Sendable {
+public struct WorktreeOptions: Equatable, Sendable {
 	public var branch: String?
 	public var newBranch: Bool
 	public var base: String?
+	/// The answer to an earlier 409 for this branch; nil on a first attempt.
+	public var onExisting: WorktreeFix?
 
-	public init(branch: String? = nil, newBranch: Bool = true, base: String? = nil) {
+	public init(branch: String? = nil, newBranch: Bool = true, base: String? = nil, onExisting: WorktreeFix? = nil) {
 		self.branch = branch
 		self.newBranch = newBranch
 		self.base = base
+		self.onExisting = onExisting
 	}
 
 	/// A fresh worktree on a new branch, named the way deck's web modal names it:
@@ -442,6 +499,7 @@ public struct WorktreeOptions: Sendable {
 		var dict: [String: Any] = ["newBranch": newBranch]
 		if let branch, !branch.isEmpty { dict["branch"] = branch }
 		if let base, !base.isEmpty { dict["base"] = base }
+		if let onExisting { dict["onExisting"] = onExisting.rawValue }
 		return dict
 	}
 }
@@ -503,7 +561,7 @@ public struct ModelChoice: Codable, Hashable, Sendable {
 	}
 }
 
-/// What one automation lane spawns with (GET/POST /api/projects `automation`).
+/// What one automation lane spawns with (GET/PATCH /api/agent/projects/config `automation`).
 /// Every field optional: unset falls back to the project's remembered pick.
 public struct AutomationAgent: Codable, Hashable, Sendable {
 	public var kind: String?
@@ -560,19 +618,32 @@ public struct ProjectAutomation: Codable, Hashable, Sendable {
 	}
 }
 
-/// The browser-API project record (GET /api/projects), for what the agent
-/// digest omits: the display name to preserve on save, and automation config.
+/// A project's full stored record (GET /api/agent/projects/config), for what
+/// the discovery list omits: the display name and automation config.
 public struct ProjectDetail: Codable, Sendable {
 	public let path: String
 	public let name: String?
 	public let group: String?
+	/// The first prompt of a work session, before placeholders expand.
+	public let template: String?
+	/// The first prompt of a review session.
+	public let reviewPrompt: String?
+	public let hidden: Bool?
 	public let automation: ProjectAutomation?
+	public let dev: DevConfig?
 
-	public init(path: String, name: String?, group: String?, automation: ProjectAutomation?) {
+	public init(
+		path: String, name: String?, group: String?, template: String? = nil, reviewPrompt: String? = nil,
+		hidden: Bool? = nil, automation: ProjectAutomation?, dev: DevConfig? = nil
+	) {
 		self.path = path
 		self.name = name
 		self.group = group
+		self.template = template
+		self.reviewPrompt = reviewPrompt
+		self.hidden = hidden
 		self.automation = automation
+		self.dev = dev
 	}
 }
 
@@ -611,12 +682,19 @@ public struct ProjectStartDefaults: Codable, Hashable, Sendable {
 	public let base: String?
 	public let prompts: StartPrompts
 	public let kinds: [String: KindStartDefaults]
+	/// The server's expensive-model list (see `ExpensiveModels`). Absent on a
+	/// deck that does not advertise `expensive-models`.
+	public let expensiveModels: [String]?
 
-	public init(path: String, base: String? = nil, prompts: StartPrompts = StartPrompts(), kinds: [String: KindStartDefaults] = [:]) {
+	public init(
+		path: String, base: String? = nil, prompts: StartPrompts = StartPrompts(),
+		kinds: [String: KindStartDefaults] = [:], expensiveModels: [String]? = nil
+	) {
 		self.path = path
 		self.base = base
 		self.prompts = prompts
 		self.kinds = kinds
+		self.expensiveModels = expensiveModels
 	}
 }
 
@@ -685,7 +763,7 @@ public struct StartDefaults: Sendable {
 
 // MARK: - Git
 
-/// An existing worktree of a project (GET /api/git/worktrees). The main entry
+/// An existing worktree of a project (GET /api/agent/git/worktrees). The main entry
 /// is the repository itself, which the start sheet leaves out.
 public struct WorktreeEntry: Codable, Hashable, Identifiable, Sendable {
 	public var id: String { path }
@@ -696,7 +774,7 @@ public struct WorktreeEntry: Codable, Hashable, Identifiable, Sendable {
 	public var name: String { (path as NSString).lastPathComponent }
 }
 
-/// One changed file in a session's diff against its base (GET /api/sessions/{id}/diff).
+/// One changed file in a session's diff against its base (GET /api/agent/sessions/{id}/diff).
 public struct DiffFile: Codable, Hashable, Identifiable, Sendable {
 	public var id: String { path }
 	public let path: String
@@ -758,12 +836,16 @@ public struct ServersResponse: Codable, Sendable {
 	public let servers: [ServerRuntime]
 }
 
-/// A dev server's log pane snapshot. `unchanged` means the tag matched the
-/// previous poll and no text was sent.
-public struct ServerLogs: Codable, Sendable {
+/// A tmux pane snapshot: a shell session's terminal or a dev server's log
+/// pane. `unchanged` means the tag matched the previous poll and no text was
+/// sent; `cleared` that the program cleared the screen and `text` is its last
+/// non-empty output.
+public struct TerminalSnapshot: Codable, Sendable {
 	public let text: String?
 	public let cleared: Bool?
 	public let dead: Bool?
 	public let h: String?
 	public let unchanged: Bool?
 }
+
+public typealias ServerLogs = TerminalSnapshot

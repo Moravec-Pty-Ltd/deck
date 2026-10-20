@@ -1,9 +1,9 @@
 import Foundation
 
-// Voice mode's server contract: what deck can do (GET /api/speech), the
-// sentence segments a reply becomes (POST /api/speech/segments) and their
-// audio (GET /api/speech/audio/{id}), and push-to-talk transcription
-// (POST /api/speech/transcribe). deck proxies a speech server it is configured
+// Voice mode's server contract: what deck can do (GET /api/agent/speech), the
+// sentence segments a reply becomes (POST /api/agent/speech/segments) and their
+// audio (GET /api/agent/speech/audio/{id}), and push-to-talk transcription
+// (POST /api/agent/speech/transcribe). deck proxies a speech server it is configured
 // with; a client only ever talks to deck.
 
 public struct SpeechCapabilities: Codable, Hashable, Sendable {
@@ -37,26 +37,26 @@ public struct Transcription: Codable, Hashable, Sendable {
 
 extension DeckClient {
 	public func speechCapabilities() async throws -> SpeechCapabilities {
-		try await get("/api/speech")
+		try await get("/api/agent/speech")
 	}
 
 	/// The sentence segments a reply is read as; audio comes per segment so
 	/// the first plays while the rest is still being made.
 	public func speechSegments(text: String) async throws -> [SpeechSegment] {
 		struct Body: Decodable { let segments: [SpeechSegment] }
-		let response: Body = try await post("/api/speech/segments", json: ["text": text])
+		let response: Body = try await post("/api/agent/speech/segments", json: ["text": text])
 		return response.segments
 	}
 
 	/// One segment's audio (WAV), synthesised on first request and cached.
 	public func speechAudio(id: String) async throws -> Data {
-		try await getData("/api/speech/audio/\(id)")
+		try await getData("/api/agent/speech/audio/\(id)")
 	}
 
 	/// A recording (any container deck's speech server reads) to text. Empty
 	/// text means silence.
 	public func transcribe(audio: Data, mimeType: String) async throws -> Transcription {
-		try await upload("/api/speech/transcribe", body: audio, contentType: mimeType)
+		try await upload("/api/agent/speech/transcribe", body: audio, contentType: mimeType)
 	}
 }
 
@@ -83,7 +83,7 @@ extension DeckClient {
 	/// Everything said (by you or the agent) across sessions that contains
 	/// `query`, newest sessions first.
 	public func search(query: String, limit: Int = 40) async throws -> SearchResponse {
-		try await get("/api/search", query: [
+		try await get("/api/agent/search", query: [
 			URLQueryItem(name: "q", value: query),
 			URLQueryItem(name: "limit", value: String(limit))
 		])

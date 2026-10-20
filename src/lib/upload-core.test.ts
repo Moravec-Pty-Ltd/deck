@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_UPLOAD_BYTES, safeUploadName, sharedFileMessage, uploadTooLarge } from './upload-core';
+import {
+	MAX_UPLOAD_BYTES,
+	MAX_UPLOAD_FILES,
+	admitUploads,
+	formatBytes,
+	isInlineImage,
+	safeUploadName,
+	sharedFileMessage,
+	uploadTooLarge
+} from './upload-core';
 
 describe('safeUploadName', () => {
 	it('keeps a name the user would recognise', () => {
@@ -50,5 +59,45 @@ describe('sharedFileMessage', () => {
 		const many = sharedFileMessage(['/a/b.pdf', '/a/c.png']);
 		expect(many).toContain('2 files');
 		expect(many).toContain('- /a/c.png');
+	});
+});
+
+describe('isInlineImage', () => {
+	it('takes the types a model reads inline and nothing else', () => {
+		for (const t of ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']) expect(isInlineImage(t)).toBe(true);
+		for (const t of ['image/svg+xml', 'image/heic', 'application/pdf', '']) expect(isInlineImage(t)).toBe(false);
+	});
+});
+
+describe('formatBytes', () => {
+	it('picks a unit a person reads at a glance', () => {
+		expect(formatBytes(512)).toBe('512 B');
+		expect(formatBytes(1536)).toBe('1.5 KB');
+		expect(formatBytes(2048)).toBe('2 KB');
+		expect(formatBytes(3 * 1024 * 1024)).toBe('3 MB');
+	});
+});
+
+describe('admitUploads', () => {
+	const file = (name: string, size = 10) => ({ name, size });
+
+	it('admits files within both limits', () => {
+		const { admitted, errors } = admitUploads(0, [file('a.pdf'), file('b.log', MAX_UPLOAD_BYTES)]);
+		expect(admitted.map((f) => f.name)).toEqual(['a.pdf', 'b.log']);
+		expect(errors).toEqual([]);
+	});
+
+	it('names an oversized file and its size', () => {
+		const { admitted, errors } = admitUploads(0, [file('big.zip', MAX_UPLOAD_BYTES + 1024 * 1024), file('ok.txt')]);
+		expect(admitted.map((f) => f.name)).toEqual(['ok.txt']);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toMatch(/^big\.zip: file is 26 MB; the limit is 25 MB$/);
+	});
+
+	it('counts files already held against the per-message cap', () => {
+		const incoming = [file('x1'), file('x2'), file('x3')];
+		const { admitted, errors } = admitUploads(MAX_UPLOAD_FILES - 1, incoming);
+		expect(admitted.map((f) => f.name)).toEqual(['x1']);
+		expect(errors).toEqual([`at most ${MAX_UPLOAD_FILES} files per message; left out x2, x3`]);
 	});
 });
