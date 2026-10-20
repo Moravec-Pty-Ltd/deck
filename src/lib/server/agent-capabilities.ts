@@ -5,7 +5,33 @@ import { shippedSkillVersion } from './skills';
 // on the server it is talking to instead of guessing from a version string.
 // Append one token when a route lands; never rename or remove one a released
 // client may check.
-export const AGENT_CAPABILITIES: readonly string[] = ['stream', 'history', 'images', 'files', 'diff', 'issue-sources', 'servers', 'speech', 'operator', 'reviews'];
+export const AGENT_CAPABILITIES: readonly string[] = [
+	'stream',
+	'history',
+	'images',
+	'files',
+	'diff',
+	'issue-sources',
+	'servers',
+	'speech',
+	'operator',
+	'reviews',
+	'pr-dismiss',
+	'zed',
+	'quick-messages',
+	'search',
+	'user',
+	'expensive-models',
+	'terminal',
+	'settings',
+	'pairing',
+	'projects-write',
+	'project-config',
+	'clone',
+	'fs-complete',
+	'git',
+	'apns-macos',
+];
 
 export function agentInfo(): { version: string | null; capabilities: string[] } {
 	return { version: shippedSkillVersion, capabilities: [...AGENT_CAPABILITIES] };

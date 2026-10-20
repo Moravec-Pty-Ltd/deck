@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { agentGet, agentPath } from '$lib/agent-api';
 	import { Search, User, Bot, MessageSquare, X } from '@lucide/svelte';
-	import type { DeckSession } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
 	import type { NameMatch, SearchHit } from '$lib/search-core';
 	import { MIN_QUERY_CHARS, matchSessionNames } from '$lib/search-core';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import { DIALOG_CLASS } from './Modal.svelte';
 	import { relativeTime } from '$lib/time';
 
 	// Search, leading with session names: most of the time you know which
@@ -19,7 +21,7 @@
 	let dialogEl = $state<HTMLDialogElement>();
 	let inputEl = $state<HTMLInputElement>();
 	let query = $state('');
-	let sessions = $state<DeckSession[]>([]);
+	let sessions = $state<SessionView[]>([]);
 	let hits = $state<SearchHit[]>([]);
 	let truncated = $state(false);
 	let selected = $state(0);
@@ -47,8 +49,7 @@
 
 	async function loadSessions() {
 		try {
-			const res = await fetch('/api/sessions');
-			if (res.ok) sessions = await res.json();
+			sessions = await agentGet<SessionView[]>(agentPath('sessions'));
 		} catch {
 			// A failed list just means no name matches; the transcript search still runs.
 		}
@@ -75,12 +76,14 @@
 	async function run(q: string) {
 		busy = true;
 		try {
-			const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=40`);
-			if (!res.ok) return;
-			const body = (await res.json()) as { hits: SearchHit[]; truncated: boolean };
+			const body = await agentGet<{ hits: SearchHit[]; truncated: boolean }>(
+				agentPath(`search?q=${encodeURIComponent(q)}&limit=40`)
+			);
 			hits = body.hits;
 			truncated = body.truncated;
 			searched = q;
+		} catch {
+			// A failed scan keeps the last results; the name matches still show.
 		} finally {
 			busy = false;
 		}
@@ -111,11 +114,9 @@
 
 <dialog
 	bind:this={dialogEl}
-	class="modal"
+	class={DIALOG_CLASS}
+	aria-label="Search sessions"
 	onclose={close}
-	onclick={(e) => {
-		if (e.target === dialogEl) close();
-	}}
 >
 	<div class="modal-box flex max-h-[80vh] w-full max-w-2xl flex-col p-0" role="document">
 		<label class="input flex w-full items-center gap-2 rounded-none border-0 border-b border-base-300 focus-within:outline-none">
@@ -177,4 +178,7 @@
 			{/if}
 		</ul>
 	</div>
+	<form method="dialog" class="modal-backdrop">
+		<button tabindex="-1" aria-label="Close">close</button>
+	</form>
 </dialog>

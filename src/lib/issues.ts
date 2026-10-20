@@ -19,3 +19,10 @@ export function shortIssueId(source: IssueSourceType, id: string): string {
 	const hash = id.lastIndexOf('#');
 	return hash === -1 ? id : id.slice(hash);
 }
+
+// The title a session started on exactly one issue gets when the caller sends
+// none: its display id, the same one automation and the web split use. Empty for
+// zero or several issues, where the caller falls back to the branch.
+export function singleIssueTitle(issues: { source: IssueSourceType; id: string }[]): string {
+	return issues.length === 1 ? shortIssueId(issues[0].source, issues[0].id) : '';
+}

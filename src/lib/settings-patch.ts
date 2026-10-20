@@ -1,27 +1,22 @@
-import type { DeckSettings } from '$lib/types';
+import type { AgentSettingsPatch, AgentSettingsView } from '$lib/types';
 
-// The settings page is a card per block of ~/.deck/settings.json, and each one
-// saves by reading the whole file, replacing its own key, and writing it back:
-// a PUT carries the entire object, so a card that sent only its own block would
-// wipe the others. That read-merge-write is the same three lines everywhere, so
-// it lives here rather than once per card.
+// The settings page is a card per block of ~/.deck/settings.json. Each one
+// saves by sending only its own block and the server merges it into the file
+// as it is on disk, so two cards (or a card and an agent) can't clobber each
+// other. Reads are the redacted agent view: no stored key reaches the browser.
 
-export async function fetchSettings(): Promise<DeckSettings> {
-	const res = await fetch('/api/settings');
-	return res.ok ? ((await res.json()) as DeckSettings) : {};
+export async function fetchSettings(): Promise<AgentSettingsView> {
+	const res = await fetch('/api/agent/settings');
+	if (!res.ok) throw new Error('failed to load settings');
+	return (await res.json()) as AgentSettingsView;
 }
 
-// Replace one block, keeping the rest of the file as it is on disk right now
-// (not as the card last saw it, so two cards saved in a row don't clobber).
-export async function patchSettings<K extends keyof DeckSettings>(
-	key: K,
-	value: DeckSettings[K]
-): Promise<void> {
-	const current = await fetchSettings();
-	const res = await fetch('/api/settings', {
-		method: 'PUT',
+export async function patchSettings(patch: AgentSettingsPatch): Promise<AgentSettingsView> {
+	const res = await fetch('/api/agent/settings', {
+		method: 'PATCH',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ ...current, [key]: value })
+		body: JSON.stringify(patch)
 	});
-	if (!res.ok) throw new Error('save failed');
+	if (!res.ok) throw new Error((await res.json().catch(() => null))?.message ?? 'save failed');
+	return (await res.json()) as AgentSettingsView;
 }

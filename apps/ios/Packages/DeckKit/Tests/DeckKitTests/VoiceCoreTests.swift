@@ -108,12 +108,12 @@ private final class SpeechStub: URLProtocol {
 		let path = request.url!.path
 		var body = Data()
 		var type = "application/json"
-		if path == "/api/speech/segments" {
+		if path == "/api/agent/speech/segments" {
 			body = Data(#"{"segments":[{"id":"abc","text":"Hello there."}]}"#.utf8)
-		} else if path == "/api/speech/audio/abc" {
+		} else if path == "/api/agent/speech/audio/abc" {
 			body = Data("RIFF".utf8)
 			type = "audio/wav"
-		} else if path == "/api/speech/transcribe" {
+		} else if path == "/api/agent/speech/transcribe" {
 			var uploaded = Data()
 			if let stream = request.httpBodyStream {
 				stream.open()

@@ -97,7 +97,7 @@
 						{/each}
 						<input
 							class="input input-sm mt-0.5"
-							placeholder="other (optional)"
+							placeholder={q.options.length ? 'Other (optional)' : 'Your answer'}
 							bind:value={other[qi]}
 						/>
 					</div>

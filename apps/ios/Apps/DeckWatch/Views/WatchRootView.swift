@@ -17,7 +17,9 @@ struct WatchRootView: View {
 					InboxView().tag(WatchTab.inbox)
 					SessionsView().tag(WatchTab.sessions)
 					StartView().tag(WatchTab.start)
-					OperatorView().tag(WatchTab.voiceOperator)
+					if store.supports(.voiceOperator) {
+						OperatorView().tag(WatchTab.voiceOperator)
+					}
 				}
 				.tabViewStyle(.verticalPage)
 				.navigationDestination(for: DeckAsk.self) { AskDetailView(ask: $0) }

@@ -50,4 +50,21 @@ final class SessionSearchTests: XCTestCase {
 		XCTAssertFalse(ids.contains("c_5"))
 		XCTAssertFalse(ids.contains("c_6"))
 	}
+
+	func testRankOrdersExactThenPrefixThenWordWise() throws {
+		let query = try XCTUnwrap(SessionSearch.Query("auth token"))
+		XCTAssertEqual(SessionSearch.rank("Auth Token", against: query), 0)
+		XCTAssertEqual(SessionSearch.rank("auth token refresh", against: query), 1)
+		XCTAssertEqual(SessionSearch.rank("Refresh the token for auth", against: query), 2)
+		XCTAssertNil(SessionSearch.rank("token refresh", against: query))
+		XCTAssertNil(SessionSearch.rank("   ", against: query))
+	}
+
+	func testRankFindsWordsInExtraWithoutCountingItAsTheTitle() throws {
+		let query = try XCTUnwrap(SessionSearch.Query("new session"))
+		XCTAssertNil(SessionSearch.rank("Start", against: query))
+		XCTAssertEqual(SessionSearch.rank("Start", against: query, extra: "New Session create"), 2)
+		// A title match still outranks one that leans on extra.
+		XCTAssertEqual(SessionSearch.rank("New session", against: query, extra: "anything"), 0)
+	}
 }

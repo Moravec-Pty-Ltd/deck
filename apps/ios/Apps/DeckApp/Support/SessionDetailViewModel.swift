@@ -27,7 +27,7 @@ final class SessionDetailViewModel {
 	private(set) var baseIndex = 0
 	private(set) var isLoadingOlder = false
 
-	var hasOlderHistory: Bool { didLoadOnce && baseIndex > 0 }
+	var hasOlderHistory: Bool { didLoadOnce && baseIndex > 0 && store.supports(.history) }
 
 	/// Voice mode for this session: reads what the live stream delivers and
 	/// sends what you say through the same store calls the composer uses.
@@ -57,7 +57,7 @@ final class SessionDetailViewModel {
 	/// server never touch the audio session.
 	func voiceController() -> VoiceController? {
 		if let voice { return voice }
-		guard let client = store.client else { return nil }
+		guard store.supports(.speech), let client = store.client else { return nil }
 		let store = self.store
 		let sessionId = self.sessionId
 		let controller = VoiceController(client: client, sessionId: sessionId, handlers: VoiceHandlers(
@@ -98,7 +98,12 @@ final class SessionDetailViewModel {
 
 	private func runStream() async {
 		while !Task.isCancelled {
-			guard let client = store.client else { return }
+			// Checked each round: the server's capabilities can arrive after the
+			// screen opens, and a missing stream route must not be retried forever.
+			guard let client = store.client, store.supports(.stream) else {
+				isLoadingTranscript = false
+				return
+			}
 			isLoadingTranscript = !didLoadOnce
 			do {
 				for try await event in client.sessionEventStream(sessionId: sessionId) {
@@ -155,7 +160,7 @@ final class SessionDetailViewModel {
 	/// something was added, so the view can hold the reader's place.
 	@discardableResult
 	func loadOlder() async -> Bool {
-		guard !isLoadingOlder, baseIndex > 0, let client = store.client else { return false }
+		guard !isLoadingOlder, baseIndex > 0, store.supports(.history), let client = store.client else { return false }
 		isLoadingOlder = true
 		defer { isLoadingOlder = false }
 		do {
@@ -193,7 +198,7 @@ final class SessionDetailViewModel {
 		if let inline = image.data, let data = Data(base64Encoded: inline) { return data }
 		guard let file = image.file else { return nil }
 		if let cached = imageCache[file] { return cached }
-		guard let client = store.client,
+		guard store.supports(.images), let client = store.client,
 			let data = try? await client.imageData(sessionId: sessionId, file: file)
 		else { return nil }
 		imageCache[file] = data
@@ -203,6 +208,7 @@ final class SessionDetailViewModel {
 	/// The servable files among a message's mentions, in order. Deck is asked
 	/// once per path; a failed ask is asked again next time.
 	func files(for paths: [String]) async -> [FileInfo] {
+		guard store.supports(.files) else { return [] }
 		let unknown = paths.filter { !filesAsked.contains($0) }
 		if !unknown.isEmpty, let client = store.client,
 			let found = try? await client.statFiles(sessionId: sessionId, paths: unknown)
@@ -215,7 +221,7 @@ final class SessionDetailViewModel {
 
 	func fileData(path: String) async -> Data? {
 		if let cached = fileCache[path] { return cached }
-		guard let client = store.client, let data = try? await client.fileData(sessionId: sessionId, path: path) else { return nil }
+		guard store.supports(.files), let client = store.client, let data = try? await client.fileData(sessionId: sessionId, path: path) else { return nil }
 		fileCache[path] = data
 		return data
 	}
@@ -314,6 +320,24 @@ final class SessionDetailViewModel {
 	func changeEffort(_ effort: String?) async {
 		do {
 			try await store.changeEffort(sessionId: sessionId, effort: effort)
+		} catch {
+			report(error)
+		}
+	}
+
+	/// Respawn claude with the current CLI config on the next message; the
+	/// conversation carries on.
+	func restart() async {
+		do {
+			try await store.restart(sessionId: sessionId)
+		} catch {
+			report(error)
+		}
+	}
+
+	func dismissPR() async {
+		do {
+			try await store.dismissPR(sessionId: sessionId)
 		} catch {
 			report(error)
 		}

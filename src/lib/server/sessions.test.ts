@@ -83,3 +83,14 @@ describe('listSessions memoization', () => {
 		expect(listTmux).toHaveBeenCalledTimes(2);
 	});
 });
+
+describe('getSession', () => {
+	it('reports a hidden session as hidden, like the list', async () => {
+		const created = await sessions.createSession({ kind: 'shell', cwd: dataDir });
+		const { setSessionHidden } = await import('./hidden');
+		setSessionHidden(created.id, true);
+		expect((await sessions.getSession(created.id))?.hidden).toBe(true);
+		setSessionHidden(created.id, false);
+		expect((await sessions.getSession(created.id))?.hidden).toBeUndefined();
+	});
+});

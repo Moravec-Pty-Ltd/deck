@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { error } from '@sveltejs/kit';
 import type { DeckSession, OperatorSettings } from '$lib/types';
 import { isAgentKind } from '$lib/types';
 import { skillBody, skillCatalogue } from './skills-catalogue';
+import { resolveSecretsFile, SECRETS_FILE_RULE } from './secrets-file';
 import {
 	askAnnouncement,
 	conversationWindow,
@@ -330,8 +330,15 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<str
 function operatorKey(c: OperatorSettings): string | undefined {
 	if (c.apiKey) return c.apiKey;
 	if (!c.apiKeyFile) return undefined;
+	// Checked again at read time: a value stored before the rule, or written by
+	// the browser's whole-settings PUT, must not reach a file outside ~/.secrets.
+	const file = resolveSecretsFile(c.apiKeyFile);
+	if (!file) {
+		console.error(`[deck] operator apiKeyFile refused: ${SECRETS_FILE_RULE}`);
+		error(400, `${SECRETS_FILE_RULE}; fix it in settings`);
+	}
 	try {
-		const raw = fs.readFileSync(c.apiKeyFile.replace(/^~(?=$|\/)/, os.homedir()), 'utf8');
+		const raw = fs.readFileSync(file, 'utf8');
 		// A bare key, or a KEY=value line from an env file.
 		const match = /^(?:[A-Z0-9_]+=)?\s*["']?([^"'\s]+)["']?\s*$/m.exec(raw.trim());
 		return match?.[1];

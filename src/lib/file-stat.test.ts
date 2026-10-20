@@ -53,7 +53,7 @@ describe('statFiles', () => {
 
 describe('fileUrl', () => {
 	it('encodes the path and marks downloads', () => {
-		expect(fileUrl('c 1', '/a b.png')).toBe('/api/sessions/c%201/files?path=%2Fa%20b.png');
-		expect(fileUrl('c1', '/a.png', true)).toBe('/api/sessions/c1/files?path=%2Fa.png&download=1');
+		expect(fileUrl('c 1', '/a b.png')).toBe('/api/agent/sessions/c%201/files?path=%2Fa%20b.png');
+		expect(fileUrl('c1', '/a.png', true)).toBe('/api/agent/sessions/c1/files?path=%2Fa.png&download=1');
 	});
 });

@@ -111,7 +111,7 @@ export class VoiceSession {
 
 	async loadCapabilities(): Promise<SpeechCapabilities | null> {
 		try {
-			const res = await fetch('/api/speech');
+			const res = await fetch('/api/agent/speech');
 			if (res.ok) this.capabilities = (await res.json()) as SpeechCapabilities;
 		} catch {
 			this.capabilities = null;
@@ -206,7 +206,7 @@ export class VoiceSession {
 
 	private async fetchSegments(text: string): Promise<SpeechSegment[]> {
 		try {
-			return (await postJson<{ segments: SpeechSegment[] }>('/api/speech/segments', { text })).segments;
+			return (await postJson<{ segments: SpeechSegment[] }>('/api/agent/speech/segments', { text })).segments;
 		} catch (e) {
 			this.error = errorText(e, 'speech failed');
 			return [];
@@ -285,7 +285,7 @@ export class VoiceSession {
 
 	private async loadSegment(id: string, token: number): Promise<string | null> {
 		try {
-			const res = await fetch(`/api/speech/audio/${encodeURIComponent(id)}`);
+			const res = await fetch(`/api/agent/speech/audio/${encodeURIComponent(id)}`);
 			if (!res.ok) throw new Error(`audio ${res.status}`);
 			const url = URL.createObjectURL(await res.blob());
 			if (token === this.playToken) return url;
@@ -298,7 +298,7 @@ export class VoiceSession {
 
 	// Warm the browser cache for the next segment while this one plays.
 	private prefetch(next: { id: string } | undefined): void {
-		if (next) void fetch(`/api/speech/audio/${encodeURIComponent(next.id)}`).catch(() => {});
+		if (next) void fetch(`/api/agent/speech/audio/${encodeURIComponent(next.id)}`).catch(() => {});
 	}
 
 	private play(url: string, token: number): Promise<void> {
@@ -410,7 +410,7 @@ export class VoiceSession {
 	}
 
 	private async transcribe(blob: Blob): Promise<string> {
-		const res = await fetch('/api/speech/transcribe', { method: 'POST', headers: { 'content-type': blob.type }, body: blob });
+		const res = await fetch('/api/agent/speech/transcribe', { method: 'POST', headers: { 'content-type': blob.type }, body: blob });
 		if (!res.ok) throw new Error(`transcribe ${res.status}`);
 		return ((await res.json()) as { text: string }).text.trim();
 	}

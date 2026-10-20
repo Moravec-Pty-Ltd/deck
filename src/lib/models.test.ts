@@ -4,6 +4,7 @@ import {
 	claudeModelOptions,
 	isExpensiveModel,
 	isListableKind,
+	markExpensive,
 	piModelOptions,
 	piProviderOptions,
 	shouldReseedModel
@@ -23,6 +24,11 @@ describe('isExpensiveModel', () => {
 	it('matches a substring inside a free-text / provider-model id', () => {
 		expect(isExpensiveModel('anthropic/claude-sol-1')).toBe(true);
 		expect(isExpensiveModel('fable-preview')).toBe(true);
+	});
+
+	it('matches against a server-supplied list when given one', () => {
+		expect(isExpensiveModel('acme-max', '', ['Max'])).toBe(true);
+		expect(isExpensiveModel('fable', '', ['max'])).toBe(false);
 	});
 
 	it('matches an expensive provider when model is separate (pi)', () => {
@@ -146,5 +152,15 @@ describe('isListableKind', () => {
 	it('rejects the kinds that do not, and junk', () => {
 		expect(isListableKind('claude')).toBe(false);
 		expect(isListableKind('../etc')).toBe(false);
+	});
+});
+
+describe('markExpensive', () => {
+	it('flags only the rows that warrant a cost confirm', () => {
+		expect(markExpensive([{ model: 'fable' }, { model: 'sonnet' }, { provider: 'sol', model: 'x' }])).toEqual([
+			{ model: 'fable', expensive: true },
+			{ model: 'sonnet' },
+			{ provider: 'sol', model: 'x', expensive: true }
+		]);
 	});
 });

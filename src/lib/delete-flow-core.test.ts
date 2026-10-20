@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import type { DeckSession } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 import { batchErrorMessage, deleteSequentially } from './delete-flow-core';
 
-function session(id: string): DeckSession {
-	return { id, kind: 'claude', title: id, cwd: '/x', createdAt: 0, lastActiveAt: 0, status: 'idle' };
+function session(id: string): SessionView {
+	return { url: '', awaitingInput: false, id, kind: 'claude', title: id, cwd: '/x', createdAt: 0, lastActiveAt: 0, status: 'idle' };
 }
 
 const batch = ['a', 'b', 'c'].map((id) => session(id));

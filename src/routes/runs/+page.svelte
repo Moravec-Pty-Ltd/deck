@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmAction } from '$lib/confirm.svelte';
 	import type { RunDigest, WorkflowDef } from '$lib/workflows';
 	import {
 		api,
@@ -11,13 +12,13 @@
 		PHASE_STATUS_VIEW,
 		RUN_STATUS_VIEW
 	} from '$lib/workflow-view';
-	import type { Issue, Project, PullRequest } from '$lib/types';
+	import type { AgentIssue, AgentPr, Project } from '$lib/types';
 	import { relativeTime } from '$lib/time';
 	import { shortIssueId } from '$lib/issues';
 	import IssuePicker from '$lib/components/IssuePicker.svelte';
 	import PrPicker from '$lib/components/PrPicker.svelte';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Plus, X, Eye, ExternalLink, CircleHelp, GitBranch, Trash2 } from '@lucide/svelte';
+	import { Plus, X, Eye, ExternalLink, CircleHelp, GitBranch, Trash2 } from '@lucide/svelte';
 
 	let runs = $state<RunDigest[]>([]);
 	let loaded = $state(false);
@@ -41,8 +42,8 @@
 	// A run takes one issue or one PR, so these hold at most a single pick. The
 	// typed `ref` stays as the way in for anything the picker doesn't list (an
 	// issue assigned to someone else, a URL from elsewhere).
-	let pickedIssue = $state<Issue | null>(null);
-	let pickedPr = $state<PullRequest | null>(null);
+	let pickedIssue = $state<AgentIssue | null>(null);
+	let pickedPr = $state<AgentPr | null>(null);
 
 	let clearing = $state(false);
 	const finishedCount = $derived(runs.filter((r) => r.status === 'done' || r.status === 'cancelled').length);
@@ -56,14 +57,14 @@
 	// A pick fills the reference field, so one field always says what the run
 	// will start from whether it was picked or typed. Picking the same row again
 	// clears it.
-	function pickIssue(issue: Issue) {
+	function pickIssue(issue: AgentIssue) {
 		const same = pickedIssue?.sourceId === issue.sourceId && pickedIssue?.id === issue.id;
 		pickedIssue = same ? null : issue;
 		ref = pickedIssue?.id ?? '';
 		formError = '';
 	}
 
-	function pickPr(pr: PullRequest) {
+	function pickPr(pr: AgentPr) {
 		const same = pickedPr?.sourceId === pr.sourceId && pickedPr?.number === pr.number;
 		pickedPr = same ? null : pr;
 		ref = pickedPr?.url ?? '';
@@ -88,7 +89,7 @@
 			]);
 			loadError = '';
 		} catch (e) {
-			loadError = e instanceof Error ? e.message : 'failed to load runs';
+			loadError = e instanceof Error ? e.message : "Couldn't load runs";
 		}
 		if (!loaded) formOpen = runs.length === 0;
 		loaded = true;
@@ -99,7 +100,7 @@
 			api<{ workflows: WorkflowDef[]; problems: string[] }>('/api/agent/workflows'),
 			api<Project[]>('/api/projects')
 		]).catch((e): [{ workflows: WorkflowDef[]; problems: string[] }, Project[]] => {
-			loadError = e instanceof Error ? e.message : 'failed to load workflows';
+			loadError = e instanceof Error ? e.message : "Couldn't load workflows";
 			return [{ workflows: [], problems: [] }, []];
 		});
 		workflows = defs.workflows;
@@ -124,7 +125,7 @@
 		if (!isReview && pickedIssue) {
 			return {
 				issue: {
-					source: pickedIssue.sourceType,
+					source: pickedIssue.source,
 					sourceId: pickedIssue.sourceId,
 					id: pickedIssue.id,
 					url: pickedIssue.url
@@ -160,7 +161,7 @@
 			});
 			await goto(`/runs/${encodeURIComponent(run.id)}`);
 		} catch (err) {
-			formError = err instanceof Error ? err.message : 'failed to start the run';
+			formError = err instanceof Error ? err.message : "Couldn't start the run";
 		} finally {
 			starting = false;
 		}
@@ -168,13 +169,19 @@
 
 	async function clearFinished() {
 		const n = finishedCount;
-		if (!confirm(`Delete ${n} finished run${n === 1 ? '' : 's'}? Their phase sessions are deleted too; worktrees and branches are kept.`)) return;
+		const ok = await confirmAction({
+			title: `Delete ${n} finished run${n === 1 ? '' : 's'}?`,
+			body: 'Their phase sessions are deleted too. Worktrees and branches are kept.',
+			confirmLabel: 'Delete',
+			danger: true
+		});
+		if (!ok) return;
 		clearing = true;
 		try {
 			await api('/api/agent/runs?finished=1', 'DELETE');
 			await load();
 		} catch (err) {
-			loadError = err instanceof Error ? err.message : 'clearing finished runs failed';
+			loadError = err instanceof Error ? err.message : "Couldn't clear finished runs";
 		} finally {
 			clearing = false;
 		}
@@ -185,7 +192,7 @@
 		try {
 			overseer = await api('/api/agent/overseer', overseer?.active ? 'DELETE' : 'POST', overseer?.active ? undefined : {});
 		} catch (err) {
-			loadError = err instanceof Error ? err.message : 'overseer request failed';
+			loadError = err instanceof Error ? err.message : 'The overseer request failed';
 		} finally {
 			overseerBusy = false;
 		}
@@ -200,7 +207,6 @@
 <svelte:head><title>Runs · deck</title></svelte:head>
 
 <div class="mb-4 flex items-center gap-2">
-	<a href="/" class="btn btn-ghost btn-sm" aria-label="Back"><ArrowLeft size={16} /></a>
 	<h1 class="text-lg font-semibold">Runs</h1>
 	<div class="flex-1"></div>
 	{#if finishedCount > 0}
@@ -270,7 +276,7 @@
 								<span class="badge badge-sm badge-primary gap-1">
 									{isReview
 										? `${pickedPr!.repo}#${pickedPr!.number}`
-										: shortIssueId(pickedIssue!.sourceType, pickedIssue!.id)}
+										: shortIssueId(pickedIssue!.source, pickedIssue!.id)}
 									<button
 										type="button"
 										aria-label="Clear the pick"
@@ -300,14 +306,14 @@
 				{/if}
 				<div class="mt-3 flex justify-end">
 					<button class="btn btn-sm btn-primary" type="submit" disabled={starting || !cwd || !workflowId}>
-						{starting ? 'Starting...' : 'Start'}
+						{starting ? 'Starting…' : 'Start'}
 					</button>
 				</div>
 			</form>
 		{/if}
 
 		{#if !loaded}
-			<p class="p-8 text-center opacity-60">Loading...</p>
+			<p class="p-8 text-center opacity-60">Loading…</p>
 		{:else if runs.length === 0}
 			<p class="p-8 text-center text-sm opacity-60">No runs yet. Start one to walk an issue or a PR through its workflow.</p>
 		{:else}
