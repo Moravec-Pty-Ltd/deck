@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// What needs you (session questions and blocked runs), then the runs board.
 struct InboxView: View {
@@ -73,13 +74,13 @@ struct InboxView: View {
 			.navigationTitle("Inbox")
 			.toolbar {
 				if store.runs.contains(where: { $0.status.isFinished }) {
-					ToolbarItem(placement: .topBarTrailing) {
+					ToolbarItem(placement: .primaryAction) {
 						Button("Clear finished") {
 							act { try await store.deleteFinishedRuns() }
 						}
 					}
 				}
-				ToolbarItem(placement: .topBarTrailing) {
+				ToolbarItem(placement: .primaryAction) {
 					Button("Start a run", systemImage: "plus") { starting = true }
 				}
 			}

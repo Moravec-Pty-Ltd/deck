@@ -1,4 +1,4 @@
-#if os(iOS) || os(watchOS)
+#if os(iOS) || os(watchOS) || os(macOS)
 import AVFoundation
 import Foundation
 import Observation
@@ -8,7 +8,10 @@ import Observation
 // hands-free takes, sends the transcript on, and walks a blocking question's
 // answers one at a time. The phone captures through an AVAudioEngine tap (so
 // hands-free can watch the level before a take starts); the watch records
-// with AVAudioRecorder and has no hands-free.
+// with AVAudioRecorder and has no hands-free. The Mac has no AVAudioSession:
+// it captures through the same engine tap and plays straight to the default
+// output, push-to-talk only, since nothing there cancels the speaker's echo
+// out of an open mic.
 
 public enum VoiceError: LocalizedError {
 	case microphoneUnavailable
@@ -17,7 +20,7 @@ public enum VoiceError: LocalizedError {
 	public var errorDescription: String? {
 		switch self {
 		case .microphoneUnavailable: return "No microphone is available."
-		case .microphoneDenied: return "Microphone access is off for deck in Settings."
+		case .microphoneDenied: return "Microphone access is off for deck in \(AppPlatform.current.microphoneSetting)."
 		}
 	}
 }
@@ -98,17 +101,17 @@ public final class VoiceController {
 	private var lastText = ""
 	private var awaitingPermission = false
 
-	private var micPermitted: Bool { AVAudioApplication.shared.recordPermission == .granted }
+	private var micPermitted: Bool { MicrophoneAccess.granted }
 
 	// Ask once; the take that triggered it starts as soon as permission lands.
 	private func requestMicrophone(then retry: @escaping @MainActor () -> Void) {
-		if AVAudioApplication.shared.recordPermission == .denied {
+		if MicrophoneAccess.denied {
 			error = VoiceError.microphoneDenied.localizedDescription
 			return
 		}
 		awaitingPermission = true
 		Task {
-			let granted = await AVAudioApplication.requestRecordPermission()
+			let granted = await MicrophoneAccess.request()
 			awaitingPermission = false
 			if granted { retry() } else { error = VoiceError.microphoneDenied.localizedDescription }
 		}
@@ -124,7 +127,9 @@ public final class VoiceController {
 		self.handlers = handlers
 		self.settings = VoiceSettings.load()
 		#if os(iOS)
-		self.capture = EngineCapture()
+		self.capture = EngineCapture(supportsMonitoring: true)
+		#elseif os(macOS)
+		self.capture = EngineCapture(supportsMonitoring: false)
 		#else
 		self.capture = RecorderCapture()
 		#endif
@@ -173,7 +178,9 @@ public final class VoiceController {
 		status = .idle
 		routeObserver.map(NotificationCenter.default.removeObserver)
 		routeObserver = nil
+		#if !os(macOS)
 		try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+		#endif
 	}
 
 	private func applySettings() {
@@ -199,6 +206,7 @@ public final class VoiceController {
 	// hands-free: it also runs playback through voice processing, which makes
 	// the built-in speaker much quieter.
 	private func configureSession() throws {
+		#if !os(macOS)
 		let session = AVAudioSession.sharedInstance()
 		#if os(iOS)
 		try session.setCategory(
@@ -209,11 +217,13 @@ public final class VoiceController {
 		#endif
 		try session.setActive(true)
 		updateRoute()
+		#endif
 	}
 
 	private var routeObserver: NSObjectProtocol?
 
 	private func watchRoute() {
+		#if !os(macOS)
 		updateRoute()
 		guard routeObserver == nil else { return }
 		routeObserver = NotificationCenter.default.addObserver(
@@ -221,11 +231,14 @@ public final class VoiceController {
 		) { [weak self] _ in
 			Task { @MainActor in self?.updateRoute() }
 		}
+		#endif
 	}
 
+	#if !os(macOS)
 	private func updateRoute() {
 		outputRoute = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portName).joined(separator: ", ")
 	}
+	#endif
 
 	private func startKeepAlive() {
 		#if os(iOS)
@@ -291,8 +304,10 @@ public final class VoiceController {
 	/// message plays (through a playback-only session) and nothing else changes.
 	public func readAloud(_ text: String) {
 		if !enabled {
+			#if !os(macOS)
 			try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
 			try? AVAudioSession.sharedInstance().setActive(true)
+			#endif
 			stopPlayback()
 		}
 		Task { await enqueue(text, standalone: true) }
@@ -419,7 +434,7 @@ public final class VoiceController {
 		recording = false
 		level = 0
 		let take = capture.endTake()
-		if !settings.handsFree { capture.stopMonitoring() }
+		if !VoiceAudio.keepsMicOpen(handsFree: settings.handsFree, supportsMonitoring: supportsHandsFree) { capture.stopMonitoring() }
 		guard let take, VoiceAudio.isUsableTake(cancelled: cancelled, seconds: take.seconds, bytes: take.data.count) else {
 			rest()
 			return
@@ -511,6 +526,27 @@ public final class VoiceController {
 	}
 }
 
+// MARK: - Microphone permission
+
+/// The microphone prompt. iOS and watchOS ask through AVAudioApplication; the
+/// Mac asks through AVCaptureDevice, which is what its privacy settings and
+/// the sandbox's audio-input entitlement answer to.
+@MainActor
+enum MicrophoneAccess {
+	#if os(macOS)
+	static var granted: Bool { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized }
+	static var denied: Bool {
+		let status = AVCaptureDevice.authorizationStatus(for: .audio)
+		return status == .denied || status == .restricted
+	}
+	static func request() async -> Bool { await AVCaptureDevice.requestAccess(for: .audio) }
+	#else
+	static var granted: Bool { AVAudioApplication.shared.recordPermission == .granted }
+	static var denied: Bool { AVAudioApplication.shared.recordPermission == .denied }
+	static func request() async -> Bool { await AVAudioApplication.requestRecordPermission() }
+	#endif
+}
+
 // MARK: - Playback
 
 /// One AVAudioPlayer at a time, awaited to completion; `stop` ends it early.
@@ -570,7 +606,7 @@ protocol TakeCapture: AnyObject {
 	func endTake() -> Take?
 }
 
-#if os(iOS)
+#if os(iOS) || os(macOS)
 /// AVAudioEngine input tap: levels flow whenever the engine runs, and a take
 /// is the 16 kHz 16-bit mono PCM captured between begin and end, wrapped as
 /// WAV for upload. The tap runs on the audio thread, so the take state sits
@@ -580,12 +616,17 @@ final class EngineCapture: TakeCapture {
 	var onLevel: ((Float) -> Void)?
 	/// A second reader of the tap (a wake-word recogniser), on the audio thread.
 	nonisolated(unsafe) var onBuffer: ((AVAudioPCMBuffer) -> Void)?
-	let supportsMonitoring = true
+	/// Whether the engine may stay running between takes for hands-free.
+	let supportsMonitoring: Bool
 
 	private let engine = AVAudioEngine()
 	private let sink = TakeSink()
 	private var takeStart: Date?
 	private var monitoring = false
+
+	init(supportsMonitoring: Bool) {
+		self.supportsMonitoring = supportsMonitoring
+	}
 
 	func startMonitoring() throws {
 		guard !monitoring else { return }

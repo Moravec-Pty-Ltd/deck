@@ -325,6 +325,24 @@ final class SessionDetailViewModel {
 		}
 	}
 
+	/// Respawn claude with the current CLI config on the next message; the
+	/// conversation carries on.
+	func restart() async {
+		do {
+			try await store.restart(sessionId: sessionId)
+		} catch {
+			report(error)
+		}
+	}
+
+	func dismissPR() async {
+		do {
+			try await store.dismissPR(sessionId: sessionId)
+		} catch {
+			report(error)
+		}
+	}
+
 	/// Summarise the history and free the context window. Runs as a turn of its
 	/// own, so the transcript shows it happening.
 	func compact() async {

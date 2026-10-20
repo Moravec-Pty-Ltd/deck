@@ -240,7 +240,7 @@ function restartCommands(ctx: CommandContext, s: SessionView): Command[] {
 	return [
 		{
 			id: 'restart-claude',
-			title: 'Restart claude',
+			title: 'Restart Claude',
 			keywords: ['restart', 'reload', 'config', 'claude.md', 'settings', 'skills', 'mcp'],
 			hint: 'reload config',
 			run: () => ctx.restartSession()
@@ -268,6 +268,12 @@ function globalCommands(ctx: CommandContext): Command[] {
 			title: 'Schedules',
 			keywords: ['schedule', 'cron', 'repeat', 'recurring', 'timer', 'every morning'],
 			run: () => ctx.goto('/schedules')
+		},
+		{
+			id: 'settings',
+			title: 'Settings',
+			keywords: ['preferences', 'voice', 'speech', 'operator', 'compact', 'skills', 'devices', 'pair', 'qr', 'zed', 'theme'],
+			run: () => ctx.goto('/settings')
 		},
 		{
 			id: 'search-sessions',

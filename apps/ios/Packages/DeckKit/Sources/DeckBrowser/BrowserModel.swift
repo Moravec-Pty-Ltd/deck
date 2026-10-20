@@ -25,6 +25,9 @@ public final class BrowserModel {
 
 	public var settings: TunnelSettings
 	public var password: String
+	/// Deck, and so its dev servers, are on this machine: pages load straight
+	/// from loopback and the tunnel is never used.
+	public let isDirect: Bool
 
 	/// Bumped whenever a tab's own WebKit state changes. `@Observable` cannot
 	/// see inside the runtime objects, so this is what views read to re-render.
@@ -48,6 +51,11 @@ public final class BrowserModel {
 		// SSH connection and its loopback port are per machine, and a second one
 		// cannot bind a port the first is holding.
 		self.tunnel = DevTunnel.shared
+		self.isDirect = LoopbackHost.isDirect(deckOrigin: deckOrigin)
+		if isDirect {
+			status = "Direct: deck runs on this machine"
+			return
+		}
 		wire()
 		// It may already be up, from a browser opened earlier. No runtimes exist
 		// yet, so they will be built against this state rather than rebuilt.
@@ -153,6 +161,7 @@ public final class BrowserModel {
 	}
 
 	public func connect() {
+		guard !isDirect else { return }
 		guard let config = config() else {
 			status = "Fill in the host, user and password first"
 			return
@@ -178,7 +187,7 @@ public final class BrowserModel {
 	/// iOS suspends sockets in the background, so coming back to the foreground
 	/// usually means the tunnel needs re-establishing.
 	public func reconnectIfNeeded() {
-		guard wantConnected, settings.autoConnect else { return }
+		guard !isDirect, wantConnected, settings.autoConnect else { return }
 		switch tunnelState {
 		case .connected, .connecting: return
 		default: break
@@ -199,7 +208,7 @@ public final class BrowserModel {
 	/// Bring the tunnel up on open when it has worked before, so the browser is
 	/// usable without visiting a form first.
 	public func connectIfConfigured() {
-		guard settings.autoConnect, config() != nil else { return }
+		guard !isDirect, settings.autoConnect, config() != nil else { return }
 		switch tunnelState {
 		case .connected, .connecting: return
 		default: connect()

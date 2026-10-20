@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import DeckKit
+import DeckUI
 
 struct SignInView: View {
 	@Environment(DeckStore.self) private var store
@@ -14,7 +15,8 @@ struct SignInView: View {
 			VStack(spacing: 24) {
 				VStack(spacing: 8) {
 					Image(systemName: "square.stack.3d.up")
-						.font(.system(size: 40))
+						.font(.largeTitle)
+						.imageScale(.large)
 						.foregroundStyle(.secondary)
 					Text("Sign in to deck")
 						.font(.title2.bold())
@@ -129,7 +131,7 @@ private struct QRScanSheet: View {
 						.font(.footnote)
 						.foregroundStyle(.white)
 						.padding(8)
-						.background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+						.background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 						.padding(.bottom, 32)
 				}
 				.toolbar {

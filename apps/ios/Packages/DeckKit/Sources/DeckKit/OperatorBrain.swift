@@ -3,7 +3,7 @@ import Foundation
 /// Whether an operator can run here, and what to say when it cannot.
 public enum OperatorAvailability: Equatable, Sendable {
 	case available
-	/// The OS is older than the on-device model (iOS 26).
+	/// The OS is older than the on-device model (iOS or macOS 26).
 	case systemTooOld
 	/// This platform has no on-device model at all. watchOS ships the
 	/// framework but marks SystemLanguageModel unavailable, so a watch cannot
@@ -14,13 +14,15 @@ public enum OperatorAvailability: Equatable, Sendable {
 	/// Apple Intelligence is off, or the model is still downloading.
 	case notReady
 
-	public var reason: String? {
+	public var reason: String? { reason(on: .current) }
+
+	public func reason(on platform: AppPlatform) -> String? {
 		switch self {
 		case .available: nil
-		case .systemTooOld: "The operator needs iOS 26 or later."
+		case .systemTooOld: "The operator needs \(platform.systemName) 26 or later."
 		case .platformUnsupported: "This device has no on-device model to run the operator."
 		case .deviceNotEligible: "This device cannot run Apple Intelligence."
-		case .notReady: "Turn on Apple Intelligence in Settings, then try again."
+		case .notReady: "Turn on Apple Intelligence in \(platform.settingsApp), then try again."
 		}
 	}
 }

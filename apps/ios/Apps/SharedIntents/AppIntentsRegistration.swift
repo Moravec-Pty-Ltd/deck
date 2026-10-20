@@ -1,6 +1,10 @@
 import AppIntents
 import DeckIntents
 
+// Compiled into each app target (DeckApp and DeckWatch) rather than the
+// package: App Intents metadata is extracted per app, so the shortcuts
+// provider and the package bridge have to live in the app's own sources.
+
 /// Pulls the package-hosted intents into this app's App Intents metadata.
 struct DeckAppIntentsPackage: AppIntentsPackage {
 	static var includedPackages: [any AppIntentsPackage.Type] {
