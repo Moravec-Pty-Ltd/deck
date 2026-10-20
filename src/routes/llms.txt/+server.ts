@@ -106,11 +106,13 @@ Open issues for a project (\`project\` = a discovery \`path\`; \`&refresh=1\`
 bypasses the 60s cache). Each row maps onto \`create\`'s \`issue\`:
 
 \`\`\`json
-{ "issues": [{ "source": "github", "sourceId": "...", "id": "owner/repo#1", "title": "...", "url": "..." }],
+{ "issues": [{ "source": "github", "sourceId": "...", "id": "owner/repo#1", "title": "...", "url": "...",
+	"updatedAt": 1700000000000, "blockers": [{ "id": "owner/repo#2", "title": "..." }] }],
   "errors": [{ "sourceId": "...", "message": "..." }] }
 \`\`\`
 
 Pass \`{ source, sourceId, id, url }\` straight through as \`create\`'s \`issue\`.
+\`updatedAt\` is epoch ms; \`blockers\` lists the open issues this one waits on.
 
 ### GET /api/agent/prs?project=<path>
 
@@ -118,8 +120,9 @@ Open PRs awaiting your review for a project. Each row carries \`review\`'s
 \`pr { repo, number }\` plus context for picking one:
 
 \`\`\`json
-{ "prs": [{ "repo": "owner/repo", "number": 42, "title": "...", "url": "...",
-	"headRefName": "feat", "baseRefName": "main", "isDraft": false, "author": "..." }],
+{ "prs": [{ "sourceId": "...", "repo": "owner/repo", "number": 42, "title": "...", "url": "...",
+	"headRefName": "feat", "baseRefName": "main", "isDraft": false, "author": "...",
+	"updatedAt": 1700000000000 }],
   "errors": [] }
 \`\`\`
 
@@ -239,6 +242,22 @@ you send change: \`name\`, \`group\`, \`template\`, \`reviewPrompt\`,
 has its own route, sources theirs, and the remembered model picks are written
 by session creates, so those are ignored here. Returns the updated record; 404
 for an unregistered path.
+
+\`dev\` replaces the whole dev-server config (see Dev servers). Every key is
+optional; step and server \`cwd\` are relative to the worktree:
+
+\`\`\`json
+{
+	"copyFromMain": [".env"],
+	"setup": [{ "label": "install", "run": "pnpm i", "cwd"?: "." }],
+	"servers": [{ "name": "web", "run": "pnpm dev", "cwd"?: "apps/web",
+		"setup"?: [<step>], "ports"?: [{ "port": 5173, "label"?: "app", "primary"?: true }],
+		"readyPattern"?: "Local:\\\\s+(http\\\\S+)" }]
+}
+\`\`\`
+
+Server names must be unique (also after tmux sanitising) and \`readyPattern\`
+must compile as a regex; a port is an integer 1-65535.
 
 ### POST /api/agent/projects/clone
 
@@ -417,7 +436,8 @@ PR, so the review/merge endpoints below work on it.
 	"cwd": "/path/to/project",          // required; an existing directory
 	"command": "npm run dev",           // optional; runs instead of the login shell
 	"title": "...",                     // optional; untitled shells get a generated name
-	"worktree": { "branch": "my-branch", "newBranch": true }  // optional, as in work mode
+	"worktree": { "branch": "my-branch", "newBranch": true },  // optional, as in work mode; or { "fromPr": 42 } for a PR's head
+	"issues": [...], "pr": { "repo": "owner/repo", "number": 42 }  // optional context, shaped as in work / review mode
 }
 \`\`\`
 
@@ -517,9 +537,10 @@ terminal already holds is a 409. A registered session keeps its id.
 
 ### POST /api/agent/sessions/{id}/upload
 
-\`{ "files": [{ "name": "report.pdf", "data": "<base64>" }], "text"?: "..." }\` —
+\`{ "files": [{ "name": "report.pdf", "data": "<base64>" }], "text"?: "...", "images"?: [...] }\` —
 share files with a session. Up to 10 per call, 25 MB each; a bigger one is a 413
-naming its size.
+naming its size. \`images\` takes the send endpoint's shape and goes inline with
+the same turn, so pictures and files can travel in one message.
 
 The files are written under deck's data dir (never into the worktree, so sharing
 cannot dirty a repo) and the session is sent a message naming their absolute
@@ -1083,16 +1104,18 @@ the code against the one the new device shows before approving.
 
 ## Push notifications
 
-Native iOS/watchOS clients register a device token to receive the same nudges
+Native iOS, watchOS and macOS clients register a device token to receive the same nudges
 the installed PWA gets over web push (question asked, turn finished, session
 crashed/exited, PR updates). Disabled server-side until an APNs key is
 configured; registering is harmless either way.
 
 ### POST /api/push/apns/register
 
-\`{ "token": "...", "platform": "ios" | "watchos", "env": "development" | "production" }\`,
+\`{ "token": "...", "platform": "ios" | "watchos" | "macos", "env": "development" | "production" }\`,
 upsert this device (\`token\` is the hex APNs device token). Returns
-\`{ "ok": true }\`.
+\`{ "ok": true }\`. \`macos\` is accepted when \`GET /api/agent\` lists the
+\`apns-macos\` capability; the Mac app shares the iOS bundle id, so it is sent
+on the same topic.
 
 ### POST /api/push/apns/unregister
 

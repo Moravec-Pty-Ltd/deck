@@ -1,37 +1,47 @@
 import type { AgentKind, ModelChoice } from '$lib/types';
 import { isListableKind } from '$lib/models';
+import { agentGet, agentPath } from '$lib/agent-api';
 
-// Shared read-through cache for the models a CLI reports, alongside
-// settings-store. The Projects page can show a work and a review lane on every
-// expanded project at once, and each field fetching for itself would be one CLI
-// shell-out per field; the New Session modal reads the same cache.
-//
-// Only the listable kinds enumerate anything (the endpoint answers every other
-// kind with an empty list), so the rest never fetch.
+// Shared read-through cache of GET /api/agent/kinds: which agent CLIs are
+// installed and the models each reports. The Projects page can show a work and
+// a review lane on every expanded project at once, and each field fetching for
+// itself would be one CLI shell-out per field; the New Session modal reads the
+// same cache.
 
-let cache = $state<Partial<Record<AgentKind, ModelChoice[]>>>({});
-const inflight = new Set<AgentKind>();
+type KindRow = { kind: AgentKind; available: boolean; models: ModelChoice[] };
+
+let rows = $state<KindRow[] | null>(null);
+let inflight: Promise<void> | null = null;
 
 // What's known for `kind`: empty until the listing lands, and empty for good if
 // the CLI is missing or unconfigured, which leaves the field plain free text.
+// Only the listable kinds count (claude's rows are its model profiles, which
+// its pickers already offer from settings).
 export function agentModels(kind: AgentKind): ModelChoice[] {
-	return cache[kind] ?? [];
+	if (!isListableKind(kind)) return [];
+	return rows?.find((r) => r.kind === kind)?.models ?? [];
+}
+
+// Which kinds are installed, or null until the listing lands (or if it failed),
+// which callers read as "show every kind".
+export function agentAvailability(): Partial<Record<AgentKind, boolean>> | null {
+	if (!rows) return null;
+	return Object.fromEntries(rows.map((r) => [r.kind, r.available]));
+}
+
+export function loadAgentKinds(): Promise<void> {
+	if (rows) return Promise.resolve();
+	inflight ??= agentGet<KindRow[]>(agentPath('kinds'))
+		.then((list) => {
+			rows = Array.isArray(list) ? list : [];
+		})
+		// A missing CLI answers 200 with available:false, so a failure here is the
+		// request itself: leave the cache unset so the next caller retries.
+		.catch(() => {})
+		.finally(() => (inflight = null));
+	return inflight;
 }
 
 export function loadAgentModels(kind: AgentKind) {
-	if (!isListableKind(kind) || cache[kind] || inflight.has(kind)) return;
-	inflight.add(kind);
-	fetch(`/api/agents/${kind}/models`)
-		.then((r) => {
-			if (!r.ok) throw new Error(`models ${r.status}`);
-			return r.json();
-		})
-		.then((list: ModelChoice[]) => {
-			cache = { ...cache, [kind]: Array.isArray(list) ? list : [] };
-		})
-		// A CLI that isn't installed answers 200 with an empty list, so a failure
-		// here is the request itself: leave the cache unset so the next lane to
-		// mount retries, the way settings-store does.
-		.catch(() => {})
-		.finally(() => inflight.delete(kind));
+	if (isListableKind(kind)) void loadAgentKinds();
 }

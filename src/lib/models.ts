@@ -4,8 +4,10 @@ import type {
 	DeckSettings,
 	ModelChoice,
 	Project,
+	RememberedPicks,
 	SessionKind
 } from '$lib/types';
+import { agentPost, sessionPath } from '$lib/agent-api';
 
 // Claude model shortnames the CLI accepts, offered in the New Session modal and
 // the mid-session model switcher (issue #88). pi/codex take free-text ids.
@@ -59,7 +61,7 @@ const DEFAULT_CLAUDE_MODEL = 'opus';
 export function resolveModelChoice(
 	kind: AgentKind,
 	project: Project | undefined,
-	settings: DeckSettings
+	settings: RememberedPicks
 ): ModelChoice {
 	const remembered = project?.lastModels?.[kind] ?? settings.lastModels?.[kind];
 	if (remembered) return remembered;
@@ -98,10 +100,15 @@ export const EXPENSIVE_MODELS = ['fable', 'sol', 'astra'] as const;
 // Whether choosing this model should prompt a cost confirm. Case-insensitive
 // substring match against the model id (and provider, for pi's separate
 // --provider arg), so one entry covers the claude shortname (`fable`), a
-// codex/pi free-text id, and opencode's combined `provider/model`.
-export function isExpensiveModel(model: string | undefined, provider?: string): boolean {
+// codex/pi free-text id, and opencode's combined `provider/model`. `list` is
+// the server's expensiveModels (GET /api/agent/defaults) when a client has it.
+export function isExpensiveModel(
+	model: string | undefined,
+	provider?: string,
+	list: readonly string[] = EXPENSIVE_MODELS
+): boolean {
 	const haystack = `${model ?? ''} ${provider ?? ''}`.toLowerCase();
-	return EXPENSIVE_MODELS.some((m) => haystack.includes(m));
+	return list.some((m) => haystack.includes(m.toLowerCase()));
 }
 
 // A model listing with `expensive: true` on the rows that warrant the confirm,
@@ -115,13 +122,5 @@ export function markExpensive(models: ModelChoice[]): (ModelChoice & { expensive
 // model step). Empty string resets to the default. Throws with the server's
 // message on failure so callers can show it inline.
 export async function switchModel(id: string, model: string): Promise<void> {
-	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/model`, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ model })
-	});
-	if (!res.ok) {
-		const data = await res.json().catch(() => null);
-		throw new Error(data?.message || 'model switch failed');
-	}
+	await agentPost(sessionPath(id, 'model'), { model });
 }

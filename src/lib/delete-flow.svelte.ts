@@ -1,18 +1,15 @@
+import { confirmAction } from '$lib/confirm.svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import type { SessionView } from '$lib/session-view';
 import { ownsWorktreeBranch } from '$lib/pr';
 import { batchErrorMessage, deleteSequentially } from '$lib/delete-flow-core';
+import { agentDelete, sessionPath } from '$lib/agent-api';
 
 export async function requestDelete(
 	id: string,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
 ): Promise<void> {
-	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
-		method: 'DELETE',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(opts)
-	});
-	if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+	await agentDelete(sessionPath(id), opts);
 }
 
 // Shared session-delete flow for the home list and the session-view sidebar:
@@ -44,8 +41,8 @@ export class DeleteFlow {
 	) {}
 
 	// Open the confirm modal for a worktree session; plain sessions just get a
-	// native confirm and delete straight away.
-	request = (s: SessionView) => {
+	// plain confirm and delete straight away.
+	request = async (s: SessionView) => {
 		if (this.deletingIds.has(s.id)) return;
 		if (s.worktree) {
 			this.worktree = true;
@@ -53,7 +50,13 @@ export class DeleteFlow {
 			this.target = s;
 			return;
 		}
-		if (confirm(`Kill and remove "${s.title}"?`)) this.run(s, {});
+		const ok = await confirmAction({
+			title: `Remove "${s.title}"?`,
+			body: 'Kills the session and removes it from deck.',
+			confirmLabel: 'Remove',
+			danger: true
+		});
+		if (ok) this.run(s, {});
 	};
 
 	// Open the one confirm for a whole selection. The batch sends a single pair of

@@ -1,16 +1,25 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// The list of sessions and the one that is open. On a phone the open session
-/// pushes over the list. On a foldable opened flat the list stays on the left
-/// half and the session fills the right, split on the fold; half open on a
-/// table the session takes the whole window (see SessionDetailView), since a
-/// column each side of a horizontal fold reads badly.
+/// pushes over the list; on an iPad it sits beside it in a split view. On a
+/// foldable opened flat the list stays on the left half and the session fills
+/// the right, split on the fold, which a NavigationSplitView cannot be pinned
+/// to; half open on a table the session takes the whole window (see
+/// SessionDetailView), since a column each side of a horizontal fold reads badly.
 struct SessionsView: View {
 	@Environment(DeckStore.self) private var store
 	@Environment(HingeMonitor.self) private var hinge
 	@Environment(\.horizontalSizeClass) private var sizeClass
 	@Binding var deepLinkSessionId: String?
+	/// A keyboard shortcut or palette pick for the list, handled then cleared.
+	@Binding var command: SessionsCommand?
+	/// Which session is open, reported up for the palette's stop action.
+	@Binding var openSessionId: String?
+	/// Opens the Settings tab where there is a sidebar to show it; nil pushes
+	/// Settings over the list instead.
+	var openSettingsTab: (() -> Void)?
 	@State private var open: SessionTarget?
 	@State private var path: [SessionTarget] = []
 	@State private var models = OpenSessionModel()
@@ -26,7 +35,10 @@ struct SessionsView: View {
 	@State private var searchTask: Task<Void, Never>?
 	/// The Hidden section starts closed: you hid those on purpose.
 	@State private var hiddenExpanded = false
-	@State private var showSettings = false
+	@State private var pushSettings = false
+	@State private var columns = NavigationSplitViewVisibility.all
+	@State private var showReviews = false
+	@FocusState private var searchFocused: Bool
 
 	/// The session that is open, at a message when it came from a search hit.
 	struct SessionTarget: Hashable {
@@ -36,63 +48,28 @@ struct SessionsView: View {
 
 	private var wide: Bool { sizeClass == .regular && !hinge.isTabletop }
 
-	// MARK: - Sidebar width
-
-	private static let sidebarMin: CGFloat = 260
-	private static let sidebarMax: CGFloat = 560
-	private static let sidebarDefault: CGFloat = 360
-
-	/// Remembered per device. On a foldable opened flat the fold decides, since
-	/// the seam has to land on the hinge rather than wherever it was dragged to.
-	@AppStorage("sidebarWidth") private var storedSidebarWidth: Double = Double(sidebarDefault)
-	@State private var dragWidth: CGFloat?
-
-	private var sidebarWidth: CGFloat {
-		if let fold = hinge.halfWidth { return fold }
-		return dragWidth ?? CGFloat(storedSidebarWidth)
-	}
-
-	/// The divider, draggable except where the fold owns the split.
-	@ViewBuilder
-	private var sidebarDivider: some View {
-		if hinge.halfWidth != nil {
-			Divider()
-		} else {
-			Divider()
-				// A one-pixel divider is not a grabbable target, so widen the
-				// hit area without drawing anything wider.
-				.padding(.horizontal, 3)
-				.contentShape(Rectangle())
-				.gesture(
-					DragGesture(coordinateSpace: .global)
-						.onChanged { value in
-							dragWidth = clampSidebar(CGFloat(storedSidebarWidth) + value.translation.width)
-						}
-						.onEnded { _ in
-							if let dragWidth { storedSidebarWidth = Double(dragWidth) }
-							dragWidth = nil
-						}
-				)
-				// No resize cursor: SwiftUI's PointerStyle is unavailable on iOS
-				// and so on Mac Catalyst too. The widened hit area is the only
-				// affordance, which is why it is generous.
-				.accessibilityLabel("Resize the sidebar")
-		}
-	}
-
-	private func clampSidebar(_ width: CGFloat) -> CGFloat {
-		min(Self.sidebarMax, max(Self.sidebarMin, width))
-	}
+	/// The fold owns the split: half the window each side of the hinge.
+	private var foldWidth: CGFloat? { hinge.halfWidth }
 
 	var body: some View {
 		Group {
-			if wide {
+			if wide, let foldWidth {
 				HStack(spacing: 0) {
 					NavigationStack { sidebar }
-						.frame(width: sidebarWidth)
-					sidebarDivider
+						.frame(width: foldWidth)
+					Divider()
 					NavigationStack { detail }
 				}
+			} else if wide {
+				NavigationSplitView(columnVisibility: $columns) {
+					sidebar
+						.navigationSplitViewColumnWidth(min: 260, ideal: 360, max: 560)
+				} detail: {
+					NavigationStack { detail }
+				}
+				// Balanced keeps the list beside the session in portrait too,
+				// rather than sliding it over the session.
+				.navigationSplitViewStyle(.balanced)
 			} else {
 				NavigationStack(path: $path) {
 					sidebar.navigationDestination(for: SessionTarget.self) { target in
@@ -110,6 +87,12 @@ struct SessionsView: View {
 		.onChange(of: open) { _, open in
 			if !wide, path.last != open { path = open.map { [$0] } ?? [] }
 			if open == nil { models.close() }
+			openSessionId = open?.sessionId
+		}
+		.onChange(of: command) { _, command in
+			guard let command else { return }
+			self.command = nil
+			handle(command)
 		}
 		.onChange(of: deepLinkSessionId) { _, sessionId in
 			guard let sessionId else { return }
@@ -145,26 +128,12 @@ struct SessionsView: View {
 		.id(target)
 	}
 
-	/// A row that opens its session: pushes it on a phone, shows it in the
-	/// right column when the list has one beside it.
+	/// A row that opens its session: pushes it on a phone; beside the list it
+	/// is a tagged row, so the list's own selection opens it and draws it.
 	@ViewBuilder
 	private func link<Label: View>(to target: SessionTarget, @ViewBuilder label: () -> Label) -> some View {
 		if wide {
-			Button {
-				open = target
-			} label: {
-				// A plain button hit-tests what it draws, so without these the
-				// only clickable part of the row is the text itself: the gaps
-				// between the title, the chips and the timestamp all miss.
-				// Spanning the width and giving it a rectangular content shape
-				// makes the whole row the target, the way a NavigationLink row
-				// behaves on the phone.
-				label()
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-			.listRowBackground(open?.sessionId == target.sessionId ? Color.accentColor.opacity(0.12) : nil)
+			label().tag(target)
 		} else {
 			NavigationLink(value: target) { label() }
 		}
@@ -187,6 +156,23 @@ struct SessionsView: View {
 		let q = query.trimmingCharacters(in: .whitespaces)
 		guard !q.isEmpty else { return list }
 		return SessionSearch.byName(q, in: list)
+	}
+
+	private func handle(_ command: SessionsCommand) {
+		switch command {
+		case .focusSearch:
+			// The field lives on the list, which a pushed session or a hidden
+			// sidebar covers.
+			if wide { columns = .all } else { open = nil }
+			searchFocused = true
+		case .step(let offset):
+			let ids = listedSessions.map(\.id)
+			if let next = SessionStepper.step(from: open?.sessionId, by: offset, in: ids) {
+				open = SessionTarget(sessionId: next)
+			}
+		case .openSettings:
+			if let openSettingsTab { openSettingsTab() } else { open = nil; pushSettings = true }
+		}
 	}
 
 	private var isFiltering: Bool {
@@ -230,8 +216,8 @@ struct SessionsView: View {
 								.foregroundStyle(selection.contains(session.id) ? Color.accentColor : .secondary)
 							SessionRow(session: session)
 						}
-						// Same as `link`: a plain button hit-tests only what it
-						// draws, so ticking a row would need a hit on its text.
+						// A plain button hit-tests only what it draws, so ticking
+						// a row would otherwise need a hit on its text.
 						.frame(maxWidth: .infinity, alignment: .leading)
 						.contentShape(Rectangle())
 					}
@@ -243,7 +229,7 @@ struct SessionsView: View {
 				// swapping to a separate results view: replacing the whole list
 				// while the search field is active is what a UIKit list handles
 				// worst, and the Mac crashed on it.
-				List {
+				List(selection: wide ? $open : nil) {
 					Section {
 						ForEach(listedSessions) { session in
 							link(to: SessionTarget(sessionId: session.id)) {
@@ -302,8 +288,15 @@ struct SessionsView: View {
 				.listStyle(.plain)
 			}
 		}
+		.safeAreaInset(edge: .top, spacing: 0) {
+			VStack(spacing: 8) {
+				ServerTooOldBanner()
+				PairingBanner()
+			}
+		}
 		.navigationTitle("Sessions")
 		.searchable(text: $query, prompt: "Search sessions")
+		.searchFocused($searchFocused)
 		.onChange(of: query) { _, text in runSearch(text) }
 		.refreshable { await store.refreshSessions() }
 		.toolbar {
@@ -316,19 +309,30 @@ struct SessionsView: View {
 					}
 				}
 			}
-			// Settings left the tab bar to make room for the browser: five tabs
-			// is the most iOS shows before it buries the sixth under "More",
-			// and this is the one opened least.
 			ToolbarItem(placement: .topBarLeading) {
-				Button { showSettings = true } label: {
+				Button {
+					if let openSettingsTab { openSettingsTab() } else { pushSettings = true }
+				} label: {
 					Image(systemName: "gearshape")
 				}
 				.accessibilityLabel("Settings")
 				.accessibilityIdentifier("openSettings")
 			}
+			if store.reviews?.isShown == true {
+				ToolbarItem(placement: .topBarLeading) {
+					Button { showReviews = true } label: {
+						Image(systemName: "checklist")
+					}
+					.accessibilityLabel("Reviews")
+					.accessibilityIdentifier("openReviews")
+				}
+			}
 		}
-		.sheet(isPresented: $showSettings) {
+		.navigationDestination(isPresented: $pushSettings) {
 			SettingsView()
+		}
+		.sheet(isPresented: $showReviews) {
+			ReviewsView { sessionId in open = SessionTarget(sessionId: sessionId) }
 		}
 		// A bar of our own rather than .bottomBar toolbar items: the tab bar
 		// owns the bottom of the screen, so those never show up.
@@ -465,7 +469,8 @@ struct SessionsView: View {
 	private func runSearch(_ text: String) {
 		searchTask?.cancel()
 		let q = text.trimmingCharacters(in: .whitespaces)
-		guard q.count >= 2 else {
+		// Without transcript search the field still filters the list by title.
+		guard q.count >= 2, store.supports(.search) else {
 			hits = []
 			searching = false
 			return
@@ -473,10 +478,12 @@ struct SessionsView: View {
 		searching = true
 		searchTask = Task {
 			try? await Task.sleep(for: .milliseconds(300))
-			guard !Task.isCancelled, let client = store.client else { return }
-			if let response = try? await client.search(query: q) {
-				hits = response.hits
-			}
+			guard !Task.isCancelled else { return }
+			let response = try? await store.client?.search(query: q)
+			// A newer keystroke owns the results now; a late answer would
+			// put back hits the field has already cleared.
+			guard !Task.isCancelled else { return }
+			if let response { hits = response.hits }
 			searching = false
 		}
 	}
@@ -498,7 +505,7 @@ struct SessionsView: View {
 		}
 		.padding(.horizontal)
 		.padding(.vertical, 10)
-		.background(.bar)
+		.deckGlass(in: Rectangle())
 	}
 
 	private func progressBar(_ progress: DeleteProgress) -> some View {
@@ -518,7 +525,7 @@ struct SessionsView: View {
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.padding(.horizontal)
 		.padding(.vertical, 10)
-		.background(.bar)
+		.deckGlass(in: Rectangle())
 	}
 
 	private var selectedSessions: [SessionDigest] {
@@ -563,6 +570,13 @@ struct SessionsView: View {
 	}
 }
 
+/// What the window asks of the sessions list from the keyboard or the palette.
+enum SessionsCommand: Equatable {
+	case focusSearch
+	case step(Int)
+	case openSettings
+}
+
 /// The open session's model, kept across folds and unfolds (which lay the
 /// session out afresh) so its transcript stream and voice mode carry on.
 @MainActor
@@ -594,82 +608,4 @@ private struct DeleteProgress {
 private struct DeleteRequest: Identifiable {
 	let id = UUID()
 	let sessions: [SessionDigest]
-}
-
-struct SessionRow: View {
-	let session: SessionDigest
-
-	var body: some View {
-		HStack(alignment: .top, spacing: 12) {
-			StatusDot(session: session)
-				.padding(.top, 6)
-
-			VStack(alignment: .leading, spacing: 4) {
-				Text(title)
-					.font(.body.weight(.medium))
-					.lineLimit(1)
-
-				HStack(spacing: 4) {
-					if let project = projectName {
-						Text(project).foregroundStyle(.primary)
-						Text("·")
-					}
-					Text(session.kind ?? "claude")
-					if let model = session.model, !model.isEmpty {
-						Text("· \(model)")
-					}
-				}
-				.font(.caption)
-				.foregroundStyle(.secondary)
-				.lineLimit(1)
-
-				if hasChips {
-					ScrollView(.horizontal, showsIndicators: false) {
-						HStack(spacing: 6) {
-							if session.awaitingInput == true {
-								Chip(text: "needs you", color: .orange)
-							}
-							if let pr = session.pr, pr.number != nil {
-								PRStatusBadge(pr: pr)
-							}
-							if let costText = CostFormat.string(session.cost?.costUsd) {
-								Chip(text: costText)
-							}
-							// Only once the window is worth noticing: a chip on
-							// every row saying "4%" is noise.
-							if let context = session.context, context.percent >= 66 {
-								Chip(
-									text: "context \(context.percent)%",
-									color: context.percent >= 85 ? .red : .orange)
-							}
-						}
-					}
-				}
-			}
-
-			Spacer(minLength: 8)
-
-			Text(RelativeFormat.string(session.lastActiveAt))
-				.font(.caption2)
-				.foregroundStyle(.secondary)
-		}
-		.padding(.vertical, 4)
-	}
-
-	private var hasChips: Bool {
-		session.awaitingInput == true || session.pr?.number != nil || session.cost?.costUsd != nil
-			|| (session.context?.percent ?? 0) >= 66
-	}
-
-	private var title: String {
-		if let title = session.title, !title.isEmpty { return title }
-		if let cwd = session.cwd, let last = cwd.split(separator: "/").last { return String(last) }
-		return session.id
-	}
-
-	private var projectName: String? {
-		if let repo = session.worktree?.repo, let last = repo.split(separator: "/").last { return String(last) }
-		if let cwd = session.cwd, let last = cwd.split(separator: "/").last { return String(last) }
-		return nil
-	}
 }

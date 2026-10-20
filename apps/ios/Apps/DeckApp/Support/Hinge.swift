@@ -62,21 +62,17 @@ struct HingeObserver: UIViewRepresentable {
 	func makeUIView(context: Context) -> UIView {
 		let view = UIView()
 		view.isUserInteractionEnabled = false
-		// A Mac has no hinge; the window size still drives the wide layout.
-		#if !targetEnvironment(macCatalyst)
 		if #available(iOS 27.1, *) {
 			view.addInteraction(UIHingeInteraction { _, update in
 				guard HingeMonitor.override == nil else { return }
 				monitor.posture = Self.posture(of: update.hinge)
 			})
 		}
-		#endif
 		return view
 	}
 
 	func updateUIView(_ uiView: UIView, context: Context) {}
 
-	#if !targetEnvironment(macCatalyst)
 	@available(iOS 27.1, *)
 	private static func posture(of hinge: UIHinge?) -> HingeMonitor.Posture {
 		switch hinge?.status {
@@ -86,5 +82,4 @@ struct HingeObserver: UIViewRepresentable {
 		default: return .unknown
 		}
 	}
-	#endif
 }

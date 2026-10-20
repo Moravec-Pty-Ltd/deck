@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// Per-project feed automation (the web Projects page's automation section):
 /// whether new issues assigned to you and PRs awaiting your review spawn a
@@ -43,7 +44,7 @@ struct ProjectAutomationView: View {
 			}
 		}
 		.navigationTitle(project.name)
-		.navigationBarTitleDisplayMode(.inline)
+		.deckInlineNavigationTitle()
 		.toolbar {
 			ToolbarItem(placement: .confirmationAction) {
 				Button(isSaving ? "Saving…" : "Save") {
@@ -115,16 +116,14 @@ struct AutomationAgentSection: View {
 				TextField("Provider (optional)", text: Binding(
 					get: { agent.provider ?? "" },
 					set: { agent.provider = $0.isEmpty ? nil : $0 }))
-					.textInputAutocapitalization(.never)
-					.autocorrectionDisabled()
+					.deckPlainInput()
 			}
 			let models = store.knownModels(for: kind)
 			if models.isEmpty {
 				TextField("Model (optional)", text: Binding(
 					get: { agent.model ?? "" },
 					set: { agent.model = $0.isEmpty ? nil : $0 }))
-					.textInputAutocapitalization(.never)
-					.autocorrectionDisabled()
+					.deckPlainInput()
 			} else {
 				Picker("Model", selection: Binding(
 					get: { agent.model ?? "" },
@@ -143,60 +142,4 @@ struct AutomationAgentSection: View {
 			}
 		}
 	}
-}
-
-/// The registered projects, each leading to its automation settings.
-struct ProjectsSettingsView: View {
-	@Environment(DeckStore.self) private var store
-
-	var body: some View {
-		List {
-			ForEach(ProjectGroups.grouped(store.projects)) { entry in
-				Section(entry.name) {
-					ForEach(entry.projects) { project in
-						NavigationLink(value: project) {
-							VStack(alignment: .leading, spacing: 2) {
-								Text(project.name)
-								HStack(spacing: 6) {
-									Text(project.path)
-										.font(.caption)
-										.foregroundStyle(.secondary)
-										.lineLimit(1)
-										.truncationMode(.head)
-								}
-								if let automation = store.projectDetails[project.path]?.automation,
-									automation.work == true || automation.review == true {
-									HStack(spacing: 4) {
-										if automation.work == true { Chip(text: "auto work", color: .blue) }
-										if automation.review == true { Chip(text: "auto review", color: .purple) }
-									}
-								}
-							}
-						}
-						// Hiding takes the project's sessions out of the session
-						// list with it; nothing stops running.
-						.swipeActions(edge: .trailing, allowsFullSwipe: false) {
-							let hide = project.hidden != true
-							Button {
-								Task { try? await store.setHidden(projectPath: project.path, hidden: hide) }
-							} label: {
-								Label(hide ? "Hide" : "Unhide", systemImage: hide ? "eye.slash" : "eye")
-							}
-							.tint(.gray)
-						}
-					}
-				}
-			}
-		}
-		.navigationTitle("Projects")
-		.navigationDestination(for: DeckProject.self) { project in
-			ProjectAutomationView(project: project)
-		}
-		.task {
-			await store.refreshProjects()
-			await store.refreshProjectDetails()
-			await store.refreshKinds()
-		}
-	}
-
 }

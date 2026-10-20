@@ -29,6 +29,11 @@ class SessionFeed {
 	#ctrl: AbortController | null = null;
 	#running = false;
 	#failures = 0;
+	#onResponse: ((res: FeedResponse) => void) | undefined;
+
+	constructor(onResponse?: (res: FeedResponse) => void) {
+		this.#onResponse = onResponse;
+	}
 
 	start = (): (() => void) => {
 		this.#running = true;
@@ -92,15 +97,24 @@ class SessionFeed {
 		if (next !== this.#state) this.sessions = next.sessions;
 		this.#state = next;
 		this.loaded = true;
+		this.#onResponse?.(res);
 	}
+}
+
+// The live session list alone, for a page that follows the feed itself:
+// onResponse sees every snapshot and batch of events once it is folded in.
+// Call during component init.
+export function sessionFeed(onResponse?: (res: FeedResponse) => void): SessionFeed {
+	const feed = new SessionFeed(onResponse);
+	$effect(() => feed.start());
+	return feed;
 }
 
 // A page's session list plus a poll for whatever else it shows. refresh() does
 // both at once, for after a change of the page's own: some (a model or effort
 // switch) never reach the event log. Call during component init.
 export function liveSessions(poll: () => Promise<void>, ms = 5000) {
-	const feed = new SessionFeed();
-	$effect(() => feed.start());
+	const feed = sessionFeed();
 	$effect(() => {
 		void poll();
 		const interval = setInterval(poll, ms);

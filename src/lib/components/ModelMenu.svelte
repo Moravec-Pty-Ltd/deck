@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Modal from './Modal.svelte';
 	import { untrack } from 'svelte';
 	import { isAgentKind, type SessionKind } from '$lib/types';
 	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
@@ -11,7 +12,7 @@
 
 	// Composer control showing the session's current model, opening a switcher (issue
 	// #88). claude picks from the same shortnames as the New Session modal; the
-	// other kinds list whatever their CLI enumerates (GET /api/agents/:kind/models)
+	// other kinds list whatever their CLI enumerates (GET /api/agent/kinds)
 	// above a free-text id for anything unlisted. Disabled while a turn runs (the
 	// model applies on the next turn, so switching mid-turn would only mislead);
 	// the server 409s on that race anyway.
@@ -79,7 +80,7 @@
 			open = false;
 			onChange();
 		} catch (e) {
-			err = e instanceof Error ? e.message : 'model switch failed';
+			err = e instanceof Error ? e.message : 'Model switch failed';
 		} finally {
 			busy = false;
 		}
@@ -157,7 +158,7 @@
 				{/if}
 				<input
 					class="input input-sm w-full"
-					placeholder="model id (empty for default)"
+					placeholder="Model ID (empty for the default)"
 					bind:value={text}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') switchTo(text);
@@ -172,24 +173,22 @@
 	</Popover>
 {/if}
 
-{#if pendingModel !== null}
-	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-		<div class="modal-box max-w-sm">
-			<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
-				<TriangleAlert size={18} class="text-warning" /> Expensive model
-			</h3>
-			<p class="mb-3 text-sm opacity-70">
-				<span class="font-mono">{modelLabel(pendingModel)}</span> is an expensive model. Switch this session
-				to it anyway?
-			</p>
-			{#if err}<p class="mb-3 text-xs text-error">{err}</p>{/if}
-			<div class="modal-action">
-				<button class="btn" onclick={() => (pendingModel = null)}>Cancel</button>
-				<button class="btn btn-warning" onclick={confirmPending} disabled={busy}>
-					{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if} Switch anyway
-				</button>
-			</div>
-		</div>
-		<button class="modal-backdrop" onclick={() => (pendingModel = null)} aria-label="close"></button>
-	</div>
-{/if}
+<Modal
+	open={pendingModel !== null}
+	onclose={() => (pendingModel = null)}
+	title="Expensive model"
+	icon={TriangleAlert}
+	iconClass="text-warning"
+>
+	<p class="mb-3 text-sm opacity-70">
+		<span class="font-mono">{modelLabel(pendingModel ?? undefined)}</span> is an expensive model. Switch this session
+		to it anyway?
+	</p>
+	{#if err}<p class="mb-3 text-xs text-error">{err}</p>{/if}
+	{#snippet footer()}
+		<button class="btn" onclick={() => (pendingModel = null)}>Cancel</button>
+		<button class="btn btn-warning" onclick={confirmPending} disabled={busy}>
+			{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if} Switch anyway
+		</button>
+	{/snippet}
+</Modal>

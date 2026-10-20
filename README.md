@@ -10,13 +10,21 @@ A structured chat view for Claude sessions, with inline diffs and collapsible to
 
 ![Claude chat view](docs/screenshots/claude-chat.png)
 
-One flat, recency-sorted list of every session across claude, pi, codex, opencode, and shells:
+One flat, recency-sorted list of every session across Claude, pi, Codex, OpenCode, and shells:
 
 ![Session list](docs/screenshots/sessions-list.png)
 
 A polled terminal view for tmux shells:
 
 ![Terminal view](docs/screenshots/terminal.png)
+
+An inbox of everything waiting on you, answered in place:
+
+![Inbox](docs/screenshots/inbox.png)
+
+Server-wide settings on one page:
+
+![Settings](docs/screenshots/settings.png)
 
 Light, dark, and e-ink themes (e-ink drops all motion and shadows for a flat, monochrome render):
 
@@ -99,7 +107,14 @@ Dev server: `pnpm dev`.
 
 ## Native apps
 
-The iPhone, iPad, Apple Watch and Mac clients live in [`apps/ios`](apps/ios/README.md): SwiftUI over deck's agent API, with Siri, Live Activities, a share extension and the voice operator. They build with XcodeGen and ship to TestFlight with fastlane; see that README.
+The iPhone, iPad, Apple Watch and Mac clients live in [`apps/ios`](apps/ios/README.md): SwiftUI over deck's agent API, with Siri, Live Activities, a share extension and the voice operator. The phone and iPad app does what the web does: chat and terminal sessions (the terminal renders the same colour snapshot, with a key bar for Enter, Ctrl-C, Esc, the arrows, Tab and Ctrl-D), starting sessions from issues or PRs, the inbox, projects, issue sources, dev servers, and the deck server's settings. The native Mac app (macOS 15 and later) runs the same session views in a Mac window, with the dev browser and push-to-talk voice, and signs in by pairing with a device that is already signed in. The watch is deliberately smaller: it shows each session's latest reply, answers questions and starts quick sessions. They build with XcodeGen and ship to TestFlight with fastlane; see that README.
+
+## Inbox and settings
+
+The nav at the top (a bottom bar on a phone) reaches every page: Sessions, Inbox, Runs, Schedules, Projects and Settings.
+
+- **Inbox** collects everything waiting on you: questions sessions have asked, and workflow runs blocked on a decision. Answer each one in place, with the same option buttons as the session view; the nav shows how many are waiting.
+- **Settings** holds what applies to the whole deck server rather than to one project: the theme (saved per browser), the voice servers, the watch operator's model, auto-compact, installing deck's skill into each coding agent, signing in another device (the QR code and access requests) and the SSH target for **Open in Zed**. **Projects** keeps per-project setup: paths, templates, issue sources, dev servers and automation.
 
 ## Remote access (Tailscale)
 
@@ -143,7 +158,7 @@ Prefer your agent harness's own notifications? deck stamps `DECK_SESSION_ID` int
 
 ## Voice mode
 
-Turn on the waveform toggle in a session's composer and deck reads each new reply aloud and lets you talk back. It needs a speech server that speaks the OpenAI audio shapes: `POST /v1/audio/speech` for reading and `POST /v1/audio/transcriptions` for push-to-talk. Point deck at yours under **Projects > Voice mode** (or the `speech` block in `~/.deck/settings.json`); **Detect local server** fills the fields when one is running on `127.0.0.1:17496`. deck proxies both, caches synthesised sentences in `~/.deck/speech/`, and hides the feature when nothing is configured.
+Turn on the waveform toggle in a session's composer and deck reads each new reply aloud and lets you talk back. It needs a speech server that speaks the OpenAI audio shapes: `POST /v1/audio/speech` for reading and `POST /v1/audio/transcriptions` for push-to-talk. Point deck at yours under **Settings > Voice** (or the `speech` block in `~/.deck/settings.json`); **Detect local server** fills the fields when one is running on `127.0.0.1:17496`. deck proxies both, caches synthesised sentences in `~/.deck/speech/`, and hides the feature when nothing is configured.
 
 What it does:
 
@@ -171,7 +186,7 @@ leaves the device. Siri covers the same ground for one-shot commands; see the
 
 An Apple Watch still asks deck to think for it: watchOS ships Apple's model
 framework but marks the model itself unavailable. That is the only thing left
-needing the `operator` block in `~/.deck/settings.json` (**Projects > Watch
+needing the `operator` block in `~/.deck/settings.json` (**Settings > Watch
 operator**): `url`, `model`, an optional `provider` (`openai` or `anthropic`,
 otherwise read from the URL), and for a hosted model either `apiKeyFile` (a
 path, so the key lives in `~/.secrets`) or `apiKey`. Pointing it at Claude costs
@@ -202,12 +217,13 @@ Upgrading with an existing `~/.deck/secrets.json` migrates automatically on the 
 - **Projects** are registered paths in `~/.deck/projects.json` that populate the new-session picker. Each can carry a template first-prompt with `[title]`, `[branch]`, `[cwd]` placeholders. The home list groups sessions by project (worktrees fold under their repo); each group has a quick-add button.
 - **Path inputs** autocomplete directories as you type and resolve a leading `~/` to your home directory.
 - **Session sidebar**: the session view has a project-grouped switcher (sticky on desktop, a hamburger drawer on mobile) for jumping between sessions, quick-adding a session to a project, or opening a shell straight into a Claude worktree.
-- **Context window**: the bar above the composer shows how full the session's context is, next to the running cost. The figure comes from the stream itself (the last assistant message's token usage, against the `contextWindow` the model reports), so a 200k and a 1M session are each measured against their own limit. **Compact** there summarises the history and frees the window on demand. Claude compacts on its own too, but only once the window is genuinely full: measured across this machine's transcripts it fires at 999k to 1003k of 1M and takes 50 to 75 seconds, all of it landing at the end of a turn you were waiting on. Turn on **Projects > Auto-compact** and deck compacts earlier, at a percentage you pick (50 to 95, default 80). What it keeps is what a handoff keeps: goal, what is done and in progress, next steps, blockers, key files, decisions, and git state. Claude sessions only.
+- **Context window**: the bar above the composer shows how full the session's context is, next to the running cost. The figure comes from the stream itself (the last assistant message's token usage, against the `contextWindow` the model reports), so a 200k and a 1M session are each measured against their own limit. **Compact** there summarises the history and frees the window on demand. Claude compacts on its own too, but only once the window is genuinely full: measured across this machine's transcripts it fires at 999k to 1003k of 1M and takes 50 to 75 seconds, all of it landing at the end of a turn you were waiting on. Turn on **Settings > Auto-compact** and deck compacts earlier, at a percentage you pick (50 to 95, default 80). What it keeps is what a handoff keeps: goal, what is done and in progress, next steps, blockers, key files, decisions, and git state. Claude sessions only.
 - **Renaming**: click a session's name in its header and type. Enter or clicking away saves, Escape puts the old name back; the iOS app has the same thing under the session menu and on a row swipe. An unregistered tmux terminal has no deck record, so renaming it renames the tmux session itself: its `t_<name>` id moves with it (deck follows the redirect), a `:` becomes `-` because tmux could not target the session otherwise, and a name another terminal already holds is refused.
 - **Questions**: when Claude asks a multiple-choice question it goes through deck's own blocking MCP `ask` tool, not the built-in `AskUserQuestion` (which the headless CLI can only auto-dismiss). deck renders the options as buttons; your pick resolves the still-open tool call and the same turn carries on. The chosen options stay on the card after reload.
 - **Tool calls** render structured: Bash shows the command, Edit/MultiEdit a red/green line diff, Write its content as an added-line diff, TodoWrite the checklist. Bash output and the diffs collapse behind a single shared toggle (collapsed by default); flip one and they all flip. Each result is paired back to its call.
-- **Images**: paste into the Claude composer, pick with the paperclip, or drag-and-drop onto the conversation. They're sent as base64 blocks and shown inline.
-- **Schedules**: a prompt that runs on a clock, for the recurring jobs that want an agent rather than a cron entry ("what changed across these repos this week, and does any of it need me"). Each schedule holds a five-field cron expression read in local time and either a project, where every run starts a fresh session, or one existing session, where every run sends into it so the context carries over. The **Schedules** page (the clock beside Runs) adds and edits them, and previews the next three runs so an expression explains itself. The command palette has *Repeat a prompt on a schedule*, which is how a session you are already in becomes one. Due times are stored rather than matched, so a window missed while deck was down fires once instead of once a minute, and a window missed by over an hour is recorded as skipped rather than caught up. A run is skipped while the previous one is still going.
+- **Images and files**: paste into the composer, pick with the paperclip, or drag-and-drop onto the conversation. Images (PNG, JPEG, GIF, WebP) are sent as base64 blocks and shown inline. Anything else (a PDF, a log, a recording) is shared as a file: deck stores it under `~/.deck/uploads/`, never in the worktree, and sends the session a message naming its path for the agent to read. Up to 10 files a message, 25 MB each; a session's uploads are deleted with it.
+- **Skills**: the composer's skills button, or a `/` at the start of a message, lists the skills installed on this machine (`~/.claude/skills` and the project's `.claude/skills`) with their descriptions; picking one fills in `/skill-name` ready for its arguments.
+- **Schedules**: a prompt that runs on a clock, for the recurring jobs that want an agent rather than a cron entry ("what changed across these repos this week, and does any of it need me"). Each schedule holds a five-field cron expression read in local time and either a project, where every run starts a fresh session, or one existing session, where every run sends into it so the context carries over. The **Schedules** page adds and edits them, and previews the next three runs so an expression explains itself. The command palette has *Repeat a prompt on a schedule*, which is how a session you are already in becomes one. Due times are stored rather than matched, so a window missed while deck was down fires once instead of once a minute, and a window missed by over an hour is recorded as skipped rather than caught up. A run is skipped while the previous one is still going.
 - **Files a message mentions**: when a bubble names a local file by absolute path, `~/`, `file://`, or `./` (a screenshot the agent took, a report it wrote), it shows under the text: images as previews that open full size, with the message's other images a swipe or arrow key away; anything else as a chip that opens or downloads it. Only files inside a registered project or its worktrees are served (`/api/sessions/<id>/files`); a mention of anything else stays plain text. Claude sessions are told (in the system prompt deck appends) to save such files under `.deck/out/` in their working directory, self-ignored from git, and to reply with the absolute path. Other agent kinds get no system prompt from deck, so put the same instruction in the project's `AGENTS.md` for them.
 
 ## Notes

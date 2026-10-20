@@ -43,7 +43,16 @@ it('starts a shell with mode shell, passing only the terminal fields', async () 
 	expect(mocks.create).toHaveBeenCalledWith({ kind: 'shell', cwd: '/path/to/project', title: 'dev', command: 'npm run dev', worktree });
 });
 
+it('carries a shell\'s optional issues and PR context', async () => {
+	vi.mocked((await import('$lib/server/create-session')).parsePr).mockReturnValue({ repo: 'acme/web', number: 7 } as never);
+	const issues = [{ source: 'github', sourceId: 'source-a', id: 'acme/web#1', url: '' }];
+	const pr = { repo: 'acme/web', number: 7 };
+	await create({ mode: 'shell', issues, pr, worktree: { fromPr: 7 } });
+	expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ kind: 'shell', issues, pr, worktree: { fromPr: 7 } }));
+});
+
 it.each([
+	[{ mode: 'shell', pr: { repo: 'x' } }, 'shell mode requires a valid pr { repo: "owner/repo", number }'],
 	[{ mode: 'shell', command: 1 }, 'command must be a string'],
 	[{ mode: 'shell', title: ['x'] }, 'title must be a string'],
 	[{ kind: 'shell' }, "start a shell with mode 'shell'"],

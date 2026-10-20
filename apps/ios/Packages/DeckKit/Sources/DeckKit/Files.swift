@@ -4,7 +4,7 @@ import Foundation
 // web client (files-core.ts): which paths it names and which of those are
 // images. deck decides what is actually served.
 
-/// A file deck can serve for a mention, as `POST /api/sessions/<id>/files`
+/// A file deck can serve for a mention, as `POST /api/agent/sessions/<id>/files`
 /// describes it.
 public struct FileInfo: Codable, Hashable, Identifiable, Sendable {
 	public var id: String { path }
@@ -62,12 +62,12 @@ extension DeckClient {
 	/// Which of a message's mentions deck can serve.
 	public func statFiles(sessionId: String, paths: [String]) async throws -> [FileInfo] {
 		struct Reply: Decodable { let files: [FileInfo] }
-		let reply: Reply = try await post("/api/sessions/\(sessionId)/files", json: ["paths": Array(paths.prefix(MessageFiles.maxPathsPerMessage))])
+		let reply: Reply = try await post("/api/agent/sessions/\(sessionId)/files", json: ["paths": Array(paths.prefix(MessageFiles.maxPathsPerMessage))])
 		return reply.files
 	}
 
 	/// The bytes of a mentioned file.
 	public func fileData(sessionId: String, path: String) async throws -> Data {
-		try await getData("/api/sessions/\(sessionId)/files", query: [URLQueryItem(name: "path", value: path)])
+		try await getData("/api/agent/sessions/\(sessionId)/files", query: [URLQueryItem(name: "path", value: path)])
 	}
 }
