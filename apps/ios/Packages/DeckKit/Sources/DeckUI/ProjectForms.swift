@@ -28,7 +28,14 @@ public struct ProjectsManagerView<Extra: View>: View {
 			ForEach(ProjectGroups.grouped(store.projects)) { entry in
 				Section(entry.name) {
 					ForEach(entry.projects) { project in
-						NavigationLink(value: project) { ProjectRowLabel(project: project) }
+						// A destination link, not a value link: on the phone this list is
+						// pushed onto the Sessions stack, whose path only holds sessions, so
+						// a DeckProject value had nowhere to go and the tap did nothing.
+						NavigationLink {
+							ProjectEditorForm(project: project) { editorExtra(project) }
+						} label: {
+							ProjectRowLabel(project: project)
+						}
 							.swipeActions(edge: .trailing, allowsFullSwipe: false) { swipeActions(project) }
 					}
 				}
@@ -52,9 +59,6 @@ public struct ProjectsManagerView<Extra: View>: View {
 						.accessibilityIdentifier("addProject")
 				}
 			}
-		}
-		.navigationDestination(for: DeckProject.self) { project in
-			ProjectEditorForm(project: project) { editorExtra(project) }
 		}
 		.sheet(isPresented: $showAdd) {
 			NavigationStack { AddProjectForm() }
