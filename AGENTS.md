@@ -42,14 +42,14 @@ pre-commit hook runs `fallow audit` and blocks only newly introduced findings.
 Test against a throwaway data directory, never the real `~/.deck`:
 
 ```sh
-DECK_DATA=/tmp/deck-fixture DECK_TOKEN=test DECK_NO_TAILSCALE=1 \
+DECK_DATA=/tmp/deck-fixture DECK_TOKEN=test \
   pnpm exec vite dev --port 4819
 ```
 
 Each part earns its place. `DECK_DATA` keeps the fixture off the real sessions
 and projects; without it the instance lock refuses to start, because two servers
-sharing `~/.deck` race each other's writes. `DECK_NO_TAILSCALE=1` keeps the
-fixture off the tailnet, which it has no business being on.
+sharing `~/.deck` race each other's writes. The dev server stays off the
+tailnet unless `DECK_TAILSCALE=1` is set, so don't set it for a fixture.
 
 Seed the fixture by writing `projects.json` and `sessions.json` into that
 directory before starting. It still lists the machine's live tmux sessions,

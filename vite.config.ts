@@ -24,9 +24,12 @@ function boundPort(server: ViteDevServer): number {
 	return server.config.server.port ?? PORT;
 }
 
-// Expose the dev server over the tailnet for the lifetime of `vite dev`, and
-// take it down again on shutdown. Silent no-op when tailscale isn't present;
-// opt out entirely (no tailscale, native Windows) with DECK_NO_TAILSCALE=1.
+// Opt in with DECK_TAILSCALE=1: expose the dev server over the tailnet for the
+// lifetime of `vite dev`, and take it down again on shutdown. Off by default
+// because the node-level serve entry it writes outlives a reboot: tailscaled
+// then holds 4818 before vite starts, vite moves to 4819, and the entry points
+// at nothing. A Tailscale Service (see the README) has its own address and
+// doesn't hold the port. Silent no-op when tailscale isn't present.
 //
 // Everything here acts on the port this server actually bound, never on the
 // default. It used to use the constant, so a second instance -- `vite dev
@@ -36,7 +39,7 @@ function boundPort(server: ViteDevServer): number {
 // leaving it perfectly healthy on localhost, which reads as the PWA showing
 // "deck is offline" for no visible reason.
 function tailscaleServe(): Plugin | false {
-	if (process.env.DECK_NO_TAILSCALE === '1' || process.env.DECK_NO_TAILSCALE === 'true') {
+	if (process.env.DECK_TAILSCALE !== '1' && process.env.DECK_TAILSCALE !== 'true') {
 		return false;
 	}
 	const args = (...rest: string[]) => ['serve', ...rest];
