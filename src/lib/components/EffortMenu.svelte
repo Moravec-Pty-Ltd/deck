@@ -37,7 +37,7 @@
 				open = false;
 				onChange();
 			},
-			'effort switch failed'
+			'Effort switch failed'
 		);
 	}
 </script>

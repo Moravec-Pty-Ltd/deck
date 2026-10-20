@@ -33,8 +33,8 @@ function commonFields(body: Record<string, unknown>): Record<string, unknown> {
 // Reject an invalid pr up front with the create pipeline's own parser: it
 // would otherwise be dropped silently, yielding a session whose review/merge
 // endpoints can never work.
-function requiredPr(v: unknown): Record<string, unknown> {
-	if (!parsePr(v)) error(400, 'review mode requires a valid pr { repo: "owner/repo", number }');
+function requiredPr(v: unknown, mode = 'review'): Record<string, unknown> {
+	if (!parsePr(v)) error(400, `${mode} mode requires a valid pr { repo: "owner/repo", number }`);
 	return v as Record<string, unknown>;
 }
 
@@ -77,12 +77,15 @@ function reviewBody(body: Record<string, unknown>): Record<string, unknown> {
 	return { ...fields, pr, worktree: { fromPr: pr.number, base: wt.base } };
 }
 
+function issuesField(body: Record<string, unknown>): unknown[] | undefined {
+	return Array.isArray(body.issues) ? body.issues : body.issue ? [body.issue] : undefined;
+}
+
 // 'work': start a session on an issue/prompt, optionally in a fresh worktree.
 function workBody(body: Record<string, unknown>): Record<string, unknown> {
-	const issues = Array.isArray(body.issues) ? body.issues : body.issue ? [body.issue] : undefined;
 	const fields = commonFields(body);
 	if (!hasPrompt(body)) fields.prompt = defaultPrompt(body.cwd, false);
-	return { ...fields, issues, worktree: body.worktree };
+	return { ...fields, issues: issuesField(body), worktree: body.worktree };
 }
 
 function optionalString(body: Record<string, unknown>, field: string): string | undefined {
@@ -92,10 +95,20 @@ function optionalString(body: Record<string, unknown>, field: string): string | 
 }
 
 // 'shell': a deck-managed tmux terminal, driven through /terminal. `command`
-// runs in place of the login shell, the same as the web's New terminal.
+// runs in place of the login shell, the same as the web's New terminal. Issues
+// and a PR are optional context, as on the web (a shell in a PR's worktree).
 function shellBody(body: Record<string, unknown>): Record<string, unknown> {
 	const command = optionalString(body, 'command')?.trim() || undefined;
-	return { kind: 'shell', cwd: body.cwd, title: optionalString(body, 'title'), command, worktree: body.worktree };
+	const pr = body.pr === undefined ? undefined : requiredPr(body.pr, 'shell');
+	return {
+		kind: 'shell',
+		cwd: body.cwd,
+		title: optionalString(body, 'title'),
+		command,
+		worktree: body.worktree,
+		issues: issuesField(body),
+		pr
+	};
 }
 
 const MODES: Record<string, (body: Record<string, unknown>) => Record<string, unknown>> = {

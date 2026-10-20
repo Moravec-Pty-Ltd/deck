@@ -229,6 +229,13 @@ public enum VoiceAudio {
 		return data
 	}
 
+	/// Whether the mic stays open once a take ends: only for hands-free, and
+	/// only where the capture can monitor (the Mac and the watch cannot, so a
+	/// hands-free setting carried over from elsewhere must not leave the mic on).
+	public static func keepsMicOpen(handsFree: Bool, supportsMonitoring: Bool) -> Bool {
+		handsFree && supportsMonitoring
+	}
+
 	/// Whether a finished take is worth transcribing.
 	public static func isUsableTake(cancelled: Bool, seconds: TimeInterval, bytes: Int) -> Bool {
 		!cancelled && seconds >= VoiceTiming.minTakeSeconds && bytes > 0

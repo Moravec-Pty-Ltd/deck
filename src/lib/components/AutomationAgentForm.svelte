@@ -63,13 +63,13 @@
 	</select>
 	{#if agent.kind === 'claude'}
 		<select class="select select-xs w-48" aria-label="{lane} model" bind:value={agent.model}>
-			<option value="">remembered model</option>
+			<option value="">Remembered model</option>
 			{#each modelOptions as m (m.value)}
 				<option value={m.value}>{m.label}</option>
 			{/each}
 		</select>
 		<select class="select select-xs w-36" aria-label="{lane} effort" bind:value={agent.effort}>
-			<option value={undefined}>remembered effort</option>
+			<option value={undefined}>Remembered effort</option>
 			{#each EFFORT_LEVELS as e (e)}
 				<option value={e}>{e}</option>
 			{/each}
@@ -80,7 +80,7 @@
 				<ComboInput
 					bind:value={agent.provider}
 					options={piProviders}
-					placeholder="provider"
+					placeholder="Provider"
 					ariaLabel="{lane} provider"
 					compact
 				/>
@@ -90,7 +90,7 @@
 			<ComboInput
 				bind:value={agent.model}
 				options={modelChoices}
-				placeholder="model"
+				placeholder="Model"
 				ariaLabel="{lane} model"
 				compact
 			/>
@@ -99,7 +99,7 @@
 		<input
 			class="input input-xs w-48"
 			aria-label="{lane} model"
-			placeholder="model"
+			placeholder="Model"
 			bind:value={agent.model}
 		/>
 	{/if}

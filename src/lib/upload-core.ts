@@ -10,6 +10,15 @@
 // sane over a LAN. Base64 inflates by about a third, so the request is ~33MB at
 // the limit.
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const MAX_UPLOAD_FILES = 10;
+
+// The image types a model can be handed inline. Any other image (SVG, HEIC, ...)
+// is shared as a file instead, so it is never silently dropped.
+const INLINE_IMAGE_TYPE = /^image\/(png|jpe?g|gif|webp)$/;
+
+export function isInlineImage(mediaType: string): boolean {
+	return INLINE_IMAGE_TYPE.test(mediaType);
+}
 
 // Keep the name the user recognises, minus anything that could escape the
 // session's own directory or confuse a shell that later quotes it. Everything
@@ -33,6 +42,34 @@ export function uploadTooLarge(bytes: number): string | null {
 
 function mb(bytes: number): string {
 	return (bytes / (1024 * 1024)).toFixed(1).replace(/\.0$/, '');
+}
+
+export function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(/\.0$/, '')} KB`;
+	return `${mb(bytes)} MB`;
+}
+
+// Which of `incoming` can join the `held` files already queued for one share,
+// and a readable reason for each one left out, so a client can refuse before
+// it base64-encodes anything.
+export function admitUploads<T extends { name: string; size: number }>(
+	held: number,
+	incoming: T[]
+): { admitted: T[]; errors: string[] } {
+	const admitted: T[] = [];
+	const errors: string[] = [];
+	const overCount: string[] = [];
+	for (const f of incoming) {
+		const tooBig = uploadTooLarge(f.size);
+		if (tooBig) errors.push(`${f.name}: ${tooBig}`);
+		else if (held + admitted.length >= MAX_UPLOAD_FILES) overCount.push(f.name);
+		else admitted.push(f);
+	}
+	if (overCount.length) {
+		errors.push(`at most ${MAX_UPLOAD_FILES} files per message; left out ${overCount.join(', ')}`);
+	}
+	return { admitted, errors };
 }
 
 // What a session is told when a file arrives with no message of its own. Names

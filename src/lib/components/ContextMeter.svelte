@@ -4,6 +4,7 @@
 	// place to compact from: the moment you notice the window is filling is the
 	// moment you want to do something about it.
 	import { contextPercent, formatContext, type ContextUsage } from '$lib/context-core';
+	import { AgentApiError, agentPost, sessionPath } from '$lib/agent-api';
 
 	interface Props {
 		id: string;
@@ -26,13 +27,9 @@
 		compacting = true;
 		errorMsg = '';
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/compact`, { method: 'POST' });
-			if (!res.ok) {
-				const body = await res.json().catch(() => null);
-				errorMsg = body?.message ?? 'compact failed';
-			}
-		} catch {
-			errorMsg = 'compact failed';
+			await agentPost(sessionPath(id, 'compact'));
+		} catch (e) {
+			errorMsg = e instanceof AgentApiError ? e.message : 'Compact failed';
 		} finally {
 			compacting = false;
 		}

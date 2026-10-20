@@ -71,7 +71,9 @@
 			} else {
 				onenter?.();
 			}
-		} else if (e.key === 'Escape') {
+		} else if (e.key === 'Escape' && open) {
+			// Handled here, so an enclosing dialog stays open.
+			e.preventDefault();
 			open = false;
 		} else if (e.key === 'Tab' && active >= 0) {
 			e.preventDefault();

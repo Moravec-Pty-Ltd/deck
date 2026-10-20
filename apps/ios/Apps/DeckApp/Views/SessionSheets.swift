@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 struct ModelPickerSheet: View {
 	let kind: String
@@ -26,8 +27,7 @@ struct ModelPickerSheet: View {
 				Section("Custom") {
 					HStack {
 						TextField("model id", text: $customModel)
-							.textInputAutocapitalization(.never)
-							.autocorrectionDisabled()
+							.deckPlainInput()
 						Button("Set") {
 							onSelect(customModel.trimmingCharacters(in: .whitespacesAndNewlines))
 							dismiss()
@@ -37,7 +37,7 @@ struct ModelPickerSheet: View {
 				}
 			}
 			.navigationTitle("Model")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }
@@ -49,7 +49,7 @@ struct ModelPickerSheet: View {
 					.foregroundStyle(.secondary)
 					.padding()
 					.frame(maxWidth: .infinity)
-					.background(.thinMaterial)
+					.deckGlass(in: Rectangle())
 			}
 		}
 	}
@@ -104,7 +104,7 @@ struct RenameSessionSheet: View {
 				}
 			}
 			.navigationTitle("Rename session")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }.disabled(saving)
@@ -172,7 +172,7 @@ struct MergeSheet: View {
 				.buttonStyle(.borderedProminent)
 			}
 			.navigationTitle(mergeTitle)
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }
@@ -221,7 +221,7 @@ struct DeleteSessionSheet: View {
 				}
 			}
 			.navigationTitle(title)
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }
@@ -289,7 +289,7 @@ struct QuickMessagesSheet: View {
 				}
 			}
 			.navigationTitle("Quick messages")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }
@@ -339,7 +339,7 @@ struct EffortPickerSheet: View {
 				}
 			}
 			.navigationTitle("Thinking level")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }
@@ -351,7 +351,7 @@ struct EffortPickerSheet: View {
 					.foregroundStyle(.secondary)
 					.padding()
 					.frame(maxWidth: .infinity)
-					.background(.thinMaterial)
+					.deckGlass(in: Rectangle())
 			}
 		}
 	}

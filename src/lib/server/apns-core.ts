@@ -6,7 +6,7 @@
 
 import { z } from 'zod';
 
-export type ApnsPlatform = 'ios' | 'watchos';
+export type ApnsPlatform = 'ios' | 'watchos' | 'macos';
 export type ApnsEnv = 'development' | 'production';
 
 export interface ApnsDevice {
@@ -22,7 +22,7 @@ export interface ApnsDevice {
 // quickmessages.ts's schema.parse -> 400-on-throw pattern.
 export const registerDeviceSchema = z.object({
 	token: z.string().regex(/^[0-9a-fA-F]{1,200}$/),
-	platform: z.enum(['ios', 'watchos']),
+	platform: z.enum(['ios', 'watchos', 'macos']),
 	env: z.enum(['development', 'production'])
 });
 
@@ -112,6 +112,8 @@ export function shouldRegenerateJwt(issuedAtMs: number | null, nowMs: number): b
 }
 
 // ---- topic derivation ----
+
+// The Mac app shares the iOS bundle id, so only the watch gets a suffix.
 
 export function deriveTopic(baseTopic: string, platform: ApnsPlatform): string {
 	return platform === 'watchos' ? `${baseTopic}.watchkitapp` : baseTopic;

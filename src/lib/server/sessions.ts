@@ -169,7 +169,14 @@ function agentSessionView(id: string, stored: DeckSession): DeckSession {
 	};
 }
 
+// One session, with `hidden` stamped the same way listSessions does, so a client
+// reading one record and one reading the list agree on whether it is hidden.
 export async function getSession(id: string): Promise<DeckSession | undefined> {
+	const session = await findSession(id);
+	return session && stampHidden([session], hiddenSessionIds(), listProjects())[0];
+}
+
+async function findSession(id: string): Promise<DeckSession | undefined> {
 	if (DEMO) return demoSession(id);
 	if (id.startsWith('t_')) {
 		return (await listSessions()).find((s) => s.id === id);

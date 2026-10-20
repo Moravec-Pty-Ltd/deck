@@ -19,9 +19,13 @@
 	import ToolRun from './ToolRun.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
+	import Modal from './Modal.svelte';
+	import SkillPicker from './SkillPicker.svelte';
 	import VoiceBar from './VoiceBar.svelte';
 	import { VoiceSession } from '$lib/voice.svelte';
-	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight, AudioLines } from '@lucide/svelte';
+	import { agentGet, agentPost, sessionPath } from '$lib/agent-api';
+	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight, AudioLines, FileText } from '@lucide/svelte';
+	import { admitUploads, formatBytes, isInlineImage } from '$lib/upload-core';
 	import {
 		isCrossSession,
 		isEmptyDraft,
@@ -100,6 +104,11 @@
 
 	type Attachment = { media_type: string; data: string; url: string };
 	let attachments = $state<Attachment[]>(restored?.attachments ?? []);
+	// Everything the model can't be handed inline goes through the upload route
+	// and is read from disk. Held as File, not base64, and never persisted with
+	// the draft: these can be 25 MB each.
+	let uploads = $state<File[]>([]);
+	let uploadError = $state('');
 	// The session the draft was started in (null when empty); drives the "from:"
 	// chip and the confirm-on-send guard when it differs from the viewed session.
 	let originSessionId = $state<string | null>(restored?.originSessionId ?? null);
@@ -183,11 +192,7 @@
 		answers: { header: string; labels: string[] }[]
 	) {
 		atBottom = true;
-		await fetch(`/api/sessions/${encodeURIComponent(session.id)}/answer`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ text, toolUseId: id, answers })
-		});
+		await agentPost(sessionPath(session.id, 'answer'), { text, askId: id, answers }).catch(() => {});
 	}
 
 	// Voice mode: reads new replies and questions aloud and sends what you say,
@@ -197,11 +202,7 @@
 	const voice = new VoiceSession({
 		send: async (text) => {
 			atBottom = true;
-			await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text })
-			});
+			await agentPost(sessionPath(session.id, 'message'), { text }).catch(() => {});
 		},
 		answer: answerQuestion,
 		interrupt: () => interrupt()
@@ -260,7 +261,7 @@
 		const connect = () => {
 			clearTimeout(retry);
 			source?.close();
-			const es = new EventSource(`/api/sessions/${encodeURIComponent(id)}/events`);
+			const es = new EventSource(sessionPath(id, 'stream'));
 			source = es;
 			// Recent history arrives as several small frames (the server can't push
 			// one big frame reliably). Reassemble the serialized payload by `seq`,
@@ -539,11 +540,10 @@
 		if (loadingOlder || baseIndex <= 0) return;
 		loadingOlder = true;
 		try {
-			const res = await fetch(
-				`/api/sessions/${encodeURIComponent(session.id)}/transcript?before=${baseIndex}&limit=${HYDRATE_CHUNK}`
-			);
-			if (!res.ok) return;
-			const slice: { start: number; events: AnyEvent[] } = await res.json();
+			const slice = await agentGet<{ start: number; events: AnyEvent[] }>(
+				`${sessionPath(session.id, 'history')}?before=${baseIndex}&limit=${HYDRATE_CHUNK}`
+			).catch(() => null);
+			if (!slice) return;
 			const added = baseIndex - slice.start;
 			if (added <= 0) {
 				baseIndex = slice.start;
@@ -571,33 +571,43 @@
 		return btoa(bin);
 	}
 
-	async function addFile(file: File) {
-		if (!file.type.startsWith('image/')) return;
+	async function addImage(file: File) {
 		const data = toBase64(await file.arrayBuffer());
 		attachments = [...attachments, { media_type: file.type, data, url: `data:${file.type};base64,${data}` }];
+	}
+
+	function addFiles(files: Iterable<File>) {
+		const others: File[] = [];
+		for (const f of files) {
+			if (isInlineImage(f.type)) addImage(f);
+			else others.push(f);
+		}
+		const { admitted, errors } = admitUploads(uploads.length, others);
+		uploads = [...uploads, ...admitted];
+		uploadError = errors.join('. ');
 	}
 
 	function onPaste(e: ClipboardEvent) {
 		const items = e.clipboardData?.items;
 		if (!items) return;
+		const files: File[] = [];
 		for (const it of items) {
-			if (it.kind === 'file' && it.type.startsWith('image/')) {
-				const f = it.getAsFile();
-				if (f) addFile(f);
-			}
+			const f = it.kind === 'file' ? it.getAsFile() : null;
+			if (f) files.push(f);
 		}
+		if (files.length) addFiles(files);
 	}
 
 	function onDrop(e: DragEvent) {
 		e.preventDefault();
 		dragging = false;
 		const files = e.dataTransfer?.files;
-		if (files) for (const f of files) addFile(f);
+		if (files) addFiles(files);
 	}
 
 	function onPick(e: Event) {
 		const files = (e.target as HTMLInputElement).files;
-		if (files) for (const f of files) addFile(f);
+		if (files) addFiles(files);
 		(e.target as HTMLInputElement).value = '';
 	}
 
@@ -605,7 +615,13 @@
 		attachments = attachments.filter((_, k) => k !== i);
 	}
 
-	const canSend = $derived(!!input.trim() || attachments.length > 0);
+	function removeUpload(i: number) {
+		uploads = uploads.filter((_, k) => k !== i);
+		uploadError = '';
+	}
+
+	const canSend = $derived(!!input.trim() || attachments.length > 0 || uploads.length > 0);
+	const attachedCount = $derived(attachments.length + uploads.length);
 
 	// The draft was started in a different session than the one being viewed.
 	const crossSession = $derived(isCrossSession(originSessionId, session.id));
@@ -637,13 +653,15 @@
 	// Track the origin session: adopt the current one when the draft first becomes
 	// non-empty, hold it across switches, clear it when the draft is emptied.
 	$effect(() => {
-		const empty = isEmptyDraft({ text: input, attachments });
+		const empty = isEmptyDraft({ text: input, attachments }) && uploads.length === 0;
 		originSessionId = nextOrigin(originSessionId, empty, session.id);
 	});
 
 	function clearDraft() {
 		input = '';
 		attachments = [];
+		uploads = [];
+		uploadError = '';
 		originSessionId = null;
 		if (typeof localStorage !== 'undefined') {
 			try {
@@ -653,6 +671,15 @@
 			}
 		}
 	}
+
+	let skillPicker = $state<SkillPicker>();
+	let composerInput = $state<HTMLTextAreaElement>();
+	// Set when the message's leading /command came from the skill list, so the
+	// send asks the server to resolve it against this machine's skills.
+	let skillChosen = $state(false);
+	$effect(() => {
+		if (!input.startsWith('/')) skillChosen = false;
+	});
 
 	async function send() {
 		if (!canSend) return;
@@ -676,21 +703,35 @@
 		const images = attachments.map((a) => ({ media_type: a.media_type, data: a.data }));
 		// Clear optimistically, but snapshot so a failed send restores the draft
 		// (the draft should only clear on a *successful* send).
-		const prev = { input, attachments, originSessionId };
+		const prev = { input, attachments, uploads, originSessionId };
 		clearDraft();
 		atBottom = true;
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text, images: images.length ? images : undefined })
-			});
-			if (!res.ok) throw new Error(`send failed: ${res.status}`);
-		} catch {
+			await postMessage(text, images, prev.uploads, skillChosen);
+		} catch (err) {
 			input = prev.input;
 			attachments = prev.attachments;
+			uploads = prev.uploads;
 			originSessionId = prev.originSessionId;
+			if (prev.uploads.length) uploadError = err instanceof Error ? err.message : 'Upload failed';
 		}
+	}
+
+	// With files, the upload route sends the turn itself, naming where each file
+	// landed under the text (the share extension's message), images still inline.
+	async function postMessage(
+		text: string,
+		images: { media_type: string; data: string }[],
+		files: File[],
+		skills: boolean
+	) {
+		const inline = images.length ? images : undefined;
+		if (!files.length)
+			return agentPost(sessionPath(session.id, 'message'), { text, images: inline, skills: skills || undefined });
+		const encoded = await Promise.all(
+			files.map(async (f) => ({ name: f.name, data: toBase64(await f.arrayBuffer()) }))
+		);
+		return agentPost(sessionPath(session.id, 'upload'), { files: encoded, text, images: inline });
 	}
 
 	// Fire a quick message immediately; `expand: true` opts it into server-side
@@ -701,12 +742,8 @@
 	async function sendQuickMessage(text: string) {
 		atBottom = true;
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text, expand: true })
-			});
-			if (res.ok) return;
+			await agentPost(sessionPath(session.id, 'message'), { text, expand: true });
+			return;
 		} catch {
 			// fall through to restore the text below
 		}
@@ -714,14 +751,11 @@
 	}
 
 	async function interrupt() {
-		await fetch(`/api/sessions/${encodeURIComponent(session.id)}/send`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ action: 'interrupt' })
-		});
+		await agentPost(sessionPath(session.id, 'stop')).catch(() => {});
 	}
 
 	function onKeydown(e: KeyboardEvent) {
+		if (skillPicker?.handleKey(e)) return;
 		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
 			send();
@@ -767,7 +801,7 @@
 		{:else if block.type === 'thinking'}
 			<details class="px-2 text-xs opacity-50">
 				<summary class="cursor-pointer select-none">
-					<ChevronDown size={12} class="inline" /> thinking
+					<ChevronDown size={12} class="inline" /> Thinking
 				</summary>
 				<div class="pt-1"><Markdown source={block.thinking} /></div>
 			</details>
@@ -787,7 +821,7 @@
 				<div class="mb-2 flex flex-wrap gap-2">
 					{#each event.images as img, k (k)}
 						<img
-							src={img.file ? `/api/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(img.file)}` : `data:${img.media_type};base64,${img.data}`}
+							src={img.file ? sessionPath(session.id, 'images', img.file) : `data:${img.media_type};base64,${img.data}`}
 							loading="lazy"
 							alt="attachment"
 							class="max-h-40 rounded-box border border-base-300"
@@ -807,7 +841,7 @@
 	{:else if event.type === 'deck.effort'}
 		<div class="px-2 text-center text-xs opacity-50">effort → {effortLabel(event.effort)}</div>
 	{:else if event.type === 'deck.restart'}
-		<div class="px-2 text-center text-xs opacity-50">restart → fresh claude config from the next message</div>
+		<div class="px-2 text-center text-xs opacity-50">restart → fresh Claude config from the next message</div>
 	{:else if event.type === 'result'}
 		<div class="px-2 text-center text-xs opacity-50">{fmtCost(event)}</div>
 	{/if}
@@ -827,7 +861,7 @@
 		<div
 			class="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-content"
 		>
-			reconnecting…
+			Reconnecting…
 		</div>
 	{/if}
 
@@ -876,13 +910,13 @@
 				bubbleClass="bg-base-100 text-base-content"
 			/>
 		{:else if loaded && status === 'running'}
-			<div class="px-2 text-sm opacity-60">working...</div>
+			<div class="px-2 text-sm opacity-60">Working…</div>
 		{/if}
 	</div>
 
 	{#if dragging}
 		<div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-box border-2 border-dashed border-primary bg-base-100/70 text-sm font-medium">
-			Drop images to attach
+			Drop files to attach
 		</div>
 	{/if}
 
@@ -921,7 +955,7 @@
 
 	<!-- -mx-2 cancels the session pane's side padding so the composer and its
 	     top border run edge to edge. -->
-	<div class="-mx-2 border-t border-base-300 bg-base-100 p-2 sm:p-3">
+	<div class="relative -mx-2 border-t border-base-300 bg-base-100 p-2 sm:p-3">
 		{#if crossSession}
 			<div class="mb-2 flex items-center gap-1 text-xs opacity-70">
 				<ArrowLeftRight size={12} />
@@ -944,13 +978,35 @@
 				{/each}
 			</div>
 		{/if}
+		{#if uploads.length}
+			<div class="mb-2 flex flex-wrap gap-2">
+				{#each uploads as f, i (i)}
+					<span class="badge badge-lg max-w-full gap-1.5 border-base-300 pr-1" title={f.name}>
+						<FileText size={14} class="shrink-0 opacity-70" />
+						<span class="truncate">{f.name}</span>
+						<span class="shrink-0 opacity-60">{formatBytes(f.size)}</span>
+						<button
+							class="btn btn-ghost btn-circle btn-xs shrink-0"
+							onclick={() => removeUpload(i)}
+							aria-label="Remove {f.name}"
+						>
+							<X size={12} />
+						</button>
+					</span>
+				{/each}
+			</div>
+		{/if}
+		{#if uploadError}
+			<p class="mb-2 text-xs text-error" role="alert">{uploadError}</p>
+		{/if}
 		<textarea
+			bind:this={composerInput}
 			class="textarea block min-h-18 w-full"
 			rows="3"
 			style="height: calc(4.5em + 1.5rem + 3px)"
 			placeholder={status === 'running'
-				? 'queue a follow-up (ctrl/cmd+enter)'
-				: 'message (ctrl/cmd+enter, paste images)'}
+				? 'Queue a follow-up (Ctrl/Cmd+Enter)'
+				: 'Message (Ctrl/Cmd+Enter to send; paste or drop files)'}
 			bind:value={input}
 			onkeydown={onKeydown}
 			onpaste={onPaste}
@@ -972,7 +1028,6 @@
 				<input
 					bind:this={fileInput}
 					type="file"
-					accept="image/*"
 					multiple
 					class="hidden"
 					onchange={onPick}
@@ -980,11 +1035,19 @@
 				<button
 					class="btn btn-ghost btn-square"
 					onclick={() => fileInput?.click()}
-					aria-label="Attach image"
-					title="Attach image"
+					aria-label="Attach files"
+					title="Attach files"
 				>
 					<Paperclip size={16} />
 				</button>
+
+				<SkillPicker
+					bind:this={skillPicker}
+					bind:text={input}
+					cwd={session.cwd}
+					textarea={composerInput}
+					onpick={() => (skillChosen = true)}
+				/>
 
 				{#if status === 'running'}
 					<button class="btn btn-error" onclick={interrupt} aria-label="Interrupt">
@@ -999,25 +1062,23 @@
 		</div>
 	</div>
 
-	{#if pendingSend}
-		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-			<div class="modal-box max-w-sm">
-				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
-					<ArrowLeftRight size={18} class="text-warning" /> Send to a different session?
-				</h3>
-				<p class="mb-3 text-sm opacity-70">
-					This draft was started in <span class="font-semibold">{originTitle}</span>. Send it to
-					<span class="font-semibold">{session.title}</span>?{#if attachments.length}
-						(with {attachments.length} image{attachments.length > 1 ? 's' : ''}){/if}
-				</p>
-				<div class="modal-action">
-					<button class="btn" onclick={() => (pendingSend = false)}>Cancel</button>
-					<button class="btn btn-primary" onclick={confirmSend}>Send</button>
-				</div>
-			</div>
-			<button class="modal-backdrop" onclick={() => (pendingSend = false)} aria-label="close"></button>
-		</div>
-	{/if}
+	<Modal
+		open={pendingSend}
+		onclose={() => (pendingSend = false)}
+		title="Send to a different session?"
+		icon={ArrowLeftRight}
+		iconClass="text-warning"
+	>
+		<p class="mb-3 text-sm opacity-70">
+			This draft was started in <span class="font-semibold">{originTitle}</span>. Send it to
+			<span class="font-semibold">{session.title}</span>?{#if attachedCount}
+				(with {attachedCount} attachment{attachedCount > 1 ? 's' : ''}){/if}
+		</p>
+		{#snippet footer()}
+			<button class="btn" onclick={() => (pendingSend = false)}>Cancel</button>
+			<button class="btn btn-primary" onclick={confirmSend}>Send</button>
+		{/snippet}
+	</Modal>
 </div>
 
 <style>
