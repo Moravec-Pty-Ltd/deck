@@ -67,7 +67,7 @@ talk to; without the two variables they skip. They only read and cancel, never
 confirm a delete.
 
 Point them at a deck started with `--host`. Vite with no `--host` binds `[::1]`
-only, so the simulator cannot reach `127.0.0.1:<port>` — and the app then
+only, so the simulator cannot reach `127.0.0.1:<port>`, and the app then
 renders as if signed in with no data (an empty Inbox, "No projects") rather than
 reporting that it cannot connect, which reads like a bug in the screen under
 test. `curl -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` returning
@@ -83,19 +83,47 @@ xcodebuild -project Deck.xcodeproj -scheme DeckApp \
 
 ## TestFlight
 
-`./ship.sh` runs `fastlane ios beta` from this Mac: it regenerates the project
-with XcodeGen, numbers the build one past the latest on TestFlight, archives
-DeckApp with the embedded watch app, and uploads it. Use the Homebrew fastlane
-(`brew install fastlane`); the lane signs with an App Store Connect API key, so
-no Xcode account is needed. `.env` (see `.env.example`) supplies the key id,
-issuer id, key path and `DEVELOPMENT_TEAM`. The key needs the Admin role, since
-cloud signing refuses an App Manager key. Release builds sign with the
-production push entitlement (`Apps/*/*.release.entitlements`) so TestFlight
-tokens are real; Debug stays on the sandbox.
+`./ship.sh [ios|mac|all]` ships from this Mac (default `ios`):
 
-One-time setup: create the App Store Connect app for bundle id
-`tech.moravec.deck` (`fastlane ios bootstrap` does it with the same key); the
-watch app id `tech.moravec.deck.watchkitapp` is registered on the first archive.
+- `ios` runs `fastlane ios beta`: archives DeckApp with the embedded watch app
+  and uploads the ipa.
+- `mac` runs `fastlane mac beta`: archives DeckMac, exports an App Store pkg and
+  uploads it as a macOS build.
+- `all` runs both, iOS first.
+
+Each lane regenerates the project with XcodeGen and numbers the build one past
+the larger of the latest iOS and latest macOS TestFlight builds. The Mac app
+shares the bundle id `tech.moravec.deck` with the iOS app, so both platforms
+live on one App Store Connect record, and a build number either platform has
+used is refused on the other.
+
+Use the Homebrew fastlane (`brew install fastlane`); the lanes sign with an App
+Store Connect API key, so no Xcode account is needed. `.env` (see
+`.env.example`) supplies the key id, issuer id, key path and
+`DEVELOPMENT_TEAM`. The key needs the Admin role, since cloud signing refuses an
+App Manager key. Release builds sign with the production push entitlement
+(`Apps/*/*.release.entitlements`) so TestFlight tokens are real; Debug stays on
+the sandbox.
+
+One-time setup:
+
+1. `./ship.sh bootstrap` (`fastlane ios bootstrap`) creates the App Store
+   Connect app for `tech.moravec.deck` with iOS and macOS, or adds macOS to an
+   existing record by creating its first macOS version. If App Store Connect
+   refuses that, the lane says so: add it by hand under Apps > deck > Add
+   Platform > macOS.
+2. On developer.apple.com, under Certificates, Identifiers & Profiles >
+   Identifiers > `tech.moravec.deck`, check the App ID is not limited to iOS
+   (an explicit App ID registered today covers every platform; an older one
+   shows only iOS, and the Mac archive then fails to find a profile) and that
+   Push Notifications is still ticked. Fix it there; the API cannot change an
+   App ID's platform.
+3. The Mac pkg is signed with a Mac Installer Distribution certificate. If the
+   `mac` lane's export stops for want of one, create it under Certificates
+   (Mac Installer Distribution) and install it in the login keychain.
+
+The watch app id `tech.moravec.deck.watchkitapp` and the Mac App Store
+provisioning profile are created on the first archive.
 
 ## Server prerequisites
 
@@ -124,8 +152,8 @@ with an energy detector; sensitivity adjustable) which can interrupt a reply
 mid-sentence. Reading continues behind the lock screen for the session you
 turned it on for; the watch reads while its Voice screen is open.
 
-It needs deck configured with a speech server (deck's **Projects > Voice
-mode**); the button only appears when `GET /api/agent/speech` reports one. The phone
+It needs deck configured with a speech server (**Settings > Voice** on the
+web, or **Settings > deck server settings** here); the button only appears when `GET /api/agent/speech` reports one. The phone
 never talks to the speech server directly.
 
 ## Operator
@@ -167,11 +195,12 @@ tool call a tool call, and keep what comes back small.
 
 Needs Apple Intelligence on and iOS 26 or later; the tab says so when it is
 missing. It still needs deck configured with a speech server for the voice part
-(deck's **Projects > Voice mode**).
+(**Settings > Voice** on the web, or **Settings > deck server settings** here).
 
 The watch is the exception: watchOS ships the model framework but marks the
 model itself unavailable, so the watch Operator page still asks deck to think
-for it and needs the `operator` block in deck's settings. No wake word there
+for it and needs deck's watch operator settings (**Settings > Watch operator**
+on the web). No wake word there
 either, since watchOS has no on-device recogniser for one.
 
 ## Operator model
@@ -209,7 +238,7 @@ operator keeps using Apple's.
 [`mlx-swift-lm`](https://github.com/ml-explore/mlx-swift-lm)'s
 `MLXFoundationModels` bridges an MLX model to Apple's own
 `FoundationModels.LanguageModel`, so a downloaded model plugs into
-`LanguageModelSession` and **deck's seven operator tools are unchanged** — only
+`LanguageModelSession` and **deck's seven operator tools are unchanged**; only
 which model answers differs. That bridge is why this is a model-management
 feature rather than a second operator.
 
@@ -300,8 +329,12 @@ so a URL that looks right can still be the wrong host underneath. And the
 machine's SSH host key is trusted on first use, so a rebuilt machine fails with
 both fingerprints until you forget it in the tunnel sheet.
 
-The Mac build needs `com.apple.security.network.{client,server}` because Mac
-Catalyst is sandboxed and the listener is refused silently without them.
+On the Mac the browser is its own window (Window > Browser, Shift-Command-B)
+with the same tabs, address bar and tunnel sheet. Deck may run on that very
+Mac, though, and then there is no tunnel: when the deck origin's host is
+loopback (`localhost`, `127.0.0.1`, `::1`) the dev servers are local, so pages
+load directly and the lock button is gone. `LoopbackHost.isDirect` decides it;
+a tailnet name or a LAN address still means another machine and the tunnel.
 
 Testing the tunnel end to end needs an SSH server, so that test skips without
 one. Any server with password auth and forwarding will do:
@@ -331,7 +364,8 @@ domain for coding-agent sessions (Apple ships them for mail, photos, documents
 and the like), so App Shortcuts match these close to verbatim and nothing is
 paraphrased for us: a phrasing that is not written down gets "I can't do that
 in the deck app, try opening it". If Siri misses something you say often, add
-it to `Apps/DeckApp/Support/AppIntentsRegistration.swift`; every phrase must
+it to `Apps/SharedIntents/AppIntentsRegistration.swift` (the phone and watch
+apps both compile it); every phrase must
 contain `\(.applicationName)`.
 
 The intents surface automatically once the app is installed, and are built with
@@ -358,8 +392,8 @@ Long-press any reply to have it read aloud.
 A session's menu shows how full its context window is and offers **Compact
 context**, which summarises the history and frees the window. A row in the list
 grows a `context 78%` chip once it passes two thirds, red past 85%. deck can
-also compact on its own at a threshold you set; that lives in deck's own
-settings, not here.
+also compact on its own at a threshold you set, under **Settings > deck server
+settings** here or **Settings > Auto-compact** on the web.
 
 Rename a session from its menu (**Rename**) or by swiping its row in the list.
 An unregistered tmux terminal has no record on the deck side, so renaming it
@@ -385,18 +419,57 @@ anywhere else. An image in the transcript has **Copy image** on its context
 menu and a copy button in the full-screen gallery, which puts the picture on
 the clipboard rather than a file reference.
 
-A Mac Catalyst build also compiles and runs (`supportedDestinations:
-[iOS, macCatalyst]`, with Live Activities and the hinge guarded out, and the
-watch app and widget extension excluded from that destination). The dev browser
-puts its controls in the window toolbar there rather than a bottom bar:
+### The Mac app
+
+`DeckMac` is a native SwiftUI app for macOS 15 and later, not a Catalyst build
+of the iPad app. It shares the bundle id `tech.moravec.deck` with the iOS app,
+so one App Store record carries both, and links DeckKit, DeckUI (the shared
+session row, tool cards, question card and terminal view) and DeckIntents, so
+the Siri phrases match the phone's.
 
 ```sh
-xcodebuild -scheme DeckApp -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' build
+xcodebuild -project Deck.xcodeproj -scheme DeckMac -destination 'platform=macOS' \
+  -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
 ```
 
-Distributing it needs Mac Catalyst enabled for the app id and a matching
-provisioning profile; without one, `xcodebuild test` on that destination
-cannot sign. Live Activities and the watch app stay phone-only.
+A Mac has no camera to scan the sign-in QR code, so it signs in one of two
+ways:
+
+- **Paste** the server URL and the token, or paste a whole sign-in link (the
+  one the QR code encodes) into the URL field and the token comes with it.
+- **Ask for access.** The app requests pairing from the server and shows a
+  six-digit code. Approve the request in deck in a browser that is already
+  signed in, after checking it shows the same code; the app picks the token up
+  from the approval and signs in.
+
+The main window is a sidebar of places (Inbox, Runs, Schedules, Start) over
+the sessions list, and whichever is selected beside it. Inbox, runs, schedules,
+starting a session and the session sheets are the phone's own views. A session
+shows its transcript (history paged in on demand, live output as it streams,
+images and the files a message mentions), its PR with review and merge, the
+question card when it is waiting on you, and a composer that takes images
+picked, pasted or dropped; shell sessions get a terminal. Its toolbar menu has
+the phone's actions: agent, model, thinking level, compact, restart, rename,
+changes, dev servers, schedule and delete.
+
+Double-click a session (or choose **Open in New Window** from its context
+menu) to give it a window of its own. Settings (Command-,) holds the account
+and Sign Out, the projects with their dev servers, issue sources and
+automation, the deck server's settings, and the operator's model. The menu bar
+carries the keyboard shortcuts: Command-N new session, Shift-Command-N new
+window, Command-Return send, Command-. stop, Shift-Command-K compact context,
+Command-K command palette, Command-F search, Command-[ and Command-] previous
+and next session.
+
+Not yet: searching what sessions said (the sidebar filters by name only), the
+transcript's thread view, deleting several sessions at once, unhiding a hidden
+project, the operator's wake word, and the share extension. Live Activities,
+widgets and the hinge are phone-only and stay that way.
+
+The app is sandboxed with network client and server access (the server half is
+for the dev browser's loopback SOCKS listener, which the sandbox refuses
+silently otherwise) and read-only access to files you pick. Shipping it needs
+macOS added to the app id's platforms and a Mac provisioning profile with push.
 
 ## Foldables
 

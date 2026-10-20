@@ -44,7 +44,7 @@ struct ProjectAutomationView: View {
 			}
 		}
 		.navigationTitle(project.name)
-		.navigationBarTitleDisplayMode(.inline)
+		.deckInlineNavigationTitle()
 		.toolbar {
 			ToolbarItem(placement: .confirmationAction) {
 				Button(isSaving ? "Saving…" : "Save") {
@@ -116,16 +116,14 @@ struct AutomationAgentSection: View {
 				TextField("Provider (optional)", text: Binding(
 					get: { agent.provider ?? "" },
 					set: { agent.provider = $0.isEmpty ? nil : $0 }))
-					.textInputAutocapitalization(.never)
-					.autocorrectionDisabled()
+					.deckPlainInput()
 			}
 			let models = store.knownModels(for: kind)
 			if models.isEmpty {
 				TextField("Model (optional)", text: Binding(
 					get: { agent.model ?? "" },
 					set: { agent.model = $0.isEmpty ? nil : $0 }))
-					.textInputAutocapitalization(.never)
-					.autocorrectionDisabled()
+					.deckPlainInput()
 			} else {
 				Picker("Model", selection: Binding(
 					get: { agent.model ?? "" },

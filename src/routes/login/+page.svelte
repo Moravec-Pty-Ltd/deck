@@ -17,7 +17,7 @@
 			<input
 				class="input w-full"
 				type="password"
-				placeholder="access token"
+				placeholder="Access token"
 				bind:value={token}
 				autocomplete="off"
 			/>

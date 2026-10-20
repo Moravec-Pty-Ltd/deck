@@ -8,90 +8,82 @@ struct SettingsView: View {
 	@State private var isTesting = false
 	@State private var notificationStatus: UNAuthorizationStatus = .notDetermined
 	@State private var showSignOutConfirm = false
-	@Environment(\.dismiss) private var dismiss
 
 	var body: some View {
-		NavigationStack {
-			Form {
-				Section("Connection") {
-					if let baseURL = store.client?.credentials.baseURL {
-						LabeledContent("Server", value: baseURL.absoluteString)
-					}
-					LabeledContent("Status") {
-						ConnectionStateLabel(state: store.connection)
-					}
-					LabeledContent("Needs attention", value: "\(store.awaitingCount)")
+		Form {
+			Section("Connection") {
+				if let baseURL = store.client?.credentials.baseURL {
+					LabeledContent("Server", value: baseURL.absoluteString)
 				}
-
-				Section("Projects") {
-					NavigationLink("Manage projects") {
-						ProjectsSettingsView()
-					}
+				LabeledContent("Status") {
+					ConnectionStateLabel(state: store.connection)
 				}
+				LabeledContent("Needs attention", value: "\(store.awaitingCount)")
+			}
 
-				Section("Operator") {
-					NavigationLink {
-						LocalModelView()
-					} label: {
-						HStack {
-							Text("Model")
-							Spacer()
-							Text(OperatorController.shared.modelName)
-								.font(.caption)
-								.foregroundStyle(.secondary)
-						}
-					}
-					.accessibilityIdentifier("openOperatorModel")
+			Section("Projects") {
+				NavigationLink("Manage projects") {
+					ProjectsSettingsView()
 				}
+			}
 
-				ServerSettingsLink()
-
-				Section("Diagnostics") {
-					Button {
-						Task { await sendTestRequest() }
-					} label: {
-						if isTesting {
-							ProgressView()
-						} else {
-							Text("Send test request")
-						}
-					}
-					.disabled(isTesting)
-
-					if let testResult {
-						Text(testResult)
-							.font(.footnote)
+			Section("Operator") {
+				NavigationLink {
+					LocalModelView()
+				} label: {
+					HStack {
+						Text("Model")
+						Spacer()
+						Text(OperatorController.shared.modelName)
+							.font(.caption)
 							.foregroundStyle(.secondary)
 					}
 				}
+				.accessibilityIdentifier("openOperatorModel")
+			}
 
-				Section("Notifications") {
-					LabeledContent("Permission", value: notificationStatusText)
-					if notificationStatus != .authorized {
-						Button("Enable notifications") {
-							PushManager.shared.requestAuthorizationAndRegister()
-							Task { await refreshNotificationStatus() }
-						}
+			ServerSettingsLink()
+
+			Section("Diagnostics") {
+				Button {
+					Task { await sendTestRequest() }
+				} label: {
+					if isTesting {
+						ProgressView()
+					} else {
+						Text("Send test request")
 					}
 				}
+				.disabled(isTesting)
 
-				Section {
-					Button("Sign out", role: .destructive) {
-						showSignOutConfirm = true
+				if let testResult {
+					Text(testResult)
+						.font(.footnote)
+						.foregroundStyle(.secondary)
+				}
+			}
+
+			Section("Notifications") {
+				LabeledContent("Permission", value: notificationStatusText)
+				if notificationStatus != .authorized {
+					Button("Enable notifications") {
+						PushManager.shared.requestAuthorizationAndRegister()
+						Task { await refreshNotificationStatus() }
 					}
 				}
 			}
-			.navigationTitle("Settings")
-			.toolbar {
-				ToolbarItem(placement: .confirmationAction) {
-					Button("Done") { dismiss() }
+
+			Section {
+				Button("Sign out", role: .destructive) {
+					showSignOutConfirm = true
 				}
 			}
-			.task { await refreshNotificationStatus() }
-			.confirmationDialog("Sign out of deck?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
-				Button("Sign out", role: .destructive) { store.signOut() }
-				Button("Cancel", role: .cancel) {}
-			}
+		}
+		.navigationTitle("Settings")
+		.task { await refreshNotificationStatus() }
+		.confirmationDialog("Sign out of deck?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+			Button("Sign out", role: .destructive) { store.signOut() }
+			Button("Cancel", role: .cancel) {}
 		}
 	}
 

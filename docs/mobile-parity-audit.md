@@ -1,6 +1,6 @@
 # Web and native parity audit
 
-Scope: web/server and the separate native iOS/watchOS checkout. This audit
+Scope: web/server and the native apps (now in `apps/ios`). This audit
 traced discovery, creation, prompt dispatch, messaging, session controls,
 question answering, and transcript rendering. No live tracker credentials or
 production sessions were used for validation.
@@ -61,9 +61,8 @@ asset writes remain confined to registered projects and worktrees.
 | Dev servers | Web-only | A Dev servers sheet lists configured servers with state, ports, preview link, setup progress, start/stop/restart/re-run setup, and a polling log pane, on the existing session server routes |
 | Automation config | Web-only | Settings lists projects; each opens the automation toggles and lane agents, saved through the projects route while preserving the project name |
 
-The native client continues to use the browser send route for images and quick
-messages, preserving compatibility with older servers. Those routes now share
-the same business logic as the agent message route. The multi-issue, handoff,
+The native clients have since moved entirely onto the agent API (`/api/agent/*`),
+images and quick messages included; see Current state below. The multi-issue, handoff,
 defaults, structured-answer, diff, server, and automation features need a
 server with the corresponding routes; on an older server the phone falls back
 to CLI defaults and hides nothing it can't fetch.
@@ -76,17 +75,54 @@ PR review and merge, and bulk session deletion. These did not need to be rebuilt
 Watch and Siri share `DeckKit`, so source-identity and review-base fixes apply
 there too. The watch remains a smaller interface with Claude-only quick starts.
 
-## Remaining differences
+## Current state
 
-| Priority | Finding | Note |
-| --- | --- | --- |
-| Low | The watch shows a session's last reply, not its transcript | Deliberate: the watch is a glanceable surface with quick starts and answers; the phone carries the full transcript |
-| Low | Native has no project registration or issue-source setup | Both need local filesystem paths and API keys, which belong on the machine running deck. Configure them on the web; the phone reads the result |
-| Low | Native shells are read-only | Shell (tmux) sessions appear in the list but have no terminal view; the agent API cannot drive them either |
+Since this audit, web and native have converged on one contract: every client,
+the web app included, talks to deck through the agent API (`/api/agent/*`), and
+the server keeps the business logic. `GET /api/agent` lists the server's
+capabilities so a client can hide what an older server lacks.
 
-Share business services, keep route adapters compatible, and expose explicit
-capabilities/defaults where native UI needs them. Avoid adding a third set of
-behavioral rules to the phone.
+### At parity
+
+The Mac app is the newest client: it has the session view (list, transcript,
+question card, composer, terminal), the dev browser and push-to-talk voice. Its
+settings, windows and keyboard commands come next; until then a Mac user sets
+deck up on the web.
+
+| Area | Web | iPhone and iPad | Mac |
+| --- | --- | --- | --- |
+| Sessions: list, transcript, send, stop, answer questions | Yes | Yes | Yes |
+| Rename, hide and delete sessions | Yes | Yes | Not yet |
+| Terminal sessions: colour snapshot, typing, named keys | Yes | Yes (key bar) | Yes |
+| Starting a terminal session | Yes | Yes | Not yet |
+| Starting work or review from issues and PRs, one session per item, existing worktrees | Yes | Yes | Not yet |
+| Restart Claude, dismiss a PR, confirm an expensive model | Yes | Yes | Not yet |
+| Inbox of questions and blocked runs | Yes (`/inbox`) | Yes | Not yet |
+| Sharing images | Yes | Yes | Not yet |
+| Sharing other files | Yes (composer) | Yes (share extension) | Not yet |
+| Projects: add, clone, remove, templates, dev servers, issue sources | Yes | Yes (Settings) | Not yet |
+| Server settings: voice, watch operator, auto-compact, Zed, agent skills | Yes (`/settings`) | Yes (Settings > deck server settings) | Not yet |
+| Approving a new device | Yes | Yes | Not yet |
+| Changes view and dev servers | Yes | Yes | Not yet |
+| Schedules and workflow runs | Yes | Yes | Not yet |
+
+### Deliberately different
+
+| Finding | Note |
+| --- | --- |
+| The watch shows a session's last reply, not its transcript | The watch is a glanceable surface: latest replies, answers to questions, quick starts and the voice operator. The phone carries the full transcript |
+| The operator runs on the device | The phone and Mac use Apple's on-device model; the browser has none, so the web has no operator. Only the watch asks deck to think for it |
+| The skills picker is web-only | The web composer lists installed skills on its button or a leading `/`. The apps reach skills through the operator, which turns "run a skill" into the slash command |
+| Siri, Live Activities, widgets and the share extension | Native-only by nature; the web has push notifications and the PWA instead |
+| The dev browser | Native-only: the app tunnels to the deck machine's dev servers, which a phone cannot reach by `localhost` |
+
+### Left to do
+
+| Finding | Note |
+| --- | --- |
+| File sharing on the Mac | The Mac app has no share extension and no attach button yet; the share extension is an iOS target, and a macOS one is still to build |
+| Browser routes kept as adapters | Installed builds from before the agent-API move still call the old browser routes. They stay as thin adapters over the shared handlers until those builds expire from TestFlight (90 days after the agent-only build ships), then go |
+| Mac app distribution | The Mac build needs the macOS platform added to the app id on the Apple side before it can upload; its proxy, keychain and voice paths have not been tested on a signed build |
 
 ## Validation
 

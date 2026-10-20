@@ -9,6 +9,37 @@ public enum SessionSearch {
 	/// MIN_QUERY_CHARS.
 	public static let minimumQueryLength = 2
 
+	/// What was typed, ready to match: lowercased and trimmed, and split into
+	/// words. Nil when it is too short to be worth matching.
+	public struct Query: Sendable {
+		public let needle: String
+		public let words: [String]
+
+		public init?(_ raw: String) {
+			let needle = raw
+				.trimmingCharacters(in: .whitespacesAndNewlines)
+				.lowercased()
+			guard needle.count >= SessionSearch.minimumQueryLength else { return nil }
+			let words = needle.split(whereSeparator: \.isWhitespace).map(String.init)
+			guard !words.isEmpty else { return nil }
+			self.needle = needle
+			self.words = words
+		}
+	}
+
+	/// How well `title` matches: 0 for the exact title, 1 for one starting with
+	/// what was typed, 2 for one holding all the words anywhere, nil for no
+	/// match. Lower is better. `extra` is more text the words may be found in
+	/// (a command's keywords) without counting as the title.
+	public static func rank(_ title: String, against query: Query, extra: String = "") -> Int? {
+		let lower = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+		guard !lower.isEmpty else { return nil }
+		if lower == query.needle { return 0 }
+		if lower.hasPrefix(query.needle) { return 1 }
+		let haystack = extra.isEmpty ? lower : lower + " " + extra.lowercased()
+		return query.words.allSatisfy({ haystack.contains($0) }) ? 2 : nil
+	}
+
 	/// Every session whose title holds all the words typed, best first: an exact
 	/// title, then one starting with what was typed, then the rest. Stable
 	/// within a rank, so the caller's order (recency) survives.
@@ -16,19 +47,9 @@ public enum SessionSearch {
 	/// Word-wise rather than substring, so "auth token" finds "Auth: token
 	/// refresh" and the order of what you type does not matter.
 	public static func byName(_ query: String, in sessions: [SessionDigest]) -> [SessionDigest] {
-		let needle = query
-			.trimmingCharacters(in: .whitespacesAndNewlines)
-			.lowercased()
-		guard needle.count >= minimumQueryLength else { return [] }
-		let words = needle.split(whereSeparator: \.isWhitespace).map(String.init)
-		guard !words.isEmpty else { return [] }
-
+		guard let query = Query(query) else { return [] }
 		let ranked = sessions.enumerated().compactMap { index, session -> (Int, Int, SessionDigest)? in
-			let title = (session.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-			guard !title.isEmpty else { return nil }
-			let lower = title.lowercased()
-			guard words.allSatisfy({ lower.contains($0) }) else { return nil }
-			let rank = lower == needle ? 0 : lower.hasPrefix(needle) ? 1 : 2
+			guard let rank = rank(session.title ?? "", against: query) else { return nil }
 			return (rank, index, session)
 		}
 		// Sort on (rank, original position) so equal ranks keep their order.

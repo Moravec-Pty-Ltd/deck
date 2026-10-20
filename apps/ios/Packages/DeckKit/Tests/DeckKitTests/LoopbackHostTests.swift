@@ -58,6 +58,22 @@ final class LoopbackHostTests: XCTestCase {
 		XCTAssertEqual(LoopbackHost.target("example.org"), "example.org")
 	}
 
+	func testALoopbackDeckOriginLoadsDirectly() {
+		for origin in ["http://localhost:4818", "http://127.0.0.1:4818", "http://[::1]:4818", "https://LOCALHOST"] {
+			XCTAssertTrue(LoopbackHost.isDirect(deckOrigin: URL(string: origin)), origin)
+		}
+	}
+
+	func testADeckOriginOnAnotherMachineNeedsTheTunnel() {
+		for origin in ["https://deck.example.ts.net", "http://192.168.1.20:4818", "https://deck.example.org"] {
+			XCTAssertFalse(LoopbackHost.isDirect(deckOrigin: URL(string: origin)), origin)
+		}
+	}
+
+	func testNoDeckOriginNeedsTheTunnel() {
+		XCTAssertFalse(LoopbackHost.isDirect(deckOrigin: nil))
+	}
+
 	func testTheSentinelIsHiddenFromTheAddressBar() {
 		XCTAssertEqual(
 			LoopbackHost.display("http://deck.localhost:5173/settings"),

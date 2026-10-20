@@ -1,3 +1,4 @@
+import { confirmAction } from '$lib/confirm.svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import type { SessionView } from '$lib/session-view';
 import { ownsWorktreeBranch } from '$lib/pr';
@@ -40,8 +41,8 @@ export class DeleteFlow {
 	) {}
 
 	// Open the confirm modal for a worktree session; plain sessions just get a
-	// native confirm and delete straight away.
-	request = (s: SessionView) => {
+	// plain confirm and delete straight away.
+	request = async (s: SessionView) => {
 		if (this.deletingIds.has(s.id)) return;
 		if (s.worktree) {
 			this.worktree = true;
@@ -49,7 +50,13 @@ export class DeleteFlow {
 			this.target = s;
 			return;
 		}
-		if (confirm(`Kill and remove "${s.title}"?`)) this.run(s, {});
+		const ok = await confirmAction({
+			title: `Remove "${s.title}"?`,
+			body: 'Kills the session and removes it from deck.',
+			confirmLabel: 'Remove',
+			danger: true
+		});
+		if (ok) this.run(s, {});
 	};
 
 	// Open the one confirm for a whole selection. The batch sends a single pair of

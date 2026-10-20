@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { encode } from 'uqr';
-	import { X, TriangleAlert } from '@lucide/svelte';
+	import { TriangleAlert } from '@lucide/svelte';
+	import Modal from './Modal.svelte';
 
 	// Sign-in QR for onboarding a new device. It encodes `${origin}/?token=<token>`
 	// - the same access URL the server prints at startup - so scanning it on a device
@@ -20,7 +21,7 @@
 		if (!open) return;
 		error = '';
 		fetch('/api/token')
-			.then((r) => (r.ok ? r.json() : Promise.reject(new Error('could not load token'))))
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error("Couldn't load token"))))
 			.then((d) => (token = d.token))
 			.catch((e) => (error = e.message));
 	});
@@ -49,51 +50,39 @@
 	}
 </script>
 
-{#if open}
-	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-		<div class="modal-box max-w-sm">
-			<div class="mb-3 flex items-center justify-between">
-				<h3 class="text-lg font-semibold">Sign in another device</h3>
-				<button class="btn btn-square btn-ghost btn-sm" onclick={close} aria-label="Close">
-					<X size={16} />
-				</button>
-			</div>
-
-			{#if error}
-				<p class="text-sm text-error">{error}</p>
-			{:else if qr}
-				<div class="flex justify-center">
-					<svg
-						class="h-56 w-56 rounded-box"
-						viewBox={`${-BORDER} ${-BORDER} ${qr.size + BORDER * 2} ${qr.size + BORDER * 2}`}
-						shape-rendering="crispEdges"
-						role="img"
-						aria-label="Sign-in QR code"
-					>
-						<rect
-							x={-BORDER}
-							y={-BORDER}
-							width={qr.size + BORDER * 2}
-							height={qr.size + BORDER * 2}
-							fill="#fff"
-						/>
-						<path d={qr.d} fill="#000" />
-					</svg>
-				</div>
-				<p class="mt-3 text-center text-sm opacity-70">
-					Scan with a device on the same network to sign it in.
-				</p>
-				<div class="mt-3 flex items-start gap-2 rounded-box bg-warning/10 p-3 text-xs text-warning">
-					<TriangleAlert size={15} class="mt-0.5 shrink-0" />
-					<span>
-						This grants full, long-lived access to deck. Only show it to devices and people you
-						trust.
-					</span>
-				</div>
-			{:else}
-				<p class="p-8 text-center text-sm opacity-60">Loading...</p>
-			{/if}
+<Modal {open} onclose={close} title="Sign in another device">
+	{#if error}
+		<p class="text-sm text-error">{error}</p>
+	{:else if qr}
+		<div class="flex justify-center">
+			<svg
+				class="h-56 w-56 rounded-box"
+				viewBox={`${-BORDER} ${-BORDER} ${qr.size + BORDER * 2} ${qr.size + BORDER * 2}`}
+				shape-rendering="crispEdges"
+				role="img"
+				aria-label="Sign-in QR code"
+			>
+				<rect
+					x={-BORDER}
+					y={-BORDER}
+					width={qr.size + BORDER * 2}
+					height={qr.size + BORDER * 2}
+					fill="#fff"
+				/>
+				<path d={qr.d} fill="#000" />
+			</svg>
 		</div>
-		<button class="modal-backdrop" onclick={close} aria-label="Close"></button>
-	</div>
-{/if}
+		<p class="mt-3 text-center text-sm opacity-70">
+			Scan with a device on the same network to sign it in.
+		</p>
+		<div class="mt-3 flex items-start gap-2 rounded-box bg-warning/10 p-3 text-xs text-warning">
+			<TriangleAlert size={15} class="mt-0.5 shrink-0" />
+			<span>
+				This grants full, long-lived access to deck. Only show it to devices and people you
+				trust.
+			</span>
+		</div>
+	{:else}
+		<p class="p-8 text-center text-sm opacity-60">Loading…</p>
+	{/if}
+</Modal>
