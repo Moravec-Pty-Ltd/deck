@@ -7,7 +7,7 @@ import SwiftUI
 /// Asked for rather than inferred: deck's own origin gives the host, but
 /// nothing in deck knows the SSH user or password, and they are not deck's to
 /// know. The host is prefilled from the deck origin because that is the machine
-/// the dev servers are on.
+/// the dev servers are on. The Mac target compiles this file by path.
 struct TunnelSheet: View {
 	@Bindable var model: BrowserModel
 	@Environment(\.dismiss) private var dismiss
@@ -17,11 +17,15 @@ struct TunnelSheet: View {
 			Form {
 				Section("Deck machine") {
 					TextField("Host", text: $model.settings.host)
+						#if os(iOS)
 						.textInputAutocapitalization(.never)
+						#endif
 						.autocorrectionDisabled()
 					TextField("Port", value: $model.settings.port, format: .number)
 					TextField("User", text: $model.settings.username)
+						#if os(iOS)
 						.textInputAutocapitalization(.never)
+						#endif
 						.autocorrectionDisabled()
 					SecureField("Password", text: $model.password)
 				}
@@ -58,9 +62,10 @@ struct TunnelSheet: View {
 					}
 				}
 			}
+			.formStyle(.grouped)
 			.navigationTitle("Tunnel")
-			#if !targetEnvironment(macCatalyst)
-				.navigationBarTitleDisplayMode(.inline)
+			#if os(iOS)
+			.navigationBarTitleDisplayMode(.inline)
 			#endif
 			.toolbar {
 				ToolbarItem(placement: .confirmationAction) {

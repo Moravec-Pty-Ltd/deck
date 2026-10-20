@@ -8,9 +8,8 @@ import { appendEvent, stopProcess } from './claude';
 // `--resume <claudeSessionId>`, so the conversation continues. Idle-only: a
 // running turn is a 409, never an interrupt. claude-only: the other kinds spawn a
 // fresh CLI per turn and pick up config anyway. Unlike model and effort there is
-// no unchanged case, so this always acts. Shared verbatim by
-// /api/sessions/[id]/restart (browser) and /api/agent/sessions/[id]/restart
-// (agent API) so the two surfaces stay identical.
+// no unchanged case, so this always acts. Served by
+// /api/agent/sessions/[id]/restart.
 export async function restartSession(event: {
 	params: Partial<Record<string, string>>;
 }): Promise<Response> {

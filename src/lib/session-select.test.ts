@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import type { DeckSession, SessionKind } from '$lib/types';
+import type { SessionKind } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 import { flattenVisibleBuckets } from '$lib/sidebar-neighbor';
 import { allSelected, rangeIds, staleIds } from './session-select';
 
-function session(id: string, kind: SessionKind = 'claude'): DeckSession {
-	return { id, kind, title: id, cwd: '/x', createdAt: 0, lastActiveAt: 0, status: 'idle' };
+function session(id: string, kind: SessionKind = 'claude'): SessionView {
+	return { url: '', awaitingInput: false, id, kind, title: id, cwd: '/x', createdAt: 0, lastActiveAt: 0, status: 'idle' };
 }
 
 const order = ['a', 'b', 'c', 'd'].map((id) => session(id));

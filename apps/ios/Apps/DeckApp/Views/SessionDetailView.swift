@@ -3,6 +3,7 @@ import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
 import DeckKit
+import DeckUI
 
 struct SessionDetailView: View {
 	let sessionId: String
@@ -24,7 +25,10 @@ struct SessionDetailView: View {
 	@Environment(\.dismiss) private var dismiss
 
 	@State private var viewModel: SessionDetailViewModel?
+	@State private var terminal: TerminalPoller?
 	@State private var composerText = ""
+	/// The phone layout's height, which caps how tall a pending question grows.
+	@State private var stackedHeight: CGFloat = 0
 	@State private var isSending = false
 	@AppStorage("condensedTranscript") private var condensedTranscript = true
 	@State private var composerFieldId = 0
@@ -34,6 +38,10 @@ struct SessionDetailView: View {
 	@State private var showDeleteSheet = false
 	@State private var showMergeSheet = false
 	@State private var showModelSheet = false
+	/// The model picked in the sheet, acted on once the sheet has gone so an
+	/// expensive-model confirm has somewhere to present.
+	@State private var modelPick: ModelPick?
+	@State private var pendingExpensiveModel: String?
 	@State private var showEffortSheet = false
 	@State private var showQuickManage = false
 	@State private var showRenameSheet = false
@@ -52,6 +60,9 @@ struct SessionDetailView: View {
 	@State private var focused = false
 	@State private var highlightedId: String?
 
+	/// What this screen reads from deck beyond the baseline routes.
+	private static let needs: [DeckCapability] = [.stream, .history, .images, .files]
+
 	private var session: SessionDigest? {
 		store.sessions.first { $0.id == sessionId }
 	}
@@ -59,6 +70,36 @@ struct SessionDetailView: View {
 	private var isAgentSession: Bool {
 		guard let kind = session?.kind else { return false }
 		return kind != "shell"
+	}
+
+	/// Switch to the model picked in the sheet, asking first when the server
+	/// marks it expensive. A pick can beat the list's first load, so it waits
+	/// for that load (a no-op once the list is in) before deciding.
+	private func applyModelPick() {
+		guard let pick = modelPick else { return }
+		modelPick = nil
+		Task {
+			await loadExpensiveModels()
+			if let kind = session?.kind, store.needsExpensiveConfirm(model: pick.model, kind: kind, current: session?.model) {
+				pendingExpensiveModel = pick.model
+			} else {
+				await viewModel?.changeModel(pick.model)
+			}
+		}
+	}
+
+	private func loadExpensiveModels() async {
+		let project = session.flatMap { SessionProject.owning($0, in: store.projects) }
+		await store.loadExpensiveModels(projectPath: project?.path)
+	}
+
+	private func openModelSheet() {
+		Task { await loadExpensiveModels() }
+		showModelSheet = true
+	}
+
+	private var isTerminal: Bool {
+		session?.kind == "shell" && store.supports(.terminal)
 	}
 
 	private func compact() async {
@@ -73,11 +114,25 @@ struct SessionDetailView: View {
 		return sessionId
 	}
 
+	/// Send, stop and compact for ⌘Return, ⌘. and ⇧⌘K (see DeckCommands).
+	private var keyboardActions: DeckSessionActions {
+		let canSend = !isSending && !isTerminal
+			&& (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty)
+		let canCompact = session?.kind == "claude" && session?.context != nil
+			&& session?.status != .running && !compacting
+		return DeckSessionActions(
+			send: canSend ? { if let viewModel { sendComposer(viewModel) } } : nil,
+			stop: session?.status == .running ? { Task { await viewModel?.stop() } } : nil,
+			compact: canCompact ? { Task { await compact() } } : nil)
+	}
+
 	var body: some View {
 		content
+			.safeAreaInset(edge: .top, spacing: 0) { ServerTooOldBanner(needs: Self.needs) }
 			.navigationTitle(title)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar { toolbarContent }
+			.focusedSceneValue(\.deckSession, keyboardActions)
 			.sheet(isPresented: $showDeleteSheet) {
 				DeleteSessionSheet(hasWorktree: session?.worktree != nil) { deleteWorktree, deleteBranch in
 					Task {
@@ -99,24 +154,41 @@ struct SessionDetailView: View {
 			.sheet(isPresented: $showSchedule) {
 				NavigationStack { SchedulesView(startFor: sessionId) }
 			}
-			.sheet(isPresented: $showModelSheet) {
-				if let viewModel, let kind = session?.kind {
+			.sheet(isPresented: $showModelSheet, onDismiss: applyModelPick) {
+				if let kind = session?.kind {
 					ModelPickerSheet(
 						kind: kind,
 						current: session?.model,
 						available: store.knownModels(for: kind)
 					) { model in
-						Task { await viewModel.changeModel(model) }
+						modelPick = ModelPick(model: model)
 					}
 				}
+			}
+			.alert(
+				"Expensive model",
+				isPresented: Binding(
+					get: { pendingExpensiveModel != nil },
+					set: { if !$0 { pendingExpensiveModel = nil } })
+			) {
+				Button("Cancel", role: .cancel) {}
+				Button("Switch anyway") {
+					let model = pendingExpensiveModel
+					Task { await viewModel?.changeModel(model) }
+				}
+			} message: {
+				Text("\(pendingExpensiveModel ?? "") is an expensive model. Switch this session to it anyway?")
 			}
 			.onAppear {
 				if viewModel == nil {
 					viewModel = shared ?? SessionDetailViewModel(sessionId: sessionId, store: store)
 				}
-				if viewModel?.isPolling != true { viewModel?.startPolling() }
+				if viewModel?.isPolling != true, session?.kind != "shell" { viewModel?.startPolling() }
+				if terminal == nil, let client = store.client {
+					terminal = .shell(client: client, sessionId: sessionId)
+				}
 				Task { await store.refreshKinds() }
-				if voice == nil, isAgentSession, let controller = viewModel?.voiceController() {
+				if voice == nil, isAgentSession, store.supports(.speech), let controller = viewModel?.voiceController() {
 					voice = controller
 					if controller.capabilities == nil { Task { await controller.loadCapabilities() } }
 				}
@@ -179,7 +251,7 @@ struct SessionDetailView: View {
 					}
 					.disabled(session?.status == .running)
 					Button {
-						showModelSheet = true
+						openModelSheet()
 					} label: {
 						Label(session?.model.map { "Model: \($0)" } ?? "Change model", systemImage: "cpu")
 					}
@@ -202,21 +274,35 @@ struct SessionDetailView: View {
 					.disabled(session?.status == .running || compacting)
 					.accessibilityIdentifier("compactSession")
 				}
+				if session?.kind == "claude" {
+					// deck restarts only an idle session (a running turn is a 409).
+					Button {
+						Task { await viewModel?.restart() }
+					} label: {
+						Label("Restart claude", systemImage: "arrow.clockwise")
+					}
+					.disabled(session?.status == .running)
+					.accessibilityIdentifier("restartSession")
+				}
 				Button {
 					showRenameSheet = true
 				} label: {
 					Label("Rename", systemImage: "pencil")
 				}
 				.accessibilityIdentifier("renameSession")
-				Button {
-					showChanges = true
-				} label: {
-					Label("Changes", systemImage: "plus.forwardslash.minus")
+				if store.supports(.diff) {
+					Button {
+						showChanges = true
+					} label: {
+						Label("Changes", systemImage: "plus.forwardslash.minus")
+					}
 				}
-				Button {
-					showServers = true
-				} label: {
-					Label("Dev servers", systemImage: "server.rack")
+				if store.supports(.servers) {
+					Button {
+						showServers = true
+					} label: {
+						Label("Dev servers", systemImage: "server.rack")
+					}
 				}
 				// Extend this session into a schedule (deck#235): the form opens
 				// already pointed at it, so the prompt comes back here every run
@@ -245,6 +331,14 @@ struct SessionDetailView: View {
 						Label("PR #\(pr.number ?? 0)", systemImage: "arrow.triangle.pull")
 					}
 				}
+				if session?.pr != nil, store.supports(.prDismiss) {
+					Button {
+						Task { await viewModel?.dismissPR() }
+					} label: {
+						Label("Dismiss PR", systemImage: "xmark.circle")
+					}
+					.accessibilityIdentifier("dismissPR")
+				}
 				Button(role: .destructive) {
 					showDeleteSheet = true
 				} label: {
@@ -262,7 +356,9 @@ struct SessionDetailView: View {
 	private var content: some View {
 		if let viewModel {
 			Group {
-				if hinge.isTabletop {
+				if isTerminal, let terminal {
+					TerminalView(poller: terminal)
+				} else if hinge.isTabletop {
 					tabletop(viewModel)
 				} else {
 					stacked(viewModel)
@@ -328,7 +424,7 @@ struct SessionDetailView: View {
 			if session?.status == .running {
 				workingIndicator
 			}
-			askCard(viewModel)
+			askCard(viewModel, available: stackedHeight)
 			if let voice, voice.enabled {
 				Divider()
 				VoiceBar(voice: voice)
@@ -336,6 +432,7 @@ struct SessionDetailView: View {
 			Divider()
 			composer(viewModel)
 		}
+		.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { stackedHeight = $0 }
 	}
 
 	/// Half open on a table: the transcript stands on the upper half, voice
@@ -368,7 +465,8 @@ struct SessionDetailView: View {
 						.frame(maxHeight: viewModel.pendingAsk == nil ? .infinity : nil)
 					}
 					if viewModel.pendingAsk != nil {
-						ScrollView { askCard(viewModel) }
+						askCard(viewModel, available: geometry.size.height - upperHeight(in: geometry))
+						Spacer(minLength: 0)
 					} else if composerFocused || voice == nil {
 						Spacer(minLength: 0)
 					}
@@ -392,7 +490,8 @@ struct SessionDetailView: View {
 	private var voiceInvitation: some View {
 		VStack(spacing: 12) {
 			Image(systemName: "waveform.circle")
-				.font(.system(size: 44))
+				.font(.largeTitle)
+				.imageScale(.large)
 				.foregroundStyle(.secondary)
 			if let voice, voice.canRead {
 				Button("Start voice mode") { voice.enable() }
@@ -448,14 +547,16 @@ struct SessionDetailView: View {
 	}
 
 	@ViewBuilder
-	private func askCard(_ viewModel: SessionDetailViewModel) -> some View {
+	private func askCard(_ viewModel: SessionDetailViewModel, available: CGFloat) -> some View {
 		if let ask = viewModel.pendingAsk {
-			AskCard(ask: ask) { draft in
+			AskCard(ask: ask, maxQuestionsHeight: available > 0 ? available / 2 : nil) { draft in
 				Task { await viewModel.answer(ask: ask, draft: draft) }
 			}
 			.id(ask.id)
 			.padding()
-			.background(.thinMaterial)
+			.deckGlass()
+			.padding(.horizontal, 8)
+			.padding(.vertical, 4)
 		}
 	}
 
@@ -490,7 +591,7 @@ struct SessionDetailView: View {
 								.id(group.id)
 								.overlay {
 									if highlightedId == group.id {
-										RoundedRectangle(cornerRadius: 12)
+										RoundedRectangle(cornerRadius: DeckStyle.Radius.card)
 											.stroke(Color.accentColor, lineWidth: 2)
 											.padding(-4)
 									}
@@ -502,7 +603,7 @@ struct SessionDetailView: View {
 							MarkdownText(viewModel.streamingText)
 								.padding(10)
 								.background(Color(.secondarySystemBackground))
-								.clipShape(RoundedRectangle(cornerRadius: 12))
+								.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 							Spacer(minLength: 40)
 						}
 						.id("streaming")
@@ -626,24 +727,26 @@ struct SessionDetailView: View {
 				.frame(height: 56)
 			}
 			HStack(alignment: .bottom, spacing: 8) {
-				Menu {
-					if store.quickMessages.isEmpty {
-						Text("No quick messages")
-					}
-					ForEach(store.quickMessages) { message in
-						Button(message.displayLabel) {
-							Task { await viewModel.sendQuickMessage(text: message.text) }
+				if store.supports(.quickMessages) {
+					Menu {
+						if store.quickMessages.isEmpty {
+							Text("No quick messages")
 						}
-					}
-					Divider()
-					Button {
-						showQuickManage = true
+						ForEach(store.quickMessages) { message in
+							Button(message.displayLabel) {
+								Task { await viewModel.sendQuickMessage(text: message.text) }
+							}
+						}
+						Divider()
+						Button {
+							showQuickManage = true
+						} label: {
+							Label("Manage…", systemImage: "slider.horizontal.3")
+						}
 					} label: {
-						Label("Manage…", systemImage: "slider.horizontal.3")
+						Image(systemName: "text.append")
+							.font(.title2)
 					}
-				} label: {
-					Image(systemName: "text.append")
-						.font(.title2)
 				}
 				PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
 					Image(systemName: "photo.on.rectangle")
@@ -686,6 +789,7 @@ struct SessionDetailView: View {
 			}
 		}
 		.padding()
+		.deckGlass(in: Rectangle())
 		.disabled(isSending)
 		.onChange(of: photoItems) { _, items in
 			Task { await loadPhotos(items) }
@@ -699,7 +803,7 @@ struct SessionDetailView: View {
 					.resizable()
 					.scaledToFill()
 					.frame(width: 48, height: 48)
-					.clipShape(RoundedRectangle(cornerRadius: 6))
+					.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 			}
 			Button {
 				attachedImages.removeAll { $0.id == image.id }
@@ -868,43 +972,8 @@ struct TranscriptBubble: View {
 			}
 			.padding(10)
 			.background(isUser ? Color.accentColor.opacity(0.15) : Color(.secondarySystemBackground))
-			.clipShape(RoundedRectangle(cornerRadius: 12))
+			.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 			if !isUser { Spacer(minLength: 40) }
-		}
-	}
-}
-
-/// A thumbnail of an attachment the message carried, fetched through the
-/// authenticated client (a plain AsyncImage can't send the token).
-struct AttachmentImage: View {
-	let image: TranscriptImage
-	var viewModel: SessionDetailViewModel?
-
-	@State private var uiImage: UIImage?
-	@State private var failed = false
-
-	var body: some View {
-		Group {
-			if let uiImage {
-				Image(uiImage: uiImage)
-					.resizable()
-					.scaledToFill()
-			} else if failed {
-				Image(systemName: "photo")
-					.foregroundStyle(.secondary)
-			} else {
-				ProgressView().controlSize(.small)
-			}
-		}
-		.frame(width: 96, height: 96)
-		.clipShape(RoundedRectangle(cornerRadius: 8))
-		.task(id: image) {
-			guard uiImage == nil else { return }
-			if let data = await viewModel?.imageData(for: image), let loaded = UIImage(data: data) {
-				uiImage = loaded
-			} else {
-				failed = true
-			}
 		}
 	}
 }
@@ -949,131 +1018,12 @@ struct QuestionCard: View {
 		}
 		.padding(10)
 		.frame(maxWidth: .infinity, alignment: .leading)
-		.background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-		.overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5))
+		.background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
+		.overlay(RoundedRectangle(cornerRadius: DeckStyle.Radius.card).stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5))
 	}
 }
 
-struct AskCard: View {
-	let ask: DeckAsk
-	var onAnswer: (AskAnswerDraft) -> Void
-
-	@State private var draft: AskAnswerDraft
-
-	init(ask: DeckAsk, onAnswer: @escaping (AskAnswerDraft) -> Void) {
-		self.ask = ask
-		self.onAnswer = onAnswer
-		_draft = State(initialValue: AskAnswerDraft(questions: ask.questions))
-	}
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			ForEach(Array(ask.questions.enumerated()), id: \.offset) { index, question in
-				VStack(alignment: .leading, spacing: 8) {
-					if let header = question.header, !header.isEmpty {
-						Text(header).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-					}
-					Text(question.question).font(.body.weight(.medium))
-					ForEach(question.options ?? [], id: \.label) { option in
-						Button {
-							draft.toggle(option.label, question: index)
-						} label: {
-							HStack(alignment: .top, spacing: 8) {
-								Image(systemName: draft.isSelected(option.label, question: index) ? "checkmark.circle.fill" : "circle")
-								VStack(alignment: .leading, spacing: 2) {
-									Text(option.label)
-									if let description = option.description {
-										Text(description).font(.caption).foregroundStyle(.secondary)
-									}
-								}
-								Spacer()
-							}
-						}
-						.buttonStyle(.plain)
-					}
-					TextField("Or type a reply", text: Binding(
-						get: { draft.reply(question: index) },
-						set: { draft.setReply($0, question: index) }))
-						.textFieldStyle(.roundedBorder)
-				}
-			}
-			Button("Send answers") {
-				onAnswer(draft)
-			}
-			.buttonStyle(.borderedProminent)
-			.disabled(!draft.isComplete)
-		}
-	}
-}
-
-struct PRSection: View {
-	let pr: SessionPR
-	var canMerge: Bool
-	var onApprove: () -> Void
-	var onRequestChanges: () -> Void
-	var onComment: () -> Void
-	var onMerge: () -> Void
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			HStack(spacing: 6) {
-				Image(systemName: "arrow.triangle.pull")
-				if let repo = pr.repo {
-					Text(repo).font(.caption).foregroundStyle(.secondary)
-				}
-				PRStatusBadge(pr: pr)
-				Spacer()
-			}
-
-			HStack(spacing: 8) {
-				Button("Approve", action: onApprove)
-				Button("Request changes", action: onRequestChanges)
-				Button("Comment", action: onComment)
-			}
-			.buttonStyle(.bordered)
-			.font(.caption)
-
-			// Merge is only for your own PR; on a review session (someone else's
-			// PR) it is hidden, matching deck's own-PR guard.
-			if canMerge {
-				Button {
-					onMerge()
-				} label: {
-					Label("Merge", systemImage: "arrow.triangle.merge")
-						.frame(maxWidth: .infinity)
-				}
-				.buttonStyle(.borderedProminent)
-				.disabled(pr.state?.lowercased() != "open")
-			}
-		}
-	}
-}
-
-struct CommentSheet: View {
-	let title: String
-	@Binding var text: String
-	var onSubmit: () -> Void
-
-	@Environment(\.dismiss) private var dismiss
-
-	var body: some View {
-		NavigationStack {
-			TextEditor(text: $text)
-				.padding()
-				.navigationTitle(title)
-				.navigationBarTitleDisplayMode(.inline)
-				.toolbar {
-					ToolbarItem(placement: .cancellationAction) {
-						Button("Cancel") { dismiss() }
-					}
-					ToolbarItem(placement: .confirmationAction) {
-						Button("Submit") {
-							onSubmit()
-							dismiss()
-						}
-						.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-					}
-				}
-		}
-	}
+/// A pick from the model sheet; `model` nil is "back to the default".
+private struct ModelPick {
+	let model: String?
 }

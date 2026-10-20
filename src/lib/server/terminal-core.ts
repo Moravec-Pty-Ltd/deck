@@ -1,5 +1,5 @@
 // Input and query parsing for driving a shell session's tmux pane, shared by
-// the browser's /snapshot + /send and the agent API's /terminal. Keys are a
+// the browser's /send and the agent API's /terminal. Keys are a
 // named allowlist of tmux key names, so a client can press Enter or ctrl-c but
 // can't smuggle tmux's own syntax through the key field.
 

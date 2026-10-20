@@ -39,6 +39,6 @@ export function withHidden(ids: string[], id: string, hidden: boolean): string[]
 }
 
 // The sessions the ordinary lists show.
-export function visibleSessions(sessions: DeckSession[]): DeckSession[] {
+export function visibleSessions<T extends { hidden?: boolean }>(sessions: T[]): T[] {
 	return sessions.filter((s) => !s.hidden);
 }

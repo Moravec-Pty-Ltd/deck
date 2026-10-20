@@ -2,7 +2,7 @@
 // `apiKey` or `credentialId` a request carries into the key to query a provider
 // with, or into the credential a new source will be stored against.
 //
-// Shared by /api/issues/meta and /api/projects/sources so the two cannot
+// Shared by the sources lookup and add routes so the two cannot
 // disagree about what a credentialId means. The pure grouping lives in
 // credentials-core.ts; this is the part that reaches the store.
 import { error } from '@sveltejs/kit';

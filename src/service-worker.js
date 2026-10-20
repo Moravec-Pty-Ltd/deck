@@ -98,13 +98,13 @@ self.addEventListener('push', (event) => {
 // pick the ask card sends, so the transcript shows it answered.
 function answerFromNotification(ask, label) {
 	const header = ask.header || 'Answer';
-	return fetch(`/api/sessions/${encodeURIComponent(ask.sessionId)}/answer`, {
+	return fetch(`/api/agent/sessions/${encodeURIComponent(ask.sessionId)}/answer`, {
 		method: 'POST',
 		credentials: 'include',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({
 			text: `Answering your question:\n- ${header}: ${label}`,
-			toolUseId: ask.askId,
+			askId: ask.askId,
 			answers: [{ header, labels: [label] }]
 		})
 	}).catch(() => {});

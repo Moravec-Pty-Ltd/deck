@@ -12,9 +12,8 @@ import { resolveSecretsFile, SECRETS_FILE_RULE } from './secrets-file';
 
 // Settings-page handlers. The agent API's settings PATCH names only the blocks
 // it changes and the server merges it into the file as it is on disk, so two
-// writers can't clobber each other's blocks (the browser's whole-object PUT
-// could). Reads and writes are synchronous, so the merge can't interleave. The
-// rest are shared verbatim by a browser route and its agent API twin.
+// writers can't clobber each other's blocks (a whole-object write could).
+// Reads and writes are synchronous, so the merge can't interleave.
 
 export function agentSettingsRoute(): Response {
 	return json(redactSettings(readSettings()));

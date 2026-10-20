@@ -1,4 +1,14 @@
 export type SessionKind = 'claude' | 'pi' | 'codex' | 'opencode' | 'shell';
+
+// How each kind is named in the UI; pi spells itself in lower case.
+export const KIND_LABELS: Record<SessionKind, string> = {
+	claude: 'Claude',
+	pi: 'pi',
+	codex: 'Codex',
+	opencode: 'OpenCode',
+	shell: 'Shell'
+};
+
 export type SessionStatus = 'running' | 'idle' | 'error' | 'dead';
 
 // Agent kinds drive an LLM coding agent (chat view); 'shell' is a tmux terminal.
@@ -397,6 +407,19 @@ export interface Issue {
 	blockers: IssueBlocker[];
 }
 
+// The agent API's issue row (GET /api/agent/issues), what the web picker reads
+// too. Maps onto create's `issue { source, sourceId, id, url }`; the rest is
+// context for picking one.
+export interface AgentIssue {
+	source: IssueSourceType;
+	sourceId: string;
+	id: string;
+	title: string;
+	url: string;
+	updatedAt: number;
+	blockers: IssueBlocker[];
+}
+
 // An open GitHub PR awaiting the authenticated user's review, as surfaced in the
 // Review-mode PR picker. `repo` is owner/repo; `headRefName`/`baseRefName` are the
 // PR's head/base branches; the worktree is checked out to a local `pr/<number>`
@@ -417,6 +440,21 @@ export interface PullRequest {
 	updatedAt: number;
 }
 
+// The agent API's PR row (GET /api/agent/prs). Maps onto review's
+// `pr { repo, number }`; the rest is context for picking one.
+export interface AgentPr {
+	sourceId: string;
+	repo: string;
+	number: number;
+	title: string;
+	url: string;
+	headRefName: string;
+	baseRefName: string;
+	isDraft: boolean;
+	author: string;
+	updatedAt: number;
+}
+
 // Prefilled values for the new-session modal when launched from a shortcut
 // (sidebar quick-add, "shell in this worktree", etc.).
 export interface NewSessionPreset {
@@ -426,7 +464,7 @@ export interface NewSessionPreset {
 	title?: string;
 }
 
-// One harness's row in the projects page's Agent skills panel (issue #127):
+// One harness's row in the settings page's Agent skills panel (issue #127):
 // the shipped deck skill's install/version status. `supported` is whether deck
 // knows where that harness keeps skills; unsupported rows render as such
 // rather than blocking the panel. Derived in server/skills-core.ts.
@@ -469,6 +507,35 @@ export interface OperatorSettings {
 	/// ~/.secrets rather than in this file.
 	apiKeyFile?: string;
 }
+
+// The agent API's view of ~/.deck/settings.json (GET /api/agent/settings):
+// the operator key reads as hasApiKey and a model profile's env as its key
+// names, so no client ever holds a stored secret.
+export interface AgentSettingsView {
+	speech?: SpeechSettings;
+	operator?: Omit<OperatorSettings, 'apiKey'> & { hasApiKey: boolean };
+	modelProfiles?: { id: string; label?: string; model?: string; envKeys: string[] }[];
+	lastModels?: DeckSettings['lastModels'];
+	lastEffort?: DeckSettings['lastEffort'];
+	zedSshTarget?: string;
+	autoCompact?: { enabled: boolean; percent: number };
+}
+
+type Nullable<T> = { [K in keyof T]?: T[K] | null };
+
+// A PATCH /api/agent/settings body: only the blocks being changed. Within a
+// block an omitted field keeps its stored value and null (or a blank string)
+// clears it; a null block removes the whole block.
+export interface AgentSettingsPatch {
+	speech?: Nullable<SpeechSettings> | null;
+	operator?: Nullable<OperatorSettings> | null;
+	autoCompact?: Nullable<{ enabled: boolean; percent: number }> | null;
+	zedSshTarget?: string | null;
+}
+
+// The settings the start-defaults resolver reads: present on both the stored
+// file and its redacted agent view.
+export type RememberedPicks = Pick<DeckSettings, 'lastModels' | 'lastEffort'>;
 
 export interface DeckSettings {
 	speech?: SpeechSettings;

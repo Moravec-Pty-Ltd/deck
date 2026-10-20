@@ -100,8 +100,8 @@ function cloneFailed(e: unknown): never {
 }
 
 // Clone a remote repo into a subfolder of an existing parent dir, then register
-// it. POST /api/projects still registers an already-present dir. Shared verbatim
-// by /api/projects/clone (browser) and /api/agent/projects/clone.
+// it. POST /api/agent/projects still registers an already-present dir. Serves
+// /api/agent/projects/clone.
 export async function cloneProjectRoute({ request }: { request: Request }): Promise<Response> {
 	const raw = await request.json().catch(() => error(400, 'invalid JSON body'));
 	const { url, parent, name, group } = readBody(raw);

@@ -5,7 +5,7 @@ import { agentSend } from './agents/dispatch';
 import { appendEvent } from './claude';
 import { updateSession } from './store';
 import { issueContextWarning, issuePromptContext, wantsIssueContext } from './issues/prompt';
-import { parseImages } from './message-core';
+import { imageKindError, parseImages } from './message-core';
 import { skillInvocation } from '$lib/skills-core';
 import { skillCatalogue } from './skills-catalogue';
 
@@ -33,8 +33,8 @@ export async function sendAgentMessage(session: DeckSession, body: Record<string
 	// client doesn't have to carry its own copy of the matching.
 	const prompt = body.skills === true ? skillInvocation(expanded, skillCatalogue()) : expanded;
 	if (!prompt.trim() && images.length === 0) error(400, 'empty prompt');
-	// The per-turn runners currently accept text only. Never silently drop an attachment.
-	if (images.length && session.kind !== 'claude') error(400, 'image attachments require a claude session');
+	const imageRefusal = imageKindError(session.kind, images);
+	if (imageRefusal) error(400, imageRefusal);
 	const meta = typeof body.answersFor === 'string'
 		? { answersFor: body.answersFor, answers: Array.isArray(body.answers) ? body.answers : undefined }
 		: undefined;

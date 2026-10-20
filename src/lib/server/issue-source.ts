@@ -1,5 +1,5 @@
-// Issue-source handlers, each shared verbatim by a browser route and its agent
-// API twin so the two cannot drift: adding and removing a project's sources,
+// Issue-source handlers for the agent API (which the web app uses too): adding
+// and removing a project's sources,
 // the provider lookups the add-source form cascades through, and the saved
 // keys a new source can reuse. API keys are write-only here: one goes in on a
 // POST and is stashed in the keyring, and no response ever carries one.

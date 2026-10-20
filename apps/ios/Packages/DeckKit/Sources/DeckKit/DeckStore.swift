@@ -37,6 +37,16 @@ public final class DeckStore {
 	/// start surface opens.
 	public private(set) var startDefaultsByProject: [String: ProjectStartDefaults] = [:]
 	public private(set) var userLogin: String?
+	/// The server's expensive-model list, from the last defaults it sent.
+	public private(set) var expensiveModels: [String] = []
+	/// What the server advertises on GET /api/agent. Nil until it first answers.
+	public private(set) var serverInfo: ServerInfo?
+	/// Devices waiting to be let in, oldest first. Kept current by the
+	/// `pairing` event, so nothing polls for it.
+	public private(set) var pairingRequests: [PairingRequest] = []
+	/// The PR reviewer's last reported state. Nil until fetched or when the
+	/// server has no reviews route.
+	public private(set) var reviews: ReviewsSnapshot?
 	private var seq: Int?
 	private var eventTask: Task<Void, Never>?
 
@@ -54,6 +64,22 @@ public final class DeckStore {
 	public var isSignedIn: Bool { client != nil }
 
 	public var awaitingCount: Int { asks.count }
+
+	/// Whether the server offers a feature. Assumed until the server has said,
+	/// so screens don't flicker on launch; a screen whose feature turns out to
+	/// be missing hides it rather than calling a route that isn't there.
+	public func supports(_ capability: DeckCapability) -> Bool {
+		serverInfo?.supports(capability) ?? true
+	}
+
+	/// The capabilities in `needs` the server is known to lack.
+	public func missing(_ needs: [DeckCapability]) -> [DeckCapability] {
+		serverInfo?.missing(needs) ?? []
+	}
+
+	/// The server is older than this app: it lacks something the app uses, and
+	/// those features are hidden until deck is updated.
+	public var serverTooOld: Bool { !missing(DeckCapability.allCases).isEmpty }
 
 	/// The runs board: what needs you first, finished runs last.
 	public var board: [RunDigest] { RunBoard.sorted(runs) }
@@ -91,6 +117,9 @@ public final class DeckStore {
 		asks = []
 		runs = []
 		overseer = nil
+		serverInfo = nil
+		pairingRequests = []
+		reviews = nil
 		connection = .signedOut
 	}
 
@@ -107,18 +136,51 @@ public final class DeckStore {
 		Task { await refreshRuns() }
 		Task { await refreshProjects() }
 		Task { await refreshKinds() }
-		Task { await refreshQuickMessages() }
-		Task { await refreshProjectDetails() }
-		Task { await refreshUser() }
+		// These routes are capability-gated, so they wait for the server's answer.
+		Task {
+			await refreshServerInfo()
+			async let quick: Void = refreshQuickMessages()
+			async let details: Void = refreshProjectDetails()
+			async let user: Void = refreshUser()
+			async let pairing: Void = refreshPairing()
+			async let reviews: Void = refreshReviews()
+			_ = await (quick, details, user, pairing, reviews)
+		}
+	}
+
+	public func refreshPairing() async {
+		guard let client, supports(.pairing) else { return }
+		if let fresh = try? await client.pairingRequests() { pairingRequests = fresh }
+	}
+
+	public func refreshReviews() async {
+		guard let client, supports(.reviews) else { return }
+		if let fresh = try? await client.reviews() { reviews = fresh }
+	}
+
+	/// Let a device in or turn it away. The request leaves the list either way:
+	/// one that had already expired or been decided elsewhere is gone too.
+	@discardableResult
+	public func decidePairing(id: String, approve: Bool) async throws -> Bool {
+		guard let client else { throw DeckError.notConfigured }
+		let ok = try await client.decidePairing(id: id, approve: approve)
+		pairingRequests.removeAll { $0.id == id }
+		return ok
+	}
+
+	/// Ask the server what it supports. A failure keeps what was known before.
+	public func refreshServerInfo() async {
+		guard let client else { return }
+		if let info = try? await client.serverInfo() { serverInfo = info }
 	}
 
 	public func refreshQuickMessages() async {
-		guard let client else { return }
+		guard let client, supports(.quickMessages) else { return }
 		if let fresh = try? await client.quickMessages() { quickMessages = fresh }
 	}
 
 	public func refreshUser() async {
-		guard let client else { return }
+		guard let client, supports(.user) else { return }
 		if let login = try? await client.currentUserLogin() { userLogin = login }
 	}
 
@@ -130,7 +192,7 @@ public final class DeckStore {
 	}
 
 	public func refreshProjectDetails() async {
-		guard let client else { return }
+		guard let client, supports(.projectConfig) else { return }
 		if let fresh = try? await client.projectDetails() {
 			projectDetails = Dictionary(uniqueKeysWithValues: fresh.map { ($0.path, $0) })
 		}
@@ -143,6 +205,7 @@ public final class DeckStore {
 		guard let client else { return nil }
 		if let fresh = try? await client.startDefaults(project: projectPath) {
 			startDefaultsByProject[projectPath] = fresh
+			if let list = fresh.expensiveModels { expensiveModels = list }
 		}
 		return startDefaultsByProject[projectPath]
 	}
@@ -157,8 +220,49 @@ public final class DeckStore {
 	/// Save a project's automation config and keep the local record current.
 	public func saveAutomation(projectPath: String, automation: ProjectAutomation) async throws {
 		guard let client else { throw DeckError.notConfigured }
-		let project = projectDetails[projectPath] ?? ProjectDetail(path: projectPath, name: nil, group: nil, automation: nil)
-		projectDetails[projectPath] = try await client.saveAutomation(project: project, automation: automation)
+		projectDetails[projectPath] = try await client.saveAutomation(projectPath: projectPath, automation: automation)
+	}
+
+	/// Register a directory as a project and list it.
+	@discardableResult
+	public func registerProject(path: String, name: String?, group: String?) async throws -> ProjectDetail {
+		guard let client else { throw DeckError.notConfigured }
+		return try await stored(client.registerProject(path: path, name: name, group: group))
+	}
+
+	/// Clone a repo into a parent folder and register the result.
+	@discardableResult
+	public func cloneProject(url: String, parent: String, name: String?, group: String?) async throws -> ProjectDetail {
+		guard let client else { throw DeckError.notConfigured }
+		return try await stored(client.cloneProject(url: url, parent: parent, name: name, group: group))
+	}
+
+	/// Save the changed fields of a project's config. Nothing changed, nothing sent.
+	public func updateProject(path: String, changes: [String: String]) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		guard !changes.isEmpty else { return }
+		try await stored(client.updateProject(path: path, changes: changes))
+	}
+
+	/// Save a project's dev-server config.
+	public func saveDevConfig(path: String, dev: DevConfig) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await stored(client.saveDevConfig(path: path, dev: dev))
+	}
+
+	/// Unregister a project; its folder and sessions are left alone.
+	public func removeProject(path: String) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await client.removeProject(path: path)
+		projectDetails[path] = nil
+		await refreshProjects()
+	}
+
+	@discardableResult
+	private func stored(_ detail: ProjectDetail) async -> ProjectDetail {
+		projectDetails[detail.path] = detail
+		await refreshProjects()
+		return detail
 	}
 
 	public func changeEffort(sessionId: String, effort: String?) async throws {
@@ -211,6 +315,34 @@ public final class DeckStore {
 	public func changeModel(sessionId: String, model: String?) async throws {
 		guard let client else { throw DeckError.notConfigured }
 		try await client.changeModel(sessionId: sessionId, model: model)
+		await refreshSessions()
+	}
+
+	/// Fetch the expensive-model list if it hasn't arrived yet. It rides on a
+	/// project's start defaults, so any registered project answers it.
+	public func loadExpensiveModels(projectPath: String? = nil) async {
+		guard supports(.expensiveModels), expensiveModels.isEmpty,
+			let path = projectPath ?? projects.first?.path else { return }
+		await loadStartDefaults(projectPath: path)
+	}
+
+	/// Whether picking `model` for a `kind` session should confirm first, by
+	/// the server's list and its marked model rows.
+	public func needsExpensiveConfirm(model: String?, provider: String? = nil, kind: String, current: String? = nil) -> Bool {
+		guard supports(.expensiveModels) else { return false }
+		let rows = kinds.first { $0.kind == kind }?.models ?? []
+		return ExpensiveModels.needsConfirm(model: model, provider: provider, current: current, list: expensiveModels, rows: rows)
+	}
+
+	public func restart(sessionId: String) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await client.restart(sessionId: sessionId)
+		await refreshSessions()
+	}
+
+	public func dismissPR(sessionId: String) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await client.dismissPR(sessionId: sessionId)
 		await refreshSessions()
 	}
 
@@ -305,7 +437,10 @@ public final class DeckStore {
 		}
 		// The snapshot covers sessions only; after a gap the run-updated events
 		// it skipped are gone too, so re-read the runs.
-		if response.gap == true { Task { await refreshRuns() } }
+		if response.gap == true {
+			Task { await refreshRuns() }
+			Task { await refreshPairing() }
+		}
 		for event in response.events ?? [] {
 			apply(event)
 			onFeedEvent?(event)
@@ -343,6 +478,8 @@ public final class DeckStore {
 			// The event names the run; the digest is fetched, never derived here.
 			if let runId = event.runId ?? event.sessionId { Task { await refreshRun(id: runId) } }
 			Task { await refreshOverseer() }
+		case "pairing":
+			applyPairing(event)
 		case "run-deleted":
 			if let runId = event.runId ?? event.sessionId {
 				runs.removeAll { $0.id == runId }
@@ -367,6 +504,20 @@ public final class DeckStore {
 			if let pr = event.pr { sessions[index].pr = pr }
 			if let cost = event.cost { sessions[index].cost = cost }
 			if let at = event.at { sessions[index].lastActiveAt = at }
+		}
+	}
+
+	private func applyPairing(_ event: DeckEvent) {
+		guard let id = event.pairingId ?? event.sessionId else { return }
+		guard event.state == "pending" else {
+			pairingRequests.removeAll { $0.id == id }
+			return
+		}
+		guard !pairingRequests.contains(where: { $0.id == id }) else { return }
+		if let code = event.code {
+			pairingRequests.append(PairingRequest(id: id, code: code))
+		} else {
+			Task { await refreshPairing() }
 		}
 	}
 
@@ -510,6 +661,22 @@ public final class DeckStore {
 		return response
 	}
 
+	/// Start a terminal in a project: a deck-managed tmux shell, no agent.
+	@discardableResult
+	public func startShell(project: DeckProject, idempotencyKey: String = UUID().uuidString) async throws -> CreateSessionResponse {
+		guard let client else { throw DeckError.notConfigured }
+		let response = try await client.createShellSession(cwd: project.path, idempotencyKey: idempotencyKey)
+		await refreshSessions()
+		return response
+	}
+
+	/// One create from a StartPlan. The caller refreshes once the batch is in,
+	/// rather than once per session.
+	public func createSession(_ request: CreateSessionRequest, idempotencyKey: String) async throws -> String {
+		guard let client else { throw DeckError.notConfigured }
+		return try await client.createSession(request, idempotencyKey: idempotencyKey).id
+	}
+
 	/// Start a review session for a PR.
 	@discardableResult
 	public func startReview(
@@ -551,7 +718,7 @@ public final class DeckStore {
 		if response.ok {
 			asks.removeAll { $0.id == ask.id }
 		} else if let reason = response.reason {
-			throw DeckError.http(status: 200, message: reason)
+			throw DeckError.answerDeclined(reason: reason)
 		}
 	}
 

@@ -8,8 +8,8 @@ import { isPickerAllowed } from './confine';
 import { objectBody } from './http';
 import { buildProjectRecord, homeRegistrationRefusal } from './project-record-core';
 
-// Project registration and config handlers, each shared verbatim by a browser
-// route under /api/projects (or /api/fs) and its agent API twin, so the two
+// Project registration and config handlers. Register and remove are shared
+// verbatim by the browser's /api/projects and its agent API twin, so the two
 // surfaces cannot drift. Auth is enforced globally by hooks.server.ts.
 
 interface ProjectEvent {

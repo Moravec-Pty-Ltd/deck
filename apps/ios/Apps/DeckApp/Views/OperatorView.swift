@@ -1,14 +1,24 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 /// The Operator tab: the conversation with the hands-free operator, what it
 /// did, whether it is listening for "hey deck" or awake for a command, the
-/// voice bar for hold-to-talk, and a text field for typing to it.
+/// voice bar for hold-to-talk, and a text field for typing to it. The Mac
+/// shows it in its own window, without the wake word.
 struct OperatorView: View {
 	@Environment(DeckStore.self) private var store
 	@State private var text = ""
 	@FocusState private var composing: Bool
 	@State private var confirmClear = false
+	#if os(macOS)
+	@State private var choosingModel = false
+	private let leading = ToolbarItemPlacement.navigation
+	private let trailing = ToolbarItemPlacement.primaryAction
+	#else
+	private let leading = ToolbarItemPlacement.topBarLeading
+	private let trailing = ToolbarItemPlacement.topBarTrailing
+	#endif
 
 	private var operatorController: OperatorController { OperatorController.shared }
 
@@ -26,7 +36,7 @@ struct OperatorView: View {
 			}
 			.navigationTitle("Operator")
 			.toolbar {
-				ToolbarItem(placement: .topBarLeading) {
+				ToolbarItem(placement: leading) {
 					Button {
 						confirmClear = true
 					} label: {
@@ -34,7 +44,17 @@ struct OperatorView: View {
 					}
 					.accessibilityLabel("Clear the conversation")
 				}
-				ToolbarItem(placement: .topBarTrailing) {
+				#if os(macOS)
+				ToolbarItem(placement: trailing) {
+					Button {
+						choosingModel = true
+					} label: {
+						Label(operatorController.modelName, systemImage: "cpu")
+					}
+					.help("Choose the model the operator thinks with")
+				}
+				#endif
+				ToolbarItem(placement: trailing) {
 					Button {
 						if operatorController.enabled { operatorController.turnOff() } else { operatorController.turnOn() }
 					} label: {
@@ -49,6 +69,9 @@ struct OperatorView: View {
 			.confirmationDialog("Clear the conversation?", isPresented: $confirmClear, titleVisibility: .visible) {
 				Button("Clear", role: .destructive) { Task { await operatorController.reset() } }
 			}
+			#if os(macOS)
+			.sheet(isPresented: $choosingModel) { modelSheet }
+			#endif
 			.onAppear { operatorController.configure(client: store.client, store: store) }
 			.onChange(of: store.isSignedIn) { _, _ in operatorController.configure(client: store.client, store: store) }
 		}
@@ -63,7 +86,7 @@ struct OperatorView: View {
 							.font(.footnote)
 							.foregroundStyle(.secondary)
 					} else if operatorController.entries.isEmpty {
-						Text("Turn it on and say \"hey deck\", or hold the mic. Ask what is going on, have a reply read, send a session an instruction, answer its question, or start a session with a skill.")
+						Text("\(Self.invitation) Ask what is going on, have a reply read, send a session an instruction, answer its question, or start a session with a skill.")
 							.font(.footnote)
 							.foregroundStyle(.secondary)
 					}
@@ -112,7 +135,14 @@ struct OperatorView: View {
 		}
 	}
 
+	private static var invitation: String {
+		AppPlatform.current.hasWakeWord
+			? "Turn it on and say \"hey deck\", or hold the mic."
+			: "Type below, or turn it on and hold the mic to talk."
+	}
+
 	private var stateText: String {
+		if !AppPlatform.current.hasWakeWord { return "On: hold the mic to talk" }
 		if operatorController.awake { return "Awake: talk now" }
 		if operatorController.wakeWordAvailable { return "Listening for \"hey deck\"" }
 		return "Speech recognition is off; hold the mic to talk"
@@ -132,7 +162,7 @@ struct OperatorView: View {
 			}
 			.padding(10)
 			.background(background(for: entry.role))
-			.clipShape(RoundedRectangle(cornerRadius: 12))
+			.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 			if entry.role != .user { Spacer(minLength: 40) }
 		}
 	}
@@ -141,7 +171,11 @@ struct OperatorView: View {
 		switch role {
 		case .user: return Color.accentColor.opacity(0.15)
 		case .error: return Color.red.opacity(0.12)
+		#if os(macOS)
+		default: return Color(nsColor: .controlBackgroundColor)
+		#else
 		default: return Color(.secondarySystemBackground)
+		#endif
 		}
 	}
 
@@ -153,6 +187,7 @@ struct OperatorView: View {
 				.focused($composing)
 				.onSubmit(submit)
 				.accessibilityIdentifier("operatorComposer")
+			#if os(iOS)
 			// The keyboard covers the tab bar and this is a root screen with no
 			// back button, so it needs its own way down. A keyboard toolbar item
 			// would do, but the system floats those over the composer.
@@ -165,6 +200,7 @@ struct OperatorView: View {
 				}
 				.accessibilityLabel("Hide the keyboard")
 			}
+			#endif
 			Button(action: submit) {
 				Image(systemName: "arrow.up.circle.fill").font(.title2)
 			}
@@ -173,6 +209,20 @@ struct OperatorView: View {
 		}
 		.padding()
 	}
+
+	#if os(macOS)
+	private var modelSheet: some View {
+		NavigationStack {
+			LocalModelView()
+				.toolbar {
+					ToolbarItem(placement: .confirmationAction) {
+						Button("Done") { choosingModel = false }
+					}
+				}
+		}
+		.frame(minWidth: 480, minHeight: 520)
+	}
+	#endif
 
 	private func submit() {
 		let message = text

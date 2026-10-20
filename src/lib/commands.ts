@@ -2,14 +2,16 @@
 // buildCommands(ctx) assembles the session-aware list, filterCommands(list, q)
 // scores it. Every side effect goes through a CommandContext method the palette
 // supplies, so the registry stays unit-testable in isolation.
-import { isAgentKind, type DeckSession, type ServerRuntime } from './types';
+import { isAgentKind, type ServerRuntime } from './types';
+import type { SessionView } from './session-view';
 import { canStart, canStop, isInFlight, type ServerAction } from './servers-client';
 import { CLAUDE_MODELS, modelLabel } from './models';
 
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 export type ReviewDecision = 'approve' | 'request-changes' | 'comment';
 
-// The two payload shapes the /api/sessions/[id]/pr POST accepts (see that route).
+// A PR action; `action` names the agent route it posts to
+// (/api/agent/sessions/[id]/review or /merge).
 export type PrActionPayload =
 	| { action: 'review'; decision: ReviewDecision; body: string }
 	| { action: 'merge'; method: MergeMethod; deleteBranch: boolean };
@@ -19,9 +21,9 @@ export type PrActionPayload =
 export interface CommandContext {
 	// The session whose page is open, or null off a /s/[id] route. Gates the
 	// PR/issue commands.
-	session: DeckSession | null;
+	session: SessionView | null;
 	// All sessions, for the "go to session" switch list.
-	sessions: DeckSession[];
+	sessions: SessionView[];
 	// The current session's configured servers (empty when it runs none), for the
 	// run/stop/restart commands.
 	servers: ServerRuntime[];
@@ -39,9 +41,9 @@ export interface CommandContext {
 	dismissPr: () => Promise<void>;
 	// Run a lifecycle action on one of the current session's servers.
 	serverAction: (name: string, action: ServerAction) => Promise<void>;
-	// Switch the current session's model (POST /api/sessions/[id]/model).
+	// Switch the current session's model (POST /api/agent/sessions/[id]/model).
 	setModel: (model: string) => Promise<void>;
-	// Restart the current claude session's process (POST /api/sessions/[id]/restart).
+	// Restart the current claude session's process (POST /api/agent/sessions/[id]/restart).
 	restartSession: () => Promise<void>;
 }
 
@@ -77,7 +79,7 @@ export interface Command {
 // Review/merge actions on the current session's captured PR. Merge is offered
 // only for a clean, mergeable, open (non-draft) PR, the same gate PrMenu uses;
 // its hint carries the approval tally deck tracks (it has no check-run data).
-function prCommands(ctx: CommandContext, pr: NonNullable<DeckSession['pr']>): Command[] {
+function prCommands(ctx: CommandContext, pr: NonNullable<SessionView['pr']>): Command[] {
 	const approvals = pr.approvals ?? 0;
 	const cmds: Command[] = [
 		{
@@ -146,11 +148,10 @@ function prCommands(ctx: CommandContext, pr: NonNullable<DeckSession['pr']>): Co
 	return cmds;
 }
 
-// One "Open issue" per attached issue that has a url (older sessions store a
-// single `issue`, newer ones an `issues` array; read them together).
-function issueCommands(ctx: CommandContext, s: DeckSession): Command[] {
-	const issues = s.issues ?? (s.issue ? [s.issue] : []);
-	return issues
+// One "Open issue" per attached issue that has a url (the digest already folds
+// an older session's single `issue` into `issues`).
+function issueCommands(ctx: CommandContext, s: SessionView): Command[] {
+	return (s.issues ?? [])
 		.filter((issue) => issue.url)
 		.map((issue) => ({
 			id: `issue-open:${issue.source}:${issue.id}`,
@@ -201,7 +202,7 @@ function serverCommands(ctx: CommandContext): Command[] {
 // Switch the current agent session's model (issue #88). Idle-only: the switch
 // applies on the next turn, so the command is simply absent while one runs (the
 // endpoint 409s on the race). Shell sessions have no model.
-function modelCommands(ctx: CommandContext, s: DeckSession): Command[] {
+function modelCommands(ctx: CommandContext, s: SessionView): Command[] {
 	if (!isAgentKind(s.kind) || s.status === 'running') return [];
 	return [
 		{
@@ -219,7 +220,7 @@ function modelCommands(ctx: CommandContext, s: DeckSession): Command[] {
 // already pointed at it, so a prompt that should run again every morning is two
 // keystrokes from the session it should run in. Agent sessions only — a terminal
 // has nothing to send a prompt to.
-function scheduleCommands(ctx: CommandContext, s: DeckSession): Command[] {
+function scheduleCommands(ctx: CommandContext, s: SessionView): Command[] {
 	if (!isAgentKind(s.kind)) return [];
 	return [
 		{
@@ -234,12 +235,12 @@ function scheduleCommands(ctx: CommandContext, s: DeckSession): Command[] {
 
 // Restart a claude session's process (see server/session-restart.ts). Idle-only
 // and claude-only, absent otherwise like the model switch.
-function restartCommands(ctx: CommandContext, s: DeckSession): Command[] {
+function restartCommands(ctx: CommandContext, s: SessionView): Command[] {
 	if (s.kind !== 'claude' || s.status === 'running') return [];
 	return [
 		{
 			id: 'restart-claude',
-			title: 'Restart claude',
+			title: 'Restart Claude',
 			keywords: ['restart', 'reload', 'config', 'claude.md', 'settings', 'skills', 'mcp'],
 			hint: 'reload config',
 			run: () => ctx.restartSession()
@@ -267,6 +268,12 @@ function globalCommands(ctx: CommandContext): Command[] {
 			title: 'Schedules',
 			keywords: ['schedule', 'cron', 'repeat', 'recurring', 'timer', 'every morning'],
 			run: () => ctx.goto('/schedules')
+		},
+		{
+			id: 'settings',
+			title: 'Settings',
+			keywords: ['preferences', 'voice', 'speech', 'operator', 'compact', 'skills', 'devices', 'pair', 'qr', 'zed', 'theme'],
+			run: () => ctx.goto('/settings')
 		},
 		{
 			id: 'search-sessions',

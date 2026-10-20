@@ -1,4 +1,5 @@
 import DeckKit
+import DeckUI
 import SwiftUI
 
 /// Schedules (deck#235): prompts that run on a clock. deck owns the clock, so
@@ -38,7 +39,7 @@ struct SchedulesView: View {
 			}
 		}
 		.navigationTitle("Schedules")
-		.navigationBarTitleDisplayMode(.inline)
+		.deckInlineNavigationTitle()
 		.overlay {
 			if !loaded && loadError == nil { ProgressView() }
 		}
@@ -307,8 +308,7 @@ struct ScheduleFormView: View {
 					}
 					TextField("Cron expression", text: $draft.cron)
 						.font(.body.monospaced())
-						.textInputAutocapitalization(.never)
-						.autocorrectionDisabled()
+						.deckPlainInput()
 						.accessibilityIdentifier("scheduleCron")
 					previewLine
 				}
@@ -330,7 +330,7 @@ struct ScheduleFormView: View {
 				}
 			}
 			.navigationTitle(scheduleId == nil ? "New schedule" : "Edit schedule")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }

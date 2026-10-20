@@ -4,7 +4,7 @@
 	// the project's remembered pick and then the CLI default. pi is the exception:
 	// its provider and model are a pair, so naming either half opts the lane out of
 	// the remembered pi pick entirely rather than mixing the two.
-	import type { DeckSettings } from '$lib/types';
+	import type { AgentSettingsView } from '$lib/types';
 	import { AGENT_KINDS } from '$lib/types';
 	import { forKind, type AgentRow } from '$lib/automation-form-core';
 	import {
@@ -21,7 +21,7 @@
 		agent = $bindable(),
 		settings,
 		lane
-	}: { agent: AgentRow; settings: DeckSettings; lane: string } = $props();
+	}: { agent: AgentRow; settings: AgentSettingsView; lane: string } = $props();
 
 	// A model this deck no longer offers (a profile deleted from ~/.deck settings)
 	// still needs an option, or the select renders blank while the lane keeps
@@ -63,13 +63,13 @@
 	</select>
 	{#if agent.kind === 'claude'}
 		<select class="select select-xs w-48" aria-label="{lane} model" bind:value={agent.model}>
-			<option value="">remembered model</option>
+			<option value="">Remembered model</option>
 			{#each modelOptions as m (m.value)}
 				<option value={m.value}>{m.label}</option>
 			{/each}
 		</select>
 		<select class="select select-xs w-36" aria-label="{lane} effort" bind:value={agent.effort}>
-			<option value={undefined}>remembered effort</option>
+			<option value={undefined}>Remembered effort</option>
 			{#each EFFORT_LEVELS as e (e)}
 				<option value={e}>{e}</option>
 			{/each}
@@ -80,7 +80,7 @@
 				<ComboInput
 					bind:value={agent.provider}
 					options={piProviders}
-					placeholder="provider"
+					placeholder="Provider"
 					ariaLabel="{lane} provider"
 					compact
 				/>
@@ -90,7 +90,7 @@
 			<ComboInput
 				bind:value={agent.model}
 				options={modelChoices}
-				placeholder="model"
+				placeholder="Model"
 				ariaLabel="{lane} model"
 				compact
 			/>
@@ -99,7 +99,7 @@
 		<input
 			class="input input-xs w-48"
 			aria-label="{lane} model"
-			placeholder="model"
+			placeholder="Model"
 			bind:value={agent.model}
 		/>
 	{/if}

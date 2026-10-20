@@ -6,7 +6,7 @@ public enum SessionStreamEvent: Sendable {
 	case status(String)
 	/// Recent stored history, sent once when the stream opens. `start` is the
 	/// absolute index of `events[0]`: anything before it lives on the server and
-	/// loads on demand through the transcript range endpoint.
+	/// loads on demand through the history endpoint.
 	case snapshot(events: [JSONValue], start: Int)
 	/// One persisted transcript event (an assistant message, a tool result, a
 	/// deck marker) to fold into the transcript.
@@ -20,30 +20,16 @@ public enum SessionStreamEvent: Sendable {
 
 extension DeckClient {
 	/// Live transcript stream for a session via deck's per-session SSE endpoint
-	/// (`/api/sessions/{id}/events`): stored history first, then token deltas and
+	/// (`/api/agent/sessions/{id}/stream`): stored history first, then token deltas and
 	/// persisted events as the agent works. The stream ends (or throws) when the
 	/// connection drops; the caller reconnects.
 	public func sessionEventStream(sessionId: String) -> AsyncThrowingStream<SessionStreamEvent, Error> {
-		let credentials = self.credentials
-		return AsyncThrowingStream { continuation in
+		AsyncThrowingStream { continuation in
 			let task = Task {
-				let config = URLSessionConfiguration.ephemeral
-				// Reset on each byte; deck sends a ping every 25s so the stream
-				// stays alive well within this window.
-				config.timeoutIntervalForRequest = 60
-				config.timeoutIntervalForResource = 86_400
-				let session = URLSession(configuration: config)
+				let session = URLSession(configuration: self.streamConfiguration())
 				defer { session.invalidateAndCancel() }
 				do {
-					guard var components = URLComponents(url: credentials.baseURL, resolvingAgainstBaseURL: false) else {
-						throw DeckError.invalidResponse
-					}
-					components.path = "/api/sessions/\(sessionId)/events"
-					guard let url = components.url else { throw DeckError.invalidResponse }
-					var request = URLRequest(url: url)
-					request.setValue("Bearer \(credentials.token)", forHTTPHeaderField: "Authorization")
-					request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-
+					let request = try self.streamRequest(path: "/api/agent/sessions/\(sessionId)/stream")
 					let (bytes, response) = try await session.bytes(for: request)
 					guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
 						throw DeckError.http(
@@ -89,24 +75,12 @@ extension DeckClient {
 	/// A generic SSE subscription: every frame is handed to `parse`, and what it
 	/// returns is yielded. Frames end at their data line, as in sessionEventStream.
 	func serverEvents<T: Sendable>(path: String, parse: @escaping @Sendable (String, String) -> T?) -> AsyncThrowingStream<T, Error> {
-		let credentials = self.credentials
-		return AsyncThrowingStream { continuation in
+		AsyncThrowingStream { continuation in
 			let task = Task {
-				let config = URLSessionConfiguration.ephemeral
-				config.timeoutIntervalForRequest = 60
-				config.timeoutIntervalForResource = 86_400
-				let session = URLSession(configuration: config)
+				let session = URLSession(configuration: self.streamConfiguration())
 				defer { session.invalidateAndCancel() }
 				do {
-					guard var components = URLComponents(url: credentials.baseURL, resolvingAgainstBaseURL: false) else {
-						throw DeckError.invalidResponse
-					}
-					components.path = path
-					guard let url = components.url else { throw DeckError.invalidResponse }
-					var request = URLRequest(url: url)
-					request.setValue("Bearer \(credentials.token)", forHTTPHeaderField: "Authorization")
-					request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-					let (bytes, response) = try await session.bytes(for: request)
+					let (bytes, response) = try await session.bytes(for: self.streamRequest(path: path))
 					guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
 						throw DeckError.http(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "stream failed")
 					}
@@ -126,6 +100,24 @@ extension DeckClient {
 			}
 			continuation.onTermination = { _ in task.cancel() }
 		}
+	}
+}
+
+extension DeckClient {
+	/// The client's own configuration (so a test stub sees streams too) with
+	/// timeouts for a long-lived stream. The request timeout resets on each
+	/// byte, and deck pings every 25s, well within it.
+	fileprivate func streamConfiguration() -> URLSessionConfiguration {
+		let config = session.configuration
+		config.timeoutIntervalForRequest = 60
+		config.timeoutIntervalForResource = 86_400
+		return config
+	}
+
+	fileprivate func streamRequest(path: String) throws -> URLRequest {
+		var request = try request(path: path)
+		request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+		return request
 	}
 }
 

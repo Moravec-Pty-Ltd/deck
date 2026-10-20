@@ -17,15 +17,15 @@ describe('providerFor', () => {
 		expect(providerFor({ provider: 'anthropic', url: 'http://127.0.0.1:17498/v1' })).toBe('anthropic');
 		expect(providerFor({ provider: 'openai', url: 'https://api.anthropic.com/v1' })).toBe('openai');
 		expect(providerFor({ url: 'https://api.anthropic.com/v1' })).toBe('anthropic');
-		expect(providerFor({ url: 'http://strix-halo:8000/v1' })).toBe('openai');
+		expect(providerFor({ url: 'http://gpu-box:8000/v1' })).toBe('openai');
 		expect(providerFor({})).toBe('openai');
 	});
 });
 
 describe('buildRequest', () => {
 	it('speaks OpenAI chat completions with the tools and a bearer key', () => {
-		const request = buildRequest('openai', { url: 'http://strix-halo:8000/v1/', model: 'qwen', apiKey: 'k' }, messages, true);
-		expect(request.url).toBe('http://strix-halo:8000/v1/chat/completions');
+		const request = buildRequest('openai', { url: 'http://gpu-box:8000/v1/', model: 'qwen', apiKey: 'k' }, messages, true);
+		expect(request.url).toBe('http://gpu-box:8000/v1/chat/completions');
 		expect(request.headers.authorization).toBe('Bearer k');
 		expect(request.body.messages).toHaveLength(4);
 		expect((request.body.tools as unknown[]).length).toBeGreaterThan(0);

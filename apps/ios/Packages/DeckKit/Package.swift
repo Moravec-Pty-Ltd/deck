@@ -6,6 +6,9 @@ let package = Package(
 	platforms: [.iOS(.v18), .watchOS(.v11), .macOS(.v14)],
 	products: [
 		.library(name: "DeckKit", targets: ["DeckKit"]),
+		// The app's shared SwiftUI views. Only the iOS (and Mac) app links it; the
+		// watch app, widgets and share extension stay on DeckKit alone.
+		.library(name: "DeckUI", targets: ["DeckUI"]),
 		.library(name: "DeckIntents", targets: ["DeckIntents"]),
 		.library(name: "DeckBrowser", targets: ["DeckBrowser"]),
 		.library(name: "DeckLocalModel", targets: ["DeckLocalModel"])
@@ -27,6 +30,7 @@ let package = Package(
 	],
 	targets: [
 		.target(name: "DeckKit"),
+		.target(name: "DeckUI", dependencies: ["DeckKit"]),
 		.target(name: "DeckIntents", dependencies: ["DeckKit"]),
 		.target(
 			name: "DeckBrowser",

@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import type { DeckSession } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 import type { SessionGroup } from '$lib/groups';
 import type { StatusBucket, StatusBucketKey } from '$lib/status-groups';
 import { flattenVisibleGroups, flattenVisibleBuckets, pickNeighbor } from './sidebar-neighbor';
 
-function session(id: string): DeckSession {
-	return { id, kind: 'claude', title: id, cwd: '/x', createdAt: 0, lastActiveAt: 0, status: 'idle' };
+function session(id: string): SessionView {
+	return { url: '', awaitingInput: false, id, kind: 'claude', title: id, cwd: '/x', createdAt: 0, lastActiveAt: 0, status: 'idle' };
 }
 
 function subgroup(key: string, ...ids: string[]) {

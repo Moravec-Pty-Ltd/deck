@@ -1,20 +1,9 @@
-import type { DeckSettings, OperatorSettings, SpeechSettings } from '$lib/types';
+import type { AgentSettingsView, DeckSettings } from '$lib/types';
 import { clampCompactPercent } from '$lib/context-core';
 
-// The agent API's view of ~/.deck/settings.json. Built field by field rather
-// than by spreading the file, so a secret added to settings later stays out
-// until someone decides how to show it: the operator key reads as hasApiKey and
-// a model profile's env as its key names.
-export interface AgentSettingsView {
-	speech?: SpeechSettings;
-	operator?: Omit<OperatorSettings, 'apiKey'> & { hasApiKey: boolean };
-	modelProfiles?: { id: string; label?: string; model?: string; envKeys: string[] }[];
-	lastModels?: DeckSettings['lastModels'];
-	lastEffort?: DeckSettings['lastEffort'];
-	zedSshTarget?: string;
-	autoCompact?: { enabled: boolean; percent: number };
-}
-
+// Built field by field rather than by spreading the file, so a secret added
+// to settings later stays out of the agent view until someone decides how to
+// show it.
 export function redactSettings(s: DeckSettings): AgentSettingsView {
 	const view: AgentSettingsView = {};
 	if (s.speech) view.speech = { ...s.speech };

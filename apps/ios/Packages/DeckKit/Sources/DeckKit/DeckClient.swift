@@ -4,13 +4,30 @@ public enum DeckError: Error, LocalizedError {
 	case http(status: Int, message: String)
 	case invalidResponse
 	case notConfigured
+	/// A create's 409 for a leftover worktree branch (code and branch), which
+	/// the caller can answer with `WorktreeOptions.onExisting`.
+	case worktreeConflict(WorktreeConflict)
+	/// deck took the request but turned the answer down (`ok: false`), with
+	/// its reason, e.g. the question was already answered.
+	case answerDeclined(reason: String)
 
 	public var errorDescription: String? {
 		switch self {
 		case .http(let status, let message): return "\(message) (HTTP \(status))"
+		case .worktreeConflict(let conflict): return conflict.message
+		case .answerDeclined(let reason): return reason
 		case .invalidResponse: return "Invalid response from deck"
 		case .notConfigured: return "deck is not signed in"
 		}
+	}
+}
+
+extension DeckError {
+	/// What a form shows for a failure: the server's own message as it sent
+	/// it (a 400 or 403 says what to fix), anything else as described.
+	public static func message(for error: Error) -> String {
+		if case DeckError.http(_, let message) = error { return message }
+		return error.localizedDescription
 	}
 }
 
@@ -27,7 +44,7 @@ public struct Credentials: Codable, Equatable, Sendable {
 /// Client for deck's stable agent API (documented at GET /llms.txt).
 public final class DeckClient: @unchecked Sendable {
 	public let credentials: Credentials
-	private let session: URLSession
+	let session: URLSession
 	private let decoder = JSONDecoder()
 
 	public init(credentials: Credentials, configuration: URLSessionConfiguration? = nil) {
@@ -67,36 +84,83 @@ public final class DeckClient: @unchecked Sendable {
 
 	/// Existing worktrees of a project, for starting a session inside one.
 	public func worktrees(repo: String) async throws -> [WorktreeEntry] {
-		try await get("/api/git/worktrees", query: [URLQueryItem(name: "repo", value: repo)])
+		try await get("/api/agent/git/worktrees", query: [URLQueryItem(name: "repo", value: repo)])
 	}
 
 	/// Local branch names of a project, for the base-branch picker.
 	public func branches(repo: String) async throws -> [String] {
-		try await get("/api/git/branches", query: [URLQueryItem(name: "repo", value: repo)])
+		try await get("/api/agent/git/branches", query: [URLQueryItem(name: "repo", value: repo)])
 	}
 
 	/// The signed-in gh login (nil if gh can't resolve it), used to gate merge
 	/// to your own PRs.
 	public func currentUserLogin() async throws -> String? {
 		struct UserResponse: Decodable { let login: String? }
-		let response: UserResponse = try await get("/api/user")
+		let response: UserResponse = try await get("/api/agent/user")
 		return response.login
 	}
 
-	/// Full project records (name, group, automation), from the browser API.
+	/// Every project's full stored record (name, group, automation).
 	public func projectDetails() async throws -> [ProjectDetail] {
-		try await get("/api/projects")
+		try await get("/api/agent/projects/config")
 	}
 
-	/// Save a project's automation config. The name rides along because the
-	/// projects route rebuilds the record and would otherwise reset it to the
-	/// directory name; every other field carries over server-side when omitted.
+	/// Save a project's automation config. The PATCH changes only the fields it
+	/// names, so nothing else on the record needs to ride along.
 	@discardableResult
-	public func saveAutomation(project: ProjectDetail, automation: ProjectAutomation) async throws -> ProjectDetail {
-		var body: [String: Any] = ["path": project.path, "automation": automation.json]
-		if let name = project.name { body["name"] = name }
-		let data = try await requestData("POST", "/api/projects", body: body)
+	public func saveAutomation(projectPath: String, automation: ProjectAutomation) async throws -> ProjectDetail {
+		let body: [String: Any] = ["path": projectPath, "automation": automation.json]
+		let data = try await requestData("PATCH", "/api/agent/projects/config", body: body)
 		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
+	// MARK: - Projects
+
+	/// Register an existing directory. Re-registering a path keeps every field
+	/// left out.
+	public func registerProject(path: String, name: String? = nil, group: String? = nil) async throws -> ProjectDetail {
+		try await post("/api/agent/projects", json: Self.compact(["path": path, "name": name, "group": group]))
+	}
+
+	/// Clone `url` into `parent/<repo name>` and register it. The clone runs
+	/// before the reply, so it gets longer than the usual request timeout.
+	public func cloneProject(url: String, parent: String, name: String? = nil, group: String? = nil) async throws -> ProjectDetail {
+		let body = Self.compact(["url": url, "parent": parent, "name": name, "group": group])
+		let data = try await requestData("POST", "/api/agent/projects/clone", body: body, timeout: 120)
+		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
+	/// Unregister a project. Its folder, worktrees and sessions stay as they are.
+	public func removeProject(path: String) async throws {
+		_ = try await requestData("DELETE", "/api/agent/projects", query: [URLQueryItem(name: "path", value: path)])
+	}
+
+	/// PATCH the named fields of a project's config and return the stored record.
+	public func updateProject(path: String, changes: [String: String]) async throws -> ProjectDetail {
+		var body: [String: Any] = changes
+		body["path"] = path
+		let data = try await requestData("PATCH", "/api/agent/projects/config", body: body)
+		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
+	/// Replace a project's dev-server config. A shape the server rejects is a
+	/// 400 whose message names the problem.
+	public func saveDevConfig(path: String, dev: DevConfig) async throws -> ProjectDetail {
+		let body: [String: Any] = ["path": path, "dev": try dev.jsonObject()]
+		let data = try await requestData("PATCH", "/api/agent/projects/config", body: body)
+		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
+	/// Folder suggestions for a path being typed, `~`-collapsed.
+	public func completePath(_ partial: String) async throws -> [String] {
+		try await get("/api/agent/fs/complete", query: [URLQueryItem(name: "q", value: partial)])
+	}
+
+	private static func compact(_ fields: [String: String?]) -> [String: Any] {
+		fields.compactMapValues { value in
+			guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+			return value
+		}
 	}
 
 	// MARK: - Sessions
@@ -116,7 +180,7 @@ public final class DeckClient: @unchecked Sendable {
 	/// Older transcript history for back-scroll: the `limit` raw events just
 	/// before absolute index `before`, oldest first, with the index of the first.
 	public func transcriptRange(sessionId: String, before: Int, limit: Int = 250) async throws -> TranscriptSlice {
-		try await get("/api/sessions/\(sessionId)/transcript", query: [
+		try await get("/api/agent/sessions/\(sessionId)/history", query: [
 			URLQueryItem(name: "before", value: String(before)),
 			URLQueryItem(name: "limit", value: String(limit))
 		])
@@ -124,12 +188,12 @@ public final class DeckClient: @unchecked Sendable {
 
 	/// The bytes of an attachment a message carried, stored by deck out-of-band.
 	public func imageData(sessionId: String, file: String) async throws -> Data {
-		try await getData("/api/sessions/\(sessionId)/images/\(file)")
+		try await getData("/api/agent/sessions/\(sessionId)/images/\(file)")
 	}
 
 	/// The session's diff against its base branch (the web Changes tab).
 	public func diff(sessionId: String) async throws -> WorktreeDiff {
-		try await get("/api/sessions/\(sessionId)/diff")
+		try await get("/api/agent/sessions/\(sessionId)/diff")
 	}
 
 	// MARK: - Dev servers
@@ -138,11 +202,11 @@ public final class DeckClient: @unchecked Sendable {
 	/// call, so a browser that spans sessions does not have to ask each of them
 	/// whether it has anything running.
 	public func serverStates() async throws -> [String: [String]] {
-		try await get("/api/servers")
+		try await get("/api/agent/servers")
 	}
 
 	public func servers(sessionId: String) async throws -> [ServerRuntime] {
-		let response: ServersResponse = try await get("/api/sessions/\(sessionId)/servers")
+		let response: ServersResponse = try await get("/api/agent/sessions/\(sessionId)/servers")
 		return response.servers
 	}
 
@@ -152,13 +216,41 @@ public final class DeckClient: @unchecked Sendable {
 		var body: [String: Any] = ["action": action]
 		if let step { body["step"] = step }
 		if let label { body["label"] = label }
-		_ = try await postRaw("/api/sessions/\(sessionId)/servers/\(seg(name))", json: body)
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/servers/\(seg(name))", json: body)
 	}
 
 	/// A server's log pane. Pass the previous `h` tag to get `unchanged` back
 	/// instead of the same text.
 	public func serverLogs(sessionId: String, name: String, tag: String?) async throws -> ServerLogs {
-		try await get("/api/sessions/\(sessionId)/servers/\(seg(name))/logs", query: tag.map { [URLQueryItem(name: "h", value: $0)] } ?? [])
+		try await get("/api/agent/sessions/\(sessionId)/servers/\(seg(name))/logs", query: tag.map { [URLQueryItem(name: "h", value: $0)] } ?? [])
+	}
+
+	// MARK: - Terminals
+
+	/// A shell session's screen, ANSI and all. Pass the previous `h` tag to get
+	/// `unchanged` back instead of the same text.
+	public func terminal(sessionId: String, tag: String?, lines: Int? = nil) async throws -> TerminalSnapshot {
+		var query: [URLQueryItem] = []
+		if let lines { query.append(URLQueryItem(name: "lines", value: String(lines))) }
+		if let tag { query.append(URLQueryItem(name: "h", value: tag)) }
+		return try await get("/api/agent/sessions/\(sessionId)/terminal", query: query)
+	}
+
+	/// Type literal text into a shell session, pressing Enter after it unless
+	/// `submit` is false. Empty text with submit is a bare Enter.
+	public func typeInTerminal(sessionId: String, text: String, submit: Bool = true) async throws {
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/terminal", json: ["text": text, "submit": submit])
+	}
+
+	public func pressInTerminal(sessionId: String, key: TerminalKey) async throws {
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/terminal", json: ["key": key.name])
+	}
+
+	/// Start a deck-managed tmux terminal in `cwd`.
+	public func createShellSession(cwd: String, title: String? = nil, idempotencyKey: String? = nil) async throws -> CreateSessionResponse {
+		var body: [String: Any] = ["mode": "shell", "cwd": cwd]
+		if let title { body["title"] = title }
+		return try await post("/api/agent/sessions", json: body, idempotencyKey: idempotencyKey)
 	}
 
 	public func createWorkSession(
@@ -175,28 +267,17 @@ public final class DeckClient: @unchecked Sendable {
 		additionalIssues: [DeckIssue] = [],
 		idempotencyKey: String? = nil
 	) async throws -> CreateSessionResponse {
-		var body: [String: Any] = ["mode": "work", "cwd": cwd]
-		if let prompt { body["prompt"] = prompt }
-		if let kind { body["kind"] = kind }
-		if let title { body["title"] = title }
-		if let model { body["model"] = model }
-		if let provider { body["provider"] = provider }
-		if let effort { body["effort"] = effort }
-		if let permissionMode { body["permissionMode"] = permissionMode }
-		if let worktree { body["worktree"] = worktree.json }
-		if let issue {
-			func fields(_ issue: DeckIssue) -> [String: Any] {
-				var result: [String: Any] = ["source": issue.source, "id": issue.issueId]
-				if let url = issue.url { result["url"] = url }
-				if let sourceId = issue.sourceId { result["sourceId"] = sourceId }
-				return result
-			}
-			body["issue"] = fields(issue)
-			if !additionalIssues.isEmpty {
-				body["issues"] = ([issue] + additionalIssues).map(fields)
-			}
-		}
-		return try await post("/api/agent/sessions", json: body, idempotencyKey: idempotencyKey)
+		var request = CreateSessionRequest(mode: .work, cwd: cwd)
+		request.prompt = prompt
+		request.kind = kind
+		request.title = title
+		request.model = model
+		request.provider = provider
+		request.effort = effort
+		request.permissionMode = permissionMode
+		request.worktree = worktree
+		request.issues = issue.map { [$0] + additionalIssues } ?? []
+		return try await createSession(request, idempotencyKey: idempotencyKey)
 	}
 
 	public func createReviewSession(
@@ -210,18 +291,22 @@ public final class DeckClient: @unchecked Sendable {
 		permissionMode: String? = nil,
 		idempotencyKey: String? = nil
 	) async throws -> CreateSessionResponse {
-		var prBody: [String: Any] = ["repo": pr.repo, "number": pr.number]
-		if let url = pr.url { prBody["url"] = url }
-		if let title = pr.title { prBody["title"] = title }
-		var body: [String: Any] = ["mode": "review", "cwd": cwd, "pr": prBody]
-		if let base = pr.baseRefName { body["worktree"] = ["base": base] }
-		if let prompt { body["prompt"] = prompt }
-		if let kind { body["kind"] = kind }
-		if let model { body["model"] = model }
-		if let provider { body["provider"] = provider }
-		if let effort { body["effort"] = effort }
-		if let permissionMode { body["permissionMode"] = permissionMode }
-		return try await post("/api/agent/sessions", json: body, idempotencyKey: idempotencyKey)
+		var request = CreateSessionRequest(mode: .review, cwd: cwd)
+		request.pr = pr
+		request.prompt = prompt
+		request.kind = kind
+		request.model = model
+		request.provider = provider
+		request.effort = effort
+		request.permissionMode = permissionMode
+		return try await createSession(request, idempotencyKey: idempotencyKey)
+	}
+
+	/// POST /api/agent/sessions. A leftover worktree branch throws
+	/// `DeckError.worktreeConflict`; retry under the same key with
+	/// `worktree.onExisting` set.
+	public func createSession(_ request: CreateSessionRequest, idempotencyKey: String? = nil) async throws -> CreateSessionResponse {
+		try await post("/api/agent/sessions", json: request.json, idempotencyKey: idempotencyKey)
 	}
 
 	@discardableResult
@@ -264,16 +349,9 @@ public final class DeckClient: @unchecked Sendable {
 	}
 
 	/// Switch a session's model. `model` nil/empty resets to the CLI default.
-	/// Idle-only server-side (a running turn is a 409). Prefers the agent-API
-	/// route and falls back to the browser route on older deck servers that
-	/// don't have it yet.
+	/// Idle-only server-side (a running turn is a 409).
 	public func changeModel(sessionId: String, model: String?) async throws {
-		let body: [String: Any] = ["model": model ?? ""]
-		do {
-			_ = try await postRaw("/api/agent/sessions/\(sessionId)/model", json: body)
-		} catch let DeckError.http(status, _) where status == 404 || status == 405 {
-			_ = try await postRaw("/api/sessions/\(sessionId)/model", json: body)
-		}
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/model", json: ["model": model ?? ""])
 	}
 
 	/// The skills installed on the deck machine, so the operator knows what it
@@ -305,64 +383,48 @@ public final class DeckClient: @unchecked Sendable {
 	}
 
 	/// Summarise a session's history and free its context window (claude's own
-	/// `/compact`). Idle-only server-side; a running turn is a 409. Prefers the
-	/// agent route, falls back to the browser route on older deck servers.
+	/// `/compact`). Idle-only server-side; a running turn is a 409.
 	public func compact(sessionId: String) async throws {
-		do {
-			_ = try await postRaw("/api/agent/sessions/\(sessionId)/compact", json: [:])
-		} catch let DeckError.http(status, _) where status == 404 || status == 405 {
-			_ = try await postRaw("/api/sessions/\(sessionId)/compact", json: [:])
-		}
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/compact", json: [:])
+	}
+
+	/// Drop a claude session's process so the next message respawns it with
+	/// the current CLI config and resumes the conversation. Idle-only and
+	/// claude-only server-side (409 while a turn runs, 400 for other kinds).
+	public func restart(sessionId: String) async throws {
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/restart", json: [:])
+	}
+
+	/// Forget the PR captured on a session. The next PR link the agent prints
+	/// captures one again.
+	public func dismissPR(sessionId: String) async throws {
+		_ = try await requestData("DELETE", "/api/agent/sessions/\(sessionId)/pr")
 	}
 
 	/// Rename a session. Returns the id it now has: renaming an unregistered
 	/// tmux terminal renames the tmux session, so deck's derived id moves with
-	/// it and the caller has to follow. Prefers the agent route, falls back to
-	/// the browser route on older deck servers.
+	/// it and the caller has to follow.
 	public func rename(sessionId: String, title: String) async throws -> String {
-		let body: [String: Any] = ["title": title]
-		let data: Data
-		do {
-			data = try await postRaw("/api/agent/sessions/\(sessionId)/title", json: body)
-		} catch let DeckError.http(status, _) where status == 404 || status == 405 {
-			data = try await postRaw("/api/sessions/\(sessionId)/title", json: body)
-		}
+		let data = try await postRaw("/api/agent/sessions/\(sessionId)/title", json: ["title": title])
 		return (try? JSONDecoder().decode(RenameResponse.self, from: data))?.id ?? sessionId
 	}
 
 	/// Move a session into the Hidden section, or bring it back. It keeps
-	/// running and stops notifying; nothing is deleted. Prefers the agent route,
-	/// falls back to the browser route on older deck servers.
+	/// running and stops notifying; nothing is deleted.
 	public func setHidden(sessionId: String, hidden: Bool) async throws {
-		let body: [String: Any] = ["hidden": hidden]
-		do {
-			_ = try await postRaw("/api/agent/sessions/\(sessionId)/hidden", json: body)
-		} catch let DeckError.http(status, _) where status == 404 || status == 405 {
-			_ = try await postRaw("/api/sessions/\(sessionId)/hidden", json: body)
-		}
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/hidden", json: ["hidden": hidden])
 	}
 
 	/// Hide or unhide a project, which takes every session working in it, or in
 	/// one of its worktrees, along with it.
 	public func setHidden(projectPath: String, hidden: Bool) async throws {
-		let body: [String: Any] = ["path": projectPath, "hidden": hidden]
-		do {
-			_ = try await postRaw("/api/agent/projects/hidden", json: body)
-		} catch let DeckError.http(status, _) where status == 404 || status == 405 {
-			_ = try await postRaw("/api/projects/hidden", json: body)
-		}
+		_ = try await postRaw("/api/agent/projects/hidden", json: ["path": projectPath, "hidden": hidden])
 	}
 
 	/// Switch a claude session's reasoning effort ("thinking level"). nil/empty
-	/// resets to the CLI default. Prefers the agent route, falls back to the
-	/// browser route on older deck servers.
+	/// resets to the CLI default.
 	public func changeEffort(sessionId: String, effort: String?) async throws {
-		let body: [String: Any] = ["effort": effort ?? ""]
-		do {
-			_ = try await postRaw("/api/agent/sessions/\(sessionId)/effort", json: body)
-		} catch let DeckError.http(status, _) where status == 404 || status == 405 {
-			_ = try await postRaw("/api/sessions/\(sessionId)/effort", json: body)
-		}
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/effort", json: ["effort": effort ?? ""])
 	}
 
 	/// Share files with a session: deck writes them beside its own data (never
@@ -374,21 +436,17 @@ public final class DeckClient: @unchecked Sendable {
 			"files": files.map { ["name": $0.name, "data": $0.data.base64EncodedString()] }
 		]
 		if let text, !text.isEmpty { body["text"] = text }
-		do {
-			_ = try await postRaw("/api/agent/sessions/\(sessionId)/upload", json: body)
-		} catch let DeckError.http(status, _) where status == 404 || status == 405 {
-			_ = try await postRaw("/api/sessions/\(sessionId)/upload", json: body)
-		}
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/upload", json: body)
 	}
 
-	/// Send a message with image attachments via the browser send endpoint (the
-	/// agent message endpoint on older servers takes text only). Literal text is preserved.
+	/// Send a message with image attachments. Literal text is preserved: no
+	/// `expand`, so a bracketed word is not taken for a template token.
 	public func sendMessage(sessionId: String, text: String, images: [DeckImage]) async throws {
 		var body: [String: Any] = ["text": text]
 		if !images.isEmpty {
 			body["images"] = images.map { ["media_type": $0.mediaType, "data": $0.data] }
 		}
-		_ = try await requestData("POST", "/api/sessions/\(sessionId)/send", body: body)
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/message", json: body)
 	}
 
 	public func deleteSession(sessionId: String, deleteWorktree: Bool, deleteBranch: Bool) async throws {
@@ -404,7 +462,7 @@ public final class DeckClient: @unchecked Sendable {
 	// MARK: - Quick messages
 
 	public func quickMessages() async throws -> [QuickMessage] {
-		try await get("/api/quick-messages")
+		try await get("/api/agent/quick-messages")
 	}
 
 	@discardableResult
@@ -414,14 +472,14 @@ public final class DeckClient: @unchecked Sendable {
 			if let label = message.label, !label.isEmpty { dict["label"] = label }
 			return dict
 		}
-		let data = try await requestData("PUT", "/api/quick-messages", body: body)
+		let data = try await requestData("PUT", "/api/agent/quick-messages", body: body)
 		return try decoder.decode([QuickMessage].self, from: data)
 	}
 
-	/// Sends a quick message through the browser send endpoint so deck expands
-	/// its [tokens] server-side (the agent message endpoint does not expand).
+	/// Sends a quick message with `expand`, so deck fills in its [tokens]
+	/// server-side.
 	public func sendQuickMessage(sessionId: String, text: String) async throws {
-		_ = try await requestData("POST", "/api/sessions/\(sessionId)/send", body: ["text": text, "expand": true])
+		_ = try await postRaw("/api/agent/sessions/\(sessionId)/message", json: ["text": text, "expand": true])
 	}
 
 	public func asks() async throws -> [DeckAsk] {
@@ -572,7 +630,7 @@ public final class DeckClient: @unchecked Sendable {
 		value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
 	}
 
-	private func request(path: String, query: [URLQueryItem] = []) throws -> URLRequest {
+	func request(path: String, query: [URLQueryItem] = []) throws -> URLRequest {
 		guard var components = URLComponents(url: credentials.baseURL, resolvingAgainstBaseURL: false) else {
 			throw DeckError.invalidResponse
 		}
@@ -623,9 +681,12 @@ public final class DeckClient: @unchecked Sendable {
 	}
 
 	/// Arbitrary method + JSON body (object or array), returning raw validated data.
-	func requestData(_ method: String, _ path: String, query: [URLQueryItem] = [], body: Any? = nil) async throws -> Data {
+	func requestData(
+		_ method: String, _ path: String, query: [URLQueryItem] = [], body: Any? = nil, timeout: TimeInterval? = nil
+	) async throws -> Data {
 		var request = try request(path: path, query: query)
 		request.httpMethod = method
+		if let timeout { request.timeoutInterval = timeout }
 		if let body {
 			request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 			request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -643,8 +704,11 @@ public final class DeckClient: @unchecked Sendable {
 	private func check(data: Data, response: URLResponse) throws {
 		guard let http = response as? HTTPURLResponse else { throw DeckError.invalidResponse }
 		guard (200..<300).contains(http.statusCode) else {
-			let message = (try? decoder.decode(APIErrorBody.self, from: data))?.message ?? "deck request failed"
-			throw DeckError.http(status: http.statusCode, message: message)
+			let body = try? decoder.decode(APIErrorBody.self, from: data)
+			if let conflict = WorktreeConflict(status: http.statusCode, body: body) {
+				throw DeckError.worktreeConflict(conflict)
+			}
+			throw DeckError.http(status: http.statusCode, message: body?.message ?? "deck request failed")
 		}
 	}
 }

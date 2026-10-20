@@ -36,7 +36,7 @@ final class VoiceUITests: XCTestCase {
 		row.tap()
 
 		let toggle = app.buttons["Turn voice mode on"]
-		XCTAssertTrue(toggle.waitForExistence(timeout: 20), "the voice toggle appears once /api/speech reports tts")
+		XCTAssertTrue(toggle.waitForExistence(timeout: 20), "the voice toggle appears once /api/agent/speech reports tts")
 		toggle.tap()
 		XCTAssertTrue(app.staticTexts["Voice on"].waitForExistence(timeout: 5), "voice bar missing\n\(app.debugDescription)")
 		XCTAssertTrue(app.buttons["Hold to talk"].exists)

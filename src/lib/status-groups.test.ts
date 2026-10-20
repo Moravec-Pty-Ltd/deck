@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { DeckSession, SessionStatus } from '$lib/types';
+import type { SessionStatus } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 import { bucketSessions } from './status-groups';
 
 function session(
@@ -7,8 +8,8 @@ function session(
 	status: SessionStatus,
 	lastActiveAt: number,
 	awaitingInput = false
-): DeckSession {
-	return { id, kind: 'claude', title: id, cwd: '/x', createdAt: 0, lastActiveAt, status, awaitingInput };
+): SessionView {
+	return { url: '', id, kind: 'claude', title: id, cwd: '/x', createdAt: 0, lastActiveAt, status, awaitingInput };
 }
 
 const JUST_FINISHED_MS = 15 * 60 * 1000;
@@ -96,7 +97,7 @@ describe('bucketSessions', () => {
 	});
 
 	it('handles an idle session with no awaitingInput field (the production default)', () => {
-		const s: DeckSession = {
+		const s = {
 			id: 'i',
 			kind: 'claude',
 			title: 'i',
@@ -104,7 +105,7 @@ describe('bucketSessions', () => {
 			createdAt: 0,
 			lastActiveAt: 1,
 			status: 'idle'
-		};
+		} as SessionView;
 		expect(bucketSessions([s]).map((b) => b.key)).toEqual(['idle']);
 	});
 });

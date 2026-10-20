@@ -101,7 +101,7 @@ export async function currentUserRoute(): Promise<Response> {
 	return json({ login: await currentUser() });
 }
 
-// DELETE handler shared by /api/sessions/[id]/pr and /api/agent/sessions/[id]/pr:
+// DELETE /api/agent/sessions/[id]/pr:
 // dismiss the captured PR chip. Capture is forward-only, so the next GitHub PR
 // link an agent prints repopulates it; the one-time backfill won't bring the
 // dismissed link back because its scan marker (prBackfilled) is already set.

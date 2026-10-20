@@ -1,4 +1,4 @@
-// Pure trigger-key + dedupe logic and the /api/sessions request bodies for feed
+// Pure trigger-key + dedupe logic and the create-pipeline request bodies for feed
 // automation (issue #171), kept node-free so they unit-test without fs/gh. The
 // orchestration (feed fetch, session create, notify, durable ledger) lives in the
 // sibling automation.ts.
@@ -147,7 +147,7 @@ function rememberedChoice(project: Project, kind: AgentKind, agent: AutomationAg
 	return agent.model || agent.provider ? {} : remembered;
 }
 
-// The /api/sessions body for a work session, mirroring the New Session modal's
+// The create-pipeline body for a work session, mirroring the New Session modal's
 // per-issue split: titled with the issue's display id and run in a fresh worktree whose
 // branch is the issue id, off the project's remembered base (repo default when
 // unset), never the project checkout itself. Seeded with the project's `template`
@@ -166,7 +166,7 @@ export function workBody(project: Project, issue: Issue): Record<string, unknown
 	};
 }
 
-// The /api/sessions body for a review session, mirroring the modal: titled with the
+// The create-pipeline body for a review session, mirroring the modal: titled with the
 // PR title, checking the PR head into a worktree (fromPr) with the PR's base ref
 // for the Changes diff, seeded with the project's `reviewPrompt`.
 export function reviewBody(project: Project, pr: PullRequest): Record<string, unknown> {
