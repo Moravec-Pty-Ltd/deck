@@ -3,6 +3,7 @@
 	// edit one. A schedule either sends its prompt into a session that already
 	// exists or spawns a fresh one in a directory, and that choice is the first
 	// thing the form asks, because everything below it depends on the answer.
+	import { confirmAction } from '$lib/confirm.svelte';
 	import type { ScheduleDigest } from '$lib/schedules';
 	import { OUTCOME_VIEW } from '$lib/schedules';
 	import type { AgentSettingsView, Project } from '$lib/types';
@@ -14,7 +15,7 @@
 	import { loadSettings } from '$lib/settings-store';
 	import { page } from '$app/state';
 	import AutomationAgentForm from '$lib/components/AutomationAgentForm.svelte';
-	import { ArrowLeft, Clock, ExternalLink, Pencil, Play, Plus, Trash2, X } from '@lucide/svelte';
+	import { Clock, ExternalLink, Pencil, Play, Plus, Trash2, X } from '@lucide/svelte';
 
 	let schedules = $state<ScheduleDigest[]>([]);
 	let projects = $state<Project[]>([]);
@@ -49,7 +50,7 @@
 			schedules = await api<ScheduleDigest[]>('/api/agent/schedules');
 			loadError = '';
 		} catch (e) {
-			loadError = e instanceof Error ? e.message : 'failed to load schedules';
+			loadError = e instanceof Error ? e.message : "Couldn't load schedules";
 		}
 		loaded = true;
 	}
@@ -132,7 +133,7 @@
 			closeForm();
 			await load();
 		} catch (err) {
-			formError = err instanceof Error ? err.message : 'failed to save the schedule';
+			formError = err instanceof Error ? err.message : "Couldn't save the schedule";
 		} finally {
 			saving = false;
 		}
@@ -145,7 +146,7 @@
 			await run();
 			await load();
 		} catch (err) {
-			loadError = err instanceof Error ? err.message : 'the request failed';
+			loadError = err instanceof Error ? err.message : 'The request failed';
 		} finally {
 			busyId = '';
 		}
@@ -161,8 +162,14 @@
 		return act(schedule.id, () => api(url, 'POST', {}));
 	}
 
-	function remove(schedule: ScheduleDigest) {
-		if (!confirm(`Delete "${schedule.title}"? The sessions it has already started are kept.`)) return;
+	async function remove(schedule: ScheduleDigest) {
+		const ok = await confirmAction({
+			title: `Delete schedule "${schedule.title}"?`,
+			body: 'The sessions it has already started are kept.',
+			confirmLabel: 'Delete',
+			danger: true
+		});
+		if (!ok) return;
 		const url = `/api/agent/schedules/${encodeURIComponent(schedule.id)}`;
 		return act(schedule.id, () => api(url, 'DELETE'));
 	}
@@ -170,7 +177,7 @@
 	// What a schedule points at, in a few words. A session target that has gone
 	// says so: it is the reason the schedule stopped.
 	function target(schedule: ScheduleDigest): string {
-		if (schedule.sessionId) return schedule.sessionTitle ?? 'session no longer exists';
+		if (schedule.sessionId) return schedule.sessionTitle ?? 'Session no longer exists';
 		return schedule.projectName ?? shortPath(schedule.cwd ?? '');
 	}
 </script>
@@ -178,7 +185,6 @@
 <svelte:head><title>Schedules · deck</title></svelte:head>
 
 <div class="mb-4 flex items-center gap-2">
-	<a href="/" class="btn btn-ghost btn-sm" aria-label="Back"><ArrowLeft size={16} /></a>
 	<h1 class="text-lg font-semibold">Schedules</h1>
 	<div class="flex-1"></div>
 	<button class="btn btn-sm {formOpen ? 'btn-ghost' : 'btn-primary'}" onclick={() => (formOpen ? closeForm() : startAdd())}>
@@ -302,14 +308,14 @@
 			<div class="mt-3 flex justify-end gap-2">
 				<button class="btn btn-sm btn-ghost" type="button" onclick={closeForm}>Cancel</button>
 				<button class="btn btn-sm btn-primary" type="submit" disabled={saving || !!problem || !prompt.trim()}>
-					{saving ? 'Saving...' : editing ? 'Save' : 'Add schedule'}
+					{saving ? 'Saving…' : editing ? 'Save' : 'Add schedule'}
 				</button>
 			</div>
 		</form>
 	{/if}
 
 	{#if !loaded}
-		<p class="p-8 text-center opacity-60">Loading...</p>
+		<p class="p-8 text-center opacity-60">Loading…</p>
 	{:else if schedules.length === 0}
 		<p class="p-8 text-center text-sm opacity-60">
 			No schedules yet. Add one to run a prompt on a clock, in a fresh session each time or in one that keeps its context.

@@ -65,7 +65,7 @@
 			projects = p;
 		} catch (e) {
 			catalogue = null;
-			loadError = e instanceof Error ? e.message : 'could not load skills';
+			loadError = e instanceof Error ? e.message : "Couldn't load skills";
 		} finally {
 			loading = false;
 		}
@@ -151,7 +151,7 @@
 			{#if loadError}
 				<p class="px-2 py-1 text-error">{loadError}</p>
 			{:else if loading}
-				<p class="px-2 py-1 opacity-60">Loading skills</p>
+				<p class="px-2 py-1 opacity-60">Loading skills…</p>
 			{:else if !results.length}
 				<p class="px-2 py-1 opacity-60">No skill matches "{query}"</p>
 			{:else}

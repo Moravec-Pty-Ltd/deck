@@ -1,5 +1,6 @@
 import SwiftUI
 import DeckKit
+import DeckUI
 
 struct StartView: View {
 	enum Mode: String, CaseIterable, Identifiable {
@@ -391,8 +392,7 @@ struct StartConfirmSheet: View {
 					}
 					if agentKind == "pi" {
 						TextField("provider (e.g. anthropic)", text: $provider)
-							.textInputAutocapitalization(.never)
-							.autocorrectionDisabled()
+							.deckPlainInput()
 					}
 					if !knownModels.isEmpty {
 						Picker("Model", selection: $model) {
@@ -401,8 +401,7 @@ struct StartConfirmSheet: View {
 						}
 					}
 					TextField("Custom model id (optional)", text: $customModel)
-						.textInputAutocapitalization(.never)
-						.autocorrectionDisabled()
+						.deckPlainInput()
 					if agentKind == "claude" {
 						Toggle("Bypass permission prompts (YOLO)", isOn: $yolo)
 						Picker("Thinking", selection: $effort) {
@@ -431,14 +430,12 @@ struct StartConfirmSheet: View {
 							TextField("Branch name (defaults to title)", text: Binding(
 								get: { effectiveBranch },
 								set: { branchName = $0; branchDirty = true }))
-								.textInputAutocapitalization(.never)
-								.autocorrectionDisabled()
+								.deckPlainInput()
 						}
 						if worktreeMode == .newBranch {
 							if baseChoices.isEmpty {
 								TextField("Base branch (optional)", text: $baseBranch)
-									.textInputAutocapitalization(.never)
-									.autocorrectionDisabled()
+									.deckPlainInput()
 							} else {
 								Picker("Base branch", selection: $baseBranch) {
 									Text("Default").tag("")
@@ -493,7 +490,7 @@ struct StartConfirmSheet: View {
 				}
 			}
 			.navigationTitle(navigationTitle)
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }

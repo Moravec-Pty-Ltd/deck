@@ -114,13 +114,16 @@ struct SessionDetailView: View {
 		return sessionId
 	}
 
-	/// Send and stop for ⌘Return and ⌘. (see DeckCommands).
+	/// Send, stop and compact for ⌘Return, ⌘. and ⇧⌘K (see DeckCommands).
 	private var keyboardActions: DeckSessionActions {
 		let canSend = !isSending && !isTerminal
 			&& (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty)
+		let canCompact = session?.kind == "claude" && session?.context != nil
+			&& session?.status != .running && !compacting
 		return DeckSessionActions(
 			send: canSend ? { if let viewModel { sendComposer(viewModel) } } : nil,
-			stop: session?.status == .running ? { Task { await viewModel?.stop() } } : nil)
+			stop: session?.status == .running ? { Task { await viewModel?.stop() } } : nil,
+			compact: canCompact ? { Task { await compact() } } : nil)
 	}
 
 	var body: some View {
@@ -971,41 +974,6 @@ struct TranscriptBubble: View {
 			.background(isUser ? Color.accentColor.opacity(0.15) : Color(.secondarySystemBackground))
 			.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 			if !isUser { Spacer(minLength: 40) }
-		}
-	}
-}
-
-/// A thumbnail of an attachment the message carried, fetched through the
-/// authenticated client (a plain AsyncImage can't send the token).
-struct AttachmentImage: View {
-	let image: TranscriptImage
-	var viewModel: SessionDetailViewModel?
-
-	@State private var uiImage: UIImage?
-	@State private var failed = false
-
-	var body: some View {
-		Group {
-			if let uiImage {
-				Image(uiImage: uiImage)
-					.resizable()
-					.scaledToFill()
-			} else if failed {
-				Image(systemName: "photo")
-					.foregroundStyle(.secondary)
-			} else {
-				ProgressView().controlSize(.small)
-			}
-		}
-		.frame(width: 96, height: 96)
-		.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
-		.task(id: image) {
-			guard uiImage == nil else { return }
-			if let data = await viewModel?.imageData(for: image), let loaded = UIImage(data: data) {
-				uiImage = loaded
-			} else {
-				failed = true
-			}
 		}
 	}
 }

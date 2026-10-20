@@ -19,6 +19,7 @@
 	import ToolRun from './ToolRun.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
+	import Modal from './Modal.svelte';
 	import SkillPicker from './SkillPicker.svelte';
 	import VoiceBar from './VoiceBar.svelte';
 	import { VoiceSession } from '$lib/voice.svelte';
@@ -712,7 +713,7 @@
 			attachments = prev.attachments;
 			uploads = prev.uploads;
 			originSessionId = prev.originSessionId;
-			if (prev.uploads.length) uploadError = err instanceof Error ? err.message : 'upload failed';
+			if (prev.uploads.length) uploadError = err instanceof Error ? err.message : 'Upload failed';
 		}
 	}
 
@@ -800,7 +801,7 @@
 		{:else if block.type === 'thinking'}
 			<details class="px-2 text-xs opacity-50">
 				<summary class="cursor-pointer select-none">
-					<ChevronDown size={12} class="inline" /> thinking
+					<ChevronDown size={12} class="inline" /> Thinking
 				</summary>
 				<div class="pt-1"><Markdown source={block.thinking} /></div>
 			</details>
@@ -840,7 +841,7 @@
 	{:else if event.type === 'deck.effort'}
 		<div class="px-2 text-center text-xs opacity-50">effort → {effortLabel(event.effort)}</div>
 	{:else if event.type === 'deck.restart'}
-		<div class="px-2 text-center text-xs opacity-50">restart → fresh claude config from the next message</div>
+		<div class="px-2 text-center text-xs opacity-50">restart → fresh Claude config from the next message</div>
 	{:else if event.type === 'result'}
 		<div class="px-2 text-center text-xs opacity-50">{fmtCost(event)}</div>
 	{/if}
@@ -860,7 +861,7 @@
 		<div
 			class="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-content"
 		>
-			reconnecting…
+			Reconnecting…
 		</div>
 	{/if}
 
@@ -909,7 +910,7 @@
 				bubbleClass="bg-base-100 text-base-content"
 			/>
 		{:else if loaded && status === 'running'}
-			<div class="px-2 text-sm opacity-60">working...</div>
+			<div class="px-2 text-sm opacity-60">Working…</div>
 		{/if}
 	</div>
 
@@ -1004,8 +1005,8 @@
 			rows="3"
 			style="height: calc(4.5em + 1.5rem + 3px)"
 			placeholder={status === 'running'
-				? 'queue a follow-up (ctrl/cmd+enter)'
-				: 'message (ctrl/cmd+enter, paste or drop files)'}
+				? 'Queue a follow-up (Ctrl/Cmd+Enter)'
+				: 'Message (Ctrl/Cmd+Enter to send; paste or drop files)'}
 			bind:value={input}
 			onkeydown={onKeydown}
 			onpaste={onPaste}
@@ -1061,25 +1062,23 @@
 		</div>
 	</div>
 
-	{#if pendingSend}
-		<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-			<div class="modal-box max-w-sm">
-				<h3 class="mb-2 flex items-center gap-2 text-lg font-semibold">
-					<ArrowLeftRight size={18} class="text-warning" /> Send to a different session?
-				</h3>
-				<p class="mb-3 text-sm opacity-70">
-					This draft was started in <span class="font-semibold">{originTitle}</span>. Send it to
-					<span class="font-semibold">{session.title}</span>?{#if attachedCount}
-						(with {attachedCount} attachment{attachedCount > 1 ? 's' : ''}){/if}
-				</p>
-				<div class="modal-action">
-					<button class="btn" onclick={() => (pendingSend = false)}>Cancel</button>
-					<button class="btn btn-primary" onclick={confirmSend}>Send</button>
-				</div>
-			</div>
-			<button class="modal-backdrop" onclick={() => (pendingSend = false)} aria-label="close"></button>
-		</div>
-	{/if}
+	<Modal
+		open={pendingSend}
+		onclose={() => (pendingSend = false)}
+		title="Send to a different session?"
+		icon={ArrowLeftRight}
+		iconClass="text-warning"
+	>
+		<p class="mb-3 text-sm opacity-70">
+			This draft was started in <span class="font-semibold">{originTitle}</span>. Send it to
+			<span class="font-semibold">{session.title}</span>?{#if attachedCount}
+				(with {attachedCount} attachment{attachedCount > 1 ? 's' : ''}){/if}
+		</p>
+		{#snippet footer()}
+			<button class="btn" onclick={() => (pendingSend = false)}>Cancel</button>
+			<button class="btn btn-primary" onclick={confirmSend}>Send</button>
+		{/snippet}
+	</Modal>
 </div>
 
 <style>

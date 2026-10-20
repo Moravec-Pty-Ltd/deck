@@ -32,7 +32,7 @@ struct ChangesSheet: View {
 				}
 			}
 			.navigationTitle("Changes")
-			.navigationBarTitleDisplayMode(.inline)
+			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Done") { dismiss() }
@@ -81,7 +81,7 @@ struct ChangesSheet: View {
 				}
 			}
 		}
-		.listStyle(.insetGrouped)
+		.deckInsetGroupedList()
 	}
 
 	private func load() async {

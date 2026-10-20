@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmAction } from '$lib/confirm.svelte';
 	import type { AgentSettingsView, Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
 	import { groupProjects, UNGROUPED } from '$lib/groups';
@@ -6,15 +7,11 @@
 	import IssueSources from '$lib/components/IssueSources.svelte';
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
-	import AgentSkills from '$lib/components/AgentSkills.svelte';
-	import SpeechSettings from '$lib/components/SpeechSettings.svelte';
-	import OperatorSettings from '$lib/components/OperatorSettings.svelte';
-	import CompactSettings from '$lib/components/CompactSettings.svelte';
 	import AutomationAgentForm from '$lib/components/AutomationAgentForm.svelte';
 	import { fromRow, toRow, type AgentRow } from '$lib/automation-form-core';
 	import { loadSettings } from '$lib/settings-store';
 	import { hideProject } from '$lib/hidden';
-	import { ArrowLeft, Plus, Trash2, Check, ChevronRight, ChevronDown, Eye, EyeOff } from '@lucide/svelte';
+	import { Plus, Trash2, Check, ChevronRight, ChevronDown, Eye, EyeOff } from '@lucide/svelte';
 
 	// automation is always materialised (both toggles and both agent picks present)
 	// so the inputs bind cleanly; the API stores the all-default shape as absent.
@@ -113,7 +110,7 @@
 			})
 		});
 		if (!res.ok) {
-			errorMsg = (await res.json()).message ?? 'failed to save';
+			errorMsg = (await res.json()).message ?? "Couldn't save";
 			return;
 		}
 		savedPath = p.path;
@@ -136,14 +133,20 @@
 		try {
 			await hideProject(p.path, !p.hidden);
 		} catch (e) {
-			errorMsg = e instanceof Error ? e.message : 'failed to save';
+			errorMsg = e instanceof Error ? e.message : "Couldn't save";
 			return;
 		}
 		await load();
 	}
 
 	async function remove(p: Project) {
-		if (!confirm(`Remove project "${p.name}"? (does not touch files)`)) return;
+		const ok = await confirmAction({
+			title: `Remove project "${p.name}"?`,
+			body: 'Takes it off deck only. The files on disk are not touched.',
+			confirmLabel: 'Remove',
+			danger: true
+		});
+		if (!ok) return;
 		await fetch(`/api/agent/projects?path=${encodeURIComponent(p.path)}`, { method: 'DELETE' });
 		load();
 	}
@@ -152,7 +155,6 @@
 <svelte:head><title>Projects · deck</title></svelte:head>
 
 <div class="mb-4 flex items-center gap-2">
-	<a href="/" class="btn btn-ghost btn-sm" aria-label="Back"><ArrowLeft size={16} /></a>
 	<h1 class="text-lg font-semibold">Projects</h1>
 	<div class="flex-1"></div>
 	<button class="btn btn-ghost btn-sm" onclick={() => openAddModal('')} aria-label="Add project">
@@ -165,7 +167,7 @@
 {/if}
 
 {#if !loaded}
-	<p class="p-8 text-center opacity-60">Loading...</p>
+	<p class="p-8 text-center opacity-60">Loading…</p>
 {:else}
 	<datalist id="project-groups">
 		{#each groupSuggestions as g (g)}
@@ -214,7 +216,7 @@
 										<input class="input input-sm flex-1 font-medium" bind:value={p.name} />
 										<input
 											class="input input-sm w-40"
-											placeholder="group (optional)"
+											placeholder="Group (optional)"
 											list="project-groups"
 											bind:value={p.group}
 										/>
@@ -234,18 +236,18 @@
 									<textarea
 										class="textarea textarea-sm w-full"
 										rows="3"
-										placeholder="default first prompt (optional)"
+										placeholder="Default first prompt (optional)"
 										bind:value={p.template}
 									></textarea>
 									<textarea
 										class="textarea textarea-sm mt-2 w-full"
 										rows="3"
-										placeholder="review-mode first prompt (optional)"
+										placeholder="Review-mode first prompt (optional)"
 										bind:value={p.reviewPrompt}
 									></textarea>
 									<input
 										class="input input-sm mt-2 w-full sm:w-72"
-										placeholder="default base branch (remembered automatically)"
+										placeholder="Default base branch (remembered automatically)"
 										bind:value={p.lastBase}
 									/>
 									<div class="mt-2">
@@ -280,7 +282,7 @@
 										<span class="text-xs opacity-50">placeholders: {SESSION_PLACEHOLDERS}; review adds {REVIEW_PLACEHOLDERS}</span>
 										<div class="flex-1"></div>
 										{#if savedPath === p.path}
-											<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
+											<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> Saved</span>
 										{/if}
 										<button class="btn btn-sm btn-primary" onclick={() => save(p)}>Save</button>
 									</div>
@@ -293,12 +295,6 @@
 				{/if}
 			</div>
 		{/each}
-	</div>
-	<div class="mt-5 space-y-4">
-		<SpeechSettings />
-		<OperatorSettings />
-		<CompactSettings />
-		<AgentSkills />
 	</div>
 {/if}
 

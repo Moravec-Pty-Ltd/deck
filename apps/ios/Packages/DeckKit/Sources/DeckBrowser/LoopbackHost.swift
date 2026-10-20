@@ -23,6 +23,14 @@ public enum LoopbackHost {
 		return all.contains(bare(host))
 	}
 
+	/// Whether the dev servers are on this machine, so the browser loads them
+	/// directly with no tunnel. True when deck itself is reached over loopback:
+	/// the machine deck runs on is the one its dev servers run on. Any other
+	/// host, a tailnet name or a LAN address included, is another machine.
+	public static func isDirect(deckOrigin: URL?) -> Bool {
+		isLoopback(deckOrigin?.host)
+	}
+
 	/// A host as it can be compared. `URLComponents` hands back an IPv6 literal
 	/// with its brackets (`[::1]`), so comparing the raw value against `::1`
 	/// silently never matches, and an IPv6 loopback URL leaks past the proxy to

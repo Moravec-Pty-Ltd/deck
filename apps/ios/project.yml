@@ -4,6 +4,7 @@ options:
   deploymentTarget:
     iOS: "18.0"
     watchOS: "11.0"
+    macOS: "15.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -21,7 +22,6 @@ targets:
   DeckApp:
     type: application
     platform: iOS
-    supportedDestinations: [iOS, macCatalyst]
     sources:
       - Apps/DeckApp
       - Apps/Shared
@@ -39,11 +39,8 @@ targets:
       # Downloaded on-device models. Only the app runs one, and it carries MLX.
       - package: DeckKit
         product: DeckLocalModel
-      # Neither can be embedded in a Mac Catalyst build of the app.
       - target: DeckWatch
-        destinationFilters: [iOS]
       - target: DeckWidgets
-        destinationFilters: [iOS]
       - target: DeckShare
     info:
       path: Apps/DeckApp/Info.plist
@@ -110,7 +107,6 @@ targets:
   DeckShare:
     type: app-extension
     platform: iOS
-    supportedDestinations: [iOS, macCatalyst]
     sources:
       - Apps/DeckShare
     dependencies:
@@ -148,7 +144,6 @@ targets:
   DeckAppUITests:
     type: bundle.ui-testing
     platform: iOS
-    supportedDestinations: [iOS, macCatalyst]
     sources:
       - Apps/DeckAppUITests
     dependencies:
@@ -191,6 +186,76 @@ targets:
           CODE_SIGN_ENTITLEMENTS: Apps/DeckWatch/DeckWatch.debug.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: Apps/DeckWatch/DeckWatch.release.entitlements
+  DeckMac:
+    type: application
+    platform: macOS
+    sources:
+      - Apps/DeckMac
+      - Apps/SharedIntents
+      # The detail screen's model is plain Foundation over DeckStore, so the
+      # Mac reads the transcript through the same code as the phone.
+      - path: Apps/DeckApp/Support/SessionDetailViewModel.swift
+      # The dev browser's tab chip, web view host and tunnel form.
+      - path: Apps/DeckApp/Views/BrowserParts.swift
+      - path: Apps/DeckApp/Views/TunnelSheet.swift
+      # The operator, without the phone's wake word.
+      - path: Apps/DeckApp/Support/OperatorController.swift
+      - path: Apps/DeckApp/Views/OperatorView.swift
+      - path: Apps/DeckApp/Views/LocalModelView.swift
+      # Inbox, runs, schedules, start, the session sheets and the settings
+      # forms: plain SwiftUI over DeckStore, shared rather than ported.
+      - path: Apps/DeckApp/Views/InboxView.swift
+      - path: Apps/DeckApp/Views/RunViews.swift
+      - path: Apps/DeckApp/Views/SchedulesView.swift
+      - path: Apps/DeckApp/Views/StartView.swift
+      - path: Apps/DeckApp/Views/StartRunView.swift
+      - path: Apps/DeckApp/Views/AutomationView.swift
+      - path: Apps/DeckApp/Views/ProjectsSettingsView.swift
+      - path: Apps/DeckApp/Views/ServerSettingsView.swift
+      - path: Apps/DeckApp/Views/ReviewsView.swift
+      - path: Apps/DeckApp/Views/PairingSheet.swift
+      - path: Apps/DeckApp/Views/ChangesSheet.swift
+      - path: Apps/DeckApp/Views/SessionSheets.swift
+      - path: Apps/DeckApp/Views/ServersSheet.swift
+      - path: Apps/DeckApp/Views/FileAttachments.swift
+    dependencies:
+      - package: DeckKit
+        product: DeckKit
+      - package: DeckKit
+        product: DeckUI
+      - package: DeckKit
+        product: DeckIntents
+      - package: DeckKit
+        product: DeckBrowser
+      - package: DeckKit
+        product: DeckLocalModel
+    info:
+      path: Apps/DeckMac/Info.plist
+      properties:
+        CFBundleDisplayName: deck
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        CFBundleIconName: AppIcon
+        ITSAppUsesNonExemptEncryption: false
+        NSMicrophoneUsageDescription: deck records what you say in voice mode and sends it to your deck server for transcription.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          # Dev servers are plain http, and through the tunnel they load from
+          # the deck.localhost sentinel, which ATS does not treat as loopback.
+          NSAllowsArbitraryLoadsInWebContent: true
+    settings:
+      base:
+        # Shared with the iOS app, so one App Store record carries both.
+        PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckMac/DeckMac.debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckMac/DeckMac.release.entitlements
 schemes:
   DeckApp:
     build:
@@ -207,5 +272,11 @@ schemes:
     build:
       targets:
         DeckWatch: all
+    run:
+      config: Debug
+  DeckMac:
+    build:
+      targets:
+        DeckMac: all
     run:
       config: Debug

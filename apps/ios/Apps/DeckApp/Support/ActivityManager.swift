@@ -1,6 +1,4 @@
-#if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
 import ActivityKit
-#endif
 import Foundation
 import DeckKit
 
@@ -19,8 +17,6 @@ final class ActivityManager {
 	func configure(client: DeckClient?) {
 		self.client = client
 	}
-
-#if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
 
 	/// Debug builds get sandbox tokens, the same split as device registration.
 	private var pushEnvironment: String {
@@ -109,12 +105,4 @@ final class ActivityManager {
 			turns: session.cost?.turns ?? 0,
 			updatedAt: Date().timeIntervalSince1970 * 1000)
 	}
-#else
-	// Live Activities are a phone and watch thing; on the Mac the calls are
-	// simply no-ops so the callers need no platform checks of their own.
-	func start(_ session: SessionDigest) {}
-	func update(_ session: SessionDigest) {}
-	func end(sessionId: String) {}
-	func reconcile(with sessions: [SessionDigest]) {}
-#endif
 }

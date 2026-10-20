@@ -73,7 +73,7 @@ cd Packages/DeckKit && swift test              # unit tests
 xcodebuild -project Deck.xcodeproj -scheme DeckApp \
   -destination 'generic/platform=iOS Simulator' \
   -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
-./ship.sh                                      # TestFlight via fastlane
+./ship.sh [ios|mac|all]                        # TestFlight via fastlane (default ios)
 ```
 
 - `-skipMacroValidation` is required on every command-line build (mlx-swift-lm

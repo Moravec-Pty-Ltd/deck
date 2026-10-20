@@ -51,7 +51,7 @@
 		try {
 			res = await fetch(sessionServersPath(session.id));
 		} catch (e) {
-			return fail(my, e instanceof Error ? e.message : 'failed to load servers');
+			return fail(my, e instanceof Error ? e.message : "Couldn't load servers");
 		}
 		if (my !== token) return;
 		if (!res.ok) return fail(my, `request failed (${res.status})`);
@@ -78,7 +78,7 @@
 				body: JSON.stringify(body)
 			});
 			if (!res.ok) {
-				errMsg = (await res.json().catch(() => ({})))?.message ?? 'action failed';
+				errMsg = (await res.json().catch(() => ({})))?.message ?? 'Action failed';
 			} else {
 				errMsg = null;
 			}

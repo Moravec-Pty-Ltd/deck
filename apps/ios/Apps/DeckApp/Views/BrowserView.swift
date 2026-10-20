@@ -41,9 +41,7 @@ struct BrowserView: View {
 			}
 		}
 		.navigationTitle("Browser")
-		#if !targetEnvironment(macCatalyst)
-			.navigationBarTitleDisplayMode(.inline)
-		#endif
+		.navigationBarTitleDisplayMode(.inline)
 		.task { await begin() }
 		.onChange(of: scenePhase) { _, phase in
 			// iOS suspends sockets in the background, so the tunnel is usually
@@ -79,27 +77,20 @@ struct BrowserView: View {
 		// that will not load is nearly always the tunnel, and the last forwarded
 		// target is the proof it is carrying traffic rather than merely up.
 		.safeAreaInset(edge: .top) { statusStrip(model) }
-		#if targetEnvironment(macCatalyst)
-			.toolbar {
-				ToolbarItemGroup(placement: .primaryAction) { controls(model) }
+		.safeAreaInset(edge: .bottom) {
+			VStack(spacing: 6) {
+				tabStrip(model)
+				controls(model)
 			}
-			.safeAreaInset(edge: .top) { tabStrip(model) }
-		#else
-			.safeAreaInset(edge: .bottom) {
-				VStack(spacing: 6) {
-					tabStrip(model)
-					controls(model)
-				}
-				.padding(.vertical, 8)
-				.deckGlass(in: Rectangle())
-			}
-		#endif
+			.padding(.vertical, 8)
+			.deckGlass(in: Rectangle())
+		}
 	}
 
 	@ViewBuilder
 	private func statusStrip(_ model: BrowserModel) -> some View {
 		HStack(spacing: 8) {
-			Circle().fill(statusColour(model)).frame(width: 7, height: 7)
+			Circle().fill(BrowserStatus.colour(model)).frame(width: 7, height: 7)
 			Text(model.status)
 				.font(.caption2.monospaced())
 				.foregroundStyle(.secondary)
@@ -117,12 +108,7 @@ struct BrowserView: View {
 		.padding(.vertical, 6)
 		.background(.bar)
 		.contentShape(Rectangle())
-		.onTapGesture { showingTunnel = true }
-	}
-
-	private func statusColour(_ model: BrowserModel) -> Color {
-		if case .failed = model.tunnelState { return .red }
-		return model.isConnected ? .green : .secondary
+		.onTapGesture { if !model.isDirect { showingTunnel = true } }
 	}
 
 	@ViewBuilder
@@ -148,7 +134,7 @@ struct BrowserView: View {
 						.font(.callout)
 						.multilineTextAlignment(.center)
 						.foregroundStyle(.secondary)
-					if !model.isConnected {
+					if !model.isConnected, !model.isDirect {
 						Button("Set up the tunnel") { showingTunnel = true }
 							.buttonStyle(.borderedProminent)
 					} else {
@@ -229,12 +215,14 @@ struct BrowserView: View {
 						.accessibilityLabel("Reload")
 				}
 			}
-			Button { showingTunnel = true } label: {
-				Image(systemName: model.isConnected ? "lock.fill" : "lock.slash")
-					.foregroundStyle(model.isConnected ? Color.green : .orange)
+			if !model.isDirect {
+				Button { showingTunnel = true } label: {
+					Image(systemName: model.isConnected ? "lock.fill" : "lock.slash")
+						.foregroundStyle(model.isConnected ? Color.green : .orange)
+				}
+				.accessibilityLabel("Tunnel")
+				.accessibilityIdentifier("browser.tunnel")
 			}
-			.accessibilityLabel("Tunnel")
-			.accessibilityIdentifier("browser.tunnel")
 		}
 		.buttonStyle(.plain)
 		.padding(.horizontal, 12)
@@ -251,7 +239,7 @@ struct BrowserView: View {
 	/// Same cadence as the servers sheet: ports come up while you watch.
 	private func poll() async {
 		while !Task.isCancelled {
-			if let servers = await currentServers() {
+			if let servers = await BrowserServers.current(store: store, sessionId: sessionId) {
 				model?.refresh(servers: servers)
 				// Only once: a later poll must not drag you back to where you
 				// came in, after you have changed tabs.
@@ -263,72 +251,5 @@ struct BrowserView: View {
 			}
 			try? await Task.sleep(for: .seconds(3))
 		}
-	}
-
-	private func currentServers() async -> [ServerRuntime]? {
-		guard let client = store.client, store.supports(.servers) else { return nil }
-		if let sessionId { return try? await client.servers(sessionId: sessionId) }
-
-		// Across every session: one call says which have anything running, and
-		// only those are asked for their ports. A port can only be listening
-		// once on the machine, so the union needs no reconciling.
-		guard let states = try? await client.serverStates() else { return nil }
-		let live = states.filter { $0.value.contains(where: BrowserTabs.previewable.contains) }.keys
-		var all: [ServerRuntime] = []
-		for id in live {
-			if let servers = try? await client.servers(sessionId: id) { all.append(contentsOf: servers) }
-		}
-		return all
-	}
-}
-
-private struct TabChip: View {
-	let tab: BrowserTab
-	let isSelected: Bool
-	let select: () -> Void
-	let close: () -> Void
-
-	var body: some View {
-		HStack(spacing: 5) {
-			if tab.isDerived {
-				Circle()
-					.fill(tab.listening ? Color.green : Color.gray.opacity(0.4))
-					.frame(width: 6, height: 6)
-			}
-			Text(tab.title).font(.caption.monospaced()).lineLimit(1)
-			if isSelected {
-				Button(action: close) {
-					Image(systemName: "xmark").font(.caption2)
-				}
-				.buttonStyle(.plain)
-				.accessibilityLabel("Close \(tab.title)")
-			}
-		}
-		.padding(.horizontal, 10)
-		.padding(.vertical, 6)
-		.background(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
-		.clipShape(Capsule())
-		.onTapGesture(perform: select)
-	}
-}
-
-/// Hosts a WKWebView, swapping it when the tab changes or the proxy forces a
-/// rebuild. The container stays put so SwiftUI keeps one view to lay out.
-private struct WebViewHost: UIViewRepresentable {
-	let webView: WKWebView
-
-	func makeUIView(context: Context) -> UIView { UIView() }
-
-	func updateUIView(_ container: UIView, context: Context) {
-		guard webView.superview !== container else { return }
-		container.subviews.forEach { $0.removeFromSuperview() }
-		webView.translatesAutoresizingMaskIntoConstraints = false
-		container.addSubview(webView)
-		NSLayoutConstraint.activate([
-			webView.topAnchor.constraint(equalTo: container.topAnchor),
-			webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-			webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-			webView.trailingAnchor.constraint(equalTo: container.trailingAnchor)
-		])
 	}
 }

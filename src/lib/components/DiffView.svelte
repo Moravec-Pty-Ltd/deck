@@ -143,7 +143,7 @@
 			render();
 		} catch (e) {
 			if (my !== token) return;
-			errMsg = e instanceof Error ? e.message : 'failed to load diff';
+			errMsg = e instanceof Error ? e.message : "Couldn't load diff";
 		} finally {
 			// On a stale response (unmount or a newer load) leave loading as-is so
 			// we don't clobber the live load; the winning load owns the flag.
@@ -197,7 +197,7 @@
 				void load();
 			})
 			.catch(() => {
-				errMsg = 'failed to load the diff renderer';
+				errMsg = "Couldn't load the diff renderer";
 				loading = false;
 			});
 		return () => {

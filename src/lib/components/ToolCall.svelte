@@ -65,7 +65,7 @@
 		class="cursor-pointer select-none text-xs opacity-50 hover:opacity-80"
 		onclick={() => (toolOutput.open = !toolOutput.open)}
 	>
-		{toolOutput.open ? 'hide diff' : 'show diff'}
+		{toolOutput.open ? 'Hide diff' : 'Show diff'}
 	</button>
 {/snippet}
 
@@ -88,7 +88,7 @@
 					class="cursor-pointer select-none text-xs opacity-50 hover:opacity-80"
 					onclick={() => (toolOutput.open = !toolOutput.open)}
 				>
-					{toolOutput.open ? 'hide output' : 'show output'}{#if isErr}
+					{toolOutput.open ? 'Hide output' : 'Show output'}{#if isErr}
 						<span class="text-error"> (error)</span>{/if}
 				</button>
 				{#if toolOutput.open}

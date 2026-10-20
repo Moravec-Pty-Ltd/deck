@@ -57,7 +57,7 @@
 			editing = false;
 			onRenamed(body?.id ?? id);
 		} catch (e) {
-			errorMsg = e instanceof AgentApiError ? e.message : 'rename failed';
+			errorMsg = e instanceof AgentApiError ? e.message : 'Rename failed';
 		} finally {
 			saving = false;
 		}

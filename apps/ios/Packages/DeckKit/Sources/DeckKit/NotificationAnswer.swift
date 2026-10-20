@@ -38,3 +38,30 @@ public struct NotificationAnswer: Equatable, Sendable {
 		self.structured = (ask["questions"] as? Int ?? 1) == 1
 	}
 }
+
+extension NotificationAnswer {
+	/// The text a session's agent receives, the same form the ask card sends.
+	public var text: String { "Answering your question:\n- \(header): \(label)" }
+
+	/// Post the answer the way the ask card does, so the transcript shows it
+	/// answered with the pick. A run takes the reply as written and hands it to
+	/// its next phase session. deck turning the answer down throws its reason.
+	public func post(with client: DeckClient) async throws {
+		if let runId {
+			_ = try await client.runAction(id: runId, .answer, text: label)
+			return
+		}
+		guard let sessionId else { return }
+		let answers = structured ? [StructuredAnswer(header: header, labels: [label])] : []
+		let response = try await client.answer(sessionId: sessionId, text: text, askId: askId, answers: answers)
+		if !response.ok, let reason = response.reason {
+			throw DeckError.answerDeclined(reason: reason)
+		}
+	}
+
+	/// The body of the "Answer not sent" notification: the pick, then deck's
+	/// own reason when it gave one (e.g. a 409 for a run no longer blocked).
+	public func failureBody(for error: Error) -> String {
+		"\"\(label)\": \(DeckError.message(for: error))"
+	}
+}
