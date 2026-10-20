@@ -7,7 +7,7 @@ struct PairingView: View {
 		NavigationStack {
 			VStack(spacing: 12) {
 				Image(systemName: "iphone.gen3")
-					.font(.system(size: 32))
+					.font(.largeTitle)
 					.foregroundStyle(.secondary)
 				Text("Open deck on your iPhone to sync sign-in.")
 					.font(.footnote)

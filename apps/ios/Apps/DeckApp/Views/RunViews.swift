@@ -149,7 +149,7 @@ struct RunView: View {
 			}
 		}
 		.navigationTitle(run?.title ?? "Run")
-		.navigationBarTitleDisplayMode(.inline)
+		.deckInlineNavigationTitle()
 		.refreshable { await store.refreshRun(id: runId) }
 		.task { await store.refreshRun(id: runId) }
 		.alert("Couldn't do that", isPresented: Binding(
@@ -406,7 +406,7 @@ struct PhaseView: View {
 			}
 		}
 		.navigationTitle(phase?.label ?? "Phase")
-		.navigationBarTitleDisplayMode(.inline)
+		.deckInlineNavigationTitle()
 	}
 
 	private func roundRow(_ session: PhaseSession) -> some View {

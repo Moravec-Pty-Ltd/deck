@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Modal from './Modal.svelte';
 	import { onMount } from 'svelte';
 	import type { QuickMessage } from '$lib/types';
 	import { MessageSquareText, Plus, Trash2, ArrowUp, ArrowDown, Settings2 } from '@lucide/svelte';
@@ -80,7 +81,7 @@
 			messages = await agentRequest<QuickMessage[]>(agentPath('quick-messages'), { method: 'PUT', body: payload });
 			managing = false;
 		} catch (e) {
-			err = e instanceof AgentApiError ? 'save failed' : 'network error';
+			err = e instanceof AgentApiError ? 'Save failed' : 'Network error';
 		} finally {
 			saving = false;
 		}
@@ -122,73 +123,66 @@
 	{/if}
 </Popover>
 
-{#if managing}
-	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-		<div class="modal-box max-w-lg">
-			<h3 class="mb-1 text-lg font-semibold">Quick messages</h3>
-			<p class="mb-4 text-xs opacity-70">
-				Canned messages for the composer. Text can include tokens like
-				<code>[pr_url]</code>, <code>[branch-name]</code>, <code>[issue_url]</code>, expanded against
-				the session when sent.
-			</p>
+<Modal open={managing} onclose={() => (managing = false)} title="Quick messages" class="max-w-lg">
+	<p class="-mt-2 mb-4 text-xs opacity-70">
+		Canned messages for the composer. Text can include tokens like
+		<code>[pr_url]</code>, <code>[branch-name]</code>, <code>[issue_url]</code>, expanded against
+		the session when sent.
+	</p>
 
-			<div class="flex flex-col gap-2">
-				{#each draft as m, i (m.id)}
-					<div class="flex items-start gap-2 rounded-box border border-base-300 p-2">
-						<div class="flex flex-col gap-1 pt-1">
-							<button
-								class="btn btn-square btn-ghost btn-xs"
-								onclick={() => move(i, -1)}
-								disabled={i === 0}
-								aria-label="Move up"
-							>
-								<ArrowUp size={14} />
-							</button>
-							<button
-								class="btn btn-square btn-ghost btn-xs"
-								onclick={() => move(i, 1)}
-								disabled={i === draft.length - 1}
-								aria-label="Move down"
-							>
-								<ArrowDown size={14} />
-							</button>
-						</div>
-						<div class="flex flex-1 flex-col gap-1">
-							<input class="input input-sm w-full" placeholder="Label (optional)" bind:value={m.label} />
-							<textarea
-								class="textarea textarea-sm w-full"
-								rows="2"
-								placeholder="Message text"
-								bind:value={m.text}
-							></textarea>
-						</div>
-						<button
-							class="btn btn-square btn-ghost btn-xs text-error"
-							onclick={() => remove(i)}
-							aria-label="Remove"
-						>
-							<Trash2 size={14} />
-						</button>
-					</div>
-				{/each}
-				{#if !draft.length}
-					<p class="py-2 text-center text-sm opacity-60">No messages. Add one to get started.</p>
-				{/if}
-			</div>
-
-			<button class="btn btn-ghost btn-sm mt-2 gap-2" onclick={add}>
-				<Plus size={14} /> Add message
-			</button>
-
-			{#if err}<p class="mt-2 text-xs text-error">{err}</p>{/if}
-
-			<div class="modal-action">
-				<button class="btn btn-ghost" onclick={() => (managing = false)}>Cancel</button>
-				<button class="btn btn-primary" onclick={save} disabled={saving}>
-					{#if saving}<span class="loading loading-spinner loading-xs"></span>{/if} Save
+	<div class="flex flex-col gap-2">
+		{#each draft as m, i (m.id)}
+			<div class="flex items-start gap-2 rounded-box border border-base-300 p-2">
+				<div class="flex flex-col gap-1 pt-1">
+					<button
+						class="btn btn-square btn-ghost btn-xs"
+						onclick={() => move(i, -1)}
+						disabled={i === 0}
+						aria-label="Move up"
+					>
+						<ArrowUp size={14} />
+					</button>
+					<button
+						class="btn btn-square btn-ghost btn-xs"
+						onclick={() => move(i, 1)}
+						disabled={i === draft.length - 1}
+						aria-label="Move down"
+					>
+						<ArrowDown size={14} />
+					</button>
+				</div>
+				<div class="flex flex-1 flex-col gap-1">
+					<input class="input input-sm w-full" placeholder="Label (optional)" bind:value={m.label} />
+					<textarea
+						class="textarea textarea-sm w-full"
+						rows="2"
+						placeholder="Message text"
+						bind:value={m.text}
+					></textarea>
+				</div>
+				<button
+					class="btn btn-square btn-ghost btn-xs text-error"
+					onclick={() => remove(i)}
+					aria-label="Remove"
+				>
+					<Trash2 size={14} />
 				</button>
 			</div>
-		</div>
-		<button class="modal-backdrop" onclick={() => (managing = false)} aria-label="close"></button>
+		{/each}
+		{#if !draft.length}
+			<p class="py-2 text-center text-sm opacity-60">No messages. Add one to get started.</p>
+		{/if}
 	</div>
-{/if}
+
+	<button class="btn btn-ghost btn-sm mt-2 gap-2" onclick={add}>
+		<Plus size={14} /> Add message
+	</button>
+
+	{#if err}<p class="mt-2 text-xs text-error">{err}</p>{/if}
+	{#snippet footer()}
+		<button class="btn btn-ghost" onclick={() => (managing = false)}>Cancel</button>
+		<button class="btn btn-primary" onclick={save} disabled={saving}>
+			{#if saving}<span class="loading loading-spinner loading-xs"></span>{/if} Save
+		</button>
+	{/snippet}
+</Modal>

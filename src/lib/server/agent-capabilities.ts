@@ -30,6 +30,7 @@ export const AGENT_CAPABILITIES: readonly string[] = [
 	'clone',
 	'fs-complete',
 	'git',
+	'apns-macos',
 ];
 
 export function agentInfo(): { version: string | null; capabilities: string[] } {

@@ -386,6 +386,11 @@ public struct DeckEvent: Codable, Sendable {
 	public let runId: String?
 	public let phase: String?
 	public let updatedAt: Double?
+	/// `pairing`: a device asked for access (`state` pending, with its `code`)
+	/// or the request was decided (approved or denied).
+	public let pairingId: String?
+	public let code: String?
+	public let state: String?
 }
 
 public struct EventsResponse: Codable, Sendable {
@@ -619,13 +624,26 @@ public struct ProjectDetail: Codable, Sendable {
 	public let path: String
 	public let name: String?
 	public let group: String?
+	/// The first prompt of a work session, before placeholders expand.
+	public let template: String?
+	/// The first prompt of a review session.
+	public let reviewPrompt: String?
+	public let hidden: Bool?
 	public let automation: ProjectAutomation?
+	public let dev: DevConfig?
 
-	public init(path: String, name: String?, group: String?, automation: ProjectAutomation?) {
+	public init(
+		path: String, name: String?, group: String?, template: String? = nil, reviewPrompt: String? = nil,
+		hidden: Bool? = nil, automation: ProjectAutomation?, dev: DevConfig? = nil
+	) {
 		self.path = path
 		self.name = name
 		self.group = group
+		self.template = template
+		self.reviewPrompt = reviewPrompt
+		self.hidden = hidden
 		self.automation = automation
+		self.dev = dev
 	}
 }
 

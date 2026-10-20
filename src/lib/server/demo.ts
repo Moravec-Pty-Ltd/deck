@@ -84,6 +84,30 @@ export function demoSessions(): DeckSession[] {
 	];
 }
 
+// One question waiting in the inbox, so its screenshot has something to show.
+export function demoAsks() {
+	return [
+		{
+			source: 'mcp' as const,
+			sessionId: 'c_yolo',
+			askId: 'demo-ask',
+			askedAt: Date.now() - 2 * 60_000,
+			questions: [
+				{
+					header: 'Badge style',
+					question: 'How should the yolo badge look in the session header?',
+					multiSelect: false,
+					options: [
+						{ label: 'Outline', description: 'A quiet outlined badge beside the title' },
+						{ label: 'Warning', description: 'Filled in the warning colour, hard to miss' },
+						{ label: 'Icon only', description: 'A small shield icon with a tooltip' }
+					]
+				}
+			]
+		}
+	];
+}
+
 export function demoSession(id: string): DeckSession | undefined {
 	return demoSessions().find((s) => s.id === id);
 }

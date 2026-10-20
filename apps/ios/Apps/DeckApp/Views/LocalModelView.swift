@@ -1,5 +1,6 @@
 import DeckKit
 import DeckLocalModel
+import DeckUI
 import SwiftUI
 
 /// Choosing and downloading the model the operator thinks with (deck#239).
@@ -78,7 +79,9 @@ struct LocalModelView: View {
 			if support == .supported {
 				Section {
 					TextField("owner/name", text: $typed)
+						#if os(iOS)
 						.textInputAutocapitalization(.never)
+						#endif
 						.autocorrectionDisabled()
 						.font(.body.monospaced())
 						.accessibilityIdentifier("modelRepoField")
@@ -98,8 +101,9 @@ struct LocalModelView: View {
 				Section("Status") { status }
 			}
 		}
+		.formStyle(.grouped)
 		.navigationTitle("Operator model")
-		.navigationBarTitleDisplayMode(.inline)
+		.deckInlineNavigationTitle()
 		.task { await store.refresh() }
 		.onChange(of: store.chosenId) { _, _ in
 			// The operator holds the brain, so it is the one that has to be told.

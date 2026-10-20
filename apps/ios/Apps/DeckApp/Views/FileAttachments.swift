@@ -51,9 +51,16 @@ struct FileAttachments: View {
 			let paths = MessageFiles.paths(in: text)
 			files = paths.isEmpty ? [] : await viewModel.files(for: paths)
 		}
+		#if os(iOS)
 		.fullScreenCover(item: $gallery) { opening in
 			ImageGallery(images: opening.images, index: opening.index, viewModel: viewModel)
 		}
+		#else
+		.sheet(item: $gallery) { opening in
+			ImageGallery(images: opening.images, index: opening.index, viewModel: viewModel)
+				.frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
+		}
+		#endif
 		.quickLookPreview($preview)
 	}
 
@@ -87,21 +94,24 @@ struct ImageGallery: View {
 	var body: some View {
 		ZStack(alignment: .top) {
 			Color.black.ignoresSafeArea()
-			TabView(selection: $index) {
-				ForEach(Array(images.enumerated()), id: \.element.id) { i, file in
-					ZoomableImage(image: loaded[file.path])
-						.tag(i)
-						.task(id: file.path) {
-							guard loaded[file.path] == nil, let data = await viewModel.fileData(path: file.path) else { return }
-							loaded[file.path] = PlatformImage(data: data)
-						}
-				}
-			}
-			.tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
-			.ignoresSafeArea()
+			pages
 			HStack(spacing: 8) {
 				Button("Done") { dismiss() }
 					.accessibilityLabel("Close")
+					.keyboardShortcut(.cancelAction)
+				#if os(macOS)
+				// No page swipe on a Mac: arrows, from the keyboard too.
+				if images.count > 1 {
+					Button { index = max(index - 1, 0) } label: { Image(systemName: "chevron.left") }
+						.keyboardShortcut(.leftArrow, modifiers: [])
+						.disabled(index == 0)
+						.accessibilityLabel("Previous image")
+					Button { index = min(index + 1, images.count - 1) } label: { Image(systemName: "chevron.right") }
+						.keyboardShortcut(.rightArrow, modifiers: [])
+						.disabled(index == images.count - 1)
+						.accessibilityLabel("Next image")
+				}
+				#endif
 				Spacer()
 				VStack(spacing: 2) {
 					Text(current.name).lineLimit(1)
@@ -133,6 +143,67 @@ struct ImageGallery: View {
 		// Dark for the gallery alone; preferredColorScheme would flip the whole
 		// scene behind it.
 		.environment(\.colorScheme, .dark)
+		#if os(iOS)
 		.statusBarHidden()
+		#endif
+	}
+
+	@ViewBuilder
+	private var pages: some View {
+		#if os(iOS)
+		TabView(selection: $index) {
+			ForEach(Array(images.enumerated()), id: \.element.id) { i, file in
+				ZoomableImage(image: loaded[file.path])
+					.tag(i)
+					.task(id: file.path) { await load(file) }
+			}
+		}
+		.tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
+		.ignoresSafeArea()
+		#else
+		ZoomableImage(image: loaded[current.path])
+			.padding(.top, 44)
+			.task(id: current.path) { await load(current) }
+		#endif
+	}
+
+	private func load(_ file: FileInfo) async {
+		guard loaded[file.path] == nil, let data = await viewModel.fileData(path: file.path) else { return }
+		loaded[file.path] = PlatformImage(data: data)
+	}
+}
+
+/// A thumbnail of an attachment the message carried, fetched through the
+/// authenticated client (a plain AsyncImage can't send the token).
+struct AttachmentImage: View {
+	let image: TranscriptImage
+	var viewModel: SessionDetailViewModel?
+
+	@State private var platformImage: PlatformImage?
+	@State private var failed = false
+
+	var body: some View {
+		Group {
+			if let platformImage {
+				Image(platformImage: platformImage)
+					.resizable()
+					.scaledToFill()
+			} else if failed {
+				Image(systemName: "photo")
+					.foregroundStyle(.secondary)
+			} else {
+				ProgressView().controlSize(.small)
+			}
+		}
+		.frame(width: 96, height: 96)
+		.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
+		.task(id: image) {
+			guard platformImage == nil else { return }
+			if let data = await viewModel?.imageData(for: image), let loaded = PlatformImage(data: data) {
+				platformImage = loaded
+			} else {
+				failed = true
+			}
+		}
 	}
 }

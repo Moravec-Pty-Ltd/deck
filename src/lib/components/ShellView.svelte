@@ -119,24 +119,24 @@
 
 <div class="@container flex h-full min-h-0 flex-col">
 	{#if !connected}
-		<div class="mb-2 text-xs text-warning">reconnecting…</div>
+		<div class="mb-2 text-xs text-warning">Reconnecting…</div>
 	{:else if cleared}
 		<div class="mb-2 text-xs text-base-content/60">
-			the program cleared the screen; showing last output (session still running)
+			The program cleared the screen; showing its last output.
 		</div>
 	{/if}
 	<div
 		bind:this={scroller}
 		onscroll={onScroll}
 		class="terminal-output min-h-0 flex-1 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-3"
-	><AnsiText text={text || (loaded ? '(empty)' : 'connecting…')} /></div>
+	><AnsiText text={text || (loaded ? '(empty)' : 'Connecting…')} /></div>
 
 	{#if !readonly}
 	<div class="mt-3 space-y-2">
 		<div class="flex items-center gap-2">
 			<input
 				class="input terminal-font flex-1 text-sm"
-				placeholder={dead ? 'session is dead' : 'type a command, enter to send'}
+				placeholder={dead ? 'This session has ended' : 'Type a command, Enter to send'}
 				bind:value={input}
 				onkeydown={onKeydown}
 				disabled={dead}
@@ -155,7 +155,7 @@
 			<div class="flex-1"></div>
 			<label class="label cursor-pointer gap-2 text-xs">
 				<input type="checkbox" class="toggle toggle-xs" bind:checked={autoRefresh} />
-				auto-refresh
+				Auto-refresh
 			</label>
 			<button class="btn btn-ghost btn-xs" onclick={refresh} aria-label="Refresh">
 				<RefreshCw size={14} />

@@ -280,6 +280,31 @@ final class ParityTests: XCTestCase {
 		_ = try await client.answer(sessionId: "example", text: draft.text, askId: "toolu_1", answers: draft.answers)
 	}
 
+	func testANotificationAnswerPostsLikeTheAskCard() async throws {
+		let info: [AnyHashable: Any] = ["ask": ["sessionId": "example", "askId": "toolu_1", "header": "Approach", "options": ["Rewrite"], "questions": 1]]
+		let answer = try XCTUnwrap(NotificationAnswer(userInfo: info, optionSlot: 0, typed: nil))
+		let sent = await requests { try await answer.post(with: $0) }
+		assertShape(sent, "POST", "/api/agent/sessions/example/answer", keys: ["answers", "askId", "text"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["text"] as? String, "Answering your question:\n- Approach: Rewrite")
+	}
+
+	func testANotificationReplyToARunPostsTheRunAnswer() async throws {
+		let info: [AnyHashable: Any] = ["ask": ["runId": "r_1", "header": "#7", "options": [], "questions": 1]]
+		let answer = try XCTUnwrap(NotificationAnswer(userInfo: info, optionSlot: nil, typed: "main"))
+		let sent = await requests(reply: "{}") { try await answer.post(with: $0) }
+		assertShape(sent, "POST", "/api/agent/runs/r_1/answer", keys: ["text"])
+	}
+
+	func testANotificationAnswerDeckTurnsDownThrowsItsReason() async throws {
+		let info: [AnyHashable: Any] = ["ask": ["sessionId": "example", "options": ["Rewrite"], "questions": 1]]
+		let answer = try XCTUnwrap(NotificationAnswer(userInfo: info, optionSlot: 0, typed: nil))
+		var thrown: Error?
+		_ = await requests(reply: #"{"ok":false,"reason":"already answered"}"#) {
+			do { try await answer.post(with: $0) } catch { thrown = error }
+		}
+		XCTAssertEqual(thrown.map(DeckError.message(for:)), "already answered")
+	}
+
 	func testStartDefaultsComeFromTheServer() async throws {
 		RequestStub.status = 200
 		RequestStub.handler = { request in
@@ -607,6 +632,221 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(sent.first?.accept, "text/event-stream")
 	}
 
+	// MARK: - Server settings
+
+	private static let redactedSettings = #"""
+	{"speech":{"ttsUrl":"http://127.0.0.1:3000","sttUrl":"http://127.0.0.1:3000","voice":"example"},
+	"operator":{"url":"http://127.0.0.1:3001/v1","model":"example-model","provider":"openai","apiKeyFile":"/path/to/key-file","hasApiKey":true},
+	"modelProfiles":[{"id":"local","label":"Local","model":"example","envKeys":["ANTHROPIC_BASE_URL"]}],
+	"lastModels":{"claude":{"model":"opus"}},"lastEffort":"high",
+	"zedSshTarget":"user@example.test","autoCompact":{"enabled":true,"percent":85}}
+	"""#
+
+	func testRedactedServerSettingsDecode() throws {
+		let s = try JSONDecoder().decode(ServerSettings.self, from: Data(Self.redactedSettings.utf8))
+		XCTAssertEqual(s.speech, SpeechServerSettings(ttsUrl: "http://127.0.0.1:3000", sttUrl: "http://127.0.0.1:3000", voice: "example"))
+		XCTAssertEqual(s.operator?.provider, .openai)
+		XCTAssertEqual(s.operator?.hasApiKey, true)
+		XCTAssertEqual(s.operator?.apiKeyFile, "/path/to/key-file")
+		XCTAssertEqual(s.modelProfiles?.first?.envKeys, ["ANTHROPIC_BASE_URL"])
+		XCTAssertEqual(s.zedSshTarget, "user@example.test")
+		XCTAssertEqual(s.autoCompact, AutoCompactSettings(enabled: true, percent: 85))
+
+		let empty = try JSONDecoder().decode(ServerSettings.self, from: Data("{}".utf8))
+		XCTAssertNil(empty.operator)
+		let unknownProvider = try JSONDecoder().decode(OperatorServerSettings.self, from: Data(#"{"provider":"other"}"#.utf8))
+		XCTAssertNil(unknownProvider.provider)
+		XCTAssertFalse(unknownProvider.hasApiKey)
+	}
+
+	func testServerSettingsReadTheAgentRoute() async {
+		let sent = await requests(reply: Self.redactedSettings) { _ = try await $0.serverSettings() }
+		assertShape(sent, "GET", "/api/agent/settings")
+	}
+
+	func testEachServerSettingsSaveSendsOnlyItsBlock() async {
+		let saves: [(ServerSettingsPatch, String)] = [
+			(.speech(SpeechServerSettings(ttsUrl: " http://127.0.0.1:3000 ")), "speech"),
+			(.operator(url: "", model: "", provider: nil, apiKeyFile: "", key: .keep), "operator"),
+			(.autoCompact(AutoCompactSettings(enabled: true, percent: 80)), "autoCompact"),
+			(.zedSshTarget("user@example.test"), "zedSshTarget")
+		]
+		for (patch, block) in saves {
+			let sent = await requests(reply: "{}") { try await $0.patchServerSettings(patch) }
+			assertShape(sent, "PATCH", "/api/agent/settings", keys: [block])
+		}
+		let speech = await requests(reply: "{}") { try await $0.patchServerSettings(.speech(SpeechServerSettings(ttsUrl: " http://127.0.0.1:3000 "))) }
+		let block = (speech.first?.json as? [String: Any])?["speech"] as? [String: Any]
+		XCTAssertEqual(block?["ttsUrl"] as? String, "http://127.0.0.1:3000")
+		XCTAssertEqual(block?["sttUrl"] as? String, "", "a blank field clears on the server")
+	}
+
+	private func operatorBlock(_ key: OperatorKeyChange) async -> [String: Any]? {
+		let sent = await requests(reply: "{}") {
+			try await $0.patchServerSettings(.operator(url: "http://127.0.0.1:3001/v1", model: "m", provider: nil, apiKeyFile: "", key: key))
+		}
+		return (sent.first?.json as? [String: Any])?["operator"] as? [String: Any]
+	}
+
+	func testOperatorKeyIsSentOnlyWhenReplacedOrRemoved() async {
+		let kept = await operatorBlock(.keep)
+		XCTAssertEqual(kept?.keys.sorted(), ["apiKeyFile", "model", "provider", "url"], "no apiKey: the stored key is kept")
+		XCTAssertTrue(kept?["provider"] is NSNull, "no provider: read from the URL")
+
+		let replaced = await operatorBlock(.replace(" example-key "))
+		XCTAssertEqual(replaced?["apiKey"] as? String, "example-key")
+
+		let removed = await operatorBlock(.remove)
+		XCTAssertTrue(removed?.keys.contains("apiKey") == true)
+		XCTAssertTrue(removed?["apiKey"] is NSNull)
+	}
+
+	func testAutoCompactIsClampedAndABlankZedTargetClears() {
+		let compact = ServerSettingsPatch.autoCompact(AutoCompactSettings(enabled: true, percent: 99)).json["autoCompact"] as? [String: Any]
+		XCTAssertEqual(compact?["percent"] as? Int, 95)
+		XCTAssertEqual(AutoCompactSettings.clamp(10), 50)
+		XCTAssertTrue(ServerSettingsPatch.zedSshTarget("  ").json["zedSshTarget"] is NSNull)
+	}
+
+	@MainActor
+	func testTheModelSendsTheKeyOnlyWhenTypedAndKeepsOtherDrafts() async {
+		let recorder = Recorder()
+		RequestStub.status = 200
+		RequestStub.handler = { request in
+			let data = Self.bodyData(request)
+			let json = data.isEmpty ? nil : try? JSONSerialization.jsonObject(with: data)
+			recorder.sent.append(Sent(method: request.httpMethod ?? "GET", path: request.url?.path ?? "", query: nil, accept: nil, contentType: nil, keys: (json as? [String: Any]).map { $0.keys.sorted() }, json: json))
+			if request.url?.path == "/api/agent/settings/skill" { return Data("[]".utf8) }
+			return Data(Self.redactedSettings.utf8)
+		}
+		let model = ServerSettingsModel(client: Self.stubbedClient())
+		await model.load()
+		XCTAssertTrue(model.hasApiKey)
+		XCTAssertEqual(model.newApiKey, "", "the stored key is never fetched into the form")
+
+		model.zedSshTarget = "unsaved@example.test"
+		model.operatorModel = "other-model"
+		await model.saveOperator()
+		var body = (recorder.sent.last?.json as? [String: Any])?["operator"] as? [String: Any]
+		XCTAssertEqual(recorder.sent.last?.keys, ["operator"])
+		XCTAssertNil(body?["apiKey"])
+		XCTAssertEqual(model.zedSshTarget, "unsaved@example.test", "saving one block leaves another's draft alone")
+
+		model.replacingKey = true
+		model.newApiKey = "example-key"
+		await model.saveOperator()
+		body = (recorder.sent.last?.json as? [String: Any])?["operator"] as? [String: Any]
+		XCTAssertEqual(body?["apiKey"] as? String, "example-key")
+		XCTAssertEqual(model.newApiKey, "", "cleared once saved")
+		XCTAssertFalse(model.replacingKey)
+
+		await model.removeApiKey()
+		body = (recorder.sent.last?.json as? [String: Any])?["operator"] as? [String: Any]
+		XCTAssertTrue(body?["apiKey"] is NSNull)
+	}
+
+	func testSpeechDetectAndSkillInstallUseTheAgentRoutes() async {
+		let detect = await requests(reply: #"{"found":false}"#) { _ = try await $0.detectSpeechServer() }
+		assertShape(detect, "POST", "/api/agent/settings/speech/detect", keys: [])
+		let list = await requests(reply: "[]") { _ = try await $0.skillStatuses() }
+		assertShape(list, "GET", "/api/agent/settings/skill")
+		let install = await requests(reply: #"{"kind":"claude","available":true,"supported":true,"installed":true,"installedVersion":"1","shippedVersion":"1","upToDate":true}"#) {
+			_ = try await $0.installSkill(kind: "claude")
+		}
+		assertShape(install, "POST", "/api/agent/settings/skill", keys: ["kind"])
+	}
+
+	func testSkillStatusSummaries() throws {
+		let rows = try JSONDecoder().decode([SkillInstallStatus].self, from: Data(#"""
+		[{"kind":"claude","available":true,"supported":true,"installed":true,"installedVersion":"1","shippedVersion":"2","upToDate":false},
+		{"kind":"codex","available":false,"supported":true,"installed":false,"installedVersion":null,"shippedVersion":"2","upToDate":false},
+		{"kind":"pi","available":true,"supported":true,"installed":false,"installedVersion":null,"shippedVersion":"2","upToDate":false}]
+		"""#.utf8))
+		XCTAssertEqual(rows.map(\.summary), ["v1 installed, v2 available", "Not installed on the server", "Skill not installed"])
+		XCTAssertEqual(rows.map(\.canInstall), [true, false, true])
+	}
+
+	// MARK: - Projects (plan item P17a)
+
+	private static let record = #"{"path":"/path/to/project","name":"example","group":"apps"}"#
+
+	func testRegisteringAProjectPostsOnlyWhatWasGiven() async {
+		let sent = await requests(reply: Self.record, status: 201) { _ = try await $0.registerProject(path: "~/code/example", name: " ", group: "apps") }
+		assertShape(sent, "POST", "/api/agent/projects", keys: ["group", "path"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["path"] as? String, "~/code/example")
+	}
+
+	func testEditingAProjectPatchesOnlyTheChangedFields() async {
+		let original = ProjectDraft(name: "example", group: "apps", template: "fix [issue_id]", reviewPrompt: "")
+		var draft = original
+		draft.group = ""
+		draft.reviewPrompt = "review [pr_url] "
+		let sent = await requests(reply: Self.record) { _ = try await $0.updateProject(path: "/path/to/project", changes: draft.changes(from: original)) }
+		assertShape(sent, "PATCH", "/api/agent/projects/config", keys: ["group", "path", "reviewPrompt"])
+		let body = sent.first?.json as? [String: Any]
+		XCTAssertEqual(body?["group"] as? String, "", "a blank clears the group")
+		XCTAssertEqual(body?["reviewPrompt"] as? String, "review [pr_url]")
+	}
+
+	func testCloningPostsTheUrlAndParent() async {
+		let sent = await requests(reply: Self.record, status: 201) {
+			_ = try await $0.cloneProject(url: "https://github.com/acme/repo.git", parent: "~/code", name: "repo", group: nil)
+		}
+		assertShape(sent, "POST", "/api/agent/projects/clone", keys: ["name", "parent", "url"])
+	}
+
+	func testRemovingAProjectDeletesItByPath() async {
+		let sent = await requests { try await $0.removeProject(path: "/path/to/project") }
+		assertShape(sent, "DELETE", "/api/agent/projects", query: "path=/path/to/project")
+	}
+
+	func testFolderSuggestionsUseTheAgentRoute() async {
+		let sent = await requests(reply: #"["~/code/example"]"#) { _ = try await $0.completePath("~/code/ex") }
+		assertShape(sent, "GET", "/api/agent/fs/complete", query: "q=~/code/ex")
+	}
+
+	func testAServerRefusalIsShownAsItWasSent() async {
+		var thrown: Error?
+		_ = await requests(reply: #"{"message":"path must be under your home directory"}"#, status: 403) {
+			do { _ = try await $0.registerProject(path: "/elsewhere") } catch { thrown = error; throw error }
+		}
+		XCTAssertEqual(thrown.map(DeckError.message(for:)), "path must be under your home directory")
+	}
+
+	@MainActor
+	func testAProjectEditWithNoChangesSendsNothing() async throws {
+		let sent = await requests { client in
+			let store = DeckStore(client: client)
+			try await store.updateProject(path: "/path/to/project", changes: [:])
+		}
+		XCTAssertTrue(sent.isEmpty)
+	}
+
+	// MARK: - Dev config (plan item P17b)
+
+	func testSavingTheDevConfigPatchesOnlyDev() async {
+		let dev = DevConfig(
+			copyFromMain: ["apps/api/.env.local"],
+			setup: [DevSetupStep(label: "install", run: "pnpm i")],
+			servers: [DevServer(name: "web", run: "pnpm dev", setup: [], ports: [DevPort(port: 5173, primary: true)], readyPattern: #"Local:\s+(http\S+)"#)])
+		let sent = await requests(reply: Self.record) { _ = try await $0.saveDevConfig(path: "/path/to/project", dev: dev) }
+		assertShape(sent, "PATCH", "/api/agent/projects/config", keys: ["dev", "path"])
+		let body = (sent.first?.json as? [String: Any])?["dev"] as? [String: Any]
+		XCTAssertEqual(Set(body?.keys.map { $0 } ?? []), ["copyFromMain", "setup", "servers"])
+		let server = (body?["servers"] as? [[String: Any]])?.first
+		XCTAssertEqual(Set(server?.keys.map { $0 } ?? []), ["name", "run", "setup", "ports", "readyPattern"], "blank optionals are left out")
+		XCTAssertEqual(server?["readyPattern"] as? String, #"Local:\s+(http\S+)"#)
+		XCTAssertEqual((server?["ports"] as? [[String: Any]])?.first?["port"] as? Int, 5173)
+	}
+
+	func testADevConfigRefusalIsShownAsItWasSent() async {
+		var thrown: Error?
+		_ = await requests(reply: #"{"message":"duplicate server name: web"}"#, status: 400) {
+			do { _ = try await $0.saveDevConfig(path: "/path/to/project", dev: DevConfig()) } catch { thrown = error; throw error }
+		}
+		XCTAssertEqual(thrown.map(DeckError.message(for:)), "duplicate server name: web")
+	}
+
 	// MARK: - Capability gating
 
 	func testServerInfoReadsTheCapabilities() async throws {
@@ -658,6 +898,229 @@ final class ParityTests: XCTestCase {
 		let store = DeckStore(client: Self.stubbedClient())
 		await store.refreshServerInfo()
 		XCTAssertFalse(store.serverTooOld)
+	}
+	func testPairingListUsesTheAgentRoute() async {
+		let sent = await requests(reply: #"{"pending":[]}"#) { _ = try await $0.pairingRequests() }
+		assertShape(sent, "GET", "/api/agent/pairing")
+	}
+
+	func testDecidingAPairingPostsApproveAlone() async {
+		let sent = await requests { _ = try await $0.decidePairing(id: "pair_a", approve: false) }
+		assertShape(sent, "POST", "/api/agent/pairing/pair_a", keys: ["approve"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["approve"] as? Bool, false)
+	}
+
+	func testReviewsUseTheAgentRoute() async throws {
+		let reply = #"{"status":"ok","updatedAt":"2026-01-01T00:00:00Z","inFlight":{"repo":"acme/web","pr":4,"headSha":"abc","phase":"model","startedAt":"2026-01-01T00:00:00Z"},"recent":[{"repo":"acme/web","pr":3,"headSha":"def","decision":"REQUEST_CHANGES","reviewId":11,"url":"https://example.test/r/11","reviewedAt":"2026-01-01T00:00:00Z"}],"recentErrors":[{"repo":"acme/web","pr":2,"headSha":"0a1","phase":"prepare","message":"no diff","url":"https://example.test/pr/2","failedAt":"2026-01-01T00:00:00Z"}]}"#
+		var decoded: ReviewsSnapshot?
+		let sent = await requests(reply: reply) { decoded = try await $0.reviews() }
+		assertShape(sent, "GET", "/api/agent/reviews")
+		let reviews = try XCTUnwrap(decoded)
+		XCTAssertEqual(reviews.inFlight?.phaseLabel, "Reviewing")
+		XCTAssertEqual(reviews.recent.first?.decisionLabel, "Changes requested")
+		XCTAssertEqual(reviews.recentErrors.first?.phaseLabel, "Preparation")
+		XCTAssertTrue(reviews.isShown)
+	}
+
+	@MainActor
+	func testAPairingEventAddsARequestAndADecisionRemovesIt() async throws {
+		_ = await requests { _ in }
+		let store = DeckStore(client: Self.stubbedClient())
+		let asked = try JSONDecoder().decode(EventsResponse.self, from: Data("""
+		{ "events": [{ "seq": 1, "sessionId": "pair_a", "type": "pairing", "pairingId": "pair_a", "code": "123456", "state": "pending" },
+		             { "seq": 2, "sessionId": "pair_b", "type": "pairing", "pairingId": "pair_b", "code": "654321", "state": "pending" }], "seq": 2 }
+		""".utf8))
+		store.apply(asked)
+		store.apply(asked)
+		XCTAssertEqual(store.pairingRequests, [PairingRequest(id: "pair_a", code: "123456"), PairingRequest(id: "pair_b", code: "654321")], "a repeated event is applied once")
+
+		try await store.decidePairing(id: "pair_a", approve: true)
+		XCTAssertEqual(store.pairingRequests.map(\.id), ["pair_b"])
+
+		let decidedElsewhere = try JSONDecoder().decode(EventsResponse.self, from: Data("""
+		{ "events": [{ "seq": 3, "sessionId": "pair_b", "type": "pairing", "pairingId": "pair_b", "state": "denied" }], "seq": 3 }
+		""".utf8))
+		store.apply(decidedElsewhere)
+		XCTAssertTrue(store.pairingRequests.isEmpty)
+	}
+
+	// MARK: - Issue sources (plan item P18)
+
+	func testAGithubSourcePostsOwnerAndRepo() async {
+		let sent = await requests(reply: #"{"id":"src_1","type":"github","owner":"acme","repo":"web"}"#, status: 201) {
+			try await $0.addIssueSource(projectPath: "/path/to/project", body: IssueSourceBody.github(owner: " acme ", repo: "web"))
+		}
+		assertShape(sent, "POST", "/api/agent/projects/sources", keys: ["owner", "projectPath", "repo", "type"])
+		let body = sent.first?.json as? [String: Any]
+		XCTAssertEqual(body?["owner"] as? String, "acme")
+		XCTAssertEqual(body?["type"] as? String, "github")
+	}
+
+	func testALinearSourceWithANewKeyPostsTheKey() async {
+		let body = IssueSourceBody.linear(
+			key: .new("example-key"), teamId: "team_1", teamName: "Example", assigneeEmail: "someone@example.com", stateIds: ["s1"])
+		let sent = await requests(reply: #"{"id":"src_2","type":"linear"}"#, status: 201) {
+			try await $0.addIssueSource(projectPath: "/path/to/project", body: body)
+		}
+		assertShape(sent, "POST", "/api/agent/projects/sources", keys: [
+			"apiKey", "assigneeEmail", "projectPath", "stateIds", "teamId", "teamName", "type"
+		])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["stateIds"] as? [String], ["s1"])
+	}
+
+	func testAClickupSourcePostsItsPlaceAndANumericAssignee() async {
+		var place = IssueSourceBody.ClickupPlace()
+		place.teamId = "t1"; place.teamName = "Acme"
+		place.spaceId = "sp1"; place.spaceName = "Eng"
+		place.folderId = "f1"; place.folderName = "Sprint"
+		place.listId = "l1"; place.listName = "Backlog"
+		let body = IssueSourceBody.clickup(
+			key: .saved("cred_1"), place: place, statuses: ["to do"], assigneeUserId: 42, assigneeName: "someone")
+		let sent = await requests(reply: #"{"id":"src_3","type":"clickup"}"#, status: 201) {
+			try await $0.addIssueSource(projectPath: "/path/to/project", body: body)
+		}
+		assertShape(sent, "POST", "/api/agent/projects/sources", keys: [
+			"assigneeName", "assigneeUserId", "credentialId", "folderId", "folderName", "listId", "listName",
+			"projectPath", "spaceId", "spaceName", "statuses", "teamId", "teamName", "type"
+		])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["assigneeUserId"] as? Int, 42)
+
+		place.folderId = ""
+		let folderless = IssueSourceBody.clickup(key: .saved("cred_1"), place: place, statuses: [], assigneeUserId: 42, assigneeName: "")
+		XCTAssertNil(folderless["folderId"], "a folderless list sends no folder")
+		XCTAssertNil(folderless["folderName"])
+	}
+
+	func testAKeyNeverPrints() {
+		XCTAssertFalse(String(describing: IssueSourceKey.new("example-key")).contains("example-key"))
+	}
+
+	func testSavedCredentialsAreListedByType() async throws {
+		var list: [SavedCredential] = []
+		let sent = await requests(reply: #"[{"id":"cred_1","type":"linear","label":"someone@example.com","projects":["example"]}]"#) {
+			list = try await $0.issueCredentials(type: .linear)
+		}
+		assertShape(sent, "GET", "/api/agent/credentials", query: "type=linear")
+		XCTAssertEqual(list.first?.displayLabel, "someone@example.com, used by example")
+	}
+
+	func testLookupRequestShapes() async {
+		let cases: [(IssueSourceType, String, [String: String], [String])] = [
+			(.linear, "me", [:], ["action", "apiKey", "type"]),
+			(.linear, "teams", [:], ["action", "apiKey", "type"]),
+			(.linear, "states", ["teamId": "t1"], ["action", "apiKey", "teamId", "type"]),
+			(.clickup, "spaces", ["teamId": "t1"], ["action", "apiKey", "teamId", "type"]),
+			(.clickup, "folders", ["spaceId": "sp1"], ["action", "apiKey", "spaceId", "type"]),
+			(.clickup, "lists", ["folderId": "f1"], ["action", "apiKey", "folderId", "type"]),
+			(.clickup, "statuses", ["listId": "l1"], ["action", "apiKey", "listId", "type"])
+		]
+		for (type, action, params, keys) in cases {
+			let sent = await requests(reply: "[]") {
+				let _: [ClickupStatus] = try await $0.issueSourceLookup(type: type, action: action, key: .new("example-key"), params: params)
+			}
+			assertShape(sent, "POST", "/api/agent/projects/sources/lookup", keys: keys)
+			let body = sent.first?.json as? [String: Any]
+			XCTAssertEqual(body?["action"] as? String, action)
+			XCTAssertEqual(body?["type"] as? String, type.rawValue)
+		}
+	}
+
+	func testRemovingASourceDeletesItByProjectAndId() async {
+		let sent = await requests { try await $0.removeIssueSource(projectPath: "/path/to/project", id: "src_1") }
+		assertShape(sent, "DELETE", "/api/agent/projects/sources", query: "project=/path/to/project&id=src_1")
+	}
+
+	func testAProjectsSourcesReadItsRecord() async throws {
+		var sources: [IssueSource] = []
+		let sent = await requests(reply: #"{"path":"/path/to/project","name":"example","sources":[{"id":"a","type":"github","owner":"acme","repo":"web"},{"id":"b","type":"linear","teamId":"t","teamName":"Example","assigneeEmail":"","stateIds":["1","2"]},{"id":"c","type":"clickup","listName":"Backlog","statuses":["to do"],"assigneeUserId":1}]}"#) {
+			sources = try await $0.issueSources(projectPath: "/path/to/project")
+		}
+		assertShape(sent, "GET", "/api/agent/projects/config", query: "path=/path/to/project")
+		XCTAssertEqual(sources.map(\.summary), ["acme/web", "Example · 2 state(s)", "Backlog · 1 status(es)"])
+	}
+
+	/// Answers each cascade step the way the server's lookups do.
+	private func cascade(_ recorder: Recorder, status: Int = 200, credentials: String) {
+		RequestStub.status = status
+		RequestStub.handler = { request in
+			let data = Self.bodyData(request)
+			let json = data.isEmpty ? nil : try? JSONSerialization.jsonObject(with: data)
+			recorder.sent.append(Sent(method: request.httpMethod ?? "GET", path: request.url?.path ?? "", query: request.url?.query, accept: nil, contentType: nil, keys: (json as? [String: Any]).map { $0.keys.sorted() }, json: json))
+			if status != 200 { return Data(#"{"message":"Linear: authentication failed"}"#.utf8) }
+			if request.url?.path == "/api/agent/credentials" { return Data(credentials.utf8) }
+			let action = (json as? [String: Any])?["action"] as? String
+			let replies = [
+				"me": #"{"name":"Someone","email":"someone@example.com","id":42,"username":"someone"}"#,
+				"teams": #"[{"id":"t1","name":"Example","key":"EX"}]"#,
+				"states": #"[{"id":"s1","name":"Todo","type":"unstarted"},{"id":"s2","name":"Done","type":"completed"}]"#,
+				"spaces": #"[{"id":"sp1","name":"Eng"}]"#,
+				"folders": #"[{"id":"f1","name":"Sprint"}]"#,
+				"lists": #"[{"id":901,"name":"Backlog"}]"#,
+				"statuses": #"[{"status":"to do","type":"open"},{"status":"in progress","type":"custom"}]"#
+			]
+			return Data((action.flatMap { replies[$0] } ?? #"{"id":"src","type":"linear"}"#).utf8)
+		}
+	}
+
+	@MainActor
+	func testReusingASavedKeySendsNoApiKey() async {
+		let recorder = Recorder()
+		cascade(recorder, credentials: #"[{"id":"cred_1","type":"clickup","label":"someone","projects":["example"]}]"#)
+		let setup = IssueSourceSetup(client: Self.stubbedClient(), type: .clickup)
+		await setup.start()
+		XCTAssertEqual(setup.credentialId, "cred_1", "the first saved key is picked")
+		await setup.connect()
+		await setup.selectClickupTeam("t1")
+		await setup.selectClickupSpace("sp1")
+		await setup.selectClickupFolder("f1")
+		await setup.selectClickupList("901")
+		XCTAssertEqual(setup.clickupSelected, ["to do"])
+		let saved = await setup.save(projectPath: "/path/to/project")
+		XCTAssertTrue(saved)
+
+		let posts = recorder.sent.filter { $0.method == "POST" }
+		XCTAssertEqual(posts.compactMap { ($0.json as? [String: Any])?["action"] as? String },
+			["me", "teams", "spaces", "folders", "lists", "lists", "statuses"])
+		XCTAssertTrue(posts.allSatisfy { $0.keys?.contains("apiKey") == false }, "a reused key is never sent")
+		XCTAssertTrue(posts.allSatisfy { $0.keys?.contains("credentialId") == true })
+		let source = posts.last?.json as? [String: Any]
+		XCTAssertEqual(source?["listId"] as? String, "901")
+		XCTAssertEqual(source?["folderName"] as? String, "Sprint")
+		XCTAssertEqual(source?["assigneeUserId"] as? Int, 42)
+	}
+
+	@MainActor
+	func testATypedKeyIsSentForTheCascadeThenDropped() async {
+		let recorder = Recorder()
+		cascade(recorder, credentials: "[]")
+		let setup = IssueSourceSetup(client: Self.stubbedClient(), type: .linear)
+		await setup.start()
+		XCTAssertEqual(setup.credentialId, "")
+		setup.apiKey = "example-key"
+		await setup.connect()
+		await setup.selectLinearTeam("t1")
+		XCTAssertEqual(setup.linearStateIds, ["s1"], "unstarted states are preselected")
+		let saved = await setup.save(projectPath: "/path/to/project")
+		XCTAssertTrue(saved)
+		XCTAssertEqual(setup.apiKey, "", "the key is gone once the server has it")
+
+		let source = recorder.sent.last?.json as? [String: Any]
+		XCTAssertEqual(recorder.sent.last?.path, "/api/agent/projects/sources")
+		XCTAssertEqual(source?["apiKey"] as? String, "example-key")
+		XCTAssertNil(source?["credentialId"])
+		XCTAssertEqual(source?["assigneeEmail"] as? String, "someone@example.com")
+		XCTAssertEqual(source?["teamName"] as? String, "Example")
+	}
+
+	@MainActor
+	func testAProviderErrorIsShownAsReturned() async {
+		let recorder = Recorder()
+		cascade(recorder, status: 400, credentials: "[]")
+		let setup = IssueSourceSetup(client: Self.stubbedClient(), type: .linear)
+		setup.apiKey = "example-key"
+		await setup.connect()
+		XCTAssertFalse(setup.connected)
+		XCTAssertEqual(setup.errorMessage, "Linear: authentication failed")
 	}
 }
 

@@ -1,4 +1,14 @@
 export type SessionKind = 'claude' | 'pi' | 'codex' | 'opencode' | 'shell';
+
+// How each kind is named in the UI; pi spells itself in lower case.
+export const KIND_LABELS: Record<SessionKind, string> = {
+	claude: 'Claude',
+	pi: 'pi',
+	codex: 'Codex',
+	opencode: 'OpenCode',
+	shell: 'Shell'
+};
+
 export type SessionStatus = 'running' | 'idle' | 'error' | 'dead';
 
 // Agent kinds drive an LLM coding agent (chat view); 'shell' is a tmux terminal.
@@ -454,7 +464,7 @@ export interface NewSessionPreset {
 	title?: string;
 }
 
-// One harness's row in the projects page's Agent skills panel (issue #127):
+// One harness's row in the settings page's Agent skills panel (issue #127):
 // the shipped deck skill's install/version status. `supported` is whether deck
 // knows where that harness keeps skills; unsupported rows render as such
 // rather than blocking the panel. Derived in server/skills-core.ts.
