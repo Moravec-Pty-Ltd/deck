@@ -136,6 +136,10 @@ describe('deriveTopic', () => {
 		expect(deriveTopic('tech.moravec.deck', 'watchos')).toBe('tech.moravec.deck.watchkitapp');
 	});
 
+	it('macos shares the base topic with ios', () => {
+		expect(deriveTopic('tech.moravec.deck', 'macos')).toBe('tech.moravec.deck');
+	});
+
 	it('respects a configurable base topic', () => {
 		expect(deriveTopic('com.example.app', 'watchos')).toBe('com.example.app.watchkitapp');
 	});
@@ -162,6 +166,11 @@ describe('registerDeviceSchema', () => {
 	it('accepts a well-formed device', () => {
 		const parsed = registerDeviceSchema.parse({ token: 'aB01', platform: 'ios', env: 'production' });
 		expect(parsed).toEqual({ token: 'aB01', platform: 'ios', env: 'production' });
+	});
+
+	it('accepts a macos device', () => {
+		const parsed = registerDeviceSchema.parse({ token: 'aB01', platform: 'macos', env: 'development' });
+		expect(parsed.platform).toBe('macos');
 	});
 
 	it('rejects a non-hex token', () => {

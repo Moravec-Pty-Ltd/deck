@@ -718,7 +718,7 @@ public final class DeckStore {
 		if response.ok {
 			asks.removeAll { $0.id == ask.id }
 		} else if let reason = response.reason {
-			throw DeckError.http(status: 200, message: reason)
+			throw DeckError.answerDeclined(reason: reason)
 		}
 	}
 

@@ -1,4 +1,6 @@
+#if os(iOS)
 import AudioToolbox
+#endif
 import Foundation
 import Observation
 import DeckKit
@@ -21,6 +23,9 @@ struct OperatorEntry: Identifiable {
 /// take only while the gate is open, which "hey deck" opens and an 8 s
 /// follow-up window after each reply keeps open. Hold-to-talk works at any
 /// time. While on, the operator's own announcements stream in and are read.
+///
+/// The Mac shares this with no wake word and no open mic: turned on, it reads
+/// replies and announcements, and listens only while the talk button is held.
 @MainActor
 @Observable
 final class OperatorController {
@@ -47,7 +52,7 @@ final class OperatorController {
 	}
 	/// The gate: true from the wake word until the follow-up window closes.
 	private(set) var awake = false
-	private(set) var wakeWordAvailable = true
+	private(set) var wakeWordAvailable = AppPlatform.current.hasWakeWord
 	/// What the wake-word recogniser last heard, and its last complaint.
 	private(set) var wakeHeard = ""
 	private(set) var wakeError = ""
@@ -57,7 +62,9 @@ final class OperatorController {
 	private var client: DeckClient?
 	private var brain: OperatorBrain?
 	private weak var store: DeckStore?
+	#if os(iOS)
 	private let wake = WakeWordListener()
+	#endif
 	private var followUp: Task<Void, Never>?
 	/// Sessions the operator speaks up about: any that has run a turn since it
 	/// came on. Without this it would narrate every session on the machine.
@@ -82,28 +89,41 @@ final class OperatorController {
 			interrupt: { }))
 		controller.persistsSettings = false
 		controller.onPlaybackFinished = { [weak self] in self?.openFollowUp() }
-		controller.onAudioBuffer = { [wake] buffer in wake.append(buffer) }
 		voice = controller
+		#if os(iOS)
+		controller.onAudioBuffer = { [wake] buffer in wake.append(buffer) }
 		wake.onWake = { [weak self] in self?.heardWakeWord() }
 		wake.onHeard = { [weak self] text in self?.wakeHeard = String(text.suffix(60)) }
 		wake.onError = { [weak self] text in self?.wakeError = text }
+		#endif
 		Task { await controller.loadCapabilities() }
 	}
 
 	// MARK: - On / off
 
 	func turnOn() {
-		guard let voice, let client else { return }
+		guard let voice, client != nil else { return }
+		awake = false
+		wakeHeard = ""
+		wakeError = ""
+		#if os(iOS)
+		listenForWakeWord(voice)
+		#else
+		voice.settings.handsFree = false
+		voice.listenGate = true
+		voice.enable()
+		#endif
+		if let store { listen(store) }
+	}
+
+	#if os(iOS)
+	private func listenForWakeWord(_ voice: VoiceController) {
 		// The operator listens continuously; hands-free is what makes the
 		// controller keep the mic open between takes. The gate stays shut until
 		// the wake word is heard, or opens for good if there is no recogniser.
 		voice.settings.handsFree = true
 		voice.listenGate = false
 		voice.enable()
-		awake = false
-		wakeHeard = ""
-		wakeError = ""
-		if let store { listen(store) }
 		Task {
 			let allowed = await Self.speechAllowed()
 			if allowed { wake.start() } else { wakeError = "Speech recognition permission was not granted; allow it in Settings > deck." }
@@ -126,12 +146,15 @@ final class OperatorController {
 			return first
 		}
 	}
+	#endif
 
 	func turnOff() {
 		followUp?.cancel()
 		store?.onFeedEvent = nil
 		followed.removeAll()
+		#if os(iOS)
 		wake.stop()
+		#endif
 		voice?.disable()
 		awake = false
 	}
@@ -152,6 +175,7 @@ final class OperatorController {
 
 	// MARK: - Wake and follow-up
 
+	#if os(iOS)
 	private func heardWakeWord() {
 		guard let voice, voice.enabled, !paused else { return }
 		wakeHeard = "hey deck"
@@ -162,6 +186,7 @@ final class OperatorController {
 		// now rather than waiting for the detector's next opening edge.
 		if !voice.recording { voice.startRecording() }
 	}
+	#endif
 
 	private func openGate() {
 		awake = true
@@ -295,7 +320,7 @@ final class OperatorController {
 		// request, not the model being unavailable.
 		if !LocalModelStore.shared.isActive, let reason = OperatorBrain.availability.reason { return reason }
 		if case DeckError.http(let status, _) = error {
-			if status == 401 { return "deck rejected the sign-in; scan the QR code again." }
+			if status == 401 { return "deck rejected the sign-in; sign in again." }
 			return "deck answered \(status)."
 		}
 		return error.localizedDescription

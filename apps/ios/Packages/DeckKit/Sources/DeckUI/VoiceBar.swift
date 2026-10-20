@@ -6,10 +6,14 @@ import DeckUI
 /// The strip between the transcript and the composer while voice mode is on:
 /// what is being read (or heard), hold-to-talk, Skip, Stop, and the per-device
 /// settings (chattiness, hands-free, sensitivity).
-struct VoiceBar: View {
+public struct VoiceBar: View {
 	@Bindable var voice: VoiceController
 
-	var body: some View {
+	public init(voice: VoiceController) {
+		self.voice = voice
+	}
+
+	public var body: some View {
 		VStack(spacing: 8) {
 			HStack(alignment: .center, spacing: 10) {
 				VStack(alignment: .leading, spacing: 2) {
@@ -36,9 +40,11 @@ struct VoiceBar: View {
 				.tint(.red)
 				.accessibilityLabel("Stop reading and interrupt")
 				TalkButton(voice: voice, size: 48)
+				#if os(iOS)
 				RoutePicker()
 					.frame(width: 28, height: 28)
 					.accessibilityLabel("Audio output")
+				#endif
 				VoiceSettingsMenu(voice: voice)
 			}
 		}
@@ -51,10 +57,14 @@ struct VoiceBar: View {
 /// Voice mode spread over the flat half of a half-open foldable: the status
 /// and caption large enough to read from the upright half, the talk button
 /// where a thumb rests.
-struct VoiceDeck: View {
+public struct VoiceDeck: View {
 	@Bindable var voice: VoiceController
 
-	var body: some View {
+	public init(voice: VoiceController) {
+		self.voice = voice
+	}
+
+	public var body: some View {
 		VStack(spacing: 18) {
 			VoiceStatusLine(voice: voice)
 				.font(.subheadline)
@@ -86,9 +96,11 @@ struct VoiceDeck: View {
 				.accessibilityLabel("Stop reading and interrupt")
 			}
 			HStack(spacing: 20) {
+				#if os(iOS)
 				RoutePicker()
 					.frame(width: 28, height: 28)
 					.accessibilityLabel("Audio output")
+				#endif
 				VoiceSettingsMenu(voice: voice)
 					.font(.title3)
 			}
@@ -120,13 +132,13 @@ struct VoiceStatusLine: View {
 }
 
 extension VoiceController {
-	var captionText: String {
+	public var captionText: String {
 		if !caption.isEmpty { return caption }
 		if ask != nil { return "Say an option, its number, or a reply." }
 		return "Hold the button to talk."
 	}
 
-	var statusLabel: String {
+	public var statusLabel: String {
 		switch status {
 		case .speaking: return "Reading"
 		case .listening: return settings.handsFree && !recording ? "Hands-free" : "Listening"
@@ -135,7 +147,7 @@ extension VoiceController {
 		}
 	}
 
-	var dotColor: Color {
+	public var dotColor: Color {
 		switch status {
 		case .speaking: return .blue
 		case .listening: return recording ? .red : .green
@@ -239,8 +251,10 @@ struct VoiceSettingsMenu: View {
 	}
 }
 
+#if os(iOS)
 /// The system's output picker (speaker, AirPods, AirPlay), so the route can
-/// be forced when the automatic one is wrong.
+/// be forced when the automatic one is wrong. The Mac picks its output in
+/// Control Center, so it has none here.
 private struct RoutePicker: UIViewRepresentable {
 	func makeUIView(context: Context) -> AVRoutePickerView {
 		let view = AVRoutePickerView()
@@ -251,3 +265,4 @@ private struct RoutePicker: UIViewRepresentable {
 
 	func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
+#endif
