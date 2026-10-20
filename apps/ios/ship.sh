@@ -4,6 +4,8 @@
 # Usage: ./ship.sh [ios|mac|all|bootstrap]  (default: ios)
 set -e
 cd "$(dirname "$0")"
+# fastlane crashes reading Xcode's package output under a non-UTF-8 locale.
+export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 if [ -f .env ]; then
 	set -a
 	. ./.env
