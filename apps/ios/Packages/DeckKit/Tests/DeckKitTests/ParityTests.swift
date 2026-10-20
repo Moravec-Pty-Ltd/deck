@@ -280,6 +280,31 @@ final class ParityTests: XCTestCase {
 		_ = try await client.answer(sessionId: "example", text: draft.text, askId: "toolu_1", answers: draft.answers)
 	}
 
+	func testANotificationAnswerPostsLikeTheAskCard() async throws {
+		let info: [AnyHashable: Any] = ["ask": ["sessionId": "example", "askId": "toolu_1", "header": "Approach", "options": ["Rewrite"], "questions": 1]]
+		let answer = try XCTUnwrap(NotificationAnswer(userInfo: info, optionSlot: 0, typed: nil))
+		let sent = await requests { try await answer.post(with: $0) }
+		assertShape(sent, "POST", "/api/agent/sessions/example/answer", keys: ["answers", "askId", "text"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["text"] as? String, "Answering your question:\n- Approach: Rewrite")
+	}
+
+	func testANotificationReplyToARunPostsTheRunAnswer() async throws {
+		let info: [AnyHashable: Any] = ["ask": ["runId": "r_1", "header": "#7", "options": [], "questions": 1]]
+		let answer = try XCTUnwrap(NotificationAnswer(userInfo: info, optionSlot: nil, typed: "main"))
+		let sent = await requests(reply: "{}") { try await answer.post(with: $0) }
+		assertShape(sent, "POST", "/api/agent/runs/r_1/answer", keys: ["text"])
+	}
+
+	func testANotificationAnswerDeckTurnsDownThrowsItsReason() async throws {
+		let info: [AnyHashable: Any] = ["ask": ["sessionId": "example", "options": ["Rewrite"], "questions": 1]]
+		let answer = try XCTUnwrap(NotificationAnswer(userInfo: info, optionSlot: 0, typed: nil))
+		var thrown: Error?
+		_ = await requests(reply: #"{"ok":false,"reason":"already answered"}"#) {
+			do { try await answer.post(with: $0) } catch { thrown = error }
+		}
+		XCTAssertEqual(thrown.map(DeckError.message(for:)), "already answered")
+	}
+
 	func testStartDefaultsComeFromTheServer() async throws {
 		RequestStub.status = 200
 		RequestStub.handler = { request in

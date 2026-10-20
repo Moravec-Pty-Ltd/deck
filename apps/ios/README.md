@@ -442,15 +442,29 @@ ways:
   signed in, after checking it shows the same code; the app picks the token up
   from the approval and signs in.
 
-What it does so far: the sessions list (hidden sessions in their own section)
-beside the open session, the transcript with history paged in on demand, live
-output as it streams, the question card when a session is waiting on you, a
-composer (Command-Return sends), Stop (Command-.), and a terminal for
-shell sessions. Sign Out is in the app menu.
+The main window is a sidebar of places (Inbox, Runs, Schedules, Start) over
+the sessions list, and whichever is selected beside it. Inbox, runs, schedules,
+starting a session and the session sheets are the phone's own views. A session
+shows its transcript (history paged in on demand, live output as it streams,
+images and the files a message mentions), its PR with review and merge, the
+question card when it is waiting on you, and a composer that takes images
+picked, pasted or dropped; shell sessions get a terminal. Its toolbar menu has
+the phone's actions: agent, model, thinking level, compact, restart, rename,
+changes, dev servers, schedule and delete.
 
-Not yet: starting sessions, runs, schedules, settings, notifications and a menu
-bar item, multiple windows, attachments and the on-device operator. The share extension is deferred; Live Activities, widgets and the
-hinge are phone-only and stay that way.
+Double-click a session (or choose **Open in New Window** from its context
+menu) to give it a window of its own. Settings (Command-,) holds the account
+and Sign Out, the projects with their dev servers, issue sources and
+automation, the deck server's settings, and the operator's model. The menu bar
+carries the keyboard shortcuts: Command-N new session, Shift-Command-N new
+window, Command-Return send, Command-. stop, Shift-Command-K compact context,
+Command-K command palette, Command-F search, Command-[ and Command-] previous
+and next session.
+
+Not yet: searching what sessions said (the sidebar filters by name only), the
+transcript's thread view, deleting several sessions at once, unhiding a hidden
+project, the operator's wake word, and the share extension. Live Activities,
+widgets and the hinge are phone-only and stay that way.
 
 The app is sandboxed with network client and server access (the server half is
 for the dev browser's loopback SOCKS listener, which the sandbox refuses

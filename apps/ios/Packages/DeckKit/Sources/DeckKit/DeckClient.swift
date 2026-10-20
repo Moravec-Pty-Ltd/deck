@@ -7,11 +7,15 @@ public enum DeckError: Error, LocalizedError {
 	/// A create's 409 for a leftover worktree branch (code and branch), which
 	/// the caller can answer with `WorktreeOptions.onExisting`.
 	case worktreeConflict(WorktreeConflict)
+	/// deck took the request but turned the answer down (`ok: false`), with
+	/// its reason, e.g. the question was already answered.
+	case answerDeclined(reason: String)
 
 	public var errorDescription: String? {
 		switch self {
 		case .http(let status, let message): return "\(message) (HTTP \(status))"
 		case .worktreeConflict(let conflict): return conflict.message
+		case .answerDeclined(let reason): return reason
 		case .invalidResponse: return "Invalid response from deck"
 		case .notConfigured: return "deck is not signed in"
 		}
