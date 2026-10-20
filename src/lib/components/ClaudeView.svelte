@@ -713,7 +713,7 @@
 			attachments = prev.attachments;
 			uploads = prev.uploads;
 			originSessionId = prev.originSessionId;
-			if (prev.uploads.length) uploadError = err instanceof Error ? err.message : 'upload failed';
+			if (prev.uploads.length) uploadError = err instanceof Error ? err.message : 'Upload failed';
 		}
 	}
 
@@ -801,7 +801,7 @@
 		{:else if block.type === 'thinking'}
 			<details class="px-2 text-xs opacity-50">
 				<summary class="cursor-pointer select-none">
-					<ChevronDown size={12} class="inline" /> thinking
+					<ChevronDown size={12} class="inline" /> Thinking
 				</summary>
 				<div class="pt-1"><Markdown source={block.thinking} /></div>
 			</details>
@@ -841,7 +841,7 @@
 	{:else if event.type === 'deck.effort'}
 		<div class="px-2 text-center text-xs opacity-50">effort → {effortLabel(event.effort)}</div>
 	{:else if event.type === 'deck.restart'}
-		<div class="px-2 text-center text-xs opacity-50">restart → fresh claude config from the next message</div>
+		<div class="px-2 text-center text-xs opacity-50">restart → fresh Claude config from the next message</div>
 	{:else if event.type === 'result'}
 		<div class="px-2 text-center text-xs opacity-50">{fmtCost(event)}</div>
 	{/if}
@@ -861,7 +861,7 @@
 		<div
 			class="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-content"
 		>
-			reconnecting…
+			Reconnecting…
 		</div>
 	{/if}
 
@@ -910,7 +910,7 @@
 				bubbleClass="bg-base-100 text-base-content"
 			/>
 		{:else if loaded && status === 'running'}
-			<div class="px-2 text-sm opacity-60">working...</div>
+			<div class="px-2 text-sm opacity-60">Working…</div>
 		{/if}
 	</div>
 
@@ -1005,8 +1005,8 @@
 			rows="3"
 			style="height: calc(4.5em + 1.5rem + 3px)"
 			placeholder={status === 'running'
-				? 'queue a follow-up (ctrl/cmd+enter)'
-				: 'message (ctrl/cmd+enter, paste or drop files)'}
+				? 'Queue a follow-up (Ctrl/Cmd+Enter)'
+				: 'Message (Ctrl/Cmd+Enter to send; paste or drop files)'}
 			bind:value={input}
 			onkeydown={onKeydown}
 			onpaste={onPaste}

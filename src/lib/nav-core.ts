@@ -18,8 +18,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
 	{ id: 'runs', label: 'Runs', href: '/runs', matches: ['/runs'] },
 	{ id: 'schedules', label: 'Schedules', href: '/schedules', matches: ['/schedules'] },
 	{ id: 'projects', label: 'Projects', href: '/projects', matches: ['/projects'] },
-	// Lands on /projects until the settings page exists; only /settings makes it current.
-	{ id: 'settings', label: 'Settings', href: '/projects', matches: ['/settings'] }
+	{ id: 'settings', label: 'Settings', href: '/settings', matches: ['/settings'] }
 ];
 
 function matchesPath(prefix: string, pathname: string): boolean {
@@ -46,7 +45,7 @@ export function isSessionPage(pathname: string): boolean {
 }
 
 // List pages share one max content width; the session page stays edge to edge.
-const CONTAINED: readonly string[] = ['/', '/inbox', '/runs', '/schedules', '/projects'];
+const CONTAINED: readonly string[] = ['/', '/inbox', '/runs', '/schedules', '/projects', '/settings'];
 
 export function isContained(pathname: string): boolean {
 	return CONTAINED.includes(pathname);

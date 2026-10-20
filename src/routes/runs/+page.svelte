@@ -89,7 +89,7 @@
 			]);
 			loadError = '';
 		} catch (e) {
-			loadError = e instanceof Error ? e.message : 'failed to load runs';
+			loadError = e instanceof Error ? e.message : "Couldn't load runs";
 		}
 		if (!loaded) formOpen = runs.length === 0;
 		loaded = true;
@@ -100,7 +100,7 @@
 			api<{ workflows: WorkflowDef[]; problems: string[] }>('/api/agent/workflows'),
 			api<Project[]>('/api/projects')
 		]).catch((e): [{ workflows: WorkflowDef[]; problems: string[] }, Project[]] => {
-			loadError = e instanceof Error ? e.message : 'failed to load workflows';
+			loadError = e instanceof Error ? e.message : "Couldn't load workflows";
 			return [{ workflows: [], problems: [] }, []];
 		});
 		workflows = defs.workflows;
@@ -161,7 +161,7 @@
 			});
 			await goto(`/runs/${encodeURIComponent(run.id)}`);
 		} catch (err) {
-			formError = err instanceof Error ? err.message : 'failed to start the run';
+			formError = err instanceof Error ? err.message : "Couldn't start the run";
 		} finally {
 			starting = false;
 		}
@@ -181,7 +181,7 @@
 			await api('/api/agent/runs?finished=1', 'DELETE');
 			await load();
 		} catch (err) {
-			loadError = err instanceof Error ? err.message : 'clearing finished runs failed';
+			loadError = err instanceof Error ? err.message : "Couldn't clear finished runs";
 		} finally {
 			clearing = false;
 		}
@@ -192,7 +192,7 @@
 		try {
 			overseer = await api('/api/agent/overseer', overseer?.active ? 'DELETE' : 'POST', overseer?.active ? undefined : {});
 		} catch (err) {
-			loadError = err instanceof Error ? err.message : 'overseer request failed';
+			loadError = err instanceof Error ? err.message : 'The overseer request failed';
 		} finally {
 			overseerBusy = false;
 		}
@@ -306,14 +306,14 @@
 				{/if}
 				<div class="mt-3 flex justify-end">
 					<button class="btn btn-sm btn-primary" type="submit" disabled={starting || !cwd || !workflowId}>
-						{starting ? 'Starting...' : 'Start'}
+						{starting ? 'Starting…' : 'Start'}
 					</button>
 				</div>
 			</form>
 		{/if}
 
 		{#if !loaded}
-			<p class="p-8 text-center opacity-60">Loading...</p>
+			<p class="p-8 text-center opacity-60">Loading…</p>
 		{:else if runs.length === 0}
 			<p class="p-8 text-center text-sm opacity-60">No runs yet. Start one to walk an issue or a PR through its workflow.</p>
 		{:else}

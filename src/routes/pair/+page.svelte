@@ -19,14 +19,14 @@
 		message = '';
 		try {
 			const res = await fetch('/api/pair/request', { method: 'POST' });
-			if (!res.ok) throw new Error('could not start pairing');
+			if (!res.ok) throw new Error("Couldn't start pairing");
 			const data = await res.json();
 			code = data.code;
 			secret = data.secret;
 			phase = 'waiting';
 		} catch (e) {
 			phase = 'error';
-			message = e instanceof Error ? e.message : 'something went wrong';
+			message = e instanceof Error ? e.message : 'Something went wrong';
 		} finally {
 			busy = false;
 		}
@@ -80,11 +80,11 @@
 			</div>
 			<p class="mt-4 flex items-center justify-center gap-2 text-sm opacity-60">
 				<span class="loading loading-spinner loading-xs"></span>
-				Waiting for approval...
+				Waiting for approval…
 			</p>
 		{:else if phase === 'approved'}
 			<p class="flex items-center gap-2 text-sm text-success">
-				<ShieldCheck size={16} /> Approved. Signing you in...
+				<ShieldCheck size={16} /> Approved. Signing you in…
 			</p>
 		{:else}
 			<p class="mb-4 text-sm opacity-70">

@@ -77,7 +77,7 @@
 		errorMsg = '';
 		if (!newPath.trim()) return;
 		if (cloning && !repoName) {
-			errorMsg = 'enter a valid repo url (https, ssh, git, or scp-style)';
+			errorMsg = 'Enter a valid repo URL (https, ssh, git, or scp-style)';
 			return;
 		}
 		busy = true;
@@ -103,14 +103,14 @@
 						})
 					});
 			if (!res.ok) {
-				errorMsg = (await res.json().catch(() => null))?.message ?? 'failed to add project';
+				errorMsg = (await res.json().catch(() => null))?.message ?? "Couldn't add project";
 				return;
 			}
 			open = false;
 			onadded?.();
 		} catch {
 			// A network failure (fetch rejection) still needs a visible message.
-			errorMsg = 'failed to add project';
+			errorMsg = "Couldn't add project";
 		} finally {
 			busy = false;
 		}
@@ -153,7 +153,7 @@
 		<legend class="fieldset-legend">Name <span class="opacity-50">(optional)</span></legend>
 		<input
 			class="input w-full"
-			placeholder="defaults to directory name"
+			placeholder="Defaults to directory name"
 			bind:value={newName}
 			oninput={() => (nameEdited = true)}
 		/>
@@ -184,7 +184,7 @@
 			onclick={add}
 			disabled={busy || !newPath.trim() || (cloning && !repoName)}
 		>
-			{busy ? (cloning ? 'Cloning...' : 'Adding...') : 'Add'}
+			{busy ? (cloning ? 'Cloning…' : 'Adding…') : 'Add'}
 		</button>
 	{/snippet}
 </Modal>

@@ -31,7 +31,7 @@
 		} catch (e) {
 			// Deleted, here or in another tab: nothing left to show.
 			if (e instanceof ApiError && e.status === 404) return void goto('/runs');
-			loadError = e instanceof Error ? e.message : 'failed to load the run';
+			loadError = e instanceof Error ? e.message : "Couldn't load the run";
 		}
 	}
 
@@ -92,7 +92,7 @@
 			await api(`/api/agent/runs/${encodeURIComponent(id)}`, 'DELETE');
 			await goto('/runs');
 		} catch (e) {
-			actionError = e instanceof Error ? e.message : 'delete failed';
+			actionError = e instanceof Error ? e.message : 'Delete failed';
 			busy = null;
 		}
 	}
@@ -133,7 +133,7 @@
 {/if}
 
 {#if !run}
-	{#if !loadError}<p class="p-8 text-center opacity-60">Loading...</p>{/if}
+	{#if !loadError}<p class="p-8 text-center opacity-60">Loading…</p>{/if}
 {:else}
 	<div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
 		<span class="opacity-70">{run.workflow.name}</span>

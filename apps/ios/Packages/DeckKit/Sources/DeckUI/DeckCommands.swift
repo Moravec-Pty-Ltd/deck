@@ -27,14 +27,16 @@ public struct DeckSceneActions {
 
 /// What the open session can do from the keyboard, published by its view with
 /// `.focusedSceneValue(\.deckSession, …)`. Nil means not right now: nothing to
-/// send, or no turn running.
+/// send, no turn running, or nothing to compact.
 public struct DeckSessionActions {
 	public var send: (() -> Void)?
 	public var stop: (() -> Void)?
+	public var compact: (() -> Void)?
 
-	public init(send: (() -> Void)?, stop: (() -> Void)?) {
+	public init(send: (() -> Void)?, stop: (() -> Void)?, compact: (() -> Void)? = nil) {
 		self.send = send
 		self.stop = stop
+		self.compact = compact
 	}
 }
 
@@ -80,6 +82,9 @@ public struct DeckCommands: Commands {
 			Button("Stop") { session?.stop?() }
 				.keyboardShortcut(".")
 				.disabled(session?.stop == nil)
+			Button("Compact Context") { session?.compact?() }
+				.keyboardShortcut("k", modifiers: [.command, .shift])
+				.disabled(session?.compact == nil)
 		}
 		CommandMenu("Go") {
 			Button("Command Palette") { scene?.openPalette() }

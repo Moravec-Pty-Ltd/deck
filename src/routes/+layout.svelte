@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './layout.css';
-	import { Sun, Moon, BookOpen, Download, Bell, BellRing, BellOff, RefreshCw, X, LayoutGrid } from '@lucide/svelte';
+	import { Download, Bell, BellRing, BellOff, RefreshCw, X, LayoutGrid } from '@lucide/svelte';
 	import { urlBase64ToUint8Array } from '$lib/push';
 	import { watchForUpdate } from '$lib/pwa-update';
 	import { guardedFetch } from '$lib/api-guard';
@@ -13,6 +13,8 @@
 	import InboxWatch from '$lib/components/InboxWatch.svelte';
 	import Popover from '$lib/components/Popover.svelte';
 	import { badgeText, isContained, isSessionPage, showsNav } from '$lib/nav-core';
+	import { nextTheme, themeOption } from '$lib/theme-core';
+	import { THEME_ICONS, themeUi } from '$lib/theme.svelte';
 
 	let { children } = $props();
 
@@ -81,7 +83,6 @@
 		location.reload();
 	}
 
-	let theme = $state('dark');
 	let installPrompt = $state<{ prompt: () => void; userChoice: Promise<unknown> } | null>(null);
 
 	let pushSupported = $state(false);
@@ -138,7 +139,7 @@
 	}
 
 	$effect(() => {
-		theme = document.documentElement.dataset.theme || 'dark';
+		themeUi.sync();
 	});
 
 	// Capture Chrome's install prompt so we can offer an in-app Install button
@@ -164,35 +165,10 @@
 		installPrompt = null;
 	}
 
-	// Browser UI bar colour per theme, matching each theme's header (base-100).
-	const themeColor: Record<string, string> = {
-		light: '#fbfcfd',
-		dark: '#1a1f24',
-		eink: '#ffffff'
-	};
-
-	function setTheme(next: string) {
-		theme = next;
-		document.documentElement.dataset.theme = next;
-		localStorage.setItem('deck-theme', next);
-		const m = document.querySelector('meta[name="theme-color"]');
-		if (m) m.setAttribute('content', themeColor[next] ?? themeColor.dark);
-	}
-
-	const themes = [
-		{ id: 'dark', label: 'Dark', icon: Moon },
-		{ id: 'light', label: 'Light', icon: Sun },
-		{ id: 'eink', label: 'E-ink', icon: BookOpen }
-	];
-
-	const themeIndex = $derived(Math.max(0, themes.findIndex((t) => t.id === theme)));
-	const currentTheme = $derived(themes[themeIndex]);
-	const nextTheme = $derived(themes[(themeIndex + 1) % themes.length]);
-
-	// Advance to the next theme in order: the header control and the palette's Switch theme.
-	function cycleTheme() {
-		setTheme(nextTheme.id);
-	}
+	const currentTheme = $derived(themeOption(themeUi.current));
+	const nextThemeLabel = $derived(nextTheme(themeUi.current).label);
+	const ThemeIcon = $derived(THEME_ICONS[themeUi.current]);
+	const cycleTheme = () => themeUi.cycle();
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -256,10 +232,10 @@
 			<button
 				class="btn btn-square btn-ghost btn-sm"
 				onclick={cycleTheme}
-				title="Theme: {currentTheme.label}. Switch to {nextTheme.label}"
-				aria-label="Theme: {currentTheme.label}. Switch to {nextTheme.label}"
+				title="Theme: {currentTheme.label}. Switch to {nextThemeLabel}"
+				aria-label="Theme: {currentTheme.label}. Switch to {nextThemeLabel}"
 			>
-				<currentTheme.icon size={16} />
+				<ThemeIcon size={16} />
 			</button>
 			{#if withNav && onSession}
 				<div class="md:hidden">

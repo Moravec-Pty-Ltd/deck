@@ -80,7 +80,7 @@
 			open = false;
 			onChange();
 		} catch (e) {
-			err = e instanceof Error ? e.message : 'model switch failed';
+			err = e instanceof Error ? e.message : 'Model switch failed';
 		} finally {
 			busy = false;
 		}
@@ -158,7 +158,7 @@
 				{/if}
 				<input
 					class="input input-sm w-full"
-					placeholder="model id (empty for default)"
+					placeholder="Model ID (empty for the default)"
 					bind:value={text}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') switchTo(text);

@@ -30,7 +30,7 @@
 			asks = next;
 			loadError = '';
 		} catch (e) {
-			if (n === generation) loadError = e instanceof Error ? e.message : 'failed to load the inbox';
+			if (n === generation) loadError = e instanceof Error ? e.message : "Couldn't load the inbox";
 		}
 		loaded = true;
 	}
@@ -42,7 +42,7 @@
 			await api(url, 'POST', body);
 			asks = asks.filter((a) => a !== row.ask);
 		} catch (e) {
-			rowErrors[row.key] = e instanceof Error ? e.message : 'failed to send the answer';
+			rowErrors[row.key] = e instanceof Error ? e.message : "Couldn't send the answer";
 		}
 		void load();
 	}

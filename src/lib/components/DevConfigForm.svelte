@@ -155,7 +155,7 @@
 						</div>
 					{/each}
 				</div>
-				<button class="btn btn-ghost btn-xs mt-1" onclick={addCopy}><Plus size={12} /> file</button>
+				<button class="btn btn-ghost btn-xs mt-1" onclick={addCopy}><Plus size={12} /> File</button>
 			</div>
 
 			<!-- shared setup -->
@@ -165,7 +165,7 @@
 					{#each setup as _, i (i)}
 						<div class="rounded border border-base-300 p-2">
 							<div class="flex items-center gap-2">
-								<input class="input input-xs flex-1" placeholder="label" bind:value={setup[i].label} />
+								<input class="input input-xs flex-1" placeholder="Label" bind:value={setup[i].label} />
 								<input class="input input-xs w-28 font-mono" placeholder="cwd (.)" bind:value={setup[i].cwd} />
 								<button class="btn btn-ghost btn-xs" onclick={() => (setup = move(setup, i, -1))} aria-label="Up"><ChevronUp size={12} /></button>
 								<button class="btn btn-ghost btn-xs" onclick={() => (setup = move(setup, i, 1))} aria-label="Down"><ChevronDown size={12} /></button>
@@ -175,7 +175,7 @@
 						</div>
 					{/each}
 				</div>
-				<button class="btn btn-ghost btn-xs mt-1" onclick={() => (setup = addStep(setup))}><Plus size={12} /> step</button>
+				<button class="btn btn-ghost btn-xs mt-1" onclick={() => (setup = addStep(setup))}><Plus size={12} /> Step</button>
 			</div>
 
 			<!-- servers -->
@@ -185,7 +185,7 @@
 					{#each servers as s, si (si)}
 						<div class="rounded-box border border-base-300 bg-base-200/40 p-2">
 							<div class="flex items-center gap-2">
-								<input class="input input-xs flex-1" placeholder="name (web)" bind:value={s.name} />
+								<input class="input input-xs flex-1" placeholder="Name (web)" bind:value={s.name} />
 								<input class="input input-xs w-28 font-mono" placeholder="cwd (.)" bind:value={s.cwd} />
 								<button class="btn btn-ghost btn-xs" onclick={() => removeServer(si)} aria-label="Remove server"><Trash2 size={13} /></button>
 							</div>
@@ -198,17 +198,17 @@
 								<div class="space-y-1">
 									{#each s.ports ?? [] as p, pi (pi)}
 										<div class="flex items-center gap-2">
-											<input class="input input-xs w-20" type="number" placeholder="port" bind:value={p.port} />
-											<input class="input input-xs flex-1" placeholder="label" bind:value={p.label} />
+											<input class="input input-xs w-20" type="number" placeholder="Port" bind:value={p.port} />
+											<input class="input input-xs flex-1" placeholder="Label" bind:value={p.label} />
 											<label class="label cursor-pointer gap-1 text-[11px]">
 												<input type="radio" class="radio radio-xs" checked={p.primary} onchange={() => setPrimary(s, pi)} />
-												primary
+												Primary
 											</label>
 											<button class="btn btn-ghost btn-xs" onclick={() => removePort(s, pi)} aria-label="Remove port"><Trash2 size={11} /></button>
 										</div>
 									{/each}
 								</div>
-								<button class="btn btn-ghost btn-xs mt-1" onclick={() => addPort(s)}><Plus size={11} /> port</button>
+								<button class="btn btn-ghost btn-xs mt-1" onclick={() => addPort(s)}><Plus size={11} /> Port</button>
 							</div>
 
 							<!-- per-server setup -->
@@ -218,7 +218,7 @@
 									{#each s.setup ?? [] as _, ssi (ssi)}
 										<div class="rounded border border-base-300 p-1.5">
 											<div class="flex items-center gap-2">
-												<input class="input input-xs flex-1" placeholder="label" bind:value={s.setup![ssi].label} />
+												<input class="input input-xs flex-1" placeholder="Label" bind:value={s.setup![ssi].label} />
 												<input class="input input-xs w-24 font-mono" placeholder="cwd" bind:value={s.setup![ssi].cwd} />
 												<button class="btn btn-ghost btn-xs" onclick={() => { s.setup = (s.setup ?? []).filter((_, idx) => idx !== ssi); servers = [...servers]; }} aria-label="Remove step"><Trash2 size={11} /></button>
 											</div>
@@ -226,16 +226,16 @@
 										</div>
 									{/each}
 								</div>
-								<button class="btn btn-ghost btn-xs mt-1" onclick={() => { s.setup = addStep(s.setup ?? []); servers = [...servers]; }}><Plus size={11} /> step</button>
+								<button class="btn btn-ghost btn-xs mt-1" onclick={() => { s.setup = addStep(s.setup ?? []); servers = [...servers]; }}><Plus size={11} /> Step</button>
 							</div>
 						</div>
 					{/each}
 				</div>
-				<button class="btn btn-ghost btn-xs mt-1" onclick={addServer}><Plus size={12} /> server</button>
+				<button class="btn btn-ghost btn-xs mt-1" onclick={addServer}><Plus size={12} /> Server</button>
 			</div>
 
 			<div class="flex items-center justify-end gap-2">
-				{#if saver.saved}<span class="flex items-center gap-1 text-xs text-success"><Check size={13} /> saved</span>{/if}
+				{#if saver.saved}<span class="flex items-center gap-1 text-xs text-success"><Check size={13} /> Saved</span>{/if}
 				<button class="btn btn-sm btn-primary" disabled={saver.busy} onclick={save}>Save dev config</button>
 			</div>
 		</div>

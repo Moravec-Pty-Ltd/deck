@@ -27,9 +27,10 @@ describe('isCurrent', () => {
 		expect(current(path)).toEqual(ids);
 	});
 
-	it('sends settings to projects without marking it there', () => {
-		expect(item('settings').href).toBe('/projects');
+	it('gives settings its own page', () => {
+		expect(item('settings').href).toBe('/settings');
 		expect(isCurrent(item('settings'), '/projects')).toBe(false);
+		expect(isCurrent(item('projects'), '/settings')).toBe(false);
 	});
 });
 
@@ -47,7 +48,7 @@ describe('where the nav shows', () => {
 	});
 
 	it('contains the list pages and not the session or run detail', () => {
-		for (const p of ['/', '/inbox', '/runs', '/schedules', '/projects']) expect(isContained(p)).toBe(true);
+		for (const p of ['/', '/inbox', '/runs', '/schedules', '/projects', '/settings']) expect(isContained(p)).toBe(true);
 		expect(isContained('/s/c_abc')).toBe(false);
 		expect(isContained('/runs/r_1')).toBe(false);
 	});

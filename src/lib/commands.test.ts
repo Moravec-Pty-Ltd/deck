@@ -58,6 +58,14 @@ describe('buildCommands', () => {
 		expect(list.some((id) => id.startsWith('pr-'))).toBe(false);
 	});
 
+	it('opens the settings page', () => {
+		const c = ctx();
+		buildCommands(c)
+			.find((cmd) => cmd.id === 'settings')!
+			.run();
+		expect(c.goto).toHaveBeenCalledWith('/settings');
+	});
+
 	it('includes toggle-notifications only when supported', () => {
 		expect(ids(ctx({ notificationsSupported: true }))).toContain('toggle-notifications');
 	});
