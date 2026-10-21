@@ -113,8 +113,31 @@ async function respond(prompt) {
 			result(started);
 			return;
 		}
+		const bg = prompt.match(/\[background(-agent)?:(\d+)\]/);
+		if (bg) {
+			// Work that outlives the turn: claude's live task list, then an empty one when it ends.
+			const task_id = `task_${randomUUID()}`;
+			const ms = Number(bg[2]) * 1000;
+			const live = (tasks) => out({ type: 'system', subtype: 'background_tasks_changed', tasks, uuid: randomUUID(), session_id: sessionId });
+			if (bg[1]) {
+				// A background Agent call: it joins the list before task_started and leaves after task_notification.
+				const agent = `toolu_${randomUUID()}`;
+				const description = 'Watch the fake build';
+				assistant([{ type: 'tool_use', id: agent, name: 'Agent', input: { description, subagent_type: 'general-purpose', run_in_background: true, prompt: 'Watch it.' } }]);
+				live([{ task_id, task_type: 'local_agent', subagent_type: 'general-purpose', description }]);
+				out({ type: 'system', subtype: 'task_started', session_id: sessionId, task_id, tool_use_id: agent, task_type: 'local_agent', description, subagent_type: 'general-purpose', is_backgrounded: true });
+				toolResult(agent, 'Async agent launched successfully.');
+				setTimeout(() => {
+					out({ type: 'system', subtype: 'task_notification', session_id: sessionId, task_id, tool_use_id: agent, status: 'completed', summary: 'Background report: build is green' });
+					live([]);
+				}, ms);
+			} else {
+				live([{ task_id, task_type: 'local_bash', description: 'fake background work' }]);
+				setTimeout(() => live([]), ms);
+			}
+		}
 		const files = [...prompt.matchAll(/\[file:([^\]]+)\]/g)].map((m) => m[1]);
-		const text = files.length ? `Here are the files: ${files.join(' and ')}` : `Fake reply to: ${prompt.replace(/\[\w+\]/g, '').trim()}`;
+		const text = files.length ? `Here are the files: ${files.join(' and ')}` : `Fake reply to: ${prompt.replace(/\[[\w-]+(:\d+)?\]/g, '').trim()}`;
 		streamText(text);
 		result(started, 'success', text);
 	} catch (err) {
