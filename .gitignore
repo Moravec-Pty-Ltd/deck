@@ -28,3 +28,7 @@ vite.config.ts.timestamp-*
 !.claude/
 .claude/*
 !.claude/skills/
+
+# Playwright
+/test-results
+/playwright-report
