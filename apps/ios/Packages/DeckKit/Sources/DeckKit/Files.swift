@@ -15,6 +15,8 @@ public struct FileInfo: Codable, Hashable, Identifiable, Sendable {
 	public let mime: String
 	public let image: Bool
 
+	public var isVideo: Bool { mime.hasPrefix("video/") }
+
 	public init(path: String, name: String, size: Int, mime: String, image: Bool) {
 		self.path = path
 		self.name = name
