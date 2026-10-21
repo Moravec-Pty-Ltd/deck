@@ -2,6 +2,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from 'vite';
+import { serveFailure, type ServeError } from './src/lib/server/tailscale-serve-core';
 
 const PORT = 4818;
 
@@ -29,7 +30,8 @@ function boundPort(server: ViteDevServer): number {
 // because the node-level serve entry it writes outlives a reboot: tailscaled
 // then holds 4818 before vite starts, vite moves to 4819, and the entry points
 // at nothing. A Tailscale Service (see the README) has its own address and
-// doesn't hold the port. Silent no-op when tailscale isn't present.
+// doesn't hold the port. Silent no-op when tailscale isn't present; any other
+// failure warns once, since it leaves a mapping behind.
 //
 // Everything here acts on the port this server actually bound, never on the
 // default. It used to use the constant, so a second instance -- `vite dev
@@ -43,13 +45,6 @@ function tailscaleServe(): Plugin | false {
 		return false;
 	}
 	const args = (...rest: string[]) => ['serve', ...rest];
-	const off = (port: number) => {
-		try {
-			execFileSync('tailscale', args(`--https=${port}`, 'off'), { stdio: 'ignore' });
-		} catch {
-			/* tailscale missing or nothing bound */
-		}
-	};
 	return {
 		name: 'tailscale-serve',
 		apply: 'serve',
@@ -62,9 +57,28 @@ function tailscaleServe(): Plugin | false {
 			// addresses, not localhost, which is what vite listens on.
 			server.httpServer?.once('listening', () => {
 				const bound = boundPort(server);
-				off(bound);
-				execFile('tailscale', args('--bg', `--https=${bound}`, `http://localhost:${bound}`), () => {});
-				for (const sig of ['SIGINT', 'SIGTERM', 'exit'] as const) process.once(sig, () => off(bound));
+				let warned = false;
+				const report = (a: string[], err: ServeError, stderr = String(err.stderr ?? '')) => {
+					const msg = serveFailure(a, err, stderr, bound);
+					if (msg && !warned) {
+						warned = true;
+						server.config.logger.warn(msg);
+					}
+				};
+				const off = () => {
+					const a = args(`--https=${bound}`, 'off');
+					try {
+						execFileSync('tailscale', a, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 5000 });
+					} catch (err) {
+						report(a, err as ServeError);
+					}
+				};
+				off();
+				const bg = args('--bg', `--https=${bound}`, `http://localhost:${bound}`);
+				execFile('tailscale', bg, (err, _out, stderr) => {
+					if (err) report(bg, err, stderr);
+				});
+				for (const sig of ['SIGINT', 'SIGTERM', 'exit'] as const) process.once(sig, off);
 			});
 		}
 	};
