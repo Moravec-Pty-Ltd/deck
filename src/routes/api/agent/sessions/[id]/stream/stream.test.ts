@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ getSession: vi.fn(), refreshPrOnOpen: vi.fn() }));
 vi.mock('$lib/server/sessions', () => ({ getSession: mocks.getSession }));
 vi.mock('$lib/server/pr', () => ({ refreshPrOnOpen: mocks.refreshPrOnOpen }));
-vi.mock('$lib/server/claude', () => ({ bus: { on: vi.fn(), off: vi.fn() }, snapshotFrames: () => [] }));
+vi.mock('$lib/server/claude', () => ({ bus: { on: vi.fn(), off: vi.fn() }, snapshotFrames: () => [], hasProcess: () => false, sessionAgents: () => ({}) }));
 vi.mock('$lib/server/agents/dispatch', () => ({ agentTurnRunning: () => false }));
 vi.mock('$lib/server/demo', () => ({ DEMO: false, demoTranscript: () => [] }));
 const { GET } = await import('./+server');

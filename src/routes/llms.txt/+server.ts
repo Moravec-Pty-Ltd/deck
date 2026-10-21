@@ -358,17 +358,41 @@ Events:
 
 - \`snapshot\`: \`{ "seq", "n", "data" }\`, the recent history split into \`n\`
 	frames. Concatenate \`data\` in \`seq\` order and parse it as
-	\`{ "start", "total", "cost", "context", "events": [...] }\`: \`events\` are the
-	transcript lines from index \`start\` of \`total\`.
+	\`{ "start", "total", "cost", "context", "agents", "events": [...] }\`: \`events\`
+	are the transcript lines from index \`start\` of \`total\`, and \`agents\` the
+	session's subagents (with the \`subagents\` capability; see /agents below).
 - \`status\`: the session status (running | idle | error | dead) on open and on
 	every change.
 - \`transcript\`: one live raw event, appended after the snapshot.
+- \`exit\`: the session's claude process exited, so any subagent still shown
+	as running has stopped (with the \`subagents\` capability).
 - \`ping\`: a heartbeat every 25s; a stream silent for longer is dead, reconnect.
 
 Opening the stream also kicks a background refresh of the session's PR, which
 arrives through the digest and event log. Raw events are the CLI's own
 stream-json lines plus deck's \`deck.*\` markers; they are less stable than
-the digest and transcript projections above.
+the digest and transcript projections above. A subagent's events carry
+\`parent_tool_use_id\`, the id of the Agent (older CLIs: Task) tool_use that
+launched it.
+
+### GET /api/agent/sessions/{id}/agents
+
+Every subagent of the session, folded over the whole transcript from claude's
+\`system\` task events (\`subagents\` capability):
+
+\`\`\`json
+{ "tasks": { "<task id>": { "taskId": "...", "toolUseId": "<Agent call id>",
+	"callIndex": 12, "description": "...", "subagentType": "...",
+	"background": true, "status": "running", "activity": "Reading a file",
+	"tokens": 0, "toolUses": 0, "durationMs": 0, "summary": "<final report>" } },
+	"byCall": { "<Agent call id>": "<task id>" }, "callIndex": { "<Agent call id>": 12 } }
+\`\`\`
+
+\`status\` is running | completed | failed | stopped; with no claude process
+every agent reads stopped. \`callIndex\` is the transcript index of the event
+holding the launching call. The stream's snapshot carries the same object but
+leaves out \`summary\` (setting \`reportOmitted\`) for finished agents launched
+before its window; fetch them here when the reader scrolls back that far.
 
 ### GET /api/agent/sessions/{id}/history?before=<index>&limit=<n>
 

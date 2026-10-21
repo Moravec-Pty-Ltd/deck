@@ -1,7 +1,7 @@
 ---
 name: deck
 description: Drive and monitor deck (the local Claude Code session manager) through its agent API. Use when asked to start deck work sessions or PR-review sessions, send prompts to or stop running deck sessions, check what deck sessions need attention or have finished, answer a blocking deck question, or review/merge a PR through deck.
-version: 3.6.0
+version: 3.7.0
 ---
 
 # deck agent API
@@ -68,6 +68,7 @@ POST /api/agent/sessions/<id>/message     {"text":"...","skills"?:true}  # -> { 
 GET  /api/agent/sessions/<id>             # digest + lastResult (the latest reply)
 GET  /api/agent/sessions/<id>/transcript  # readable messages + lastResult + cost
 GET  /api/agent/sessions/<id>/dir         ?path=src  # one folder under the cwd: { path, root, entries, truncated } (files-browser)
+GET  /api/agent/sessions/<id>/agents                # { tasks }: the session's subagents by task id, with status and report (subagents)
 POST /api/agent/sessions/<id>/stop
 POST /api/agent/sessions/<id>/title       {"title":"..."}  # rename; read `id` back, a tmux terminal's moves
 POST /api/agent/sessions/<id>/compact                      # free the context window; idle-only, claude only

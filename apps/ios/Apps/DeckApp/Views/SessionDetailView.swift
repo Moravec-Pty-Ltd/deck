@@ -436,6 +436,7 @@ struct SessionDetailView: View {
 			if session?.status == .running {
 				workingIndicator
 			}
+			AgentsBar(agents: viewModel.agents.running)
 			askCard(viewModel, available: stackedHeight)
 			if let voice, voice.enabled {
 				Divider()
@@ -460,6 +461,7 @@ struct SessionDetailView: View {
 					if session?.status == .running {
 						workingIndicator
 					}
+					AgentsBar(agents: viewModel.agents.running)
 				}
 				.frame(height: upperHeight(in: geometry))
 				Divider()
@@ -908,8 +910,10 @@ struct TranscriptRow: View {
 				QuestionCard(call: call)
 			} else {
 				ToolCallCard(call: call)
-				if let steps = viewModel?.steps[call.id] {
-					SubagentSteps(steps: steps) { TranscriptRow(item: $0, viewModel: viewModel, voice: voice) }
+				let steps = viewModel?.steps[call.id] ?? []
+				let agent = viewModel?.agents.agent(forCall: call.id)
+				if !steps.isEmpty || agent != nil {
+					SubagentSteps(steps: steps, agent: agent) { TranscriptRow(item: $0, viewModel: viewModel, voice: voice) }
 				}
 			}
 		case .notice(_, let text, let level):

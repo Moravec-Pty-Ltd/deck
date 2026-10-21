@@ -16,6 +16,8 @@ public enum SessionStreamEvent: Sendable {
 	case turnStart
 	/// A streamed text delta to append to the in-progress assistant reply.
 	case textDelta(String)
+	/// The session's claude process exited, taking any running subagent with it.
+	case exit
 }
 
 extension DeckClient {
@@ -175,6 +177,8 @@ private func emitFrame(
 		} else {
 			continuation.yield(.transcript(value))
 		}
+	case "exit":
+		continuation.yield(.exit)
 	default:
 		break
 	}
