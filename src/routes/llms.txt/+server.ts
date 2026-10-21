@@ -189,14 +189,17 @@ with \`/s/{id}?at={index}\`, or page to it with /history.
 
 ### GET /api/agent/quick-messages
 
-The user's canned messages, \`[{ "id": "...", "label"?: "...", "text": "..." }]\`,
-for a one-tap send to a session.
+The user's canned messages, \`[{ "id": "...", "label"?: "...", "text": "...", "projectId"?: "..." }]\`,
+for a one-tap send to a session, in display order. \`projectId\` is a
+registered project's \`path\`: such a message is offered only in that project's
+sessions, listed before the global ones (no \`projectId\`). Servers listing the
+\`quick-messages-by-project\` capability store and return it; older ones drop it.
 
 ### PUT /api/agent/quick-messages
 
 Replace the whole list with the same shape (up to 200; \`id\` and \`text\`
-required, a blank \`label\` is dropped). Returns the stored list; a schema
-mismatch is a 400.
+required, a blank \`label\` or \`projectId\` is dropped). Returns the stored
+list; a schema mismatch is a 400.
 
 ## Projects
 

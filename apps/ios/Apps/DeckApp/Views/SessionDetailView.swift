@@ -707,10 +707,11 @@ struct SessionDetailView: View {
 			HStack(alignment: .bottom, spacing: 8) {
 				if store.supports(.quickMessages) {
 					Menu {
-						if store.quickMessages.isEmpty {
+						let offered = store.quickMessages(for: session)
+						if offered.isEmpty {
 							Text("No quick messages")
 						}
-						ForEach(store.quickMessages) { message in
+						ForEach(offered) { message in
 							Button(message.displayLabel) {
 								Task { await viewModel.sendQuickMessage(text: message.text) }
 							}

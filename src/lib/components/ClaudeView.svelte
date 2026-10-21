@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import type { DeckSession } from '$lib/types';
+	import type { DeckSession, Project } from '$lib/types';
 	import { indexForward, indexOlderBatch, type Answer } from '$lib/transcript-index';
 	import {
 		emptyCostSummary,
@@ -19,6 +19,7 @@
 	import ToolRun from './ToolRun.svelte';
 	import AskQuestion from './AskQuestion.svelte';
 	import QuickMessages from './QuickMessages.svelte';
+	import { sessionProjectId } from '$lib/quick-messages-core';
 	import Modal from './Modal.svelte';
 	import SkillPicker from './SkillPicker.svelte';
 	import VoiceBar from './VoiceBar.svelte';
@@ -54,6 +55,7 @@
 	let {
 		session,
 		sessions = [],
+		projects = [],
 		visible = true,
 		condensed = false,
 		controls,
@@ -61,6 +63,7 @@
 	}: {
 		session: DeckSession;
 		sessions?: DeckSession[];
+		projects?: Project[];
 		visible?: boolean;
 		condensed?: boolean;
 		controls?: Snippet;
@@ -1054,7 +1057,11 @@
 						<Square size={16} /> <span class="hidden sm:inline">Interrupt</span>
 					</button>
 				{/if}
-				<QuickMessages onpick={sendQuickMessage} />
+				<QuickMessages
+					onpick={sendQuickMessage}
+					projectId={sessionProjectId(session, projects)}
+					{projects}
+				/>
 				<button class="btn btn-primary" onclick={send} disabled={!canSend} aria-label="Send">
 					<Send size={16} /> <span class="hidden sm:inline">Send</span>
 				</button>

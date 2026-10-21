@@ -66,10 +66,11 @@ struct SessionDetailView: View {
 						.disabled(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
 				}
 
-				if !store.quickMessages.isEmpty {
+				let offered = store.quickMessages(for: live)
+				if !offered.isEmpty {
 					VStack(alignment: .leading, spacing: 4) {
 						Text("Quick messages").font(.caption).foregroundStyle(.secondary)
-						ForEach(store.quickMessages) { message in
+						ForEach(offered) { message in
 							Button(message.displayLabel) { sendQuick(message.text) }
 								.buttonStyle(.bordered)
 								.disabled(isSending)

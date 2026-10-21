@@ -501,6 +501,7 @@
 					<ClaudeView
 						{session}
 						{sessions}
+						{projects}
 						visible={tab === 'main' || tab === 'chat'}
 						condensed={transcriptTab === 'chat'}
 						focusIndex={focusIndex}

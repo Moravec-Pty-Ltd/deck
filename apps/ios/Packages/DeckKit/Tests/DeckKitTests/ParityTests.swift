@@ -560,6 +560,23 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(list?.first?.keys.sorted(), ["id", "text"], "a blank label is dropped")
 	}
 
+	func testSavingAProjectMessageSendsItsProjectId() async {
+		let messages = [QuickMessage(id: "a", text: "go on", projectId: "/path/to/project"), QuickMessage(id: "b", text: "hi", projectId: "")]
+		let sent = await requests(reply: "[]") { _ = try await $0.saveQuickMessages(messages) }
+		let list = sent.first?.json as? [[String: Any]]
+		XCTAssertEqual(list?.first?.keys.sorted(), ["id", "projectId", "text"])
+		XCTAssertEqual(list?.first?["projectId"] as? String, "/path/to/project")
+		XCTAssertEqual(list?.last?.keys.sorted(), ["id", "text"], "a blank projectId is dropped")
+	}
+
+	func testQuickMessagesDecodeWithOrWithoutAProject() throws {
+		let json = #"[{"id":"a","text":"x","projectId":"/path/to/project"},{"id":"b","label":"L","text":"y"}]"#
+		let list = try JSONDecoder().decode([QuickMessage].self, from: Data(json.utf8))
+		XCTAssertEqual(list.map(\.projectId), ["/path/to/project", nil], "an older server's messages read as global")
+		let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(list[1])) as? [String: Any]
+		XCTAssertEqual(encoded?.keys.sorted(), ["id", "label", "text"], "a global message encodes no projectId")
+	}
+
 	func testFileStatsUseTheAgentRoute() async {
 		let sent = await requests(reply: #"{"files":[]}"#) { _ = try await $0.statFiles(sessionId: "example", paths: ["/path/to/project/out.png"]) }
 		assertShape(sent, "POST", "/api/agent/sessions/example/files", keys: ["paths"])

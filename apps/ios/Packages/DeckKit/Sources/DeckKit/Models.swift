@@ -452,16 +452,28 @@ public struct WorktreeConflict: Equatable, Sendable {
 }
 
 /// A saved canned composer message. `text` may contain [tokens] that deck
-/// expands at send time. Stored system-wide in deck.
+/// expands at send time. Stored in one ordered list in deck; `projectId` (a
+/// registered project's path) scopes it to that project's sessions, and nil
+/// makes it global. An older deck never sends `projectId`, so every message
+/// reads as global there.
 public struct QuickMessage: Codable, Identifiable, Hashable, Sendable {
 	public var id: String
 	public var label: String?
 	public var text: String
+	public var projectId: String?
 
-	public init(id: String = UUID().uuidString, label: String? = nil, text: String) {
+	public init(id: String = UUID().uuidString, label: String? = nil, text: String, projectId: String? = nil) {
 		self.id = id
 		self.label = label
 		self.text = text
+		self.projectId = projectId
+	}
+
+	/// What a session's picker offers: the project's messages first, then the
+	/// global ones, each in stored order. Mirrors deck's `quickMessagesFor`.
+	public static func offered(_ list: [QuickMessage], projectId: String?) -> [QuickMessage] {
+		let own = projectId.map { id in list.filter { $0.projectId == id } } ?? []
+		return own + list.filter { $0.projectId == nil }
 	}
 
 	public var displayLabel: String {

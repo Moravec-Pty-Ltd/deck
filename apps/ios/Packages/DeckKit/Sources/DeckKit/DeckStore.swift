@@ -281,6 +281,12 @@ public final class DeckStore {
 		quickMessages = try await client.saveQuickMessages(messages)
 	}
 
+	/// The quick messages a session offers: its project's, then the global ones.
+	public func quickMessages(for session: SessionDigest?) -> [QuickMessage] {
+		let projectId = session.flatMap { SessionProject.owning($0, in: projects)?.path }
+		return QuickMessage.offered(quickMessages, projectId: projectId)
+	}
+
 	public func sendQuickMessage(sessionId: String, text: String) async throws {
 		guard let client else { throw DeckError.notConfigured }
 		try await client.sendQuickMessage(sessionId: sessionId, text: text)
