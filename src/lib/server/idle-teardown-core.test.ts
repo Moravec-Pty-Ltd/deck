@@ -76,6 +76,17 @@ describe('teardownDecision', () => {
 		});
 	});
 
+	it('treats an ambient-only list as idle, but holds for ambient plus real work', () => {
+		const now = idleSince + 20 * 60 * 1000;
+		const count = (tasks: unknown[]) => backgroundTaskCount({ type: 'system', subtype: 'background_tasks_changed', tasks })!;
+		const watcher = { task_id: 'w', task_type: 'local_bash', description: 'Watch the log', ambient: true };
+		const shell = { task_id: 'b', task_type: 'local_bash', description: 'Run the tests' };
+		expect(count([watcher])).toBe(0);
+		expect(teardownDecision({ running: false, backgroundTasks: count([watcher]), idleSince, now })).toEqual({ action: 'kill' });
+		expect(count([watcher, shell])).toBe(1);
+		expect(teardownDecision({ running: false, backgroundTasks: count([watcher, shell]), idleSince, now }).action).toBe('wait');
+	});
+
 	it('honours a custom hold', () => {
 		expect(teardownDecision({ running: false, backgroundTasks: 1, idleSince, now: idleSince + 5, holdMs: 10 })).toEqual({
 			action: 'wait',

@@ -12,10 +12,11 @@ export const BACKGROUND_HOLD_MS = 4 * 60 * 60 * 1000;
 
 // Number of running background tasks reported by a `background_tasks_changed`
 // system event (the full current list, empty once everything has finished), or
-// undefined for any other event.
+// undefined for any other event. Tasks marked `ambient` (watchers, which claude
+// says are not activity) don't count: they would hold the process to the cap.
 export function backgroundTaskCount(event: Record<string, unknown>): number | undefined {
 	if (event.type !== 'system' || event.subtype !== 'background_tasks_changed') return undefined;
-	return Array.isArray(event.tasks) ? event.tasks.length : 0;
+	return Array.isArray(event.tasks) ? event.tasks.filter((t) => t?.ambient !== true).length : 0;
 }
 
 export type TeardownDecision =
