@@ -587,6 +587,12 @@ final class ParityTests: XCTestCase {
 		assertShape(sent, "GET", "/api/agent/sessions/example/files", query: "path=notes.md")
 	}
 
+	func testDirListingUsesTheAgentRoute() async {
+		let reply = #"{"path":"src","root":"/path/to/project","entries":[],"truncated":false}"#
+		let sent = await requests(reply: reply) { _ = try await $0.listDir(sessionId: "example", path: "src") }
+		assertShape(sent, "GET", "/api/agent/sessions/example/dir", query: "path=src")
+	}
+
 	func testSpeechCapabilitiesUseTheAgentRoute() async {
 		let sent = await requests(reply: #"{"tts":true,"stt":true}"#) { _ = try await $0.speechCapabilities() }
 		assertShape(sent, "GET", "/api/agent/speech")

@@ -4,7 +4,7 @@ import DeckUI
 
 /// The sheets a session opens from its menu, its PR header or its composer.
 enum MacSessionSheet: Identifiable {
-	case delete, changes, servers, schedule, model, effort, rename, merge, quickMessages
+	case delete, changes, servers, files, schedule, model, effort, rename, merge, quickMessages
 	case comment(decision: String)
 
 	var id: String {
@@ -77,6 +77,9 @@ struct MacSessionMenu: View {
 		if store.supports(.servers) {
 			Button("Dev Servers", systemImage: "server.rack") { sheet = .servers }
 		}
+		if store.supports(.filesBrowser) {
+			Button("Files", systemImage: "folder") { sheet = .files }
+		}
 		Button("Repeat on a Schedule…", systemImage: "clock.arrow.2.circlepath") { sheet = .schedule }
 	}
 
@@ -130,6 +133,7 @@ struct MacSessionSheetContent: View {
 			}
 		case .changes: ChangesSheet(sessionId: sessionId, title: title)
 		case .servers: ServersSheet(sessionId: sessionId, title: title)
+		case .files: FilesSheet(sessionId: sessionId, viewModel: viewModel)
 		case .schedule: NavigationStack { SchedulesView(startFor: sessionId) }
 		case .model:
 			ModelPickerSheet(kind: session?.kind ?? "claude", current: session?.model, available: store.knownModels(for: session?.kind ?? "claude"), onSelect: onModelPicked)

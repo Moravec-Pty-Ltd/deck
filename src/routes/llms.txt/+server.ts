@@ -397,6 +397,19 @@ Serve one of those files, inline (or as an attachment with \`download=1\`), with
 an \`etag\` (send \`If-None-Match\` for a 304). 404 for a path outside the
 registered projects or a missing file.
 
+### GET /api/agent/sessions/{id}/dir?path=<relative>
+
+One folder under the session's cwd, for browsing it (capability
+\`files-browser\`): \`{ "path": "src", "root": "/path/to/project", "entries":
+[{ "name", "dir", "size", "mtimeMs" }], "truncated": false }\`. \`path\` is
+relative to the cwd (\`""\` or absent for the cwd itself) and \`root\` is the
+cwd's canonical absolute path, so a file to open with the \`files\` GET is
+\`root/path/name\`. Folders come first, then names in natural order; dotfiles
+and generated folders are included, and hiding them is the client's choice. At
+most 2000 entries, with \`truncated\` set when more were left out. A \`..\`
+segment, a missing folder, or a symlink out of the registered projects is a 404;
+a session whose cwd is outside them is a 403.
+
 ### GET /api/agent/sessions/{id}/diff?meta=1
 
 The session's worktree changes against its base branch. \`{ "git": false }\` when

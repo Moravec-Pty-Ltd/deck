@@ -29,6 +29,7 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 	case issueSources = "issue-sources"
 	case apnsMacos = "apns-macos"
 	case quickMessagesByProject = "quick-messages-by-project"
+	case filesBrowser = "files-browser"
 
 	/// What the feature is called where a banner names what is missing.
 	public var label: String {
@@ -58,6 +59,7 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 		case .issueSources: return "issue sources"
 		case .apnsMacos: return "notifications on a Mac"
 		case .quickMessagesByProject: return "quick messages for one project"
+		case .filesBrowser: return "browsing a session's files"
 		}
 	}
 }

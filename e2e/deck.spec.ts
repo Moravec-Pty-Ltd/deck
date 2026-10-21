@@ -97,6 +97,26 @@ test('previews a mentioned image and video', async ({ page }) => {
 	expect((await res.body()).length).toBe(100);
 });
 
+test('browses the session folder and previews a text file and an image', async ({ page }) => {
+	await openSession(page, 'browse');
+	const tab = page.getByRole('button', { name: 'Files', exact: true });
+	await open(tab, page.getByRole('button', { name: /^README\.md / }));
+	await expect(page.getByRole('button', { name: '.deck', exact: true })).toBeHidden();
+
+	await page.getByRole('button', { name: 'src', exact: true }).click();
+	await page.getByRole('button', { name: /^answer\.ts / }).click();
+	await expect(page.getByText('export const answer = 42;')).toBeVisible();
+
+	await page.getByRole('navigation', { name: 'Path' }).getByRole('button', { name: 'acme', exact: true }).click();
+	await page.getByRole('button', { name: 'Show hidden files' }).click();
+	await page.getByRole('button', { name: '.deck', exact: true }).click();
+	await page.getByRole('button', { name: 'out', exact: true }).click();
+	await page.getByRole('button', { name: /^shot\.png / }).click();
+	await expect(page.getByRole('img', { name: 'shot.png', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'View shot.png full size' }).click();
+	await expect(page.getByRole('dialog')).toBeVisible();
+});
+
 test('quick messages list the project ones before the global ones', async ({ page }) => {
 	await page.request.put('/api/agent/quick-messages', { headers, data: [] });
 	await openSession(page, 'quick');

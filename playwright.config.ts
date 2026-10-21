@@ -17,10 +17,12 @@ if (!process.env.DECK_E2E_ROOT) {
 	const project = path.join(root, 'acme');
 	const data = path.join(root, 'data');
 	fs.mkdirSync(path.join(project, '.deck', 'out'), { recursive: true });
+	fs.mkdirSync(path.join(project, 'src'));
 	fs.mkdirSync(path.join(root, 'example'));
 	fs.mkdirSync(data);
 	fs.writeFileSync(path.join(project, 'README.md'), '# acme\n');
 	fs.writeFileSync(path.join(project, '.gitignore'), '.deck/\n');
+	fs.writeFileSync(path.join(project, 'src', 'answer.ts'), 'export const answer = 42;\n');
 	fs.writeFileSync(path.join(project, '.deck', 'out', 'shot.png'), Buffer.from(PIXEL_PNG, 'base64'));
 	// Never played, only served: deck picks the player from the extension.
 	fs.writeFileSync(path.join(project, '.deck', 'out', 'clip.mp4'), Buffer.alloc(4096, 1));
