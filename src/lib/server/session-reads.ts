@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { error, json } from '@sveltejs/kit';
 import type { DeckSession } from '$lib/types';
-import { MAX_PATHS_PER_MESSAGE } from '$lib/files-core';
+import { MAX_PATHS_PER_MESSAGE, byteRange } from '$lib/files-core';
 import { parseTranscriptRange } from '$lib/transcript-range-core';
 import { objectBody, sessionOr404 } from './http';
 import { readTranscriptRange } from './transcript';
@@ -61,6 +61,24 @@ export async function serveFileRoute({ params, url, request }: SessionEvent): Pr
 	if (!file) error(404, 'file not found');
 	const headers = fileHeaders(file, url.searchParams.get('download') === '1');
 	if (request.headers.get('if-none-match') === headers.etag) return new Response(null, { status: 304, headers });
+	// Safari and iOS play a video only from a server that answers byte ranges.
+	const range = byteRange(request.headers.get('range'), file.size);
+	if (range === 'unsatisfiable') {
+		return new Response(null, { status: 416, headers: { ...headers, 'content-range': `bytes */${file.size}` } });
+	}
+	if (range) {
+		const slice = new Uint8Array(range.end - range.start + 1);
+		const fd = fs.openSync(file.absolute, 'r');
+		try {
+			fs.readSync(fd, slice, 0, slice.length, range.start);
+		} finally {
+			fs.closeSync(fd);
+		}
+		return new Response(slice, {
+			status: 206,
+			headers: { ...headers, 'content-range': `bytes ${range.start}-${range.end}/${file.size}` }
+		});
+	}
 	return new Response(new Uint8Array(fs.readFileSync(file.absolute)), { headers });
 }
 

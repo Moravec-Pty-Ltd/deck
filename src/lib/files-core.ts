@@ -70,7 +70,9 @@ const MIME: Record<string, string> = {
 	log: 'text/plain',
 	zip: 'application/zip',
 	mp4: 'video/mp4',
+	m4v: 'video/mp4',
 	mov: 'video/quicktime',
+	webm: 'video/webm',
 	mp3: 'audio/mpeg',
 	wav: 'audio/wav',
 	m4a: 'audio/mp4'
@@ -78,6 +80,29 @@ const MIME: Record<string, string> = {
 
 export function mimeFor(p: string): string {
 	return MIME[extensionOf(p)] ?? 'application/octet-stream';
+}
+
+export function isVideoMime(mime: string): boolean {
+	return mime.startsWith('video/');
+}
+
+// The single byte range a `Range: bytes=...` header asks for, inclusive, or
+// 'unsatisfiable' (a 416). null serves the whole file: no header, a malformed
+// one, or several ranges (which only a multipart reply could answer).
+export function byteRange(header: string | null, size: number): { start: number; end: number } | 'unsatisfiable' | null {
+	const m = header?.trim().match(/^bytes=(\d*)-(\d*)$/);
+	if (!m || (!m[1] && !m[2])) return null;
+	let start: number;
+	let end: number;
+	if (!m[1]) {
+		start = Math.max(size - Number(m[2]), 0);
+		end = size - 1;
+	} else {
+		start = Number(m[1]);
+		end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+	}
+	if (start >= size || start > end) return 'unsatisfiable';
+	return { start, end };
 }
 
 // Types a browser would run scripts from when shown as a page.
