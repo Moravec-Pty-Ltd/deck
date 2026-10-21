@@ -62,7 +62,7 @@ public struct FileThumbnail: View {
 }
 
 /// A mentioned file that is not an image: its name and size, or a spinner
-/// while it is fetched for Quick Look.
+/// while it is fetched to open.
 public struct FileChip: View {
 	let file: FileInfo
 	let fetching: Bool
@@ -72,12 +72,14 @@ public struct FileChip: View {
 		self.fetching = fetching
 	}
 
+	private var icon: String { file.isVideo ? "play.rectangle" : "doc" }
+
 	public var body: some View {
 		HStack(spacing: 6) {
 			if fetching {
 				ProgressView().controlSize(.mini)
 			} else {
-				Image(systemName: "doc")
+				Image(systemName: icon)
 			}
 			Text(file.name).lineLimit(1)
 			Text(MessageFiles.formatBytes(file.size)).foregroundStyle(.secondary)

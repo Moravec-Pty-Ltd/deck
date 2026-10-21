@@ -1,3 +1,4 @@
+import AVKit
 import QuickLook
 import SwiftUI
 import DeckKit
@@ -5,7 +6,8 @@ import DeckUI
 
 /// The local files a message mentions, under its text: images as previews
 /// that open full size (with the message's other images a swipe away), other
-/// files as chips that fetch the file and open it in Quick Look. Only files
+/// files as chips that fetch the file and open it: a video in a player,
+/// anything else in Quick Look. Only files
 /// deck can serve show up; a mention of anything else stays plain text.
 struct FileAttachments: View {
 	let text: String
@@ -14,6 +16,7 @@ struct FileAttachments: View {
 	@State private var files: [FileInfo] = []
 	@State private var gallery: GalleryOpening?
 	@State private var preview: URL?
+	@State private var video: VideoOpening?
 	@State private var fetching: String?
 
 	private var images: [FileInfo] { files.filter(\.image) }
@@ -61,15 +64,60 @@ struct FileAttachments: View {
 				.frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
 		}
 		#endif
+		#if os(iOS)
+		.fullScreenCover(item: $video) { VideoSheet(opening: $0) }
+		#else
+		.sheet(item: $video) { VideoSheet(opening: $0).frame(minWidth: 640, idealWidth: 900, minHeight: 420, idealHeight: 560) }
+		#endif
 		.quickLookPreview($preview)
 	}
 
 	private func open(_ file: FileInfo) {
 		fetching = file.path
 		Task {
-			preview = await viewModel.localCopy(of: file)
+			// shortcut: the whole file is fetched before it plays (the player cannot send the token), fine under the server's 64 MB cap.
+			let local = await viewModel.localCopy(of: file)
+			if file.isVideo, let local {
+				video = VideoOpening(name: file.name, url: local)
+			} else {
+				preview = local
+			}
 			fetching = nil
 		}
+	}
+}
+
+struct VideoOpening: Identifiable {
+	let id = UUID()
+	let name: String
+	let url: URL
+}
+
+/// A mentioned video, playing as soon as it opens.
+struct VideoSheet: View {
+	@Environment(\.dismiss) private var dismiss
+	private let name: String
+	@State private var player: AVPlayer
+
+	init(opening: VideoOpening) {
+		name = opening.name
+		_player = State(initialValue: AVPlayer(url: opening.url))
+	}
+
+	var body: some View {
+		NavigationStack {
+			VideoPlayer(player: player)
+				.ignoresSafeArea(edges: .bottom)
+				.navigationTitle(name)
+				.deckInlineNavigationTitle()
+				.toolbar {
+					ToolbarItem(placement: .confirmationAction) {
+						Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+					}
+				}
+		}
+		.onAppear { player.play() }
+		.onDisappear { player.pause() }
 	}
 }
 
