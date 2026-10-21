@@ -282,7 +282,8 @@ struct MacSessionDetail: View {
 			onStop: { Task { await viewModel.stop() } },
 			onSend: { send(viewModel) },
 			onQuickMessage: { text in Task { await viewModel.sendQuickMessage(text: text) } },
-			onManageQuickMessages: { sheet = .quickMessages })
+			onManageQuickMessages: { sheet = .quickMessages },
+			session: session)
 	}
 
 	private func send(_ viewModel: SessionDetailViewModel) {

@@ -470,6 +470,7 @@ public final class DeckClient: @unchecked Sendable {
 		let body: [[String: Any]] = messages.map { message in
 			var dict: [String: Any] = ["id": message.id, "text": message.text]
 			if let label = message.label, !label.isEmpty { dict["label"] = label }
+			if let projectId = message.projectId, !projectId.isEmpty { dict["projectId"] = projectId }
 			return dict
 		}
 		let data = try await requestData("PUT", "/api/agent/quick-messages", body: body)

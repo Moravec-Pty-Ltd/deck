@@ -11,13 +11,18 @@ const MAX = 200;
 const messageSchema = z.object({
 	id: z.string().trim().min(1),
 	label: z.string().trim().optional(),
-	text: z.string().trim().min(1)
+	text: z.string().trim().min(1),
+	projectId: z.string().trim().optional()
 });
 const listSchema = z.array(messageSchema).max(MAX);
 
-// Drop a label that trimmed to empty so the menu falls back to the text.
+// Drop a label that trimmed to empty so the menu falls back to the text, and a
+// blank projectId so the message reads as global.
 function normalise(m: z.infer<typeof messageSchema>): QuickMessage {
-	return m.label ? { id: m.id, label: m.label, text: m.text } : { id: m.id, text: m.text };
+	const out: QuickMessage = { id: m.id, text: m.text };
+	if (m.label) out.label = m.label;
+	if (m.projectId) out.projectId = m.projectId;
+	return out;
 }
 
 // Read the stored list, tolerating a missing or corrupt file (-> []).

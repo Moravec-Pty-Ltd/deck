@@ -15,6 +15,8 @@ struct MacComposer: View {
 	var onSend: () -> Void
 	var onQuickMessage: (String) -> Void
 	var onManageQuickMessages: () -> Void
+	/// Picks which project's quick messages are offered beside the global ones.
+	var session: SessionDigest?
 
 	@Environment(DeckStore.self) private var store
 	@State private var importing = false
@@ -91,11 +93,12 @@ struct MacComposer: View {
 	}
 
 	private var quickMessages: some View {
-		Menu {
-			if store.quickMessages.isEmpty {
+		let offered = store.quickMessages(for: session)
+		return Menu {
+			if offered.isEmpty {
 				Text("No quick messages")
 			}
-			ForEach(store.quickMessages) { message in
+			ForEach(offered) { message in
 				Button(message.displayLabel) { onQuickMessage(message.text) }
 			}
 			Divider()

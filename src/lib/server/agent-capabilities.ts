@@ -31,6 +31,7 @@ export const AGENT_CAPABILITIES: readonly string[] = [
 	'fs-complete',
 	'git',
 	'apns-macos',
+	'quick-messages-by-project',
 ];
 
 export function agentInfo(): { version: string | null; capabilities: string[] } {

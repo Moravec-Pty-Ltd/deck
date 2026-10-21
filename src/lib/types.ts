@@ -188,6 +188,9 @@ export interface QuickMessage {
 	id: string;
 	label?: string;
 	text: string;
+	// The registered project (its path) the message belongs to. Absent is global:
+	// offered in every session. A project's messages show only in its sessions.
+	projectId?: string;
 }
 
 // What one automation lane spawns with (issue #223), so automatic reviews can run
