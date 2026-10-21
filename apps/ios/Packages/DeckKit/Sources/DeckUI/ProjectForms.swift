@@ -61,7 +61,7 @@ public struct ProjectsManagerView<Extra: View>: View {
 			}
 		}
 		.sheet(isPresented: $showAdd) {
-			NavigationStack { AddProjectForm() }
+			NavigationStack { AddProjectForm() }.deckSheetFrame()
 		}
 		.confirmationDialog(
 			"Remove \(removing?.name ?? "project")?",
@@ -325,6 +325,7 @@ public struct AddProjectForm: View {
 				Section { Text(errorMessage).foregroundStyle(.red).font(.footnote) }
 			}
 		}
+		.formStyle(.grouped)
 		.navigationTitle("Add project")
 		.deckInlineNavigationTitle()
 		.toolbar {

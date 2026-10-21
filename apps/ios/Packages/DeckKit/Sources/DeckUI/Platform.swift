@@ -79,6 +79,18 @@ extension View {
 }
 
 extension View {
+	/// A sheet's content on macOS has no size of its own: without one a
+	/// NavigationStack opens as an empty sheet that still blocks its window.
+	public func deckSheetFrame() -> some View {
+		#if os(macOS)
+		frame(minWidth: 480, idealWidth: 540, minHeight: 420, idealHeight: 520)
+		#else
+		self
+		#endif
+	}
+}
+
+extension View {
 	/// A field for paths, urls and names: no autocapitalisation or autocorrect.
 	public func deckPlainInput() -> some View {
 		#if os(iOS)

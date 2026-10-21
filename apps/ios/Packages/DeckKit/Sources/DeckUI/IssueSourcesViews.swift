@@ -58,7 +58,7 @@ struct IssueSourcesView: View {
 			}
 		}
 		.sheet(item: $adding, onDismiss: { Task { await load() } }) { setup in
-			NavigationStack { AddIssueSourceForm(setup: setup, projectPath: project.path) }
+			NavigationStack { AddIssueSourceForm(setup: setup, projectPath: project.path) }.deckSheetFrame()
 		}
 		.task { await load() }
 	}
