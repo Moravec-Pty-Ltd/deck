@@ -32,7 +32,7 @@ final class LiveActivityUITests: XCTestCase {
 		let row = app.staticTexts["voice smoke"].firstMatch
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
-		XCTAssertTrue(app.buttons["Thread"].waitForExistence(timeout: 20))
+		XCTAssertTrue(app.buttons["sessionMenu"].waitForExistence(timeout: 20))
 
 		// A turn starting while the session is open starts the activity.
 		let sessionId = try VoiceUITests.sessionId(url: url, token: token)

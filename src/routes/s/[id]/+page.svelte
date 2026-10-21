@@ -27,7 +27,8 @@
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import { DeleteFlow, requestDelete } from '$lib/delete-flow.svelte';
 	import { goto } from '$app/navigation';
-	import { Menu, X, Ticket } from '@lucide/svelte';
+	import { Menu, X, Ticket, Check, ChevronDown } from '@lucide/svelte';
+	import Popover from '$lib/components/Popover.svelte';
 	import { onMount } from 'svelte';
 	import { agentGet, sessionPath } from '$lib/agent-api';
 	import { transcriptMode } from '$lib/transcript-mode.svelte';
@@ -67,6 +68,7 @@
 	const transcriptTab = $derived(
 		session.kind !== 'shell' && transcriptMode.current === 'chat' ? 'chat' : 'main'
 	);
+	let viewMenuOpen = $state(false);
 	function pickTranscript(next: 'main' | 'chat') {
 		tab = next;
 		transcriptMode.set(next === 'chat' ? 'chat' : 'thread');
@@ -131,6 +133,19 @@
 	const myServers = $derived(serverStates[session.id] ?? []);
 	const serverChip = $derived(aggregateState(myServers));
 	const hasServers = $derived(myServers.length > 0);
+	// The tab row, or at phone width the View menu.
+	const views = $derived([
+		...(liveKind === 'shell'
+			? [{ id: 'main' as const, label: 'Terminal' }]
+			: [{ id: 'main' as const, label: 'Thread' }, { id: 'chat' as const, label: 'Chat' }]),
+		...(gitRepo ? [{ id: 'changes' as const, label: 'Changes', count: changedCount }] : []),
+		...(hasServers ? [{ id: 'servers' as const, label: 'Servers', count: myServers.length }] : []),
+		{ id: 'files' as const, label: 'Files' }
+	]);
+	function pickView(next: typeof tab) {
+		if ((next === 'main' || next === 'chat') && liveKind !== 'shell') pickTranscript(next);
+		else tab = next;
+	}
 
 	// Sessions come from the live feed; the rest still polls.
 	async function refreshOthers() {
@@ -428,6 +443,21 @@
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
 			<div class="flex items-center gap-2">
+				<!-- Phone width: the views live in this menu instead of the tab row. -->
+				<div class="sm:hidden">
+					<Popover bind:open={viewMenuOpen} summaryClass="btn btn-ghost btn-sm gap-1" summaryLabel="View: {views.find((v) => v.id === tab)?.label ?? ''}" summaryTitle="View" panelClass="p-2">
+						{#snippet trigger()}{views.find((v) => v.id === tab)?.label ?? 'View'}<ChevronDown size={14} />{/snippet}
+						<ul class="menu menu-sm w-full p-0">
+							{#each views as view (view.id)}
+								<li><button onclick={() => { pickView(view.id); viewMenuOpen = false; }} aria-pressed={tab === view.id}>
+									{view.label}
+									{#if view.count}<span class="badge badge-neutral badge-sm">{view.count}</span>{/if}
+									{#if tab === view.id}<Check size={14} class="ml-auto" />{/if}
+								</button></li>
+							{/each}
+						</ul>
+					</Popover>
+				</div>
 				{#if liveKind !== 'shell' && data.zedCommand}
 					<ZedButton command={data.zedCommand} />
 				{/if}
@@ -448,59 +478,18 @@
 			</div>
 		</div>
 
-		<div class="join mb-2 shrink-0 self-start">
-				{#if liveKind === 'shell'}
-					<button
-						class="btn join-item btn-sm {tab === 'main' ? 'btn-active' : 'btn-ghost'}"
-						onclick={() => (tab = 'main')}
-						aria-pressed={tab === 'main'}
-					>
-						Terminal
-					</button>
-				{:else}
-					<button
-						class="btn join-item btn-sm {tab === 'main' ? 'btn-active' : 'btn-ghost'}"
-						onclick={() => pickTranscript('main')}
-						aria-pressed={tab === 'main'}
-					>
-						Thread
-					</button>
-					<button
-						class="btn join-item btn-sm {tab === 'chat' ? 'btn-active' : 'btn-ghost'}"
-						onclick={() => pickTranscript('chat')}
-						aria-pressed={tab === 'chat'}
-					>
-						Chat
-					</button>
-				{/if}
-				{#if gitRepo}
-					<button
-						class="btn join-item btn-sm gap-1 {tab === 'changes' ? 'btn-active' : 'btn-ghost'}"
-						onclick={() => (tab = 'changes')}
-						aria-pressed={tab === 'changes'}
-					>
-						Changes
-						{#if changedCount}<span class="badge badge-neutral badge-sm">{changedCount}</span>{/if}
-					</button>
-				{/if}
-				{#if hasServers}
-					<button
-						class="btn join-item btn-sm gap-1 {tab === 'servers' ? 'btn-active' : 'btn-ghost'}"
-						onclick={() => (tab = 'servers')}
-						aria-pressed={tab === 'servers'}
-					>
-						Servers
-						<span class="badge badge-neutral badge-sm">{myServers.length}</span>
-					</button>
-				{/if}
+		<div class="join mb-2 shrink-0 self-start max-sm:hidden">
+			{#each views as view (view.id)}
 				<button
-					class="btn join-item btn-sm {tab === 'files' ? 'btn-active' : 'btn-ghost'}"
-					onclick={() => (tab = 'files')}
-					aria-pressed={tab === 'files'}
+					class="btn join-item btn-sm gap-1 {tab === view.id ? 'btn-active' : 'btn-ghost'}"
+					onclick={() => pickView(view.id)}
+					aria-pressed={tab === view.id}
 				>
-					Files
+					{view.label}
+					{#if view.count}<span class="badge badge-neutral badge-sm">{view.count}</span>{/if}
 				</button>
-			</div>
+			{/each}
+		</div>
 
 		<div class="min-h-0 flex-1">
 			<!-- Thread and Chat are one mounted transcript in two modes, so switching

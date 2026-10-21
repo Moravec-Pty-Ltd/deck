@@ -51,6 +51,13 @@ final class HingeMonitor {
 		guard posture != .unknown, windowSize.width > 0 else { return nil }
 		return windowSize.width / 2
 	}
+
+	/// Half the window when it is split on the fold, nil otherwise. The one
+	/// definition of "split" for the sessions layout and the sheets that must
+	/// stay off the fold.
+	func splitWidth(_ sizeClass: UserInterfaceSizeClass?) -> CGFloat? {
+		sizeClass == .regular && !isTabletop ? halfWidth : nil
+	}
 }
 
 /// A zero-size view hosting the hinge interaction, placed once anywhere in

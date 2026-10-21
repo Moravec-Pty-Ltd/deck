@@ -10,6 +10,7 @@ import {
 	LISTENING_CAPTION,
 	nextSegment,
 	parseVoiceSettings,
+	serializeVoiceSettings,
 	pickRecorderType,
 	restingCaption,
 	restingStatus,
@@ -55,7 +56,7 @@ function loadVoiceSettings(): VoiceSettings {
 function saveVoiceSettings(settings: VoiceSettings): void {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+		localStorage.setItem(SETTINGS_KEY, serializeVoiceSettings(settings));
 	} catch {
 		// private mode / quota: keep the in-memory value
 	}

@@ -29,6 +29,11 @@ struct MacSessionMenu: View {
 
 	private var isClaude: Bool { session?.kind == "claude" }
 	private var isRunning: Bool { session?.status == .running }
+	private var hasLinks: Bool {
+		let pr = session?.pr
+		return pr?.url.flatMap(URL.init(string:)) != nil || (pr != nil && store.supports(.prDismiss))
+			|| (session?.issues ?? []).contains { $0.url.flatMap(URL.init(string:)) != nil }
+	}
 
 	var body: some View {
 		Menu {
@@ -36,7 +41,7 @@ struct MacSessionMenu: View {
 			sessionItems
 			linkItems
 			Divider()
-			Button("Delete Session…", systemImage: "trash", role: .destructive) { sheet = .delete }
+			destructiveItems
 		} label: {
 			Label("Session Actions", systemImage: "ellipsis.circle")
 		}
@@ -61,10 +66,17 @@ struct MacSessionMenu: View {
 				Button("Compact Context (\(context.percent)%)", systemImage: "arrow.down.right.and.arrow.up.left", action: onCompact)
 					.disabled(isRunning || compacting)
 			}
+		}
+	}
+
+	@ViewBuilder
+	private var destructiveItems: some View {
+		if isClaude {
 			// deck restarts only an idle session (a running turn is a 409).
 			Button("Restart claude", systemImage: "arrow.clockwise") { Task { await viewModel.restart() } }
 				.disabled(isRunning)
 		}
+		Button("Delete Session…", systemImage: "trash", role: .destructive) { sheet = .delete }
 	}
 
 	@ViewBuilder
@@ -85,6 +97,7 @@ struct MacSessionMenu: View {
 
 	@ViewBuilder
 	private var linkItems: some View {
+		if hasLinks { Divider() }
 		ForEach(session?.issues ?? [], id: \.id) { issue in
 			if let urlString = issue.url, let link = URL(string: urlString) {
 				Button(issue.repo.map { "Issue \(issue.shortId) · \($0)" } ?? "Issue \(issue.shortId)", systemImage: "smallcircle.filled.circle") {

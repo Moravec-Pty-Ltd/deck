@@ -43,9 +43,9 @@ final class RenameSessionUITests: XCTestCase {
 		XCTAssertEqual(app.state, .runningForeground, "app died dismissing the rename sheet")
 	}
 
-	/// The same sheet from inside a session, and an empty name must not be
-	/// saveable.
-	func testRenameFromSessionMenuRejectsAnEmptyName() throws {
+	/// The same sheet from tapping the session's title, and an empty name must
+	/// not be saveable.
+	func testTappingTheTitleRenamesAndRejectsAnEmptyName() throws {
 		let app = try signedInApp()
 
 		let list = app.collectionViews.firstMatch
@@ -54,11 +54,8 @@ final class RenameSessionUITests: XCTestCase {
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 
-		let menu = app.buttons["sessionMenu"]
-		XCTAssertTrue(menu.waitForExistence(timeout: 20), "session menu never appeared")
-		menu.tap()
 		let rename = app.buttons["renameSession"]
-		XCTAssertTrue(rename.waitForExistence(timeout: 5), "menu has no Rename")
+		XCTAssertTrue(rename.waitForExistence(timeout: 20), "the title is not a rename button")
 		rename.tap()
 
 		let field = app.textFields["renameField"]

@@ -49,7 +49,7 @@ struct SessionsView: View {
 	private var wide: Bool { sizeClass == .regular && !hinge.isTabletop }
 
 	/// The fold owns the split: half the window each side of the hinge.
-	private var foldWidth: CGFloat? { hinge.halfWidth }
+	private var foldWidth: CGFloat? { hinge.splitWidth(sizeClass) }
 
 	var body: some View {
 		Group {
@@ -578,7 +578,8 @@ enum SessionsCommand: Equatable {
 }
 
 /// The open session's model, kept across folds and unfolds (which lay the
-/// session out afresh) so its transcript stream and voice mode carry on.
+/// session out afresh) so its transcript stream, voice mode, draft and scroll
+/// position carry on.
 @MainActor
 final class OpenSessionModel {
 	private var current: SessionDetailViewModel?

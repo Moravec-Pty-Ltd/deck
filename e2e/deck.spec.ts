@@ -93,9 +93,23 @@ test('shows Working while a turn runs and stops it', async ({ page }) => {
 	await openSession(page, 'slow');
 	await send(page, '[slow] take your time');
 	await expect(page.getByText('Working…')).toBeVisible();
-	await page.getByRole('button', { name: 'Interrupt' }).click();
-	await expect(page.getByRole('button', { name: 'Interrupt' })).toBeHidden();
+	await page.getByRole('button', { name: 'Stop' }).click();
+	await expect(page.getByRole('button', { name: 'Stop' })).toBeHidden();
 	await expect(page.getByText('Working…')).toBeHidden();
+});
+
+test('at phone width the views move from the tab row into the View menu', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await openSession(page, 'phone views');
+	await expect(page.getByRole('button', { name: 'Files', exact: true })).toBeHidden();
+	const menu = page.locator('summary[aria-label^="View: "]');
+	await expect(menu).toHaveAttribute('aria-label', 'View: Thread');
+	await open(menu, page.getByRole('button', { name: 'Chat', exact: true }));
+	await page.getByRole('button', { name: 'Chat', exact: true }).click();
+	await expect(menu).toHaveAttribute('aria-label', 'View: Chat');
+	await open(menu, page.getByRole('button', { name: 'Files', exact: true }));
+	await page.getByRole('button', { name: 'Files', exact: true }).click();
+	await expect(menu).toHaveAttribute('aria-label', 'View: Files');
 });
 
 test('answers an ask', async ({ page }) => {

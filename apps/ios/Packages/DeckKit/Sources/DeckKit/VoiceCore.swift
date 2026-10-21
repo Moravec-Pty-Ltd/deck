@@ -33,13 +33,27 @@ public enum VadSensitivity: String, CaseIterable, Codable, Sendable {
 
 public struct VoiceSettings: Codable, Equatable, Sendable {
 	public var chattiness: Chattiness = .everyUpdate
-	public var handsFree = false
+	public var handsFree = true
 	public var sensitivity: VadSensitivity = .medium
+	/// Bumped when a default changes for everyone. Both clients save the whole
+	/// object, so a stored false is not a choice until it carries this version.
+	public private(set) var version = VoiceSettings.currentVersion
+	static let currentVersion = 2
 
-	public init(chattiness: Chattiness = .everyUpdate, handsFree: Bool = false, sensitivity: VadSensitivity = .medium) {
+	public init(chattiness: Chattiness = .everyUpdate, handsFree: Bool = true, sensitivity: VadSensitivity = .medium) {
 		self.chattiness = chattiness
 		self.handsFree = handsFree
 		self.sensitivity = sensitivity
+	}
+
+	// Each key is optional so settings saved before a key existed keep the rest
+	// and take the default for what is missing.
+	public init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		chattiness = try container.decodeIfPresent(Chattiness.self, forKey: .chattiness) ?? .everyUpdate
+		let stored = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
+		handsFree = stored < Self.currentVersion ? true : try container.decodeIfPresent(Bool.self, forKey: .handsFree) ?? true
+		sensitivity = try container.decodeIfPresent(VadSensitivity.self, forKey: .sensitivity) ?? .medium
 	}
 
 	static let defaultsKey = "deck.voice.settings"

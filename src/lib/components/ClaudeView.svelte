@@ -1029,8 +1029,6 @@
 				streamId={liveTurn}
 				bubbleClass="bg-base-100 text-base-content"
 			/>
-		{:else if loaded && status === 'running'}
-			<div class="px-2 text-sm opacity-60">Working…</div>
 		{/if}
 	</div>
 
@@ -1074,6 +1072,18 @@
 	{#if voice.enabled}
 		<VoiceBar {voice} />
 	{/if}
+
+	<!-- An always-present live region, so "Working…" is announced when it appears. -->
+	<div role="status">
+		{#if status === 'running'}
+			<div class="-mx-2 flex items-center gap-2 border-t border-base-300 px-3 py-1 text-sm">
+				<span class="opacity-60">Working…</span>
+				<button class="btn btn-error btn-xs ml-auto" onclick={interrupt}>
+					<Square size={12} /> Stop
+				</button>
+			</div>
+		{/if}
+	</div>
 
 	<!-- -mx-2 cancels the session pane's side padding so the composer and its
 	     top border run edge to edge. -->
@@ -1121,9 +1131,10 @@
 		{#if uploadError}
 			<p class="mb-2 text-xs text-error" role="alert">{uploadError}</p>
 		{/if}
+		<div class="rounded-box border border-base-300 bg-base-100 focus-within:border-primary focus-within:outline-2 focus-within:outline-primary/40">
 		<textarea
 			bind:this={composerInput}
-			class="textarea block min-h-18 w-full"
+			class="textarea block min-h-18 w-full border-0 bg-transparent outline-none focus:outline-none"
 			rows="3"
 			style="height: calc(4.5em + 1.5rem + 3px)"
 			placeholder={status === 'running'
@@ -1133,7 +1144,7 @@
 			onkeydown={onKeydown}
 			onpaste={onPaste}
 		></textarea>
-		<div class="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
+		<div class="flex flex-wrap items-center gap-1.5 p-1.5 sm:gap-2">
 			{@render controls?.()}
 			{#if voiceAvailable}
 				<button
@@ -1171,11 +1182,6 @@
 					onpick={() => (skillChosen = true)}
 				/>
 
-				{#if status === 'running'}
-					<button class="btn btn-error" onclick={interrupt} aria-label="Interrupt">
-						<Square size={16} /> <span class="hidden sm:inline">Interrupt</span>
-					</button>
-				{/if}
 				<QuickMessages
 					onpick={sendQuickMessage}
 					projectId={sessionProjectId(session, projects)}
@@ -1185,6 +1191,7 @@
 					<Send size={16} /> <span class="hidden sm:inline">Send</span>
 				</button>
 			</div>
+		</div>
 		</div>
 	</div>
 

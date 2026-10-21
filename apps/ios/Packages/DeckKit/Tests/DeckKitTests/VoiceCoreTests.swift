@@ -83,9 +83,21 @@ final class VoiceCoreTests: XCTestCase {
 		let defaults = UserDefaults(suiteName: "deck-voice-tests")!
 		defaults.removePersistentDomain(forName: "deck-voice-tests")
 		XCTAssertEqual(VoiceSettings.load(from: defaults), VoiceSettings())
-		let custom = VoiceSettings(chattiness: .finalOnly, handsFree: true, sensitivity: .high)
+		XCTAssertTrue(VoiceSettings().handsFree, "hands-free is the default")
+		let custom = VoiceSettings(chattiness: .finalOnly, handsFree: false, sensitivity: .high)
 		custom.save(to: defaults)
 		XCTAssertEqual(VoiceSettings.load(from: defaults), custom)
+		// Saved before hands-free had a key: the rest survives, hands-free defaults on.
+		defaults.set(Data(#"{"chattiness":"final-only","sensitivity":"low"}"#.utf8), forKey: "deck.voice.settings")
+		XCTAssertEqual(VoiceSettings.load(from: defaults), VoiceSettings(chattiness: .finalOnly, handsFree: true, sensitivity: .low))
+		// An unversioned false predates the new default and is not a choice.
+		defaults.set(Data(#"{"chattiness":"final-only","handsFree":false,"sensitivity":"low"}"#.utf8), forKey: "deck.voice.settings")
+		XCTAssertTrue(VoiceSettings.load(from: defaults).handsFree)
+		// A false saved at the current version is.
+		defaults.set(Data(#"{"version":2,"handsFree":false}"#.utf8), forKey: "deck.voice.settings")
+		XCTAssertFalse(VoiceSettings.load(from: defaults).handsFree)
+		defaults.set(Data(#"{"version":2}"#.utf8), forKey: "deck.voice.settings")
+		XCTAssertTrue(VoiceSettings.load(from: defaults).handsFree)
 	}
 
 	func testSpeechRequestsUseDecksProxies() async throws {

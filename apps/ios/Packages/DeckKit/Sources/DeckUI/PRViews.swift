@@ -8,6 +8,8 @@ public struct PRSection: View {
 	var onRequestChanges: () -> Void
 	var onComment: () -> Void
 	var onMerge: () -> Void
+	/// Off where a status row of its own already sits elsewhere on screen.
+	var showsStatus: Bool
 
 	public init(
 		pr: SessionPR,
@@ -15,7 +17,8 @@ public struct PRSection: View {
 		onApprove: @escaping () -> Void,
 		onRequestChanges: @escaping () -> Void,
 		onComment: @escaping () -> Void,
-		onMerge: @escaping () -> Void
+		onMerge: @escaping () -> Void,
+		showsStatus: Bool
 	) {
 		self.pr = pr
 		self.canMerge = canMerge
@@ -23,17 +26,20 @@ public struct PRSection: View {
 		self.onRequestChanges = onRequestChanges
 		self.onComment = onComment
 		self.onMerge = onMerge
+		self.showsStatus = showsStatus
 	}
 
 	public var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
-			HStack(spacing: 6) {
-				Image(systemName: "arrow.triangle.pull")
-				if let repo = pr.repo {
-					Text(repo).font(.caption).foregroundStyle(.secondary)
+			if showsStatus {
+				HStack(spacing: 6) {
+					Image(systemName: "arrow.triangle.pull")
+					if let repo = pr.repo {
+						Text(repo).font(.caption).foregroundStyle(.secondary)
+					}
+					PRStatusBadge(pr: pr)
+					Spacer()
 				}
-				PRStatusBadge(pr: pr)
-				Spacer()
 			}
 
 			HStack(spacing: 8) {

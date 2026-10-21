@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { answerAskFlow, askAnswerText, askPrompt, errorText, isUsableTake, nextSegment, parseVoiceSettings, pickRecorderType, restingCaption, restingStatus, rms, startAskFlow, vadAction, VoiceDetector } from './voice-core';
+import { answerAskFlow, askAnswerText, askPrompt, errorText, isUsableTake, nextSegment, parseVoiceSettings, pickRecorderType, serializeVoiceSettings, restingCaption, restingStatus, rms, startAskFlow, vadAction, VoiceDetector } from './voice-core';
 
 describe('voice settings', () => {
 	it('defaults and tolerates junk', () => {
-		expect(parseVoiceSettings(null)).toEqual({ chattiness: 'every-update', handsFree: false, sensitivity: 'medium' });
-		expect(parseVoiceSettings('not json')).toEqual({ chattiness: 'every-update', handsFree: false, sensitivity: 'medium' });
+		expect(parseVoiceSettings(null)).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium' });
+		expect(parseVoiceSettings('not json')).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium' });
 		expect(parseVoiceSettings('{"chattiness":"final-only","handsFree":true,"sensitivity":"high"}')).toEqual({
 			chattiness: 'final-only', handsFree: true, sensitivity: 'high'
 		});
 		expect(parseVoiceSettings('{"sensitivity":"loud"}').sensitivity).toBe('medium');
+		expect(parseVoiceSettings('{"sensitivity":"high"}').handsFree).toBe(true);
+		expect(parseVoiceSettings('{"handsFree":false}').handsFree).toBe(true);
+		expect(parseVoiceSettings('{"handsFree":false,"v":2}').handsFree).toBe(false);
+		const holdToTalk = { chattiness: 'final-only', handsFree: false, sensitivity: 'low' } as const;
+		expect(parseVoiceSettings(serializeVoiceSettings(holdToTalk))).toEqual(holdToTalk);
 	});
 });
 

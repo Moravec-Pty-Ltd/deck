@@ -166,7 +166,7 @@
 					disabled={!voice.canListen}
 					onchange={(e) => voice.updateSettings({ ...voice.settings, handsFree: (e.currentTarget as HTMLInputElement).checked })}
 				/>
-				<span>Hands-free <span class="opacity-60">(experimental)</span></span>
+				<span>Hands-free</span>
 			</label>
 			{#if voice.settings.handsFree}
 				<label class="flex items-center gap-2">

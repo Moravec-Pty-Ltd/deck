@@ -28,6 +28,17 @@ final class SessionDetailViewModel {
 	/// its scroll geometry; live output only pulls the view down while it is true,
 	/// so scrolling up to read stays put.
 	var isNearBottom = true
+	/// The screen's own state, kept here because a fold or unfold lays the view
+	/// out afresh: the composer draft, whether it had the keyboard, and the
+	/// transcript row at the top of the screen.
+	var draft = ""
+	var draftImages: [DeckImage] = []
+	var composerFocused = false
+	var topRowId: String?
+
+	var hasDraft: Bool {
+		!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftImages.isEmpty
+	}
 	/// Absolute index of the first loaded event. Above zero means older history
 	/// remains on the server.
 	private(set) var baseIndex = 0

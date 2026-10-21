@@ -47,6 +47,7 @@ final class FoldableUITests: XCTestCase {
 		attach(app, "tabletop")
 
 		start.tap()
+		VoiceUITests.allowMicrophone()
 		let talk = app.buttons["Hold to talk"]
 		XCTAssertTrue(talk.waitForExistence(timeout: 10), "voice deck missing\n\(app.debugDescription.prefix(3000))")
 		XCTAssertGreaterThan(talk.frame.midY, window.midY)
@@ -55,6 +56,66 @@ final class FoldableUITests: XCTestCase {
 
 		app.buttons["Turn voice mode off"].tap()
 		XCTAssertTrue(start.waitForExistence(timeout: 10))
+	}
+
+	/// Opened flat, a sheet from the session would straddle the fold, so it
+	/// opens on the session's half instead.
+	func testOpenFlatKeepsSheetsOnTheSessionHalf() throws {
+		guard Self.isFoldable else { throw XCTSkip("opened flat needs the iPhone Duo simulator") }
+		let app = try Self.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = app.staticTexts["Stream token diff renderer"].firstMatch
+		XCTAssertTrue(row.waitForExistence(timeout: 20))
+		row.tap()
+		let window = app.windows.firstMatch.frame
+
+		let rename = app.buttons["renameSession"]
+		XCTAssertTrue(rename.waitForExistence(timeout: 20))
+		rename.tap()
+		let renameBar = app.navigationBars["Rename session"]
+		XCTAssertTrue(renameBar.waitForExistence(timeout: 5), "rename did not open\n\(app.debugDescription.prefix(3000))")
+		XCTAssertGreaterThanOrEqual(renameBar.frame.minX, window.midX, "rename sits on the session's half")
+		attach(app, "open-flat-rename")
+		app.buttons["Cancel"].tap()
+		XCTAssertTrue(renameBar.waitForNonExistence(timeout: 5))
+
+		app.buttons["sessionMenu"].tap()
+		let model = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model' OR label == 'Change model'")).firstMatch
+		XCTAssertTrue(model.waitForExistence(timeout: 5))
+		model.tap()
+		let modelBar = app.navigationBars["Model"]
+		XCTAssertTrue(modelBar.waitForExistence(timeout: 5), "the model picker did not open\n\(app.debugDescription.prefix(3000))")
+		XCTAssertGreaterThanOrEqual(modelBar.frame.minX, window.midX, "the model picker sits on the session's half")
+		attach(app, "open-flat-model")
+		app.buttons["Cancel"].tap()
+	}
+
+	/// Half open with a PR and a question pending, everything to tap lies on
+	/// the flat half; the standing half shows only the PR's status.
+	func testTabletopPutsPRActionsOnTheFlatHalf() throws {
+		guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("the tabletop layout is a phone's") }
+		guard let url = ProcessInfo.processInfo.environment["DECK_UITEST_URL"],
+			let token = ProcessInfo.processInfo.environment["DECK_UITEST_TOKEN"]
+		else { throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests") }
+		let app = try Self.launch(environment: ["DECK_HINGE": "tabletop"])
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = app.staticTexts["ask smoke"].firstMatch
+		XCTAssertTrue(row.waitForExistence(timeout: 20))
+		row.tap()
+
+		let sessionId = try VoiceUITests.sessionId(titled: "ask smoke", url: url, token: token)
+		// Answered from outside, so the question does not outlive the test.
+		addTeardownBlock { try? VoiceUITests.send("Blue", sessionId: sessionId, url: url, token: token, route: "answer") }
+		try VoiceUITests.send("[ask] Ask me which colour to use.", sessionId: sessionId, url: url, token: token)
+		let send = app.buttons["Send answers"]
+		XCTAssertTrue(send.waitForExistence(timeout: 60), "no ask card\n\(app.debugDescription.prefix(3000))")
+
+		let window = app.windows.firstMatch.frame
+		let approve = app.buttons["Approve"]
+		XCTAssertTrue(approve.waitForExistence(timeout: 10), "needs the fixture's PR on 'ask smoke'")
+		XCTAssertGreaterThan(approve.frame.midY, window.midY, "PR actions lie on the flat half")
+		XCTAssertGreaterThan(send.frame.midY, window.midY)
+		attach(app, "tabletop-pr-ask")
 	}
 
 	/// Every screen, since the open display is not the main one.
