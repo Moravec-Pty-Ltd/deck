@@ -42,7 +42,7 @@ final class RunsUITests: XCTestCase {
 	/// overseer's call and its reason, and a round opens its session.
 	func testRunViewShowsPhasesAndEachRoundDrillsIn() {
 		openRun("r_review")
-		XCTAssertTrue(app.staticTexts["PHASES"].waitForExistence(timeout: 10))
+		XCTAssertTrue(app.staticTexts["Phases"].waitForExistence(timeout: 10))
 		XCTAssertTrue(app.staticTexts["Implement"].exists)
 		XCTAssertTrue(app.staticTexts["current"].exists)
 		XCTAssertTrue(app.staticTexts["round 2 of 5"].firstMatch.exists)
@@ -75,7 +75,7 @@ final class RunsUITests: XCTestCase {
 		app.buttons["Send answers"].tap()
 
 		XCTAssertTrue(app.staticTexts["running"].waitForExistence(timeout: 10), "the run did not resume\n\(app.debugDescription.prefix(3000))")
-		XCTAssertFalse(app.staticTexts["NEEDS YOU"].exists)
+		XCTAssertFalse(app.staticTexts["Needs you"].exists)
 		let posts = server.posts
 		XCTAssertEqual(posts.map(\.path), ["/api/agent/runs/r_blocked/answer"])
 		XCTAssertEqual(posts.first?.body["text"] as? String, "main")
@@ -140,7 +140,7 @@ final class RunsUITests: XCTestCase {
 	/// A run that is not finished never offers the fix.
 	func testAnUnfinishedRunOffersNoFix() {
 		openRun("r_review")
-		XCTAssertTrue(app.staticTexts["PHASES"].waitForExistence(timeout: 10))
+		XCTAssertTrue(app.staticTexts["Phases"].waitForExistence(timeout: 10))
 		app.collectionViews.firstMatch.swipeUp()
 		XCTAssertFalse(app.buttons["Fix remaining findings"].exists)
 	}

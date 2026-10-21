@@ -18,6 +18,11 @@ final class OperatorUITests: XCTestCase {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Operator"].firstMatch.tap()
 		XCTAssertTrue(app.navigationBars["Operator"].waitForExistence(timeout: 10))
+		// The on-device model needs iOS 26 and Apple Intelligence; without it the
+		// tab says why and the switch stays off, which is not this test's subject.
+		let turnOn = app.buttons["Turn the operator on"]
+		XCTAssertTrue(turnOn.waitForExistence(timeout: 10))
+		guard turnOn.isEnabled else { throw XCTSkip("the operator's on-device model is not available on this simulator") }
 
 		let field = app.textFields["Or type to the operator"]
 		XCTAssertTrue(field.waitForExistence(timeout: 10))

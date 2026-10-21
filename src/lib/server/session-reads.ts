@@ -8,6 +8,7 @@ import { readTranscriptRange } from './transcript';
 import { readImage } from './images';
 import { fileHeaders, resolveSessionFile, statSessionFiles } from './files';
 import { isGitRepo, worktreeDiff, worktreeDiffMeta } from './git';
+import { listSessionDir } from './file-browser';
 
 // Read-side per-session handlers, each shared verbatim by a browser route under
 // /api/sessions/[id] and its agent API twin under /api/agent/sessions/[id], so
@@ -80,6 +81,15 @@ export async function serveFileRoute({ params, url, request }: SessionEvent): Pr
 		});
 	}
 	return new Response(new Uint8Array(fs.readFileSync(file.absolute)), { headers });
+}
+
+// One folder of the session's Files tab: GET ?path=<relative to the session's
+// folder>. The files themselves are served by serveFileRoute (same confinement).
+export async function sessionDirRoute({ params, url }: Pick<SessionEvent, 'params' | 'url'>): Promise<Response> {
+	const session = await sessionOr404(params.id!);
+	const result = listSessionDir(session, url.searchParams.get('path') ?? '');
+	if (!result.ok) error(result.status, result.message);
+	return json(result.listing);
 }
 
 // Diff the session's worktree against its base branch, off the session's *stored*

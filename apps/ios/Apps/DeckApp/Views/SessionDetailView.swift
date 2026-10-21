@@ -49,6 +49,7 @@ struct SessionDetailView: View {
 	@State private var showCommentSheet = false
 	@State private var showChanges = false
 	@State private var showServers = false
+	@State private var showFiles = false
 	@State private var showBrowser = false
 	@State private var showSchedule = false
 	@State private var voice: VoiceController?
@@ -147,6 +148,9 @@ struct SessionDetailView: View {
 			}
 			.sheet(isPresented: $showServers) {
 				ServersSheet(sessionId: sessionId, title: title)
+			}
+			.sheet(isPresented: $showFiles) {
+				if let viewModel { FilesSheet(sessionId: sessionId, viewModel: viewModel) }
 			}
 			.sheet(isPresented: $showBrowser) {
 				NavigationStack { BrowserView(sessionId: sessionId, isModal: true) }
@@ -303,6 +307,14 @@ struct SessionDetailView: View {
 					} label: {
 						Label("Dev servers", systemImage: "server.rack")
 					}
+				}
+				if store.supports(.filesBrowser) {
+					Button {
+						showFiles = true
+					} label: {
+						Label("Files", systemImage: "folder")
+					}
+					.accessibilityIdentifier("sessionFiles")
 				}
 				// Extend this session into a schedule (deck#235): the form opens
 				// already pointed at it, so the prompt comes back here every run

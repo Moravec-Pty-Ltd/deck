@@ -30,6 +30,8 @@ interrupt ends the turn. Keywords in the prompt pick the reply:
 | --- | --- |
 | (none) | `Fake reply to: <prompt>` |
 | `[tool]` | a `Bash` tool_use and its tool_result, then the reply |
+| `[background:<seconds>]` | reports a running background task, replies, then reports it finished after that many seconds |
+| `[background-agent:<seconds>]` | the same for a background `Agent` call, with its `task_started` and `task_notification` events |
 | `[slow]` | starts a turn and waits until interrupted, so Working and Interrupt show |
 | `[error]` | an error message and an `error_during_execution` result |
 | `[file:<path>]` | a reply naming each path, so deck previews the files |

@@ -32,6 +32,7 @@ export const AGENT_CAPABILITIES: readonly string[] = [
 	'git',
 	'apns-macos',
 	'quick-messages-by-project',
+	'files-browser',
 ];
 
 export function agentInfo(): { version: string | null; capabilities: string[] } {

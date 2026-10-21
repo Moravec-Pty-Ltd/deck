@@ -57,13 +57,13 @@ final class VoiceUITests: XCTestCase {
 		XCTAssertFalse(app.buttons["Hold to talk"].exists)
 	}
 
-	static func sessionId(url: String, token: String) throws -> String {
+	static func sessionId(titled title: String = "voice smoke", url: String, token: String) throws -> String {
 		var request = URLRequest(url: URL(string: "\(url)/api/agent/sessions")!)
 		request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 		let data = try sync(request)
 		let sessions = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] ?? []
-		guard let match = sessions.first(where: { $0["title"] as? String == "voice smoke" }), let id = match["id"] as? String else {
-			throw XCTSkip("no 'voice smoke' session on the server")
+		guard let match = sessions.first(where: { $0["title"] as? String == title }), let id = match["id"] as? String else {
+			throw XCTSkip("no '\(title)' session on the server")
 		}
 		return id
 	}
@@ -74,6 +74,14 @@ final class VoiceUITests: XCTestCase {
 		request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.httpBody = try JSONSerialization.data(withJSONObject: ["text": text])
+		_ = try sync(request)
+	}
+
+	/// Interrupts the session's turn, so one a test started does not outlive it.
+	static func stop(sessionId: String, url: String, token: String) throws {
+		var request = URLRequest(url: URL(string: "\(url)/api/agent/sessions/\(sessionId)/stop")!)
+		request.httpMethod = "POST"
+		request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 		_ = try sync(request)
 	}
 

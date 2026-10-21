@@ -48,6 +48,12 @@ final class HideSessionUITests: XCTestCase {
 		// Put it back, so a live deck is left as it was found.
 		let hiddenRow = list.cells.containing(.staticText, identifier: title).firstMatch
 		XCTAssertTrue(hiddenRow.waitForExistence(timeout: 10))
+		// The section sits at the end of the list, where the floating tab bar
+		// covers the row: a swipe there lands on the bar.
+		let tabBar = app.tabBars.firstMatch
+		for _ in 0..<4 where tabBar.exists && hiddenRow.frame.maxY > tabBar.frame.minY {
+			list.swipeUp()
+		}
 		hiddenRow.swipeLeft()
 		let unhide = app.buttons["Unhide"]
 		XCTAssertTrue(unhide.waitForExistence(timeout: 5), "the hidden row offers no Unhide")

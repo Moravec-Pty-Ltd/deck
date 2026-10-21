@@ -4,8 +4,9 @@ import XCTest
 /// list beside the open session rather than pushed over it. Run on an iPad
 /// simulator against the demo-fixture server.
 final class PadLayoutUITests: XCTestCase {
-	override func setUp() {
+	override func setUpWithError() throws {
 		continueAfterFailure = false
+		guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("needs an iPad simulator") }
 	}
 
 	override func tearDown() {

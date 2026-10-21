@@ -221,6 +221,7 @@ targets:
       - path: Apps/DeckApp/Views/SessionSheets.swift
       - path: Apps/DeckApp/Views/ServersSheet.swift
       - path: Apps/DeckApp/Views/FileAttachments.swift
+      - path: Apps/DeckApp/Views/FilesSheet.swift
     dependencies:
       - package: DeckKit
         product: DeckKit
