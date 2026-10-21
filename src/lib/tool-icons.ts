@@ -25,7 +25,8 @@ const icons: Record<string, typeof Wrench> = {
 	TodoWrite: ListChecks,
 	WebFetch: Globe,
 	WebSearch: Search,
-	Task: Bot
+	Task: Bot,
+	Agent: Bot
 };
 
 export function toolIcon(name: string): typeof Wrench {

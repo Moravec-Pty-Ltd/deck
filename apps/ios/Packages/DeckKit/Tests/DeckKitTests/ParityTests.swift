@@ -257,6 +257,50 @@ final class ParityTests: XCTestCase {
 		XCTAssertFalse(TranscriptGroup.make([.tool(tool)], condensed: true)[0].isCollapsedRun)
 	}
 
+	/// Mirrors the web view's `nestSubagents`: a subagent's work folds into the
+	/// Agent call that launched it, by parent id rather than position; its ask,
+	/// and anything whose launcher isn't loaded, stays in the thread.
+	func testSubagentStepsFoldIntoTheirAgentCard() {
+		let lines = [
+			#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"a1","name":"Agent","input":{"description":"Scan the docs","subagent_type":"general-purpose"}},{"type":"tool_use","id":"a2","name":"Task","input":{"description":"Check tests"}}]}}"#,
+			#"{"type":"assistant","parent_tool_use_id":"a1","message":{"content":[{"type":"text","text":"Reading"},{"type":"tool_use","id":"s1","name":"Read","input":{"file_path":"/path/to/project/README.md"}}]}}"#,
+			#"{"type":"assistant","message":{"content":[{"type":"text","text":"Main thread"}]}}"#,
+			#"{"type":"assistant","parent_tool_use_id":"a2","message":{"content":[{"type":"tool_use","id":"s2","name":"Bash","input":{"command":"pnpm test"}}]}}"#,
+			#"{"type":"user","parent_tool_use_id":"a1","message":{"content":[{"type":"tool_result","tool_use_id":"s1","content":"ok"}]}}"#,
+			#"{"type":"assistant","parent_tool_use_id":"a1","message":{"content":[{"type":"tool_use","id":"q","name":"mcp__deck__ask","input":{}}]}}"#,
+			#"{"type":"assistant","parent_tool_use_id":"gone","message":{"content":[{"type":"text","text":"Orphan"}]}}"#,
+			#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a1","content":"Done"}]}}"#
+		]
+		var builder = TranscriptBuilder()
+		builder.append(contentsOf: lines.map { JSONValue.parse(Data($0.utf8))! })
+		let thread = builder.thread
+		XCTAssertEqual(thread.items.map(\.id), ["tool-a1", "tool-a2", "2:0", "tool-q", "6:0"])
+		XCTAssertEqual(thread.steps["a1"]?.map(\.id), ["1:0", "tool-s1"])
+		XCTAssertEqual(thread.steps["a2"]?.map(\.id), ["tool-s2"])
+		guard case .tool(let read) = thread.steps["a1"]?.last else { return XCTFail("missing step") }
+		XCTAssertEqual(read.output, "ok")
+		guard case .tool(let agent) = thread.items.first else { return XCTFail("missing card") }
+		XCTAssertEqual(agent.headerArg, "Scan the docs")
+		XCTAssertEqual(agent.output, "Done")
+		XCTAssertFalse(agent.showsRawInput)
+		XCTAssertEqual(thread.threadItemId(for: "tool-s1"), "tool-a1")
+		XCTAssertEqual(thread.threadItemId(for: "2:0"), "2:0")
+		XCTAssertNil(thread.threadItemId(for: "missing"))
+	}
+
+	func testANestedSubagentLandsOnTheOutermostCard() {
+		let parents = ["tool-b": "a", "1:0": "b"]
+		let items: [TranscriptItem] = [
+			.tool(ToolCall(id: "a", name: "Agent", input: .null)),
+			.tool(ToolCall(id: "b", name: "Agent", input: .null)),
+			.assistant(id: "1:0", text: "deep")
+		]
+		let thread = TranscriptThread.make(items, parents: parents)
+		XCTAssertEqual(thread.items.map(\.id), ["tool-a"])
+		XCTAssertEqual(thread.steps["b"]?.map(\.id), ["1:0"])
+		XCTAssertEqual(thread.threadItemId(for: "1:0"), "tool-a")
+	}
+
 	func testAgentHandoffIsVisibleInTranscript() {
 		var builder = TranscriptBuilder()
 		builder.append(JSONValue.parse(Data(#"{"type":"deck.agent","kind":"codex"}"#.utf8))!)

@@ -25,12 +25,14 @@ function out(event) {
 
 const usage = { input_tokens: 1200, output_tokens: 40, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
 
-function assistant(content) {
-	out({ type: 'assistant', session_id: sessionId, message: { id: `msg_${randomUUID()}`, role: 'assistant', model: 'fake', content, usage } });
+// `parent` tags the event as a subagent's, the way claude tags them with the
+// id of the Agent call that launched it.
+function assistant(content, parent = null) {
+	out({ type: 'assistant', session_id: sessionId, parent_tool_use_id: parent, message: { id: `msg_${randomUUID()}`, role: 'assistant', model: 'fake', content, usage } });
 }
 
-function toolResult(id, content) {
-	out({ type: 'user', session_id: sessionId, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content, is_error: false }] } });
+function toolResult(id, content, parent = null) {
+	out({ type: 'user', session_id: sessionId, parent_tool_use_id: parent, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content, is_error: false }] } });
 }
 
 function streamText(text) {
@@ -102,6 +104,15 @@ async function respond(prompt) {
 			const id = `toolu_${randomUUID()}`;
 			assistant([{ type: 'tool_use', id, name: 'Bash', input: { command: 'echo fake', description: 'Echo a fake line' } }]);
 			toolResult(id, 'fake tool output');
+		}
+		if (prompt.includes('[agent]')) {
+			const agent = `toolu_${randomUUID()}`;
+			const step = `toolu_${randomUUID()}`;
+			assistant([{ type: 'tool_use', id: agent, name: 'Agent', input: { description: 'Survey the fake repo', subagent_type: 'general-purpose', prompt: 'Look around.' } }]);
+			assistant([{ type: 'text', text: 'Subagent looking around' }], agent);
+			assistant([{ type: 'tool_use', id: step, name: 'Bash', input: { command: 'ls', description: 'List the fake repo' } }], agent);
+			toolResult(step, 'README.md', agent);
+			toolResult(agent, 'Subagent report: one file');
 		}
 		if (prompt.includes('[ask]')) {
 			const id = `toolu_${randomUUID()}`;

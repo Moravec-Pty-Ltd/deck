@@ -68,6 +68,60 @@ export function flattenTranscript(events: AnyEvent[], first: number): Row[] {
 	return rows;
 }
 
+// The thread with each subagent's rows lifted out and filed under the call that
+// launched it. `calls` maps every tool call in the window to its row.
+export type Thread = {
+	rows: Row[];
+	nested: Map<string, Row[]>;
+	calls: Map<string, Row>;
+};
+
+// Claude tags every event a subagent produces with `parent_tool_use_id`, the id
+// of the Agent (older CLIs: Task) call that launched it.
+export function parentOf(event: AnyEvent): string | null {
+	const id = event.parent_tool_use_id;
+	return typeof id === 'string' && id ? id : null;
+}
+
+// Background subagents keep producing events long after their call returned,
+// interleaved with the main thread and with each other, so they are filed by
+// parent id rather than by position. A row whose launcher isn't in the window
+// stays in the thread so nothing goes missing, and an ask stays there too: it
+// is how a blocked session gets answered.
+export function nestSubagents(rows: Row[]): Thread {
+	const calls = new Map<string, Row>();
+	for (const row of rows) {
+		if (row.block?.type === 'tool_use' && typeof row.block.id === 'string') calls.set(row.block.id, row);
+	}
+	const main: Row[] = [];
+	const nested = new Map<string, Row[]>();
+	for (const row of rows) {
+		const parent = parentOf(row.event);
+		if (!parent || !calls.has(parent) || (row.block && isAskTool(row.block))) {
+			main.push(row);
+			continue;
+		}
+		const steps = nested.get(parent);
+		if (steps) steps.push(row);
+		else nested.set(parent, [row]);
+	}
+	return { rows: main, nested, calls };
+}
+
+// The calls whose cards hold an event, innermost first, so a deep link to a
+// subagent's step can open them. Empty when the event sits in the thread.
+export function launchersOf(thread: Thread, event: AnyEvent): string[] {
+	const ids: string[] = [];
+	let id = parentOf(event);
+	while (id && !ids.includes(id)) {
+		const call = thread.calls.get(id);
+		if (!call) break;
+		ids.push(id);
+		id = parentOf(call.event);
+	}
+	return ids;
+}
+
 // Collapse each maximal run of tool calls into one chunk. A run holding a single
 // call stays as it is: a summary line wrapping one call reads worse than the call.
 export function groupRuns(rows: Row[]): Chunk[] {

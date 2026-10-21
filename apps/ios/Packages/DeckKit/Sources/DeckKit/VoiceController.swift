@@ -256,7 +256,8 @@ public final class VoiceController {
 	/// A live transcript event. Assistant text is read (or held for the turn's
 	/// end), an ask is read and routed, and an answer marker closes it.
 	public func hear(_ event: JSONValue) {
-		guard enabled else { return }
+		// A subagent's replies are its own work, not the session talking.
+		guard enabled, (event["parent_tool_use_id"].string ?? "").isEmpty else { return }
 		switch event["type"].string {
 		case "assistant":
 			for block in event["message"]["content"].array ?? [] { hearBlock(block) }

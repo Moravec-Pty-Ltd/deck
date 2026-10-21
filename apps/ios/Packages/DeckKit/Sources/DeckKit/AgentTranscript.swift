@@ -125,7 +125,8 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
 		case "Grep", "Glob": return input["pattern"].string ?? ""
 		case "WebFetch": return input["url"].string ?? ""
 		case "WebSearch": return input["query"].string ?? ""
-		case "Task": return input["subagent_type"].string ?? input["description"].string ?? ""
+		// Description first: parallel subagents usually share a type.
+		case "Agent", "Task": return input["description"].string ?? input["subagent_type"].string ?? ""
 		case "TodoWrite": return "\(todos.count) items"
 		default:
 			return firstLine(
@@ -176,7 +177,7 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
 
 	static let fileTools: Set<String> = ["Read", "Edit", "MultiEdit", "Write", "NotebookEdit"]
 	static let knownTools: Set<String> = [
-		"Bash", "TodoWrite", "Grep", "Glob", "WebFetch", "WebSearch", "Task"
+		"Bash", "TodoWrite", "Grep", "Glob", "WebFetch", "WebSearch", "Task", "Agent"
 	]
 	public static let askTools: Set<String> = ["mcp__deck__ask", "AskUserQuestion"]
 }
@@ -234,15 +235,22 @@ public struct TranscriptBuilder: Sendable {
 	/// `startIndex + k`.
 	public private(set) var events: [JSONValue] = []
 	public private(set) var startIndex = 0
+	/// Item id to the id of the Agent (older CLIs: Task) call whose subagent
+	/// produced it, from claude's `parent_tool_use_id`.
+	public private(set) var parents: [String: String] = [:]
 	private var toolIndexById: [String: Int] = [:]
 
 	public init() {}
+
+	/// The items with each subagent's filed under the call that launched it.
+	public var thread: TranscriptThread { TranscriptThread.make(items, parents: parents) }
 
 	/// The absolute index the next appended event takes.
 	public var nextIndex: Int { startIndex + events.count }
 
 	public mutating func reset(with events: [JSONValue] = [], startIndex: Int = 0) {
 		items = []
+		parents = [:]
 		toolIndexById = [:]
 		self.events = []
 		self.startIndex = startIndex
@@ -270,6 +278,14 @@ public struct TranscriptBuilder: Sendable {
 	}
 
 	private mutating func fold(_ event: JSONValue, at index: Int) {
+		let before = items.count
+		foldEvent(event, at: index)
+		if let parent = event["parent_tool_use_id"].string, !parent.isEmpty {
+			for item in items[before...] { parents[item.id] = parent }
+		}
+	}
+
+	private mutating func foldEvent(_ event: JSONValue, at index: Int) {
 		let id = String(index)
 		switch event["type"].string {
 		case "deck.user":
