@@ -25,6 +25,7 @@ targets:
     sources:
       - Apps/DeckApp
       - Apps/Shared
+      - Apps/Sounds
       - Apps/SharedIntents
     dependencies:
       - package: DeckKit
@@ -159,6 +160,7 @@ targets:
     sources:
       - Apps/DeckWatch
       - Apps/SharedIntents
+      - Apps/Sounds
     dependencies:
       - package: DeckKit
         product: DeckKit
@@ -192,6 +194,7 @@ targets:
     sources:
       - Apps/DeckMac
       - Apps/SharedIntents
+      - Apps/Sounds
       # The detail screen's model is plain Foundation over DeckStore, so the
       # Mac reads the transcript through the same code as the phone.
       - path: Apps/DeckApp/Support/SessionDetailViewModel.swift

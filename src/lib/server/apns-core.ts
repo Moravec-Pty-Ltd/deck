@@ -152,7 +152,7 @@ export interface ApnsAlert {
 
 export interface ApnsAps {
 	alert: ApnsAlert;
-	sound: 'default';
+	sound: typeof DECK_SOUND;
 	'thread-id'?: string;
 	category?: string;
 }
@@ -162,6 +162,10 @@ export interface ApnsPayload {
 	url?: string;
 	ask?: PushAsk;
 }
+
+// Bundled in the iPhone, watch and Mac apps (apps/ios/Apps/Sounds) so deck's
+// pushes are told apart by ear; a build without the file plays the default.
+const DECK_SOUND = 'deck-attention.caf';
 
 // The category the iOS app registers its answer actions under.
 export const ASK_CATEGORY = 'DECK_ASK';
@@ -174,7 +178,7 @@ export const ASK_ACTION_SLOTS = 3;
 export function toApnsPayload(payload: DeckPushPayload): ApnsPayload {
 	const alert: ApnsAlert = { title: payload.title };
 	if (payload.body !== undefined) alert.body = payload.body;
-	const aps: ApnsAps = { alert, sound: 'default' };
+	const aps: ApnsAps = { alert, sound: DECK_SOUND };
 	if (payload.tag !== undefined) aps['thread-id'] = payload.tag;
 	if (payload.ask) aps.category = ASK_CATEGORY;
 	const result: ApnsPayload = { aps };
