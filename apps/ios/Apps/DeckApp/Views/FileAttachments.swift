@@ -54,36 +54,53 @@ struct FileAttachments: View {
 			let paths = MessageFiles.paths(in: text)
 			files = paths.isEmpty ? [] : await viewModel.files(for: paths)
 		}
-		#if os(iOS)
-		.fullScreenCover(item: $gallery) { opening in
-			ImageGallery(images: opening.images, index: opening.index, viewModel: viewModel)
-		}
-		#else
-		.sheet(item: $gallery) { opening in
-			ImageGallery(images: opening.images, index: opening.index, viewModel: viewModel)
-				.frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
-		}
-		#endif
-		#if os(iOS)
-		.fullScreenCover(item: $video) { VideoSheet(opening: $0) }
-		#else
-		.sheet(item: $video) { VideoSheet(opening: $0).frame(minWidth: 640, idealWidth: 900, minHeight: 420, idealHeight: 560) }
-		#endif
-		.quickLookPreview($preview)
+		.filePreviews(gallery: $gallery, video: $video, preview: $preview, viewModel: viewModel)
 	}
 
 	private func open(_ file: FileInfo) {
 		fetching = file.path
 		Task {
-			// shortcut: the whole file is fetched before it plays (the player cannot send the token), fine under the server's 64 MB cap.
-			let local = await viewModel.localCopy(of: file)
-			if file.isVideo, let local {
-				video = VideoOpening(name: file.name, url: local)
-			} else {
-				preview = local
-			}
+			_ = await viewModel.openFile(file, video: $video, preview: $preview)
 			fetching = nil
 		}
+	}
+}
+
+extension SessionDetailViewModel {
+	/// Fetch a file and open it: a video in the player, anything else in Quick
+	/// Look. False when deck would not serve it.
+	func openFile(_ file: FileInfo, video: Binding<VideoOpening?>, preview: Binding<URL?>) async -> Bool {
+		// shortcut: the whole file is fetched before it plays (the player cannot send the token), fine under the server's 64 MB cap.
+		guard let local = await localCopy(of: file) else { return false }
+		if file.isVideo {
+			video.wrappedValue = VideoOpening(name: file.name, url: local)
+		} else {
+			preview.wrappedValue = local
+		}
+		return true
+	}
+}
+
+extension View {
+	/// Where a session's files open: the image gallery, the video player and
+	/// Quick Look, shared by message mentions and the Files browser.
+	func filePreviews(
+		gallery: Binding<GalleryOpening?>, video: Binding<VideoOpening?>, preview: Binding<URL?>, viewModel: SessionDetailViewModel
+	) -> some View {
+		self
+			#if os(iOS)
+			.fullScreenCover(item: gallery) { opening in
+				ImageGallery(images: opening.images, index: opening.index, viewModel: viewModel)
+			}
+			.fullScreenCover(item: video) { VideoSheet(opening: $0) }
+			#else
+			.sheet(item: gallery) { opening in
+				ImageGallery(images: opening.images, index: opening.index, viewModel: viewModel)
+					.frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
+			}
+			.sheet(item: video) { VideoSheet(opening: $0).frame(minWidth: 640, idealWidth: 900, minHeight: 420, idealHeight: 560) }
+			#endif
+			.quickLookPreview(preview)
 	}
 }
 
