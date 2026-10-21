@@ -6,7 +6,7 @@
 
 import { z } from 'zod';
 
-export type ApnsPlatform = 'ios' | 'watchos';
+export type ApnsPlatform = 'ios' | 'watchos' | 'macos';
 export type ApnsEnv = 'development' | 'production';
 
 export interface ApnsDevice {
@@ -22,7 +22,7 @@ export interface ApnsDevice {
 // quickmessages.ts's schema.parse -> 400-on-throw pattern.
 export const registerDeviceSchema = z.object({
 	token: z.string().regex(/^[0-9a-fA-F]{1,200}$/),
-	platform: z.enum(['ios', 'watchos']),
+	platform: z.enum(['ios', 'watchos', 'macos']),
 	env: z.enum(['development', 'production'])
 });
 
@@ -113,6 +113,8 @@ export function shouldRegenerateJwt(issuedAtMs: number | null, nowMs: number): b
 
 // ---- topic derivation ----
 
+// The Mac app shares the iOS bundle id, so only the watch gets a suffix.
+
 export function deriveTopic(baseTopic: string, platform: ApnsPlatform): string {
 	return platform === 'watchos' ? `${baseTopic}.watchkitapp` : baseTopic;
 }
@@ -150,7 +152,7 @@ export interface ApnsAlert {
 
 export interface ApnsAps {
 	alert: ApnsAlert;
-	sound: 'default';
+	sound: typeof DECK_SOUND;
 	'thread-id'?: string;
 	category?: string;
 }
@@ -160,6 +162,10 @@ export interface ApnsPayload {
 	url?: string;
 	ask?: PushAsk;
 }
+
+// Bundled in the iPhone, watch and Mac apps (apps/ios/Apps/Sounds) so deck's
+// pushes are told apart by ear; a build without the file plays the default.
+const DECK_SOUND = 'deck-attention.caf';
 
 // The category the iOS app registers its answer actions under.
 export const ASK_CATEGORY = 'DECK_ASK';
@@ -172,7 +178,7 @@ export const ASK_ACTION_SLOTS = 3;
 export function toApnsPayload(payload: DeckPushPayload): ApnsPayload {
 	const alert: ApnsAlert = { title: payload.title };
 	if (payload.body !== undefined) alert.body = payload.body;
-	const aps: ApnsAps = { alert, sound: 'default' };
+	const aps: ApnsAps = { alert, sound: DECK_SOUND };
 	if (payload.tag !== undefined) aps['thread-id'] = payload.tag;
 	if (payload.ask) aps.category = ASK_CATEGORY;
 	const result: ApnsPayload = { aps };

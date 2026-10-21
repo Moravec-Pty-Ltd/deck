@@ -26,7 +26,10 @@ export interface AgentFeedEvent {
 		// A workflow run changed (issue #233). `sessionId` carries the run id and
 		// the payload the run digest, so clients follow runs on the same cursor.
 		| 'run-updated'
-		| 'run-deleted';
+		| 'run-deleted'
+		// A device asked for access, or a request was decided. `sessionId` carries
+		// the pairing id; never the requester's secret.
+		| 'pairing';
 	at: number;
 	[key: string]: unknown;
 }

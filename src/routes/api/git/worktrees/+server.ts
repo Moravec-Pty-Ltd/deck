@@ -1,10 +1,5 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { listWorktrees } from '$lib/server/git';
-import { resolveRepoParam } from '../repo';
+import { worktreesRoute } from '$lib/server/project-git';
 
-export const GET: RequestHandler = async ({ url }) => {
-	const dir = await resolveRepoParam(url.searchParams.get('repo'));
-	if (!dir) return json([]);
-	return json(await listWorktrees(dir));
-};
+// Same handler as the agent API's /api/agent/git/worktrees; see project-git.ts.
+export const GET: RequestHandler = worktreesRoute;

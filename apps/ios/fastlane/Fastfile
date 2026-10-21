@@ -1,0 +1,150 @@
+# Build the iOS app (with the embedded watch app) and the Mac app and ship them
+# to TestFlight. Auth is an App Store Connect API key; all secrets come from the
+# gitignored .env (see .env.example).
+
+require "shellwords"
+
+default_platform(:ios)
+
+# The iOS and Mac apps share this bundle id, so one App Store Connect record
+# carries both platforms.
+APP_ID = "tech.moravec.deck".freeze
+
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: File.expand_path(ENV.fetch("ASC_KEY_PATH")),
+    in_house: false
+  )
+end
+
+def generate_project
+  # The .xcodeproj is not committed; XcodeGen builds it from project.yml.
+  Dir.chdir("..") { sh("./generate.sh") }
+end
+
+# Both platforms share one record, and App Store Connect rejects a build number
+# the record has already seen on either platform, so number past the larger.
+def bump_build_number(api_key)
+  latest = %w[ios osx].map do |platform|
+    latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: APP_ID,
+      platform: platform,
+      initial_build_number: 0
+    ).to_i
+  rescue StandardError
+    0
+  end
+  increment_build_number(xcodeproj: "Deck.xcodeproj", build_number: latest.max + 1)
+end
+
+# Let Xcode create/refresh the distribution certs and profiles using the API
+# key, no signed-in Xcode account required.
+def xcode_auth_args
+  [
+    "-allowProvisioningUpdates",
+    # mlx-swift-lm builds its model loader with a Swift macro, and Xcode
+    # refuses to run an unvalidated macro outside the IDE's trust prompt.
+    # Without this the archive stops at "Macro must be enabled before it can
+    # be used".
+    "-skipMacroValidation",
+    "-authenticationKeyPath #{File.expand_path(ENV.fetch("ASC_KEY_PATH")).shellescape}",
+    "-authenticationKeyID #{ENV.fetch("ASC_KEY_ID")}",
+    "-authenticationKeyIssuerID #{ENV.fetch("ASC_ISSUER_ID")}"
+  ].join(" ")
+end
+
+platform :ios do
+  desc "Archive DeckApp + DeckWatch and upload to TestFlight"
+  lane :beta do
+    api_key = asc_api_key
+    generate_project
+    bump_build_number(api_key)
+
+    build_app(
+      project: "Deck.xcodeproj",
+      scheme: "DeckApp",
+      configuration: "Release",
+      export_method: "app-store",
+      xcargs: xcode_auth_args,
+      output_directory: "build",
+      clean: true
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: APP_ID,
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+  end
+
+  desc "Create the App Store Connect app record, or add macOS to an existing one"
+  lane :bootstrap do
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      filepath: File.expand_path(ENV.fetch("ASC_KEY_PATH"))
+    )
+    # produce needs an Apple ID to create a record; with one already there,
+    # only the macOS platform is missing, and the API key can add that.
+    produce(
+      app_identifier: APP_ID,
+      app_name: "deck",
+      language: "en-US",
+      platforms: %w[ios osx],
+      skip_itc: false,
+      skip_devcenter: false
+    ) unless Spaceship::ConnectAPI::App.find(APP_ID)
+    ensure_mac_platform
+  end
+end
+
+# produce only sets platforms when it creates the record, so a record made
+# before the Mac app needs macOS added. App Store Connect adds a platform by
+# creating that platform's first App Store version.
+def ensure_mac_platform
+  mac = Spaceship::ConnectAPI::Platform::MAC_OS
+  app = Spaceship::ConnectAPI::App.find(APP_ID)
+  UI.user_error!("No App Store Connect app for #{APP_ID}") unless app
+  if app.get_latest_app_store_version(platform: mac)
+    UI.success("macOS is already on the app record")
+    return
+  end
+  app.ensure_version!("1.0", platform: mac)
+  UI.success("Added macOS to the app record")
+rescue Spaceship::UnexpectedResponse, Spaceship::AccessForbiddenError => e
+  UI.important("Could not add macOS to the app record (#{e.message}).")
+  UI.important("Add it by hand: App Store Connect > Apps > deck > Add Platform > macOS.")
+end
+
+platform :mac do
+  desc "Archive DeckMac as an App Store pkg and upload to TestFlight"
+  lane :beta do
+    api_key = asc_api_key
+    generate_project
+    bump_build_number(api_key)
+
+    build_mac_app(
+      project: "Deck.xcodeproj",
+      scheme: "DeckMac",
+      configuration: "Release",
+      export_method: "app-store",
+      xcargs: xcode_auth_args,
+      output_directory: "build",
+      clean: true
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: APP_ID,
+      app_platform: "osx",
+      pkg: lane_context[SharedValues::PKG_OUTPUT_PATH],
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+  end
+end

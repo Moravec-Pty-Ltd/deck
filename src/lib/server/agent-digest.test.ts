@@ -68,6 +68,23 @@ describe('sessionDigest', () => {
 		expect(shell.issues).toEqual([{ source: 'github', id: 'a/b#1', url: '' }]);
 	});
 
+	it('carries provider and permissionMode only when set', () => {
+		const set = sessionDigest(session({ kind: 'pi', provider: 'example', permissionMode: 'plan' }));
+		expect(set).toMatchObject({ provider: 'example', permissionMode: 'plan' });
+		const unset = sessionDigest(session());
+		expect('provider' in unset).toBe(false);
+		expect('permissionMode' in unset).toBe(false);
+	});
+
+	it('carries managed/attached for shells only, and only when set', () => {
+		const shell = sessionDigest(session({ kind: 'shell', managed: true, attached: false }));
+		expect(shell).toMatchObject({ managed: true, attached: false });
+		const bare = sessionDigest(session({ kind: 'shell' }));
+		expect('managed' in bare || 'attached' in bare).toBe(false);
+		const agent = sessionDigest(session({ managed: true, attached: true }));
+		expect('managed' in agent || 'attached' in agent).toBe(false);
+	});
+
 	it('normalises absent awaitingInput to false', () => {
 		expect(sessionDigest(session()).awaitingInput).toBe(false);
 	});
@@ -97,15 +114,17 @@ describe('discovery projections', () => {
 			id: 'acme/web#12',
 			title: 'Fix it',
 			url: 'https://github.com/acme/web/issues/12',
-			updatedAt: 0,
-			blockers: []
+			updatedAt: 5,
+			blockers: [{ id: 'acme/web#3', title: 'First' }]
 		};
 		expect(issueDigest(issue)).toEqual({
 			source: 'github',
 			sourceId: 's1',
 			id: 'acme/web#12',
 			title: 'Fix it',
-			url: 'https://github.com/acme/web/issues/12'
+			url: 'https://github.com/acme/web/issues/12',
+			updatedAt: 5,
+			blockers: [{ id: 'acme/web#3', title: 'First' }]
 		});
 	});
 
@@ -123,6 +142,14 @@ describe('discovery projections', () => {
 			author: 'someone',
 			updatedAt: 0
 		};
-		expect(prDigest(pr)).toMatchObject({ repo: 'acme/web', number: 42, headRefName: 'feat', baseRefName: 'main' });
+		expect(prDigest(pr)).toMatchObject({
+			sourceId: 's1',
+			repo: 'acme/web',
+			number: 42,
+			headRefName: 'feat',
+			baseRefName: 'main',
+			updatedAt: 0
+		});
+		expect(prDigest(pr)).not.toHaveProperty('headRefOid');
 	});
 });

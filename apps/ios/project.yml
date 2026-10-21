@@ -1,0 +1,285 @@
+name: Deck
+options:
+  bundleIdPrefix: tech.moravec
+  deploymentTarget:
+    iOS: "26.0"
+    watchOS: "11.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    VERSIONING_SYSTEM: apple-generic
+packages:
+  DeckKit:
+    path: Packages/DeckKit
+targets:
+  DeckApp:
+    type: application
+    platform: iOS
+    sources:
+      - Apps/DeckApp
+      - Apps/Shared
+      - Apps/Sounds
+      - Apps/SharedIntents
+    dependencies:
+      - package: DeckKit
+        product: DeckKit
+      - package: DeckKit
+        product: DeckUI
+      - package: DeckKit
+        product: DeckIntents
+      # The dev browser. Only the app has one, and it carries SwiftNIO SSH.
+      - package: DeckKit
+        product: DeckBrowser
+      # Downloaded on-device models. Only the app runs one, and it carries MLX.
+      - package: DeckKit
+        product: DeckLocalModel
+      - target: DeckWatch
+      - target: DeckWidgets
+      - target: DeckShare
+    info:
+      path: Apps/DeckApp/Info.plist
+      properties:
+        CFBundleDisplayName: deck
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: tech.moravec.deck
+            CFBundleURLSchemes: [deck]
+        NSCameraUsageDescription: deck scans the QR code shown by your deck server to sign in.
+        NSMicrophoneUsageDescription: deck records what you say in voice mode and sends it to your deck server for transcription.
+        NSSpeechRecognitionUsageDescription: deck listens for "hey deck" on the device so you can talk to the operator hands-free. Nothing is sent to Apple.
+        UIBackgroundModes: [remote-notification, audio]
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          # The dev browser loads plain http: dev servers are not on https, and
+          # the loopback sentinel (deck.localhost) is an ordinary hostname to
+          # ATS rather than a loopback address, so it is not exempt. Scoped to
+          # web content, so the API traffic URLSession carries stays protected.
+          NSAllowsArbitraryLoadsInWebContent: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckApp/DeckApp.debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckApp/DeckApp.release.entitlements
+  DeckWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Apps/DeckWidgets
+      - Apps/Shared
+    dependencies:
+      - package: DeckKit
+        product: DeckKit
+    info:
+      path: Apps/DeckWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: deck
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck.widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+  DeckShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Apps/DeckShare
+    dependencies:
+      - package: DeckKit
+        product: DeckKit
+    info:
+      path: Apps/DeckShare/Info.plist
+      properties:
+        CFBundleDisplayName: deck
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: ShareViewController
+          NSExtensionAttributes:
+            # Anything a share sheet hands over. deck writes files beside its
+            # data and tells the session where they are, so the kind only
+            # decides how the bytes are read, not whether it works.
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsFileWithMaxCount: 10
+              NSExtensionActivationSupportsMovieWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck.share
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckShare/DeckShare.debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckShare/DeckShare.release.entitlements
+  DeckAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Apps/DeckAppUITests
+    dependencies:
+      - target: DeckApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: DeckApp
+  DeckWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - Apps/DeckWatch
+      - Apps/SharedIntents
+      - Apps/Sounds
+    dependencies:
+      - package: DeckKit
+        product: DeckKit
+      - package: DeckKit
+        product: DeckIntents
+    info:
+      path: Apps/DeckWatch/Info.plist
+      properties:
+        CFBundleDisplayName: deck
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleIconName: AppIcon
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: tech.moravec.deck
+        WKRunsIndependentlyOfCompanionApp: true
+        NSMicrophoneUsageDescription: deck records what you say in voice mode and sends it to your deck server for transcription.
+        NSSpeechRecognitionUsageDescription: deck listens for "hey deck" on the device so you can talk to the operator hands-free. Nothing is sent to Apple.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck.watchkitapp
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckWatch/DeckWatch.debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckWatch/DeckWatch.release.entitlements
+  DeckMac:
+    type: application
+    platform: macOS
+    sources:
+      - Apps/DeckMac
+      - Apps/SharedIntents
+      - Apps/Sounds
+      # The detail screen's model is plain Foundation over DeckStore, so the
+      # Mac reads the transcript through the same code as the phone.
+      - path: Apps/DeckApp/Support/SessionDetailViewModel.swift
+      # The dev browser's tab chip, web view host and tunnel form.
+      - path: Apps/DeckApp/Views/BrowserParts.swift
+      - path: Apps/DeckApp/Views/TunnelSheet.swift
+      # The operator, without the phone's wake word.
+      - path: Apps/DeckApp/Support/OperatorController.swift
+      - path: Apps/DeckApp/Views/OperatorView.swift
+      - path: Apps/DeckApp/Views/LocalModelView.swift
+      # Inbox, runs, schedules, start, the session sheets and the settings
+      # forms: plain SwiftUI over DeckStore, shared rather than ported.
+      - path: Apps/DeckApp/Views/InboxView.swift
+      - path: Apps/DeckApp/Views/RunViews.swift
+      - path: Apps/DeckApp/Views/SchedulesView.swift
+      - path: Apps/DeckApp/Views/StartView.swift
+      - path: Apps/DeckApp/Views/StartRunView.swift
+      - path: Apps/DeckApp/Views/AutomationView.swift
+      - path: Apps/DeckApp/Views/ProjectsSettingsView.swift
+      - path: Apps/DeckApp/Views/ServerSettingsView.swift
+      - path: Apps/DeckApp/Views/ReviewsView.swift
+      - path: Apps/DeckApp/Views/PairingSheet.swift
+      - path: Apps/DeckApp/Views/ChangesSheet.swift
+      - path: Apps/DeckApp/Views/SessionSheets.swift
+      - path: Apps/DeckApp/Views/ServersSheet.swift
+      - path: Apps/DeckApp/Views/FileAttachments.swift
+    dependencies:
+      - package: DeckKit
+        product: DeckKit
+      - package: DeckKit
+        product: DeckUI
+      - package: DeckKit
+        product: DeckIntents
+      - package: DeckKit
+        product: DeckBrowser
+      - package: DeckKit
+        product: DeckLocalModel
+    info:
+      path: Apps/DeckMac/Info.plist
+      properties:
+        CFBundleDisplayName: deck
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        CFBundleIconName: AppIcon
+        ITSAppUsesNonExemptEncryption: false
+        NSMicrophoneUsageDescription: deck records what you say in voice mode and sends it to your deck server for transcription.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          # Dev servers are plain http, and through the tunnel they load from
+          # the deck.localhost sentinel, which ATS does not treat as loopback.
+          NSAllowsArbitraryLoadsInWebContent: true
+    settings:
+      base:
+        # Shared with the iOS app, so one App Store record carries both.
+        PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckMac/DeckMac.debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckMac/DeckMac.release.entitlements
+schemes:
+  DeckApp:
+    build:
+      targets:
+        DeckApp: all
+        DeckAppUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - DeckAppUITests
+  DeckWatch:
+    build:
+      targets:
+        DeckWatch: all
+    run:
+      config: Debug
+  DeckMac:
+    build:
+      targets:
+        DeckMac: all
+    run:
+      config: Debug

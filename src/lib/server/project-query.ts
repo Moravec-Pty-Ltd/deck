@@ -2,8 +2,8 @@ import { error } from '@sveltejs/kit';
 import type { Project } from '$lib/types';
 import { listProjects } from './store';
 
-// Shared query parsing for the project-scoped list endpoints (/api/issues,
-// /api/prs): resolve the ?project=<path> to a registered project and read the
+// Shared query parsing for the project-scoped list endpoints (/api/agent/issues,
+// /api/agent/prs): resolve the ?project=<path> to a registered project and read the
 // ?refresh flag, 404-ing an unknown path. Both endpoints then hand the project
 // to their own aggregator.
 export function projectFromQuery(url: URL): { project: Project; refresh: boolean } {

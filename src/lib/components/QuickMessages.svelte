@@ -1,17 +1,26 @@
 <script lang="ts">
+	import Modal from './Modal.svelte';
 	import { onMount } from 'svelte';
-	import type { QuickMessage } from '$lib/types';
+	import type { Project, QuickMessage } from '$lib/types';
 	import { MessageSquareText, Plus, Trash2, ArrowUp, ArrowDown, Settings2 } from '@lucide/svelte';
 	import Popover from './Popover.svelte';
+	import { AgentApiError, agentGet, agentPath, agentRequest } from '$lib/agent-api';
+	import { groupByScope, moveWithinScope, quickMessagesFor, setScope } from '$lib/quick-messages-core';
 
 	// The composer's quick-message popover (issue #45): a button next to send that
-	// lists the system-wide canned messages; clicking one fires it immediately via
-	// `onpick`, which sends it with server-side [token] expansion. A "Manage" entry
-	// opens a modal to add/edit/remove/reorder the list, persisted through
-	// GET/PUT /api/quick-messages.
-	let { onpick }: { onpick: (text: string) => void } = $props();
+	// lists the session's project's canned messages and then the global ones;
+	// clicking one fires it immediately via `onpick`, which sends it with
+	// server-side [token] expansion. A "Manage" entry opens a modal to add, edit,
+	// remove, reorder and rescope the list, persisted through
+	// GET/PUT /api/agent/quick-messages. `projectId` is the session's registered
+	// project path, absent outside every project.
+	let {
+		onpick,
+		projectId,
+		projects = []
+	}: { onpick: (text: string) => void; projectId?: string; projects?: Project[] } = $props();
 
-	type Draft = { id: string; label: string; text: string };
+	type Draft = { id: string; label: string; text: string; projectId?: string };
 
 	let messages = $state<QuickMessage[]>([]);
 	let open = $state(false);
@@ -19,13 +28,16 @@
 	let draft = $state<Draft[]>([]);
 	let saving = $state(false);
 	let err = $state('');
+	let addScope = $state('');
+
+	const shown = $derived(quickMessagesFor(messages, projectId));
+	const groups = $derived(groupByScope(draft, projects));
 
 	onMount(load);
 
 	async function load() {
 		try {
-			const res = await fetch('/api/quick-messages');
-			if (res.ok) messages = await res.json();
+			messages = await agentGet<QuickMessage[]>(agentPath('quick-messages'));
 		} catch {
 			// best-effort; an empty list just shows the empty state
 		}
@@ -48,14 +60,15 @@
 	}
 
 	function openManage() {
-		draft = messages.map((m) => ({ id: m.id, label: m.label ?? '', text: m.text }));
+		draft = messages.map((m) => ({ id: m.id, label: m.label ?? '', text: m.text, projectId: m.projectId }));
+		addScope = projectId ?? '';
 		err = '';
 		open = false;
 		managing = true;
 	}
 
 	function add() {
-		draft = [...draft, { id: newId(), label: '', text: '' }];
+		draft = [...draft, { id: newId(), label: '', text: '', projectId: addScope || undefined }];
 	}
 
 	function remove(i: number) {
@@ -63,33 +76,37 @@
 	}
 
 	function move(i: number, dir: -1 | 1) {
-		const j = i + dir;
-		if (j < 0 || j >= draft.length) return;
-		const next = [...draft];
-		[next[i], next[j]] = [next[j], next[i]];
-		draft = next;
+		draft = moveWithinScope(draft, i, dir);
+	}
+
+	function rescope(i: number, scope: string) {
+		draft = setScope(draft, i, scope);
+	}
+
+	// A message scoped to a project that is no longer registered keeps its path
+	// as an option, so opening the editor never silently rescopes it.
+	function scopeOptions(current?: string): { value: string; label: string }[] {
+		const options = [{ value: '', label: 'Global' }, ...projects.map((p) => ({ value: p.path, label: p.name }))];
+		if (current && !projects.some((p) => p.path === current)) options.push({ value: current, label: current });
+		return options;
 	}
 
 	async function save() {
 		saving = true;
 		err = '';
 		const payload = draft
-			.map((m) => ({ id: m.id, label: m.label.trim() || undefined, text: m.text.trim() }))
+			.map((m) => ({
+				id: m.id,
+				label: m.label.trim() || undefined,
+				text: m.text.trim(),
+				projectId: m.projectId || undefined
+			}))
 			.filter((m) => m.text);
 		try {
-			const res = await fetch('/api/quick-messages', {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(payload)
-			});
-			if (!res.ok) {
-				err = 'save failed';
-				return;
-			}
-			messages = await res.json();
+			messages = await agentRequest<QuickMessage[]>(agentPath('quick-messages'), { method: 'PUT', body: payload });
 			managing = false;
-		} catch {
-			err = 'network error';
+		} catch (e) {
+			err = e instanceof AgentApiError ? 'Save failed' : 'Network error';
 		} finally {
 			saving = false;
 		}
@@ -108,9 +125,9 @@
 	{#snippet trigger()}
 		<MessageSquareText size={16} />
 	{/snippet}
-	{#if messages.length}
+	{#if shown.length}
 		<ul class="menu menu-sm max-h-64 w-full flex-nowrap overflow-y-auto p-0">
-			{#each messages as m (m.id)}
+			{#each shown as m (m.id)}
 				<li>
 					<button class="block truncate text-left" onclick={() => pick(m)}>{menuLabel(m)}</button>
 				</li>
@@ -131,24 +148,24 @@
 	{/if}
 </Popover>
 
-{#if managing}
-	<div class="modal modal-open modal-bottom sm:modal-middle" role="dialog">
-		<div class="modal-box max-w-lg">
-			<h3 class="mb-1 text-lg font-semibold">Quick messages</h3>
-			<p class="mb-4 text-xs opacity-70">
-				Canned messages for the composer. Text can include tokens like
-				<code>[pr_url]</code>, <code>[branch-name]</code>, <code>[issue_url]</code>, expanded against
-				the session when sent.
-			</p>
+<Modal open={managing} onclose={() => (managing = false)} title="Quick messages" class="max-w-lg">
+	<p class="-mt-2 mb-4 text-xs opacity-70">
+		Canned messages for the composer. Text can include tokens like
+		<code>[pr_url]</code>, <code>[branch-name]</code>, <code>[issue_url]</code>, expanded against
+		the session when sent.
+	</p>
 
-			<div class="flex flex-col gap-2">
-				{#each draft as m, i (m.id)}
+	<div class="flex flex-col gap-4">
+		{#each groups as group (group.projectId ?? '')}
+			<section class="flex flex-col gap-2" aria-label={group.label}>
+				<h3 class="text-xs font-semibold uppercase tracking-wide opacity-70">{group.label}</h3>
+				{#each group.items as { message: m, index: i }, k (m.id)}
 					<div class="flex items-start gap-2 rounded-box border border-base-300 p-2">
 						<div class="flex flex-col gap-1 pt-1">
 							<button
 								class="btn btn-square btn-ghost btn-xs"
 								onclick={() => move(i, -1)}
-								disabled={i === 0}
+								disabled={k === 0}
 								aria-label="Move up"
 							>
 								<ArrowUp size={14} />
@@ -156,20 +173,30 @@
 							<button
 								class="btn btn-square btn-ghost btn-xs"
 								onclick={() => move(i, 1)}
-								disabled={i === draft.length - 1}
+								disabled={k === group.items.length - 1}
 								aria-label="Move down"
 							>
 								<ArrowDown size={14} />
 							</button>
 						</div>
 						<div class="flex flex-1 flex-col gap-1">
-							<input class="input input-sm w-full" placeholder="Label (optional)" bind:value={m.label} />
+							<input class="input input-sm w-full" placeholder="Label (optional)" bind:value={draft[i].label} />
 							<textarea
 								class="textarea textarea-sm w-full"
 								rows="2"
 								placeholder="Message text"
-								bind:value={m.text}
+								bind:value={draft[i].text}
 							></textarea>
+							<select
+								class="select select-xs w-full"
+								aria-label="Show in"
+								value={m.projectId ?? ''}
+								onchange={(e) => rescope(i, e.currentTarget.value)}
+							>
+								{#each scopeOptions(m.projectId) as option (option.value)}
+									<option value={option.value}>{option.label}</option>
+								{/each}
+							</select>
 						</div>
 						<button
 							class="btn btn-square btn-ghost btn-xs text-error"
@@ -180,24 +207,29 @@
 						</button>
 					</div>
 				{/each}
-				{#if !draft.length}
-					<p class="py-2 text-center text-sm opacity-60">No messages. Add one to get started.</p>
+				{#if !group.items.length}
+					<p class="py-1 text-center text-sm opacity-60">No global messages.</p>
 				{/if}
-			</div>
-
-			<button class="btn btn-ghost btn-sm mt-2 gap-2" onclick={add}>
-				<Plus size={14} /> Add message
-			</button>
-
-			{#if err}<p class="mt-2 text-xs text-error">{err}</p>{/if}
-
-			<div class="modal-action">
-				<button class="btn btn-ghost" onclick={() => (managing = false)}>Cancel</button>
-				<button class="btn btn-primary" onclick={save} disabled={saving}>
-					{#if saving}<span class="loading loading-spinner loading-xs"></span>{/if} Save
-				</button>
-			</div>
-		</div>
-		<button class="modal-backdrop" onclick={() => (managing = false)} aria-label="close"></button>
+			</section>
+		{/each}
 	</div>
-{/if}
+
+	<div class="mt-3 flex items-center gap-2">
+		<button class="btn btn-ghost btn-sm gap-2" onclick={add}>
+			<Plus size={14} /> Add message to
+		</button>
+		<select class="select select-sm flex-1" aria-label="Add to" bind:value={addScope}>
+			{#each scopeOptions() as option (option.value)}
+				<option value={option.value}>{option.label}</option>
+			{/each}
+		</select>
+	</div>
+
+	{#if err}<p class="mt-2 text-xs text-error">{err}</p>{/if}
+	{#snippet footer()}
+		<button class="btn btn-ghost" onclick={() => (managing = false)}>Cancel</button>
+		<button class="btn btn-primary" onclick={save} disabled={saving}>
+			{#if saving}<span class="loading loading-spinner loading-xs"></span>{/if} Save
+		</button>
+	{/snippet}
+</Modal>

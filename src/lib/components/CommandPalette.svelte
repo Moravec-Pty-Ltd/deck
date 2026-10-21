@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { agentDelete, agentGet, agentPath, agentPost, sessionPath } from '$lib/agent-api';
 	import {
 		buildCommands,
 		filterCommands,
@@ -9,12 +10,14 @@
 		type MergeMethod,
 		type PrActionPayload
 	} from '$lib/commands';
-	import type { DeckSession, ServerRuntime, DeckSettings } from '$lib/types';
+	import type { ServerRuntime, AgentSettingsView } from '$lib/types';
+	import type { SessionView } from '$lib/session-view';
 	import { fetchServers, serverAction as postServerAction } from '$lib/servers-client';
 	import { claudeModelOptions, isExpensiveModel, modelLabel, switchModel } from '$lib/models';
 	import { restartSession } from '$lib/session-restart';
 	import { loadSettings } from '$lib/settings-store';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import { DIALOG_CLASS } from './Modal.svelte';
 	import { Search, CornerDownLeft, ChevronLeft, TriangleAlert } from '@lucide/svelte';
 
 	// Global Cmd+K palette. Rendered once in the layout; `open` is toggled by the
@@ -44,14 +47,14 @@
 
 	// Locally-configured model profiles (~/.deck settings), so the palette's model
 	// step offers the same options as the modal and header switcher.
-	let paletteSettings = $state<DeckSettings>({});
+	let paletteSettings = $state<AgentSettingsView>({});
 	$effect(() => {
 		loadSettings().then((s) => (paletteSettings = s));
 	});
 
 	let query = $state('');
 	let selected = $state(0);
-	let sessions = $state<DeckSession[]>([]);
+	let sessions = $state<SessionView[]>([]);
 	let sessionServers = $state<ServerRuntime[]>([]);
 
 	// Second-step panel: a command awaiting its input before it runs.
@@ -69,31 +72,17 @@
 		currentId ? (sessions.find((s) => s.id === currentId) ?? null) : null
 	);
 
-	async function prPost(payload: PrActionPayload) {
+	// Review and merge are separate agent routes, named by the payload's action.
+	async function sessionPr(send: (id: string) => Promise<unknown>) {
 		if (!currentSession) throw new Error('no session');
-		const res = await fetch(`/api/sessions/${encodeURIComponent(currentSession.id)}/pr`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(payload)
-		});
-		if (!res.ok) {
-			const data = await res.json().catch(() => null);
-			throw new Error(data?.message || 'action failed');
-		}
+		await send(currentSession.id);
 		await loadData();
 	}
 
-	async function prDismiss() {
-		if (!currentSession) return;
-		const res = await fetch(`/api/sessions/${encodeURIComponent(currentSession.id)}/pr`, {
-			method: 'DELETE'
-		});
-		if (!res.ok) {
-			const data = await res.json().catch(() => null);
-			throw new Error(data?.message || 'action failed');
-		}
-		await loadData();
-	}
+	const prPost = ({ action, ...body }: PrActionPayload) =>
+		sessionPr((id) => agentPost(sessionPath(id, action), body));
+
+	const prDismiss = () => sessionPr((id) => agentDelete(sessionPath(id, 'pr')));
 
 	function context(): CommandContext {
 		return {
@@ -134,8 +123,8 @@
 	// Pull the switch-list + current session's servers whenever the palette opens
 	// (and after an action mutates them). Cheap and on-demand, no new poller.
 	async function loadData() {
-		const sRes = await fetch('/api/sessions').catch(() => null);
-		if (sRes?.ok) sessions = await sRes.json();
+		const list = await agentGet<SessionView[]>(agentPath('sessions')).catch(() => null);
+		if (list) sessions = list;
 		sessionServers = currentId ? await fetchServers(currentId).catch(() => []) : [];
 	}
 
@@ -221,7 +210,7 @@
 			await cmd.run(input);
 			open = false;
 		} catch (e) {
-			err = e instanceof Error ? e.message : 'action failed';
+			err = e instanceof Error ? e.message : 'Action failed';
 		} finally {
 			busy = false;
 		}
@@ -281,7 +270,7 @@
 
 <dialog
 	bind:this={dialogEl}
-	class="modal modal-bottom sm:modal-middle"
+	class={DIALOG_CLASS}
 	aria-label="Command palette"
 	oncancel={onCancel}
 	onclose={() => (open = false)}
@@ -404,7 +393,7 @@
 								}
 							}}
 							class="input input-bordered input-sm w-full"
-							placeholder="model id (empty for default)"
+							placeholder="Model ID (empty for the default)"
 							autocomplete="off"
 							spellcheck="false"
 						/>

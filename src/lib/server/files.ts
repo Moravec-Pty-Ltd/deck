@@ -61,6 +61,7 @@ export function fileHeaders(file: ServedFile, download: boolean): Record<string,
 		'content-type': file.mime,
 		'cache-control': 'private, no-cache',
 		'x-content-type-options': 'nosniff',
+		'accept-ranges': 'bytes',
 		etag: `"${file.size}-${Math.floor(file.mtimeMs)}"`,
 		'content-disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(file.name)}`
 	};

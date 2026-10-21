@@ -1,9 +1,5 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { cachedServerStates } from '$lib/server/devservers';
+import { serverStatesRoute } from '$lib/server/devservers-route';
 
-// Per-session dev-server states from the monitor's last poll (no fresh probing),
-// for the sidebar dots and header chip. Keyed by session id.
-export const GET: RequestHandler = async () => {
-	return json(cachedServerStates());
-};
+// Per-session dev-server states, same handler as GET /api/agent/servers; see devservers-route.ts.
+export const GET: RequestHandler = serverStatesRoute;

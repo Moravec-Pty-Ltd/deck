@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Code, Check } from '@lucide/svelte';
+	import { createCopier } from '$lib/copy.svelte';
 
 	// Header chip that copies the `zed ssh://…` command for the session's cwd, so
 	// the worktree can be opened in Zed on whatever machine the browser is on.
@@ -7,27 +8,17 @@
 	// the documented CLI form.
 	let { command }: { command: string } = $props();
 
-	let copied = $state(false);
-	let resetTimer: ReturnType<typeof setTimeout> | undefined;
+	const copier = createCopier();
+	const copied = $derived(copier.copied);
 
-	async function copy() {
-		if (!navigator.clipboard) return;
-		try {
-			await navigator.clipboard.writeText(command);
-		} catch {
-			return; // don't flash the tick if the write failed
-		}
-		copied = true;
-		clearTimeout(resetTimer);
-		resetTimer = setTimeout(() => (copied = false), 1000);
-	}
+	$effect(() => () => copier.stop());
 </script>
 
 <button
 	type="button"
 	class="badge badge-outline badge-sm header-chip shrink-0 gap-1"
 	title={copied ? 'Copied' : `Copy: ${command}`}
-	onclick={copy}
+	onclick={() => copier.copy(command)}
 >
 	{#if copied}
 		<Check size={12} />

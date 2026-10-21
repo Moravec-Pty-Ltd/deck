@@ -1,4 +1,4 @@
-import type { DeckSession } from './types';
+import type { SessionView } from './session-view';
 
 // Pure helpers for the homepage's multi-select (issue #211). They all work on the
 // flattened *visible* order of the current view, which the sidebar's flatteners
@@ -9,7 +9,7 @@ import type { DeckSession } from './types';
 // direction-agnostic, for a shift-click. Empty when either row isn't on screen (a
 // poll dropped it, or it's inside a collapsed section), so the caller falls back
 // to a plain toggle.
-export function rangeIds(order: DeckSession[], anchorId: string, toId: string): string[] {
+export function rangeIds(order: SessionView[], anchorId: string, toId: string): string[] {
 	const a = order.findIndex((s) => s.id === anchorId);
 	const b = order.findIndex((s) => s.id === toId);
 	if (a === -1 || b === -1) return [];
@@ -17,16 +17,16 @@ export function rangeIds(order: DeckSession[], anchorId: string, toId: string): 
 }
 
 // The selected ids that are no longer on the list, for the caller to drop. The
-// homepage repolls every 5s and its filter can change under a live selection, so
+// homepage's live feed can drop a session and its filter can change under a live selection, so
 // without this a row the user can't see any more would still be in the Remove
 // count, and in the batch.
-export function staleIds(selected: Iterable<string>, sessions: DeckSession[]): string[] {
+export function staleIds(selected: Iterable<string>, sessions: SessionView[]): string[] {
 	const live = new Set(sessions.map((s) => s.id));
 	return [...selected].filter((id) => !live.has(id));
 }
 
 // Whether every visible row is picked, which flips Select All to Deselect All.
 // False for an empty list, so an empty action bar never reads as "all picked".
-export function allSelected(order: DeckSession[], selected: ReadonlySet<string>): boolean {
+export function allSelected(order: SessionView[], selected: ReadonlySet<string>): boolean {
 	return order.length > 0 && order.every((s) => selected.has(s.id));
 }

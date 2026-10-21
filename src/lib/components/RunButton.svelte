@@ -80,7 +80,7 @@
 			// Surface only while we have nothing to show, so a transient mid-session
 			// failure (list already loaded) doesn't clobber a working control.
 			if (my === loadToken && servers.length === 0) {
-				loadErr = e instanceof Error ? e.message : 'failed to load servers';
+				loadErr = e instanceof Error ? e.message : "Couldn't load servers";
 			}
 		}
 	}
@@ -116,7 +116,7 @@
 		try {
 			await serverAction(session.id, name, action);
 		} catch (e) {
-			err = e instanceof Error ? e.message : 'action failed';
+			err = e instanceof Error ? e.message : 'Action failed';
 		} finally {
 			busy = false;
 			onRefresh?.();

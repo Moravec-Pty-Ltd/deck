@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { basename, extensionOf, findFilePaths, formatBytes, isImagePath, mimeFor, scriptable } from './files-core';
+import { basename, byteRange, extensionOf, findFilePaths, formatBytes, isImagePath, mimeFor, scriptable } from './files-core';
 
 describe('findFilePaths', () => {
 	it('finds absolute, home, file URL and explicit relative paths', () => {
@@ -56,5 +56,29 @@ describe('file helpers', () => {
 		expect(formatBytes(2048)).toBe('2.0 KB');
 		expect(formatBytes(200 * 1024)).toBe('200 KB');
 		expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB');
+	});
+});
+
+describe('byteRange', () => {
+	it('reads the start-end, open-ended and suffix forms, clamped to the file', () => {
+		expect(byteRange('bytes=0-1', 10)).toEqual({ start: 0, end: 1 });
+		expect(byteRange('bytes=4-', 10)).toEqual({ start: 4, end: 9 });
+		expect(byteRange('bytes=-3', 10)).toEqual({ start: 7, end: 9 });
+		expect(byteRange('bytes=-30', 10)).toEqual({ start: 0, end: 9 });
+		expect(byteRange('bytes=5-99', 10)).toEqual({ start: 5, end: 9 });
+	});
+
+	it('serves the whole file for no header, a malformed one or several ranges', () => {
+		expect(byteRange(null, 10)).toBeNull();
+		expect(byteRange('bytes=-', 10)).toBeNull();
+		expect(byteRange('items=0-1', 10)).toBeNull();
+		expect(byteRange('bytes=0-1,4-5', 10)).toBeNull();
+	});
+
+	it('refuses a range outside the file', () => {
+		expect(byteRange('bytes=10-', 10)).toBe('unsatisfiable');
+		expect(byteRange('bytes=5-2', 10)).toBe('unsatisfiable');
+		expect(byteRange('bytes=-0', 10)).toBe('unsatisfiable');
+		expect(byteRange('bytes=0-', 0)).toBe('unsatisfiable');
 	});
 });

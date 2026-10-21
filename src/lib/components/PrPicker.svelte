@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Project, PullRequest } from '$lib/types';
+	import type { AgentPr, Project } from '$lib/types';
 	import { relativeTime } from '$lib/time';
 	import { runLoad } from '$lib/picker';
 	import { RefreshCw, Check } from '@lucide/svelte';
@@ -8,16 +8,16 @@
 		project,
 		picked = [],
 		onpick
-	}: { project: Project; picked?: PullRequest[]; onpick: (pr: PullRequest) => void } = $props();
+	}: { project: Project; picked?: AgentPr[]; onpick: (pr: AgentPr) => void } = $props();
 
 	// Multi-select mirrors IssuePicker: `onpick` toggles and the list stays open.
 	// Selected rows show a check; the modal owns the array and renders chips.
-	const prKey = (pr: PullRequest) => `${pr.sourceId}:${pr.number}`;
+	const prKey = (pr: AgentPr) => `${pr.sourceId}:${pr.number}`;
 	const selectedKeys = $derived(new Set(picked.map(prKey)));
 
 	type SourceError = { sourceId: string; message: string };
 
-	let prs = $state<PullRequest[]>([]);
+	let prs = $state<AgentPr[]>([]);
 	let errors = $state<SourceError[]>([]);
 	let loading = $state(false);
 	let loadError = $state('');
@@ -38,8 +38,8 @@
 			loading = false;
 			return;
 		}
-		return runLoad<{ prs?: PullRequest[]; errors?: SourceError[] }>(
-			`/api/prs?project=${encodeURIComponent(project.path)}${refresh ? '&refresh=1' : ''}`,
+		return runLoad<{ prs?: AgentPr[]; errors?: SourceError[] }>(
+			`/api/agent/prs?project=${encodeURIComponent(project.path)}${refresh ? '&refresh=1' : ''}`,
 			seq,
 			{
 				loading: (v) => (loading = v),

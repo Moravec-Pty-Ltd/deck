@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@source not '../../apps';
 
 /* iOS Safari zooms the page when a focused field has a font-size below 16px.
    Force the 16px minimum on touch devices so focusing any control never zooms;
@@ -136,6 +137,12 @@
 	--noise: 0;
 }
 
+/* The width list pages (Home, Inbox, Runs, Schedules, Projects) stop growing
+   at, as `max-w-content`. The session page ignores it and stays edge to edge. */
+@theme {
+	--container-content: 72rem;
+}
+
 /* ── global base ──────────────────────────────────────────────────────────
    System sans on purpose (zero font payload). Identity lives in scale,
    spacing, and the brand palette, not in a typeface. The bundled Nerd Font
@@ -211,6 +218,120 @@ h3,
 	border-radius: var(--radius-field, 0.3125rem);
 }
 
+/* ── persistent nav (NavLinks.svelte): header tabs from md up, a bottom bar on
+   phones. The current page reads by weight, full opacity and a bar, so it
+   survives e-ink; orange is only the bar. */
+.deck-nav {
+	display: flex;
+	align-items: stretch;
+}
+.deck-nav-item {
+	position: relative;
+	display: flex;
+	align-items: center;
+	color: color-mix(in oklch, var(--color-base-content) 68%, transparent);
+	transition: color 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.deck-nav-item:hover,
+.deck-nav-item[aria-current='page'] {
+	color: var(--color-base-content);
+}
+.deck-nav-item[aria-current='page'] {
+	font-weight: 600;
+}
+.deck-nav-item[aria-current='page']::after {
+	content: '';
+	position: absolute;
+	height: 2px;
+	background-color: var(--color-primary);
+}
+.deck-nav-icon {
+	position: relative;
+	display: inline-flex;
+}
+
+.deck-nav-tabs {
+	height: 100%;
+}
+.deck-nav-tabs .deck-nav-item {
+	gap: 0.375rem;
+	padding-inline: 0.625rem;
+	font-size: 0.8125rem;
+}
+.deck-nav-tabs .deck-nav-item[aria-current='page']::after {
+	inset-inline: 0.5rem;
+	bottom: -1px;
+}
+/* Icons alone until the labels fit beside the brand and header controls. */
+@media (max-width: 63.99rem) {
+	.deck-nav-tabs .deck-nav-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+}
+
+.deck-nav-bar {
+	display: grid;
+	grid-template-columns: repeat(6, minmax(0, 1fr));
+	padding-bottom: env(safe-area-inset-bottom);
+	border-top: var(--border, 1px) solid var(--color-base-300);
+	background-color: var(--color-base-100);
+}
+.deck-nav-bar .deck-nav-item {
+	flex-direction: column;
+	justify-content: center;
+	gap: 0.1875rem;
+	min-height: 3.25rem;
+	font-size: 0.625rem;
+	letter-spacing: 0;
+}
+.deck-nav-bar .deck-nav-item[aria-current='page']::after {
+	inset-inline: 30%;
+	top: -1px;
+}
+
+.nav-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1rem;
+	height: 1rem;
+	padding-inline: 0.25rem;
+	border-radius: 99px;
+	background-color: var(--color-primary);
+	color: var(--color-primary-content);
+	font-size: 0.625rem;
+	font-weight: 700;
+	line-height: 1;
+	letter-spacing: 0;
+}
+.deck-nav-icon .nav-badge {
+	position: absolute;
+	top: -0.4rem;
+	left: calc(100% - 0.45rem);
+	outline: 2px solid var(--color-base-100);
+}
+
+/* Clears the bottom bar on phones; from md up the bar is gone. */
+.update-toast-above-bar {
+	bottom: calc(4.25rem + env(safe-area-inset-bottom));
+}
+@media (min-width: 48rem) {
+	.update-toast-above-bar {
+		bottom: 1rem;
+	}
+}
+
+/* The phone session page has no bottom bar; keep its composer off the home
+   indicator instead. */
+.session-home-inset {
+	height: env(safe-area-inset-bottom);
+}
+
 /* ── popovers (Popover.svelte): dropdown on desktop, bottom drawer on phones.
    Below sm the panel is repositioned as a fixed sheet; keepInView detects the
    fixed position and steps aside. Unlayered rules, so they win over daisyUI's
@@ -271,6 +392,24 @@ h3,
 	to {
 		transform: translateY(0);
 		opacity: 1;
+	}
+}
+
+/* ── dialogs (Modal.svelte, plus CommandPalette and TranscriptSearch on the same
+   daisyUI .modal classes). The dialog takes focus itself on open; the box is the
+   visible surface, so no ring around the whole viewport. */
+dialog.modal:focus-visible {
+	outline: none;
+}
+/* Modal unmounts its body as it closes, so skip daisyUI's fade-out rather than
+   fade an empty box. */
+.deck-modal:not([open]) {
+	display: none;
+	transition: none;
+}
+@media (max-width: 39.99rem) {
+	.deck-modal-box {
+		padding-bottom: max(1.5rem, calc(1rem + env(safe-area-inset-bottom)));
 	}
 }
 
@@ -415,10 +554,14 @@ h3,
 	line-height: 1.5;
 	overflow-wrap: anywhere;
 }
-.markdown > :first-child {
+/* A fenced block is wrapped for its copy button, so the resets have to reach
+   through the wrapper to the pre that actually carries the margin. */
+.markdown > :first-child,
+.markdown > .code-block:first-child > pre {
 	margin-top: 0;
 }
-.markdown > :last-child {
+.markdown > :last-child,
+.markdown > .code-block:last-child > pre {
 	margin-bottom: 0;
 }
 .markdown p {
@@ -511,6 +654,39 @@ h3,
 .markdown pre code {
 	font: inherit;
 	white-space: pre;
+}
+/* Copy button, pinned to the block's top-right corner (CodeBlock.svelte). The
+   pre scrolls sideways, so the button hangs off a wrapper instead of sliding
+   away with the content, and the code shrink-wraps with trailing padding so a
+   long line scrolled to its end still clears the button. The wrapper itself
+   takes no margin: the pre's collapses straight through it. */
+.markdown .code-block {
+	position: relative;
+}
+.markdown .code-block > pre > code {
+	display: inline-block;
+	vertical-align: top;
+	padding-inline-end: 1.9em;
+}
+.markdown .code-copy {
+	position: absolute;
+	top: 0.25rem;
+	right: 0.25rem;
+	opacity: 0;
+	transition: opacity 0.15s;
+	/* Nearly opaque: the code behind it would otherwise read through the glyphs. */
+	background-color: color-mix(in oklch, var(--color-base-100) 94%, transparent);
+}
+.markdown .code-block:hover .code-copy,
+.markdown .code-copy:focus-visible,
+.markdown .code-copy.copied {
+	opacity: 1;
+}
+/* Nothing to hover with on touch, so the button stays up, dimmed. */
+@media (hover: none) {
+	.markdown .code-copy {
+		opacity: 0.65;
+	}
 }
 /* Shiki dual theme: light by default, dark under [data-theme='dark']. Shiki emits
    per-token --shiki-light/--shiki-dark custom properties (defaultColor:false), so

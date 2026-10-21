@@ -1,4 +1,5 @@
-import type { DeckEffort, DeckSettings, Project } from '$lib/types';
+import type { DeckEffort, Project, RememberedPicks } from '$lib/types';
+import { agentPost, sessionPath } from '$lib/agent-api';
 
 // Reasoning-effort levels the claude CLI accepts (`--effort`), offered next to the
 // model in the New Session modal and the mid-session switcher (issue #178). Ordered
@@ -9,7 +10,7 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 // project's last pick, else the global last-used (fresh-project fallback), else
 // unset (the CLI's own default). Mirrors resolveModelChoice, but scalar since
 // effort is claude-only.
-export function resolveEffort(project: Project | undefined, settings: DeckSettings): DeckEffort | undefined {
+export function resolveEffort(project: Project | undefined, settings: RememberedPicks): DeckEffort | undefined {
 	return project?.lastEffort ?? settings.lastEffort;
 }
 
@@ -24,13 +25,5 @@ export function effortLabel(effort: string | undefined): string {
 // to the default. Throws with the server's message on failure so callers can show
 // it inline.
 export async function switchEffort(id: string, effort: string): Promise<void> {
-	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/effort`, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ effort })
-	});
-	if (!res.ok) {
-		const data = await res.json().catch(() => null);
-		throw new Error(data?.message || 'effort switch failed');
-	}
+	await agentPost(sessionPath(id, 'effort'), { effort });
 }

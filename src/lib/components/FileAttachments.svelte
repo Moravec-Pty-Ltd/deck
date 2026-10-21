@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { FileText } from '@lucide/svelte';
-	import { findFilePaths, formatBytes, type FileInfo } from '$lib/files-core';
+	import { findFilePaths, formatBytes, isVideoMime, type FileInfo } from '$lib/files-core';
 	import { fileUrl, statFiles } from '$lib/file-stat';
 	import Lightbox from './Lightbox.svelte';
 
 	// The local files a message mentions, under its text: images as previews
-	// that open full size (with the message's other images alongside), other
-	// files as chips that open or download. Only files deck can serve show up;
+	// that open full size (with the message's other images alongside), videos
+	// as players, other files as chips that open or download. Only files deck can serve show up;
 	// a mention of something missing or outside the projects stays plain text.
 	let { text, sessionId }: { text: string; sessionId: string } = $props();
 
@@ -29,7 +29,8 @@
 	});
 
 	const images = $derived(files.filter((f) => f.image));
-	const others = $derived(files.filter((f) => !f.image));
+	const videos = $derived(files.filter((f) => isVideoMime(f.mime)));
+	const others = $derived(files.filter((f) => !f.image && !isVideoMime(f.mime)));
 	let galleryOpen = $state(false);
 	let galleryIndex = $state(0);
 	const gallery = $derived(
@@ -57,6 +58,17 @@
 					class="max-h-40 max-w-full rounded-box object-contain"
 				/>
 			</button>
+		{/each}
+		{#each videos as f (f.path)}
+			<!-- svelte-ignore a11y_media_has_caption -->
+			<video
+				src={fileUrl(sessionId, f.path)}
+				controls
+				playsinline
+				preload="metadata"
+				title={f.name}
+				class="max-h-64 max-w-full rounded-box border border-base-300 bg-base-200"
+			></video>
 		{/each}
 		{#each others as f (f.path)}
 			<a

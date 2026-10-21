@@ -10,13 +10,21 @@ A structured chat view for Claude sessions, with inline diffs and collapsible to
 
 ![Claude chat view](docs/screenshots/claude-chat.png)
 
-One flat, recency-sorted list of every session across claude, pi, codex, opencode, and shells:
+One flat, recency-sorted list of every session across Claude, pi, Codex, OpenCode, and shells:
 
 ![Session list](docs/screenshots/sessions-list.png)
 
 A polled terminal view for tmux shells:
 
 ![Terminal view](docs/screenshots/terminal.png)
+
+An inbox of everything waiting on you, answered in place:
+
+![Inbox](docs/screenshots/inbox.png)
+
+Server-wide settings on one page:
+
+![Settings](docs/screenshots/settings.png)
 
 Light, dark, and e-ink themes (e-ink drops all motion and shadows for a flat, monochrome render):
 
@@ -89,6 +97,8 @@ Dev server: `pnpm dev`.
 | `DECK_TOKEN` | random | Override the generated access token |
 | `DECK_NO_AUTH` | unset | Set to `1` to skip the token gate entirely. **Only safe when the network path is genuinely private** (Tailscale with Funnel off, loopback, or a LAN), never on a raw public tunnel. If the resolved host (`DECK_BASE_URL`) isn't obviously private, deck ignores this flag and keeps the gate on. |
 | `DECK_NO_AUTH_PUBLIC` | unset | Set to `1` to force `DECK_NO_AUTH` even when the host looks public, acknowledging the app is served unauthenticated to anyone with the URL. Don't use this with a raw public tunnel; carry the token instead. |
+| `DECK_BASE_URL` | `http://localhost:<PORT>` | The URL deck is reached at. Used in sign-in QR codes, push links, `/llms.txt` and the `DECK_BASE_URL` given to spawned agents, and as the signal for whether `DECK_NO_AUTH` is safe. |
+| `DECK_TAILSCALE` | unset | Set to `1` to have `vite dev` register a node-level `tailscale serve --https=<port>` for its lifetime. Off by default; a Tailscale Service is the better way to reach deck over the tailnet (see [Remote access](#remote-access-tailscale)). |
 | `DECK_DEMO` | unset | Set to `1` to serve a fixed, sanitized demo dataset instead of `~/.deck` (used for the README screenshots). Skips auth and the host tmux scan, so it never shows real sessions or paths. |
 | `DECK_PUSH_SUBJECT` | `mailto:info@moravec.tech` | VAPID contact for web push (Apple rejects a localhost mailto) |
 | `DECK_TURN_SILENCE_MS` | `1800000` | How long a pi/codex/opencode turn may produce no output on either stdout or stderr before deck kills it and marks the session errored. These agents emit on completed items rather than streaming deltas, so a slow tool call is legitimately silent; raise this if a healthy turn is being cut off. |
@@ -97,20 +107,33 @@ Dev server: `pnpm dev`.
 
 **Configuration**: Variables are loaded from a `.env` file in the repo root by `vite dev` (dev server) and via `node --env-file=.env build/index.js` (production). Explicit environment variables (set inline or exported) always take precedence over `.env` values.
 
+## Native apps
+
+The iPhone, iPad, Apple Watch and Mac clients live in [`apps/ios`](apps/ios/README.md): SwiftUI over deck's agent API, with Siri, Live Activities, a share extension and the voice operator. The phone and iPad app does what the web does: chat and terminal sessions (the terminal renders the same colour snapshot, with a key bar for Enter, Ctrl-C, Esc, the arrows, Tab and Ctrl-D), starting sessions from issues or PRs, the inbox, projects, issue sources, dev servers, and the deck server's settings. The native Mac app (macOS 26 and later) runs the same session views in a Mac window, with the dev browser and push-to-talk voice, and signs in by pairing with a device that is already signed in. The watch is deliberately smaller: it shows each session's latest reply, answers questions and starts quick sessions. They build with XcodeGen and ship to TestFlight with fastlane; see that README.
+
+## Inbox and settings
+
+The nav at the top (a bottom bar on a phone) reaches every page: Sessions, Inbox, Runs, Schedules, Projects and Settings.
+
+- **Inbox** collects everything waiting on you: questions sessions have asked, and workflow runs blocked on a decision. Answer each one in place, with the same option buttons as the session view; the nav shows how many are waiting.
+- **Settings** holds what applies to the whole deck server rather than to one project: the theme (saved per browser), the voice servers, the watch operator's model, auto-compact, installing deck's skill into each coding agent, signing in another device (the QR code and access requests) and the SSH target for **Open in Zed**. **Projects** keeps per-project setup: paths, templates, issue sources, dev servers and automation.
+
 ## Remote access (Tailscale)
 
-Bind loopback and front it with Tailscale `serve` so the tailnet is the access boundary:
+Bind loopback and front it with a Tailscale Service, so the tailnet is the access boundary and deck gets its own name (`https://deck.<tailnet>.ts.net`):
 
 ```sh
-tailscale serve --bg --https 4818 http://127.0.0.1:4818
-HOST=127.0.0.1 PORT=4818 DECK_NO_AUTH=1 node --env-file=.env build/index.js
+tailscale serve --service=svc:deck --https=443 http://127.0.0.1:4818
+HOST=127.0.0.1 PORT=4818 DECK_NO_AUTH=1 DECK_BASE_URL=https://deck.<tailnet>.ts.net node --env-file=.env build/index.js
 ```
+
+Define the `deck` service in the Tailscale admin console first. Its serve config persists across reboots, and because a service has its own address it never holds port 4818 on the machine, so deck always gets the port it asks for. Set `DECK_BASE_URL` to the service's URL so sign-in QR codes, push links and `/llms.txt` point at it.
 
 `DECK_NO_AUTH=1` drops the token gate, which is redundant once only the tailnet can reach it. Leave it unset to keep token auth.
 
 **Public tunnels: keep the token on.** `DECK_NO_AUTH` is safe only when the network path itself is private (Tailscale with Funnel off, loopback, a LAN, or an authenticating proxy like Cloudflare Access in front). deck can't see the network path, so it treats the resolved host (`DECK_BASE_URL`) as the signal: if no-auth is set but the host isn't obviously private (not loopback, not a `.ts.net` / `100.64.0.0/10` Tailscale address, not RFC1918), deck ignores the flag, keeps the gate on, and logs a warning rather than exposing every route to the open internet. If you reach deck over a raw public tunnel (a Cloudflare/ngrok-style hostname), don't set `DECK_NO_AUTH` at all: authenticate the browser once via `/?token=` or the QR/pairing flow, and have native/programmatic clients send the bearer token per request. (`DECK_NO_AUTH_PUBLIC=1` overrides the guardrail if you really are behind an authenticating proxy, but a plain tunnel is not that.)
 
-The dev server does this for you: `vite dev` runs a small plugin that registers a `tailscale serve` for the lifetime of the process (see `vite.config.ts`). It's on by default; set `DECK_NO_TAILSCALE=1` to opt out (no tailscale installed, native Windows, or you just don't want it), and the dev server runs without touching tailscale.
+`vite dev` leaves tailscale alone unless you set `DECK_TAILSCALE=1`. Then a small plugin (see `vite.config.ts`) registers a node-level `tailscale serve --https=<port>` for the life of the process. Prefer the service above: the node-level entry outlives a reboot, tailscaled then holds the port before the dev server starts, and vite quietly moves to the next one.
 
 ## Install on a phone (PWA)
 
@@ -139,7 +162,7 @@ Prefer your agent harness's own notifications? deck stamps `DECK_SESSION_ID` int
 
 ## Voice mode
 
-Turn on the waveform toggle in a session's composer and deck reads each new reply aloud and lets you talk back. It needs a speech server that speaks the OpenAI audio shapes: `POST /v1/audio/speech` for reading and `POST /v1/audio/transcriptions` for push-to-talk. Point deck at yours under **Projects > Voice mode** (or the `speech` block in `~/.deck/settings.json`); **Detect local server** fills the fields when one is running on `127.0.0.1:17496`. deck proxies both, caches synthesised sentences in `~/.deck/speech/`, and hides the feature when nothing is configured.
+Turn on the waveform toggle in a session's composer and deck reads each new reply aloud and lets you talk back. It needs a speech server that speaks the OpenAI audio shapes: `POST /v1/audio/speech` for reading and `POST /v1/audio/transcriptions` for push-to-talk. Point deck at yours under **Settings > Voice** (or the `speech` block in `~/.deck/settings.json`); **Detect local server** fills the fields when one is running on `127.0.0.1:17496`. deck proxies both, caches synthesised sentences in `~/.deck/speech/`, and hides the feature when nothing is configured.
 
 What it does:
 
@@ -163,11 +186,11 @@ on-device model in a browser, and running one beside deck to serve one tab cost
 more than it was worth. On the phone the thinking is done by Apple's on-device
 model (iOS 26+), so nothing runs on the deck machine and the conversation never
 leaves the device. Siri covers the same ground for one-shot commands; see the
-[deck-ios README](https://github.com/Moravec-Pty-Ltd/deck-ios).
+[iOS app README](apps/ios/README.md).
 
 An Apple Watch still asks deck to think for it: watchOS ships Apple's model
 framework but marks the model itself unavailable. That is the only thing left
-needing the `operator` block in `~/.deck/settings.json` (**Projects > Watch
+needing the `operator` block in `~/.deck/settings.json` (**Settings > Watch
 operator**): `url`, `model`, an optional `provider` (`openai` or `anthropic`,
 otherwise read from the URL), and for a hosted model either `apiKeyFile` (a
 path, so the key lives in `~/.secrets`) or `apiKey`. Pointing it at Claude costs
@@ -198,12 +221,13 @@ Upgrading with an existing `~/.deck/secrets.json` migrates automatically on the 
 - **Projects** are registered paths in `~/.deck/projects.json` that populate the new-session picker. Each can carry a template first-prompt with `[title]`, `[branch]`, `[cwd]` placeholders. The home list groups sessions by project (worktrees fold under their repo); each group has a quick-add button.
 - **Path inputs** autocomplete directories as you type and resolve a leading `~/` to your home directory.
 - **Session sidebar**: the session view has a project-grouped switcher (sticky on desktop, a hamburger drawer on mobile) for jumping between sessions, quick-adding a session to a project, or opening a shell straight into a Claude worktree.
-- **Context window**: the bar above the composer shows how full the session's context is, next to the running cost. The figure comes from the stream itself (the last assistant message's token usage, against the `contextWindow` the model reports), so a 200k and a 1M session are each measured against their own limit. **Compact** there summarises the history and frees the window on demand. Claude compacts on its own too, but only once the window is genuinely full: measured across this machine's transcripts it fires at 999k to 1003k of 1M and takes 50 to 75 seconds, all of it landing at the end of a turn you were waiting on. Turn on **Projects > Auto-compact** and deck compacts earlier, at a percentage you pick (50 to 95, default 80). What it keeps is what a handoff keeps: goal, what is done and in progress, next steps, blockers, key files, decisions, and git state. Claude sessions only.
+- **Context window**: the bar above the composer shows how full the session's context is, next to the running cost. The figure comes from the stream itself (the last assistant message's token usage, against the `contextWindow` the model reports), so a 200k and a 1M session are each measured against their own limit. **Compact** there summarises the history and frees the window on demand. Claude compacts on its own too, but only once the window is genuinely full: measured across this machine's transcripts it fires at 999k to 1003k of 1M and takes 50 to 75 seconds, all of it landing at the end of a turn you were waiting on. Turn on **Settings > Auto-compact** and deck compacts earlier, at a percentage you pick (50 to 95, default 80). What it keeps is what a handoff keeps: goal, what is done and in progress, next steps, blockers, key files, decisions, and git state. Claude sessions only.
 - **Renaming**: click a session's name in its header and type. Enter or clicking away saves, Escape puts the old name back; the iOS app has the same thing under the session menu and on a row swipe. An unregistered tmux terminal has no deck record, so renaming it renames the tmux session itself: its `t_<name>` id moves with it (deck follows the redirect), a `:` becomes `-` because tmux could not target the session otherwise, and a name another terminal already holds is refused.
 - **Questions**: when Claude asks a multiple-choice question it goes through deck's own blocking MCP `ask` tool, not the built-in `AskUserQuestion` (which the headless CLI can only auto-dismiss). deck renders the options as buttons; your pick resolves the still-open tool call and the same turn carries on. The chosen options stay on the card after reload.
 - **Tool calls** render structured: Bash shows the command, Edit/MultiEdit a red/green line diff, Write its content as an added-line diff, TodoWrite the checklist. Bash output and the diffs collapse behind a single shared toggle (collapsed by default); flip one and they all flip. Each result is paired back to its call.
-- **Images**: paste into the Claude composer, pick with the paperclip, or drag-and-drop onto the conversation. They're sent as base64 blocks and shown inline.
-- **Schedules**: a prompt that runs on a clock, for the recurring jobs that want an agent rather than a cron entry ("what changed across these repos this week, and does any of it need me"). Each schedule holds a five-field cron expression read in local time and either a project, where every run starts a fresh session, or one existing session, where every run sends into it so the context carries over. The **Schedules** page (the clock beside Runs) adds and edits them, and previews the next three runs so an expression explains itself. The command palette has *Repeat a prompt on a schedule*, which is how a session you are already in becomes one. Due times are stored rather than matched, so a window missed while deck was down fires once instead of once a minute, and a window missed by over an hour is recorded as skipped rather than caught up. A run is skipped while the previous one is still going.
+- **Images and files**: paste into the composer, pick with the paperclip, or drag-and-drop onto the conversation. Images (PNG, JPEG, GIF, WebP) are sent as base64 blocks and shown inline. Anything else (a PDF, a log, a recording) is shared as a file: deck stores it under `~/.deck/uploads/`, never in the worktree, and sends the session a message naming its path for the agent to read. Up to 10 files a message, 25 MB each; a session's uploads are deleted with it.
+- **Skills**: the composer's skills button, or a `/` at the start of a message, lists the skills installed on this machine (`~/.claude/skills` and the project's `.claude/skills`) with their descriptions; picking one fills in `/skill-name` ready for its arguments.
+- **Schedules**: a prompt that runs on a clock, for the recurring jobs that want an agent rather than a cron entry ("what changed across these repos this week, and does any of it need me"). Each schedule holds a five-field cron expression read in local time and either a project, where every run starts a fresh session, or one existing session, where every run sends into it so the context carries over. The **Schedules** page adds and edits them, and previews the next three runs so an expression explains itself. The command palette has *Repeat a prompt on a schedule*, which is how a session you are already in becomes one. Due times are stored rather than matched, so a window missed while deck was down fires once instead of once a minute, and a window missed by over an hour is recorded as skipped rather than caught up. A run is skipped while the previous one is still going.
 - **Files a message mentions**: when a bubble names a local file by absolute path, `~/`, `file://`, or `./` (a screenshot the agent took, a report it wrote), it shows under the text: images as previews that open full size, with the message's other images a swipe or arrow key away; anything else as a chip that opens or downloads it. Only files inside a registered project or its worktrees are served (`/api/sessions/<id>/files`); a mention of anything else stays plain text. Claude sessions are told (in the system prompt deck appends) to save such files under `.deck/out/` in their working directory, self-ignored from git, and to reply with the absolute path. Other agent kinds get no system prompt from deck, so put the same instruction in the project's `AGENTS.md` for them.
 
 ## Notes
