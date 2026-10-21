@@ -16,6 +16,16 @@ final class TranscriptFollowTests: XCTestCase {
 		XCTAssertEqual(step, .init(isNearBottom: false, pin: false))
 	}
 
+	func testScrollingUpWhileRowsAboveTakeTheirHeightStopsFollowing() {
+		let step = TranscriptFollow.step(from: at(1500), to: at(1400, content: 2400), isNearBottom: true, userScrolling: true)
+		XCTAssertEqual(step, .init(isNearBottom: false, pin: false))
+	}
+
+	func testGrowthWhileTheReaderScrollsNearTheEndNeverPins() {
+		let step = TranscriptFollow.step(from: at(1500), to: at(1550, content: 2100), isNearBottom: true, userScrolling: true)
+		XCTAssertEqual(step, .init(isNearBottom: true, pin: false))
+	}
+
 	func testScrollingUpStopsFollowing() {
 		let step = TranscriptFollow.step(from: at(1500), to: at(1200), isNearBottom: true)
 		XCTAssertEqual(step, .init(isNearBottom: false, pin: false))

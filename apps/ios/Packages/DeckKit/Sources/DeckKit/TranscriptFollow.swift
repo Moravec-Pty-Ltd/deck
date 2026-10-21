@@ -35,8 +35,13 @@ public enum TranscriptFollow {
 	/// height) or the view resizing moves the end, never the reader. And only a
 	/// move up can stop following, because a pin to an end the lazy stack is
 	/// still estimating can land short, and that must not read as the reader
-	/// leaving.
-	public static func step(from old: Geometry, to new: Geometry, isNearBottom: Bool) -> Step {
+	/// leaving. While the reader's finger (or momentum) is moving the view, it
+	/// never pins: scrolling up a lazy stack measures the rows coming into view,
+	/// so the content changes height on every frame of the scroll.
+	public static func step(from old: Geometry, to new: Geometry, isNearBottom: Bool, userScrolling: Bool = false) -> Step {
+		if userScrolling {
+			return Step(isNearBottom: new.distanceToEnd < threshold, pin: false)
+		}
 		if new.contentHeight != old.contentHeight || new.containerHeight != old.containerHeight {
 			return Step(isNearBottom: isNearBottom, pin: isNearBottom)
 		}
