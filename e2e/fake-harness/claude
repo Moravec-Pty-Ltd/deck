@@ -113,8 +113,15 @@ async function respond(prompt) {
 			result(started);
 			return;
 		}
+		const bg = prompt.match(/\[background:(\d+)\]/);
+		if (bg) {
+			// A backgrounded shell that outlives the turn: the live set, then an empty one when it ends.
+			const task = { task_id: `task_${randomUUID()}`, task_type: 'local_bash', description: 'fake background work' };
+			out({ type: 'system', subtype: 'background_tasks_changed', tasks: [task], uuid: randomUUID(), session_id: sessionId });
+			setTimeout(() => out({ type: 'system', subtype: 'background_tasks_changed', tasks: [], uuid: randomUUID(), session_id: sessionId }), Number(bg[1]) * 1000);
+		}
 		const files = [...prompt.matchAll(/\[file:([^\]]+)\]/g)].map((m) => m[1]);
-		const text = files.length ? `Here are the files: ${files.join(' and ')}` : `Fake reply to: ${prompt.replace(/\[\w+\]/g, '').trim()}`;
+		const text = files.length ? `Here are the files: ${files.join(' and ')}` : `Fake reply to: ${prompt.replace(/\[\w+(:\d+)?\]/g, '').trim()}`;
 		streamText(text);
 		result(started, 'success', text);
 	} catch (err) {

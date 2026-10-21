@@ -34,3 +34,4 @@ interrupt ends the turn. Keywords in the prompt pick the reply:
 | `[error]` | an error message and an `error_during_execution` result |
 | `[file:<path>]` | a reply naming each path, so deck previews the files |
 | `[ask]` | calls deck's MCP `ask` tool and replies with the answer |
+| `[background:<seconds>]` | reports a running background task, replies, then reports it finished after that many seconds |
