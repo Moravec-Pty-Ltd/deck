@@ -9,6 +9,9 @@ final class SessionsCompactUITests: XCTestCase {
 	}
 
 	func testSessionPushesOverTheListAndSearchOpensAHit() throws {
+		guard UIDevice.current.userInterfaceIdiom == .phone, !FoldableUITests.isFoldable else {
+			throw XCTSkip("an iPad or an open foldable shows the list beside the session")
+		}
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
 

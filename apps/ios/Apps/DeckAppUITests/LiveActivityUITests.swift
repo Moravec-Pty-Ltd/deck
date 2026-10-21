@@ -36,7 +36,9 @@ final class LiveActivityUITests: XCTestCase {
 
 		// A turn starting while the session is open starts the activity.
 		let sessionId = try VoiceUITests.sessionId(url: url, token: token)
-		try VoiceUITests.send("Count slowly from one to twelve, one number per line, thinking briefly between each.", sessionId: sessionId, url: url, token: token)
+		addTeardownBlock { try? VoiceUITests.stop(sessionId: sessionId, url: url, token: token) }
+		// [slow] holds the fixture's fake claude in its turn until the stop above.
+		try VoiceUITests.send("[slow] Count slowly from one to twelve, one number per line, thinking briefly between each.", sessionId: sessionId, url: url, token: token)
 		sleep(4)
 
 		XCUIDevice.shared.press(.home)

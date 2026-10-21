@@ -1,38 +1,19 @@
 import XCTest
 
-/// Opens a live session and checks the transcript renders agent work (tool
-/// cards), not just chat text. Needs a running deck: see SwipeDeleteUITests.
+/// Opens a session and checks the transcript renders agent work (tool cards),
+/// not just chat text. Needs the fixture's "Yolo badge in session header".
 final class TranscriptUITests: XCTestCase {
 	override func setUp() {
 		continueAfterFailure = false
 	}
 
 	func testSessionTranscriptShowsToolCards() throws {
-		guard let url = ProcessInfo.processInfo.environment["DECK_UITEST_URL"],
-			let token = ProcessInfo.processInfo.environment["DECK_UITEST_TOKEN"]
-		else { throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests") }
-
-		let app = XCUIApplication()
-		app.launch()
-		let manual = app.buttons["Enter details manually"]
-		if manual.waitForExistence(timeout: 5) {
-			manual.tap()
-			let urlField = app.textFields["Server URL"]
-			XCTAssertTrue(urlField.waitForExistence(timeout: 5))
-			urlField.tap()
-			urlField.typeText(url)
-			let tokenField = app.secureTextFields["Token"]
-			tokenField.tap()
-			tokenField.typeText(token)
-			app.buttons["Connect"].tap()
-		}
-		XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20))
-		app.tabBars.buttons["Sessions"].tap()
-
-		let list = app.collectionViews.firstMatch
-		XCTAssertTrue(list.waitForExistence(timeout: 20))
-		let row = list.cells.element(boundBy: 0)
-		XCTAssertTrue(row.waitForExistence(timeout: 20))
+		let app = try FoldableUITests.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
+		// A session that has run tools, not whichever is newest: other tests
+		// leave fresh sessions on top that have only chatted.
+		let row = app.staticTexts["Yolo badge in session header"].firstMatch
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the fixture sessions\n\(app.debugDescription.prefix(3000))")
 		row.tap()
 
 		// Chat (the default) folds runs of tool calls into one summary row;
@@ -50,12 +31,12 @@ final class TranscriptUITests: XCTestCase {
 		}
 		XCTAssertEqual(app.state, .runningForeground)
 
-		// Opens at the newest output, not the top of the recent window.
-		let scrollBar = app.otherElements.matching(
-			NSPredicate(format: "label BEGINSWITH 'Vertical scroll bar'")).firstMatch
-		if scrollBar.waitForExistence(timeout: 5), let value = scrollBar.value as? String {
-			XCTAssertNotEqual(value, "0%", "transcript should open scrolled to the bottom")
-		}
+		// Opens at the newest output, not the top of the recent window. Checked
+		// on the reply itself: this transcript fits on one screen, so a scroll
+		// bar's value says nothing.
+		let newest = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Done. The yolo badge'")).firstMatch
+		XCTAssertTrue(newest.waitForExistence(timeout: 10), "the newest reply is not rendered")
+		XCTAssertTrue(newest.isHittable, "transcript should open at its newest output")
 
 		// A long session offers older history above the recent window; nearing
 		// the top pulls it in on its own, and the transcript must stay readable

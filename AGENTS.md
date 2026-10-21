@@ -74,15 +74,19 @@ cd Packages/DeckKit && swift test              # unit tests
 xcodebuild -project Deck.xcodeproj -scheme DeckApp \
   -destination 'generic/platform=iOS Simulator' \
   -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
+./uitest.sh [device...]                        # UI tests against a seeded throwaway deck
 ./ship.sh [ios|mac|all]                        # TestFlight via fastlane (default ios)
 ```
 
 - `-skipMacroValidation` is required on every command-line build (mlx-swift-lm
   uses Swift macros).
-- UI tests skip unless `TEST_RUNNER_DECK_UITEST_URL` and
-  `TEST_RUNNER_DECK_UITEST_TOKEN` are exported in the shell. Passed as trailing
-  `KEY=value` arguments they become build settings and the tests skip while the
-  run still reports success.
+- Run the UI tests with `./uitest.sh`, never against the live deck. It seeds a
+  temp deck (`uitest/seed.mjs`, the fake claude from `e2e/`), serves it on
+  127.0.0.1:4851 and runs the suite on an iPhone 17 Pro and an iPad simulator
+  (pass names or ids to choose; `"iPhone Duo"` for the foldable tests). It
+  exports `TEST_RUNNER_DECK_UITEST_URL` and `TEST_RUNNER_DECK_UITEST_TOKEN` in
+  the shell: passed as trailing `KEY=value` arguments they become build
+  settings and every test skips while the run still reports success.
 - Use the Homebrew fastlane; `bundle exec` has no installed bundle.
 - `.env` holds the signing team and App Store Connect key settings. It is
   gitignored, and none of its values belong in the repo.
