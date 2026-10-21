@@ -515,6 +515,15 @@ final class ParityTests: XCTestCase {
 	}
 
 	@MainActor
+	func testThePollerCountsA4xxAsConnectedAndA5xxAsNot() async {
+		for (status, reachable) in [(404, true), (409, true), (500, false), (502, false)] {
+			let poller = TerminalPoller(fetch: { _ in throw DeckError.http(status: status, message: "") })
+			await poller.refresh()
+			XCTAssertEqual(poller.connected, reachable, "HTTP \(status)")
+		}
+	}
+
+	@MainActor
 	func testTerminalOverlappingRefreshesKeepTheNewerScreen() async {
 		let gate = AsyncGate()
 		let poller = TerminalPoller(fetch: { tag in

@@ -21,6 +21,7 @@ struct MacComposer: View {
 	@Environment(DeckStore.self) private var store
 	@State private var importing = false
 	@State private var dropTargeted = false
+	@State private var attachFailures = 0
 
 	static let maxImages = 8
 
@@ -40,6 +41,15 @@ struct MacComposer: View {
 				}
 				.frame(height: 60)
 			}
+			if attachFailures > 0 {
+				Text("Couldn't attach that file")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.task(id: attachFailures) {
+						guard (try? await Task.sleep(for: .seconds(4))) != nil else { return }
+						attachFailures = 0
+					}
+			}
 			HStack(alignment: .bottom, spacing: 8) {
 				if store.supports(.quickMessages) { quickMessages }
 				if store.supports(.images) { imageControls }
@@ -51,7 +61,7 @@ struct MacComposer: View {
 		}
 		.padding()
 		.fileImporter(isPresented: $importing, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
-			guard case .success(let urls) = result else { return }
+			guard case .success(let urls) = result else { attachFailures += 1; return }
 			for url in urls { attach(fileAt: url) }
 		}
 		.dropDestination(for: Data.self) { items, _ in
@@ -151,25 +161,30 @@ struct MacComposer: View {
 	private func attach(fileAt url: URL) {
 		let scoped = url.startAccessingSecurityScopedResource()
 		defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-		if let data = try? Data(contentsOf: url) { attach(data) }
+		guard let data = try? Data(contentsOf: url) else { attachFailures += 1; return }
+		attach(data)
 	}
 
 	private func attach(_ providers: [NSItemProvider]) async {
 		for provider in providers {
-			if let data = try? await provider.imageData() { attach(data) }
+			if let data = try? await provider.imageData() { attach(data) } else { attachFailures += 1 }
 		}
 	}
 
 	/// PNG and JPEG go as they are; anything else (TIFF from a screenshot
 	/// paste, HEIC) is re-encoded as PNG, which deck and the model both take.
 	private func attach(_ data: Data) {
-		guard images.count < Self.maxImages, !data.isEmpty else { return }
-		if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
+		guard images.count < Self.maxImages else { return }
+		if data.isEmpty {
+			attachFailures += 1
+		} else if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
 			images.append(DeckImage(mediaType: "image/png", data: data.base64EncodedString()))
 		} else if data.starts(with: [0xFF, 0xD8, 0xFF]) {
 			images.append(DeckImage(mediaType: "image/jpeg", data: data.base64EncodedString()))
 		} else if let image = NSImage(data: data), let png = Self.png(image) {
 			images.append(DeckImage(mediaType: "image/png", data: png.base64EncodedString()))
+		} else {
+			attachFailures += 1
 		}
 	}
 

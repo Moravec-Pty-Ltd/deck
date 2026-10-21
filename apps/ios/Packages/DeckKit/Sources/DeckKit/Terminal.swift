@@ -144,7 +144,7 @@ public final class TerminalPoller {
 			connected = true
 			apply(snapshot)
 		} catch is CancellationError {
-		} catch DeckError.http {
+		} catch DeckError.http(let status, _) where (400..<500).contains(status) {
 			// Reachable but refused (a deleted session, say): keep what is shown.
 			connected = true
 		} catch let error as URLError where error.code == .cancelled {

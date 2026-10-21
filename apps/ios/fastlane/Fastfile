@@ -34,7 +34,9 @@ def bump_build_number(api_key)
       platform: platform,
       initial_build_number: 0
     ).to_i
-  rescue StandardError
+  rescue StandardError => e
+    # A platform with no builds yet throws here; say so in case it's a real failure.
+    UI.important("No TestFlight build number for #{platform}, using 0: #{e.message}")
     0
   end
   increment_build_number(xcodeproj: "Deck.xcodeproj", build_number: latest.max + 1)

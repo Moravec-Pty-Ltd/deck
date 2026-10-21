@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Check } from '@lucide/svelte';
 	import { fetchSettings, patchSettings } from '$lib/settings-patch';
 
@@ -19,7 +20,7 @@
 		}
 	}
 
-	$effect(() => {
+	onMount(() => {
 		void load();
 	});
 

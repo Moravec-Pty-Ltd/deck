@@ -144,7 +144,8 @@ struct MacSignInView: View {
 		case .expired:
 			errorMessage = "The request expired before anyone approved it. Request access to try again."
 		case .unknown, .pending:
-			errorMessage = "deck no longer knows this request. Ask again."
+			// The server prunes an expired request rather than answering .expired.
+			errorMessage = "The request expired or deck no longer knows it. Request access to try again."
 		}
 	}
 

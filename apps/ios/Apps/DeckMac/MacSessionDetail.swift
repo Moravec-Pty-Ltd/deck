@@ -136,7 +136,7 @@ struct MacSessionDetail: View {
 		}
 		.onDisappear {
 			viewModel?.leave()
-			if voice?.enabled != true { OperatorController.shared.resume() }
+			OperatorController.shared.resume()
 		}
 		.alert(
 			"Something went wrong",
