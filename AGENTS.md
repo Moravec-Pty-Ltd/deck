@@ -29,6 +29,7 @@ and flag it.
 pnpm install
 pnpm dev                                      # vite dev server
 pnpm test                                     # vitest
+pnpm test:e2e                                 # playwright, headless chromium (see e2e/README.md)
 pnpm check                                    # svelte-check: types + Svelte diagnostics
 pnpm audit                                    # fallow: dead code, complexity, duplication
 pnpm build && PORT=4818 node build/index.js   # production build
