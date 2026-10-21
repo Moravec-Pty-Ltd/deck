@@ -576,6 +576,7 @@
 		branch = '';
 	}
 
+	// Raw fetch, not agentPost: the 409's code and branch don't survive AgentApiError.
 	async function postCreate(body: Record<string, unknown>): Promise<string> {
 		const res = await fetch('/api/agent/sessions', {
 			method: 'POST',

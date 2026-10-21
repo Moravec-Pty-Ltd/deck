@@ -22,10 +22,10 @@ public struct PairingTicket: Decodable, Equatable, Sendable {
 	/// The longest a client waits for approval before giving up.
 	public static let pollLimit: TimeInterval = 5 * 60
 
-	/// When to stop polling a request made at `start`: the ticket's own expiry,
-	/// or five minutes on, whichever is sooner.
+	/// When to stop polling a request made at `start`. Not the ticket's expiry:
+	/// that is the server's clock, and the server forgets an expired request.
 	public func pollDeadline(from start: Date) -> Date {
-		min(expiry, start.addingTimeInterval(Self.pollLimit))
+		start.addingTimeInterval(Self.pollLimit)
 	}
 }
 

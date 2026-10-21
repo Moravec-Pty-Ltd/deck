@@ -261,6 +261,8 @@ struct StartConfirmSheet: View {
 	@State private var showConflict = false
 	@State private var errorMessage: String?
 	@State private var confirmingExpensive = false
+	/// Start waits for the defaults, which carry the expensive-model list.
+	@State private var defaultsLoaded = false
 
 	private var isReview: Bool { if case .pr = kind { return true }; return false }
 
@@ -503,7 +505,7 @@ struct StartConfirmSheet: View {
 							Task { await start() }
 						}
 					}
-					.disabled(isSubmitting || (worktreeMode == .existing && existingWorktree.isEmpty))
+					.disabled(!defaultsLoaded || isSubmitting || (worktreeMode == .existing && existingWorktree.isEmpty))
 				}
 			}
 			.alert("Expensive model", isPresented: $confirmingExpensive) {
@@ -616,6 +618,7 @@ struct StartConfirmSheet: View {
 		baseBranch = defaults.base ?? ""
 		if firstPrompt.isEmpty { firstPrompt = defaults.firstPrompt ?? "" }
 		seedModel()
+		defaultsLoaded = true
 		if !isReview, store.supports(.git), let client = store.client {
 			branches = (try? await client.branches(repo: project.path)) ?? []
 		}

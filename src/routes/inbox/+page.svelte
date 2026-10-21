@@ -32,7 +32,7 @@
 		} catch (e) {
 			if (n === generation) loadError = e instanceof Error ? e.message : "Couldn't load the inbox";
 		}
-		loaded = true;
+		if (n === generation) loaded = true;
 	}
 
 	async function answer(row: InboxRow, text: string, picks: AnswerPick[]) {

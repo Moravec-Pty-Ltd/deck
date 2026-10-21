@@ -136,6 +136,7 @@ function originOf(url: unknown): string | undefined {
 function guardOperatorPatch(current: DeckSettings['operator'], patch: FieldPatch): FieldPatch {
 	if (typeof patch.url !== 'string' || !current) return patch;
 	const before = originOf(current.url);
+	// No parseable stored url means no known origin, so the stored credential drops too.
 	if (before !== undefined && before === originOf(patch.url)) return patch;
 	const out = { ...patch };
 	for (const key of ['apiKey', 'apiKeyFile'] as const) {
