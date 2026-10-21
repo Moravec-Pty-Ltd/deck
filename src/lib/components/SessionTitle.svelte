@@ -5,6 +5,7 @@
 	// title back. Validated with the same rules the API applies
 	// ($lib/session-title), so a bad title is refused before the round trip.
 	import { MAX_TITLE_LENGTH, parseTitle } from '$lib/session-title';
+	import { AgentApiError, agentPost, sessionPath } from '$lib/agent-api';
 
 	interface Props {
 		id: string;
@@ -52,20 +53,11 @@
 		}
 		saving = true;
 		try {
-			const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/title`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ title: parsed.title })
-			});
-			const body = await res.json().catch(() => null);
-			if (!res.ok) {
-				errorMsg = body?.message ?? 'rename failed';
-				return;
-			}
+			const body = await agentPost<{ id?: string }>(sessionPath(id, 'title'), { title: parsed.title });
 			editing = false;
 			onRenamed(body?.id ?? id);
-		} catch {
-			errorMsg = 'rename failed';
+		} catch (e) {
+			errorMsg = e instanceof AgentApiError ? e.message : 'Rename failed';
 		} finally {
 			saving = false;
 		}

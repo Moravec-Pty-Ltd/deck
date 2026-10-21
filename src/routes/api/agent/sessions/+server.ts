@@ -22,20 +22,19 @@ export const GET: RequestHandler = async () => {
 
 // Fields shared by both modes, passed through to the create pipeline (which
 // validates them; kind defaults to claude for the common orchestrator case).
-// Shells are rejected: the agent API has no way to drive one (message/stop/
-// answer are agent-session endpoints), so creating one here would be a
-// session the contract can't control.
+// A shell is its own mode (see shellBody), never a kind here: work and review
+// both start an agent turn.
 function commonFields(body: Record<string, unknown>): Record<string, unknown> {
 	const { cwd, prompt, kind, title, model, provider, effort, permissionMode } = body;
-	if (kind === 'shell') error(400, 'the agent API drives agent sessions, not shells');
+	if (kind === 'shell') error(400, "start a shell with mode 'shell'");
 	return { cwd, prompt, kind: kind ?? 'claude', title, model, provider, effort, permissionMode };
 }
 
 // Reject an invalid pr up front with the create pipeline's own parser: it
 // would otherwise be dropped silently, yielding a session whose review/merge
 // endpoints can never work.
-function requiredPr(v: unknown): Record<string, unknown> {
-	if (!parsePr(v)) error(400, 'review mode requires a valid pr { repo: "owner/repo", number }');
+function requiredPr(v: unknown, mode = 'review'): Record<string, unknown> {
+	if (!parsePr(v)) error(400, `${mode} mode requires a valid pr { repo: "owner/repo", number }`);
 	return v as Record<string, unknown>;
 }
 
@@ -78,18 +77,50 @@ function reviewBody(body: Record<string, unknown>): Record<string, unknown> {
 	return { ...fields, pr, worktree: { fromPr: pr.number, base: wt.base } };
 }
 
-// 'work': start a session on an issue/prompt, optionally in a fresh worktree.
-function workBody(body: Record<string, unknown>): Record<string, unknown> {
-	const issues = Array.isArray(body.issues) ? body.issues : body.issue ? [body.issue] : undefined;
-	const fields = commonFields(body);
-	if (!hasPrompt(body)) fields.prompt = defaultPrompt(body.cwd, false);
-	return { ...fields, issues, worktree: body.worktree };
+function issuesField(body: Record<string, unknown>): unknown[] | undefined {
+	return Array.isArray(body.issues) ? body.issues : body.issue ? [body.issue] : undefined;
 }
 
+// 'work': start a session on an issue/prompt, optionally in a fresh worktree.
+function workBody(body: Record<string, unknown>): Record<string, unknown> {
+	const fields = commonFields(body);
+	if (!hasPrompt(body)) fields.prompt = defaultPrompt(body.cwd, false);
+	return { ...fields, issues: issuesField(body), worktree: body.worktree };
+}
+
+function optionalString(body: Record<string, unknown>, field: string): string | undefined {
+	const v = body[field];
+	if (v !== undefined && typeof v !== 'string') error(400, `${field} must be a string`);
+	return v;
+}
+
+// 'shell': a deck-managed tmux terminal, driven through /terminal. `command`
+// runs in place of the login shell, the same as the web's New terminal. Issues
+// and a PR are optional context, as on the web (a shell in a PR's worktree).
+function shellBody(body: Record<string, unknown>): Record<string, unknown> {
+	const command = optionalString(body, 'command')?.trim() || undefined;
+	const pr = body.pr === undefined ? undefined : requiredPr(body.pr, 'shell');
+	return {
+		kind: 'shell',
+		cwd: body.cwd,
+		title: optionalString(body, 'title'),
+		command,
+		worktree: body.worktree,
+		issues: issuesField(body),
+		pr
+	};
+}
+
+const MODES: Record<string, (body: Record<string, unknown>) => Record<string, unknown>> = {
+	work: workBody,
+	review: reviewBody,
+	shell: shellBody
+};
+
 function internalBody(body: Record<string, unknown>): Record<string, unknown> {
-	if (body.mode === 'review') return reviewBody(body);
-	if (body.mode === 'work') return workBody(body);
-	error(400, "mode must be 'work' or 'review'");
+	const build = typeof body.mode === 'string' && Object.hasOwn(MODES, body.mode) ? MODES[body.mode] : undefined;
+	if (!build) error(400, "mode must be 'work', 'review' or 'shell'");
+	return build(body);
 }
 
 // An idempotency key (header `Idempotency-Key`, or body `idempotencyKey`) dedupes
@@ -103,7 +134,7 @@ function idempotencyKey(headers: Headers, body: Record<string, unknown>): string
 	return key && key.length <= 200 ? key : null;
 }
 
-// { mode: 'work' | 'review', cwd, ... } -> { id, url }. Both modes map onto
+// { mode: 'work' | 'review' | 'shell', cwd, ... } -> { id, url }. Every mode maps onto
 // the shared create pipeline, so validation and side effects match the UI path.
 // A replayed idempotency key returns the original result with 200 instead of 201.
 export const POST: RequestHandler = async ({ request }) => {

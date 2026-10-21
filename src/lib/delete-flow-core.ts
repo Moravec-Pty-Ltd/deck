@@ -1,4 +1,4 @@
-import type { DeckSession } from './types';
+import type { SessionView } from './session-view';
 
 // Node-free core of the batch delete path, so the sequencing and the failure
 // collection are unit-testable apart from the runes in delete-flow.svelte.ts.
@@ -9,11 +9,11 @@ import type { DeckSession } from './types';
 // because worktree removal shells out to git in the same repo, where concurrent
 // removals contend on the repo lock.
 export async function deleteSequentially(
-	sessions: DeckSession[],
-	del: (s: DeckSession) => Promise<void>,
-	onSettled: (s: DeckSession, done: number) => void
-): Promise<DeckSession[]> {
-	const failed: DeckSession[] = [];
+	sessions: SessionView[],
+	del: (s: SessionView) => Promise<void>,
+	onSettled: (s: SessionView, done: number) => void
+): Promise<SessionView[]> {
+	const failed: SessionView[] = [];
 	let done = 0;
 	for (const s of sessions) {
 		try {
@@ -28,7 +28,7 @@ export async function deleteSequentially(
 
 // The error-alert copy for a finished batch: name the session when one failed,
 // count them against the batch when several did. Null when everything went.
-export function batchErrorMessage(failed: DeckSession[], total: number): string | null {
+export function batchErrorMessage(failed: SessionView[], total: number): string | null {
 	if (failed.length === 0) return null;
 	if (failed.length === 1) return `Couldn't remove "${failed[0].title}".`;
 	return `Couldn't remove ${failed.length} of ${total} sessions.`;

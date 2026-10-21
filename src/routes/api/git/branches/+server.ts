@@ -1,10 +1,5 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { listBranches } from '$lib/server/git';
-import { resolveRepoParam } from '../repo';
+import { branchesRoute } from '$lib/server/project-git';
 
-export const GET: RequestHandler = async ({ url }) => {
-	const dir = await resolveRepoParam(url.searchParams.get('repo'));
-	if (!dir) return json([]);
-	return json(await listBranches(dir));
-};
+// Same handler as the agent API's /api/agent/git/branches; see project-git.ts.
+export const GET: RequestHandler = branchesRoute;

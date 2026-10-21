@@ -1,11 +1,13 @@
 import type {
 	AgentKind,
+	AgentSettingsView,
 	DeckSettings,
 	ModelChoice,
-	ModelProfile,
 	Project,
+	RememberedPicks,
 	SessionKind
 } from '$lib/types';
+import { agentPost, sessionPath } from '$lib/agent-api';
 
 // Claude model shortnames the CLI accepts, offered in the New Session modal and
 // the mid-session model switcher (issue #88). pi/codex take free-text ids.
@@ -16,10 +18,10 @@ export const CLAUDE_MODELS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
 // model plumbing treats it like any other string). Profiles come from the user's
 // ~/.deck settings, so this repo stays free of private-infra ids.
 export function claudeModelOptions(
-	settings: DeckSettings | undefined
+	settings: DeckSettings | AgentSettingsView | undefined
 ): { value: string; label: string }[] {
 	const builtin = CLAUDE_MODELS.map((m) => ({ value: m, label: m }));
-	const profiles = (settings?.modelProfiles ?? []).map((p: ModelProfile) => ({
+	const profiles = (settings?.modelProfiles ?? []).map((p) => ({
 		value: p.id,
 		label: p.label || p.id
 	}));
@@ -59,7 +61,7 @@ const DEFAULT_CLAUDE_MODEL = 'opus';
 export function resolveModelChoice(
 	kind: AgentKind,
 	project: Project | undefined,
-	settings: DeckSettings
+	settings: RememberedPicks
 ): ModelChoice {
 	const remembered = project?.lastModels?.[kind] ?? settings.lastModels?.[kind];
 	if (remembered) return remembered;
@@ -93,28 +95,32 @@ export function modelLabel(model: string | undefined): string {
 // Premium models worth a confirm before you select one, so an accidental pick
 // doesn't run costly work on a top-tier model (issue #134). Extend by editing
 // the list.
-const EXPENSIVE_MODELS = ['fable', 'sol', 'astra'] as const;
+export const EXPENSIVE_MODELS = ['fable', 'sol', 'astra'] as const;
 
 // Whether choosing this model should prompt a cost confirm. Case-insensitive
 // substring match against the model id (and provider, for pi's separate
 // --provider arg), so one entry covers the claude shortname (`fable`), a
-// codex/pi free-text id, and opencode's combined `provider/model`.
-export function isExpensiveModel(model: string | undefined, provider?: string): boolean {
+// codex/pi free-text id, and opencode's combined `provider/model`. `list` is
+// the server's expensiveModels (GET /api/agent/defaults) when a client has it.
+export function isExpensiveModel(
+	model: string | undefined,
+	provider?: string,
+	list: readonly string[] = EXPENSIVE_MODELS
+): boolean {
 	const haystack = `${model ?? ''} ${provider ?? ''}`.toLowerCase();
-	return EXPENSIVE_MODELS.some((m) => haystack.includes(m));
+	return list.some((m) => haystack.includes(m.toLowerCase()));
+}
+
+// A model listing with `expensive: true` on the rows that warrant the confirm,
+// so a client that can't import this module (the native apps, an orchestrator)
+// gets the same answer from GET /api/agent/kinds.
+export function markExpensive(models: ModelChoice[]): (ModelChoice & { expensive?: true })[] {
+	return models.map((m) => (isExpensiveModel(m.model, m.provider) ? { ...m, expensive: true } : m));
 }
 
 // Switch a session's model (shared by the header ModelMenu and the palette's
 // model step). Empty string resets to the default. Throws with the server's
 // message on failure so callers can show it inline.
 export async function switchModel(id: string, model: string): Promise<void> {
-	const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/model`, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ model })
-	});
-	if (!res.ok) {
-		const data = await res.json().catch(() => null);
-		throw new Error(data?.message || 'model switch failed');
-	}
+	await agentPost(sessionPath(id, 'model'), { model });
 }

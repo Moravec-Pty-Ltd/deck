@@ -196,7 +196,7 @@ export function applyOutcome(
 	};
 }
 
-// The POST /api/sessions body a fresh run creates its session from. The agent
+// The create-pipeline body a fresh run creates its session from. The agent
 // half is an automation lane's, so an unset model falls back to the project's
 // remembered pick and then the CLI's default.
 //

@@ -5,6 +5,7 @@
 	import Linked from './Linked.svelte';
 	import Markdown from './Markdown.svelte';
 	import { haptic } from '$lib/haptics';
+	import { createCopier } from '$lib/copy.svelte';
 
 	// A transcript message bubble (user / assistant / live) with a copy affordance:
 	// a hover copy button on desktop, a long-press to copy on touch. Copies the raw
@@ -42,19 +43,12 @@
 
 	const copyable = $derived(!!text.trim());
 
-	let copied = $state(false);
-	let resetTimer: ReturnType<typeof setTimeout> | undefined;
+	const copier = createCopier();
+	const copied = $derived(copier.copied);
 
-	async function doCopy() {
-		if (!copyable || !navigator.clipboard) return;
-		try {
-			await navigator.clipboard.writeText(text);
-		} catch {
-			return; // don't flash the "copied" tick if the write actually failed
-		}
-		copied = true;
-		clearTimeout(resetTimer);
-		resetTimer = setTimeout(() => (copied = false), 1000);
+	function doCopy() {
+		if (!copyable) return;
+		copier.copy(text);
 	}
 
 	// Long-press to copy (touch only; mouse uses the hover button and keeps native
@@ -91,7 +85,7 @@
 
 	$effect(() => () => {
 		clearTimeout(pressTimer);
-		clearTimeout(resetTimer);
+		copier.stop();
 	});
 </script>
 

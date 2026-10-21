@@ -1,0 +1,6 @@
+#!/bin/sh
+# Test-only tmux: always the private deck-e2e socket, never the live server.
+REAL="${DECK_E2E_REAL_TMUX:-/opt/homebrew/bin/tmux}"
+[ -x "$REAL" ] || REAL=/usr/local/bin/tmux
+unset TMUX
+exec "$REAL" -L deck-e2e "$@"

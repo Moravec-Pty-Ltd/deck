@@ -1,7 +1,7 @@
 ---
 name: deck
 description: Drive and monitor deck (the local Claude Code session manager) through its agent API. Use when asked to start deck work sessions or PR-review sessions, send prompts to or stop running deck sessions, check what deck sessions need attention or have finished, answer a blocking deck question, or review/merge a PR through deck.
-version: 3.4.0
+version: 3.5.0
 ---
 
 # deck agent API
@@ -26,6 +26,7 @@ the common operations. Every error is `{ "message": "..." }` with an HTTP status
 ## Discovery (form valid calls with no out-of-band values)
 
 ```sh
+GET /api/agent                       # { version, capabilities } — check a token before relying on a newer route
 GET /api/agent/projects              # [{ path, name, group }] — every valid cwd
 GET /api/agent/kinds                 # installed agent CLIs + models
 GET /api/agent/issues?project=<path> # open issues → create's issue {source,id,url}
@@ -74,6 +75,27 @@ POST /api/agent/sessions/<id>/answer      {"text":"...","askId"?:"...","answers"
 POST /api/agent/sessions/<id>/review      {"decision":"approve|request-changes|comment","body":"..."}
 POST /api/agent/sessions/<id>/merge       {"method":"squash|merge|rebase","deleteBranch":true}
 DELETE /api/agent/sessions/<id>           {"deleteWorktree":true,"deleteBranch":true}
+```
+
+Terminals (tmux shell sessions; check for the `terminal` capability on `GET /api/agent`):
+
+```sh
+POST /api/agent/sessions                  {"mode":"shell","cwd":"/path/to/project","command"?:"npm run dev","title"?:"..."}
+GET  /api/agent/sessions/<id>/terminal    ?lines=500&h=<tag>  # screen text; same h back -> {"unchanged":true}
+POST /api/agent/sessions/<id>/terminal    {"text":"ls","submit"?:true} | {"key":"C-c"}  # named tmux keys only
+```
+
+The token drives every terminal deck lists, including the user's own tmux
+sessions (`managed: false`). Only type into a terminal you started or were asked to.
+
+Projects and settings (the same calls the web and native apps make; change them
+only when the user asked you to):
+
+```sh
+POST   /api/agent/projects                {"path":"/path/to/project","name"?:"..."}  # register; must be under $HOME
+PATCH  /api/agent/projects/config         {"path":"...","template"?:"...","dev"?:{...}}  # only the fields you send change
+GET    /api/agent/settings                # redacted: secrets show as hasApiKey / envKeys, never values
+PATCH  /api/agent/settings                {"autoCompact"?:{...},"speech"?:{...}}  # one block; omitted fields are kept
 ```
 
 ## Workflow runs

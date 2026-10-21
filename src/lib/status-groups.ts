@@ -1,4 +1,4 @@
-import type { DeckSession } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 
 // The attention-first grouping for the sidebar's "By status" view (issue #48):
 // cuts across projects so whatever needs you is up top.
@@ -7,7 +7,7 @@ export type StatusBucketKey = 'needs-attention' | 'active' | 'just-finished' | '
 export interface StatusBucket {
 	key: StatusBucketKey;
 	label: string;
-	sessions: DeckSession[];
+	sessions: SessionView[];
 }
 
 // The dot colour per bucket, shared by the sidebar and homepage headers. Needs
@@ -34,19 +34,19 @@ const BUCKETS: { key: StatusBucketKey; label: string }[] = [
 ];
 
 // A session demands attention when it errored or is blocked on an `ask`.
-function needsAttention(s: DeckSession): boolean {
+function needsAttention(s: SessionView): boolean {
 	return s.status === 'error' || s.awaitingInput === true;
 }
 
 // Split the idle case: a recently-idle session lands in "just finished", older
 // idle sessions in plain "idle".
-function idleBucket(s: DeckSession, now: number): StatusBucketKey {
+function idleBucket(s: SessionView, now: number): StatusBucketKey {
 	return now - s.lastActiveAt <= JUST_FINISHED_MS ? 'just-finished' : 'idle';
 }
 
 // The bucket a session sorts into. Needs-attention wins over the raw status, so an
 // erroring or asking session is pulled out of Active/Idle.
-function bucketOf(s: DeckSession, now: number): StatusBucketKey {
+function bucketOf(s: SessionView, now: number): StatusBucketKey {
 	if (needsAttention(s)) return 'needs-attention';
 	if (s.status === 'running') return 'active';
 	if (s.status === 'dead') return 'dead';
@@ -57,8 +57,8 @@ function bucketOf(s: DeckSession, now: number): StatusBucketKey {
 // first. Empty buckets are dropped so the caller renders only what's populated.
 // `now` is threaded so the just-finished window is testable and re-reads each
 // poll, letting sessions drift into Idle on their own.
-export function bucketSessions(sessions: DeckSession[], now = Date.now()): StatusBucket[] {
-	const byKey = new Map<StatusBucketKey, DeckSession[]>();
+export function bucketSessions(sessions: SessionView[], now = Date.now()): StatusBucket[] {
+	const byKey = new Map<StatusBucketKey, SessionView[]>();
 	for (const s of sessions) {
 		const key = bucketOf(s, now);
 		const list = byKey.get(key);

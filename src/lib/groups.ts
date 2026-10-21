@@ -1,4 +1,5 @@
-import type { DeckSession, Project } from '$lib/types';
+import type { Project } from '$lib/types';
+import type { SessionView } from '$lib/session-view';
 import { deriveGroup } from '$lib/time';
 
 // The bucket for projects with no group, and for sessions whose derived project
@@ -16,7 +17,7 @@ export const HIDDEN = 'Hidden';
 export interface ProjectSubgroup {
 	key: string;
 	label: string;
-	sessions: DeckSession[];
+	sessions: SessionView[];
 	lastActiveAt: number;
 }
 
@@ -50,7 +51,7 @@ function pathGroups(projects: Project[]): Map<string, string> {
 // Cluster sessions into per-project subgroups, most-recently-active first.
 // Shared by the ordinary grouping and by the Hidden section, so a hidden session
 // still sits under the project it belongs to.
-function projectSubgroups(sessions: DeckSession[], projects: Project[]): ProjectSubgroup[] {
+function projectSubgroups(sessions: SessionView[], projects: Project[]): ProjectSubgroup[] {
 	const subMap = new Map<string, ProjectSubgroup>();
 	for (const s of sessions) {
 		const { key, label } = deriveGroup(s.cwd, projects);
@@ -73,7 +74,7 @@ function projectSubgroups(sessions: DeckSession[], projects: Project[]): Project
 //
 // Callers pass the sessions they want listed, so hidden ones are filtered out
 // first (see visibleSessions) and rendered by hiddenGroup instead.
-export function groupSessions(sessions: DeckSession[], projects: Project[]): SessionGroup[] {
+export function groupSessions(sessions: SessionView[], projects: Project[]): SessionGroup[] {
 	const toGroup = pathGroups(projects);
 	const subgroups = projectSubgroups(sessions, projects);
 
@@ -97,7 +98,7 @@ export function groupSessions(sessions: DeckSession[], projects: Project[]): Ses
 // belongs to, rendered below Ungrouped. Null when nothing is hidden, so the
 // section doesn't appear at all until it has something in it. Subgroups are kept
 // so you can see what you hid and unhide a whole project from its header.
-export function hiddenGroup(sessions: DeckSession[], projects: Project[]): SessionGroup | null {
+export function hiddenGroup(sessions: SessionView[], projects: Project[]): SessionGroup | null {
 	const hidden = sessions.filter((s) => s.hidden);
 	if (hidden.length === 0) return null;
 	return {

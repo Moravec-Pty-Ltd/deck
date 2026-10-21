@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Issue, IssueSourceType, Project } from '$lib/types';
+	import type { AgentIssue, IssueSourceType, Project } from '$lib/types';
 	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
 	import { runLoad } from '$lib/picker';
 	import { RefreshCw, TriangleAlert, ChevronRight, Check } from '@lucide/svelte';
@@ -8,7 +8,7 @@
 		project,
 		selected = [],
 		onpick
-	}: { project: Project; selected?: Issue[]; onpick: (issue: Issue) => void } = $props();
+	}: { project: Project; selected?: AgentIssue[]; onpick: (issue: AgentIssue) => void } = $props();
 
 	// Multi-select: `onpick` toggles, and the picker stays open. Selected rows show
 	// a check; the modal owns the set and renders removable chips.
@@ -16,7 +16,7 @@
 
 	type SourceError = { sourceId: string; message: string };
 
-	let issues = $state<Issue[]>([]);
+	let issues = $state<AgentIssue[]>([]);
 	let errors = $state<SourceError[]>([]);
 	let loading = $state(false);
 	let loadError = $state('');
@@ -25,15 +25,15 @@
 
 	// Only offer chips for source types this project actually has.
 	const presentTypes = $derived([...new Set((project.sources ?? []).map((s) => s.type))]);
-	const visible = $derived(filter === 'all' ? issues : issues.filter((i) => i.sourceType === filter));
+	const visible = $derived(filter === 'all' ? issues : issues.filter((i) => i.source === filter));
 
 	// Guards against a slow fetch for a previous project landing after a newer
 	// one and overwriting the current project's issues.
 	const seq = { n: 0 };
 
 	function load(refresh = false) {
-		return runLoad<{ issues?: Issue[]; errors?: SourceError[] }>(
-			`/api/issues?project=${encodeURIComponent(project.path)}${refresh ? '&refresh=1' : ''}`,
+		return runLoad<{ issues?: AgentIssue[]; errors?: SourceError[] }>(
+			`/api/agent/issues?project=${encodeURIComponent(project.path)}${refresh ? '&refresh=1' : ''}`,
 			seq,
 			{
 				loading: (v) => (loading = v),
@@ -55,7 +55,7 @@
 		load();
 	});
 
-	function key(i: Issue) {
+	function key(i: AgentIssue) {
 		return `${i.sourceId}:${i.id}`;
 	}
 </script>
@@ -98,11 +98,11 @@
 							<span class="flex w-4 shrink-0 justify-center">
 								{#if selectedKeys.has(key(issue))}<Check size={14} class="text-primary" />{/if}
 							</span>
-							<span class="badge badge-sm {ISSUE_BADGE[issue.sourceType].cls} shrink-0">
-								{ISSUE_BADGE[issue.sourceType].label}
+							<span class="badge badge-sm {ISSUE_BADGE[issue.source].cls} shrink-0">
+								{ISSUE_BADGE[issue.source].label}
 							</span>
 							<span class="shrink-0 font-mono text-xs opacity-70" title={issue.id}>
-								{shortIssueId(issue.sourceType, issue.id)}
+								{shortIssueId(issue.source, issue.id)}
 							</span>
 							<span class="min-w-0 flex-1 truncate text-sm">{issue.title}</span>
 						</button>
@@ -122,7 +122,7 @@
 							<div class="mb-0.5 font-medium">Blocked by:</div>
 							{#each issue.blockers as b (b.id)}
 								<div class="truncate" title={b.id}>
-									<span class="font-mono">{shortIssueId(issue.sourceType, b.id)}</span>
+									<span class="font-mono">{shortIssueId(issue.source, b.id)}</span>
 									{b.title}
 								</div>
 							{/each}

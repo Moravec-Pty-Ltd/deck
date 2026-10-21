@@ -4,6 +4,8 @@ import {
 	canStop,
 	isInFlight,
 	serverActionPath,
+	serverLogsPath,
+	sessionServersPath,
 	serverAction,
 	fetchServers
 } from './servers-client';
@@ -27,7 +29,12 @@ describe('server state predicates', () => {
 
 describe('serverActionPath', () => {
 	it('encodes the session id and server name', () => {
-		expect(serverActionPath('s 1', 'web/app')).toBe('/api/sessions/s%201/servers/web%2Fapp');
+		expect(serverActionPath('s 1', 'web/app')).toBe('/api/agent/sessions/s%201/servers/web%2Fapp');
+	});
+
+	it('builds the list and logs paths on the agent API', () => {
+		expect(sessionServersPath('s 1')).toBe('/api/agent/sessions/s%201/servers');
+		expect(serverLogsPath('s 1', 'web/app')).toBe('/api/agent/sessions/s%201/servers/web%2Fapp/logs');
 	});
 });
 
@@ -39,7 +46,7 @@ describe('serverAction', () => {
 		vi.stubGlobal('fetch', fetchMock);
 		await serverAction('s1', 'web', 'start');
 		expect(fetchMock).toHaveBeenCalledWith(
-			'/api/sessions/s1/servers/web',
+			'/api/agent/sessions/s1/servers/web',
 			expect.objectContaining({ method: 'POST', body: JSON.stringify({ action: 'start' }) })
 		);
 	});

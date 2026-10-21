@@ -12,12 +12,13 @@ import { parseEffort } from './session-effort-core';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
 import { conflictMessage, isWorktreeFix, worktreeConflict } from '$lib/worktree-conflict';
+import { singleIssueTitle } from '$lib/issues';
 import { expandPlaceholders, contextFromSession } from '$lib/placeholders';
 import { issueContextWarning, issuePromptContext, type PickedIssue } from './issues/prompt';
 
-// The create-session request pipeline, extracted from the POST /api/sessions
-// route so the agent API (POST /api/agent/sessions) can share it. Validation
-// failures throw SvelteKit error()s, which both routes surface as-is.
+// The create-session request pipeline behind POST /api/agent/sessions (which
+// maps each mode onto this internal body), automations and schedules.
+// Validation failures throw SvelteKit error()s, which the route surfaces as-is.
 
 const KINDS: SessionKind[] = [...AGENT_KINDS, 'shell'];
 const ISSUE_SOURCES: IssueSourceType[] = ['github', 'linear', 'clickup'];
@@ -327,7 +328,7 @@ export interface CreateOptions {
 	remember?: boolean;
 }
 
-// The whole POST /api/sessions pipeline for one untyped JSON body: validate,
+// The whole create pipeline for one untyped internal body: validate,
 // resolve the worktree, create the session, and fire the first turn.
 export async function createSessionFromRequest(
 	body: Record<string, unknown>,
@@ -353,7 +354,7 @@ export async function createSessionFromRequest(
 
 	const session = await createSession({
 		kind,
-		title: title || branch,
+		title: title || singleIssueTitle(picked.map((p) => p.issue)) || branch,
 		cwd,
 		model,
 		provider,

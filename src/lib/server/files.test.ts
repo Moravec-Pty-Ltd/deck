@@ -92,6 +92,7 @@ describe('fileHeaders', () => {
 			'content-type': 'image/png',
 			'cache-control': 'private, no-cache',
 			'x-content-type-options': 'nosniff',
+			'accept-ranges': 'bytes',
 			etag: '"9-1700000000123"',
 			'content-disposition': "inline; filename*=UTF-8''a%20b.png"
 		});

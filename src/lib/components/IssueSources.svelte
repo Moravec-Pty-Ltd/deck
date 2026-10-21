@@ -89,7 +89,7 @@
 		resetAdd();
 		addType = type;
 		try {
-			const res = await fetch(`/api/projects/credentials?type=${type}`);
+			const res = await fetch(`/api/agent/credentials?type=${type}`);
 			if (!res.ok) return;
 			credentials = await res.json();
 			credentialId = credentials[0]?.id ?? '';
@@ -99,21 +99,21 @@
 	}
 
 	function credentialLabel(c: Credential): string {
-		return c.projects.length ? `${c.label} — used by ${c.projects.join(', ')}` : c.label;
+		return c.projects.length ? `${c.label} (used by ${c.projects.join(', ')})` : c.label;
 	}
 
 	// Enough to connect: a saved key picked, or one typed in.
 	const hasKey = $derived(!!credentialId || !!apiKey.trim());
 
 	async function meta<T>(type: IssueSourceType, action: string, params: Record<string, unknown> = {}): Promise<T> {
-		const res = await fetch('/api/issues/meta', {
+		const res = await fetch('/api/agent/projects/sources/lookup', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			// One or the other: a saved credential is resolved server-side, so the
 			// browser never holds the key it is reusing.
 			body: JSON.stringify({ type, action, ...(credentialId ? { credentialId } : { apiKey }), ...params })
 		});
-		if (!res.ok) throw new Error((await res.json()).message ?? 'request failed');
+		if (!res.ok) throw new Error((await res.json()).message ?? 'Request failed');
 		return res.json();
 	}
 
@@ -123,7 +123,7 @@
 		try {
 			await fn();
 		} catch (e) {
-			errorMsg = e instanceof Error ? e.message : 'request failed';
+			errorMsg = e instanceof Error ? e.message : 'Request failed';
 		} finally {
 			busy = false;
 		}
@@ -234,12 +234,12 @@
 	}
 
 	async function addSource(body: Record<string, unknown>) {
-		const res = await fetch('/api/projects/sources', {
+		const res = await fetch('/api/agent/projects/sources', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ projectPath: project.path, ...body })
 		});
-		if (!res.ok) throw new Error((await res.json()).message ?? 'failed to add source');
+		if (!res.ok) throw new Error((await res.json()).message ?? "Couldn't add source");
 		resetAdd();
 		onchanged();
 	}
@@ -282,11 +282,11 @@
 	async function remove(s: IssueSource) {
 		await run(async () => {
 			const res = await fetch(
-				`/api/projects/sources?project=${encodeURIComponent(project.path)}&id=${encodeURIComponent(s.id)}`,
+				`/api/agent/projects/sources?project=${encodeURIComponent(project.path)}&id=${encodeURIComponent(s.id)}`,
 				{ method: 'DELETE' }
 			);
 			if (!res.ok) {
-				throw new Error((await res.json().catch(() => ({})))?.message ?? 'failed to remove source');
+				throw new Error((await res.json().catch(() => ({})))?.message ?? "Couldn't remove source");
 			}
 			onchanged();
 		});
@@ -363,8 +363,8 @@
 
 			{#if addType === 'github'}
 				<div class="flex flex-col gap-2 sm:flex-row">
-					<input class="input input-sm flex-1" placeholder="owner" bind:value={ghOwner} />
-					<input class="input input-sm flex-1" placeholder="repo" bind:value={ghRepo} />
+					<input class="input input-sm flex-1" placeholder="Owner" bind:value={ghOwner} />
+					<input class="input input-sm flex-1" placeholder="Repo" bind:value={ghRepo} />
 				</div>
 				<p class="mt-1 text-xs opacity-50">Lists open issues assigned to you (via gh). No API key.</p>
 				<div class="mt-2 flex justify-end">
@@ -378,7 +378,7 @@
 				{:else}
 					<p class="mb-2 text-xs opacity-60">Assignee: {meLabel}</p>
 					<select class="select select-sm w-full" bind:value={linTeamId} onchange={loadLinearStates}>
-						<option value="">pick a team…</option>
+						<option value="">Pick a team…</option>
 						{#each linTeams as t (t.id)}
 							<option value={t.id}>{t.name} ({t.key})</option>
 						{/each}
@@ -412,14 +412,14 @@
 					<p class="mb-2 text-xs opacity-60">Assignee: {meLabel}</p>
 					<div class="space-y-2">
 						<select class="select select-sm w-full" bind:value={cuTeamId} onchange={loadSpaces}>
-							<option value="">pick a workspace…</option>
+							<option value="">Pick a workspace…</option>
 							{#each cuTeams as t (t.id)}
 								<option value={t.id}>{t.name}</option>
 							{/each}
 						</select>
 						{#if cuSpaces.length}
 							<select class="select select-sm w-full" bind:value={cuSpaceId} onchange={loadFoldersAndLists}>
-								<option value="">pick a space…</option>
+								<option value="">Pick a space…</option>
 								{#each cuSpaces as s (s.id)}
 									<option value={s.id}>{s.name}</option>
 								{/each}
@@ -427,7 +427,7 @@
 						{/if}
 						{#if cuSpaceId && cuFolders.length}
 							<select class="select select-sm w-full" bind:value={cuFolderId} onchange={() => run(loadListsInner)}>
-								<option value="">(no folder — lists in the space)</option>
+								<option value="">(No folder: lists in the space)</option>
 								{#each cuFolders as f (f.id)}
 									<option value={f.id}>{f.name}</option>
 								{/each}
@@ -435,7 +435,7 @@
 						{/if}
 						{#if cuSpaceId && cuLists.length}
 							<select class="select select-sm w-full" bind:value={cuListId} onchange={loadStatuses}>
-								<option value="">pick a list…</option>
+								<option value="">Pick a list…</option>
 								{#each cuLists as l (l.id)}
 									<option value={l.id}>{l.name}</option>
 								{/each}

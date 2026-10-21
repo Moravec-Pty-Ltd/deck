@@ -51,7 +51,10 @@ interface Proc {
 // One long-lived `claude --input-format stream-json` process per active session.
 // Messages are written to stdin (queued if a turn is in flight); interrupt is a
 // control_request that ends the current turn but keeps the session alive.
-const procs = new Map<string, Proc>();
+// On globalThis so a dev reload keeps hold of the running processes: a fresh
+// map lost them, and the next message spawned a second claude on the session
+// while the first kept running, each acting on the same conversation.
+const procs = ((globalThis as { __deckProcs?: Map<string, Proc> }).__deckProcs ??= new Map<string, Proc>());
 
 // Survives HMR in dev so SSE subscribers and runners share one bus.
 const g = globalThis as { __deckBus?: EventEmitter };

@@ -33,6 +33,21 @@ describe('saveQuickMessages', () => {
 		expect(saveQuickMessages([{ id: 'a', text: 'x' }])).toEqual([{ id: 'a', text: 'x' }]);
 	});
 
+	it('keeps a projectId through the round-trip and drops a blank one', () => {
+		const saved = saveQuickMessages([
+			{ id: 'a', text: 'x', projectId: '/path/to/project' },
+			{ id: 'b', text: 'y', projectId: '  ' },
+			{ id: 'c', label: 'L', text: 'z' }
+		]);
+		const expected = [
+			{ id: 'a', text: 'x', projectId: '/path/to/project' },
+			{ id: 'b', text: 'y' },
+			{ id: 'c', label: 'L', text: 'z' }
+		];
+		expect(saved).toEqual(expected);
+		expect(listQuickMessages()).toEqual(expected);
+	});
+
 	it('replaces the whole list (PUT semantics)', () => {
 		saveQuickMessages([{ id: 'a', text: 'one' }]);
 		const next = saveQuickMessages([{ id: 'b', text: 'two' }]);

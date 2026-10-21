@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { readJson, writeJson } from './config';
 import { notify } from './push';
+import { publishAgentEvent } from './agent-feed';
 import * as core from './pairing-core';
 
 // Persistence + randomness + the always-on push nudge for the pure pairing state
@@ -56,6 +57,7 @@ export function requestPairing(): PairingRequest {
 	);
 	list = core.addPairing(list, record, now);
 	save(list);
+	publishAgentEvent(record.id, 'pairing', { pairingId: record.id, code, state: 'pending' });
 	if (now - lastPushAt > PUSH_COOLDOWN_MS) {
 		lastPushAt = now;
 		notify({
@@ -92,6 +94,7 @@ export function decidePairing(id: string, approve: boolean): boolean {
 	const pruned = core.prune(loaded, now);
 	const { list, changed } = core.decide(pruned, id, approve ? 'approved' : 'denied', now);
 	if (changed || pruned.length !== loaded.length) save(list);
+	if (changed) publishAgentEvent(id, 'pairing', { pairingId: id, state: approve ? 'approved' : 'denied' });
 	return changed;
 }
 

@@ -1,0 +1,158 @@
+#!/usr/bin/env node
+// A stand-in for the `claude` CLI in stream-json mode, for deck's e2e tests.
+// Keywords in a prompt pick the reply; see e2e/README.md.
+import { randomUUID } from 'node:crypto';
+import { createInterface } from 'node:readline';
+
+const args = process.argv.slice(2);
+if (args.includes('--version')) {
+	console.log('0.0.0 (fake claude)');
+	process.exit(0);
+}
+
+const sessionId = argValue('--resume') ?? randomUUID();
+const mcpConfig = argValue('--mcp-config');
+let turn = null;
+
+function argValue(flag) {
+	const i = args.indexOf(flag);
+	return i >= 0 ? args[i + 1] : undefined;
+}
+
+function out(event) {
+	process.stdout.write(JSON.stringify(event) + '\n');
+}
+
+const usage = { input_tokens: 1200, output_tokens: 40, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+
+function assistant(content) {
+	out({ type: 'assistant', session_id: sessionId, message: { id: `msg_${randomUUID()}`, role: 'assistant', model: 'fake', content, usage } });
+}
+
+function toolResult(id, content) {
+	out({ type: 'user', session_id: sessionId, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content, is_error: false }] } });
+}
+
+function streamText(text) {
+	out({ type: 'stream_event', session_id: sessionId, event: { type: 'message_start' } });
+	for (const word of text.split(/(?<= )/)) {
+		out({ type: 'stream_event', session_id: sessionId, event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: word } } });
+	}
+	assistant([{ type: 'text', text }]);
+}
+
+function result(started, subtype = 'success', text = '') {
+	out({
+		type: 'result',
+		subtype,
+		is_error: subtype !== 'success',
+		session_id: sessionId,
+		duration_ms: Date.now() - started,
+		num_turns: 1,
+		total_cost_usd: 0.0123,
+		usage,
+		result: text
+	});
+}
+
+// Calls deck's MCP `ask` tool over Streamable HTTP and returns the answer text.
+async function mcpAsk(questions) {
+	const url = JSON.parse(mcpConfig).mcpServers.deck.url;
+	let sid;
+	const rpc = async (body) => {
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				accept: 'application/json, text/event-stream',
+				...(sid ? { 'mcp-session-id': sid } : {})
+			},
+			body: JSON.stringify(body)
+		});
+		sid ??= res.headers.get('mcp-session-id') ?? undefined;
+		const raw = await res.text();
+		const data = raw.split('\n').find((l) => l.startsWith('data:'));
+		return data ? JSON.parse(data.slice(5)) : raw ? JSON.parse(raw) : null;
+	};
+	await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'fake-claude', version: '0' } } });
+	await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' });
+	const reply = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'ask', arguments: { questions } } });
+	if (reply?.error || reply?.result?.isError) throw new Error(reply.error?.message ?? 'ask failed');
+	return reply.result.content[0].text;
+}
+
+async function respond(prompt) {
+	const started = Date.now();
+	const t = { interrupted: false, wake: () => {} };
+	turn = t;
+	try {
+		if (prompt.includes('[error]')) {
+			streamText('Something went wrong (fake error).');
+			result(started, 'error_during_execution');
+			return;
+		}
+		if (prompt.includes('[slow]')) {
+			out({ type: 'stream_event', session_id: sessionId, event: { type: 'message_start' } });
+			// Waits until interrupted; a test stops it with the Interrupt button.
+			await new Promise((resolve) => (t.wake = resolve));
+			result(started, 'error_during_execution');
+			return;
+		}
+		if (prompt.includes('[tool]')) {
+			const id = `toolu_${randomUUID()}`;
+			assistant([{ type: 'tool_use', id, name: 'Bash', input: { command: 'echo fake', description: 'Echo a fake line' } }]);
+			toolResult(id, 'fake tool output');
+		}
+		if (prompt.includes('[ask]')) {
+			const id = `toolu_${randomUUID()}`;
+			const questions = [{ question: 'Which colour?', header: 'Colour', multiSelect: false, options: [{ label: 'Red' }, { label: 'Blue' }] }];
+			assistant([{ type: 'tool_use', id, name: 'mcp__deck__ask', input: { questions } }]);
+			const answer = await mcpAsk(questions);
+			toolResult(id, answer);
+			streamText(`You answered: ${answer}`);
+			result(started);
+			return;
+		}
+		const files = [...prompt.matchAll(/\[file:([^\]]+)\]/g)].map((m) => m[1]);
+		const text = files.length ? `Here are the files: ${files.join(' and ')}` : `Fake reply to: ${prompt.replace(/\[\w+\]/g, '').trim()}`;
+		streamText(text);
+		result(started, 'success', text);
+	} catch (err) {
+		if (!t.interrupted) {
+			streamText(`fake harness failed: ${err.message}`);
+			result(started, 'error_during_execution');
+		}
+	} finally {
+		if (turn === t) turn = null;
+	}
+}
+
+function promptText(content) {
+	if (typeof content === 'string') return content;
+	return (content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+}
+
+out({ type: 'system', subtype: 'init', session_id: sessionId, cwd: process.cwd(), model: 'fake', tools: ['Bash'], mcp_servers: [{ name: 'deck', status: 'connected' }] });
+
+// Messages arriving mid-turn queue behind it, like the real CLI.
+let queue = Promise.resolve();
+createInterface({ input: process.stdin }).on('line', (line) => {
+	let msg;
+	try {
+		msg = JSON.parse(line);
+	} catch {
+		return;
+	}
+	if (msg.type === 'control_request') {
+		if (msg.request?.subtype === 'interrupt' && turn) {
+			turn.interrupted = true;
+			turn.wake();
+		}
+		out({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id } });
+		return;
+	}
+	if (msg.type === 'user') {
+		out({ ...msg, session_id: sessionId });
+		queue = queue.then(() => respond(promptText(msg.message?.content)));
+	}
+});

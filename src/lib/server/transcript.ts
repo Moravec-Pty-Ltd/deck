@@ -6,6 +6,7 @@ import { emptyContext, foldContext, type ContextUsage } from '$lib/context-core'
 import { projectTranscript, type TranscriptMessage } from '$lib/agent-transcript-core';
 import { isAskTool } from '$lib/transcript-groups';
 import { whenDrained } from './transcript-writer';
+import { RANGE_MAX } from '$lib/transcript-range-core';
 
 // Transcript files are append-only JSONL: one JSON event per line, written by
 // appendEvent. The live view only ever needs the tail (initial snapshot) or a
@@ -405,11 +406,6 @@ export function snapshotFrames(id: string): { seq: number; n: number; data: stri
 		frames.push({ seq: i, n, data: payload.slice(i * CHUNK, (i + 1) * CHUNK) });
 	return frames;
 }
-
-// Upper bound on a single back-scroll request, well above the client's
-// HYDRATE_CHUNK (250). Without it a crafted ?limit= could read and parse from
-// index 0 on the request thread, the unbounded read this module exists to avoid.
-const RANGE_MAX = 1000;
 
 // A contiguous older slice [start, end) for lazy back-scroll, oldest-first.
 export function readTranscriptRange(

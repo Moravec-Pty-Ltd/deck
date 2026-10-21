@@ -192,8 +192,9 @@ describe('operatorChat', () => {
 
 describe('providers', () => {
 	it('talks to Claude when the settings say so, and reads the key from a file', async () => {
-		const keyFile = path.join(dataDir, 'operator-key');
-		fs.writeFileSync(keyFile, 'ANTHROPIC_API_KEY=sk-test-123\n');
+		fs.mkdirSync(path.join(home, '.secrets'), { recursive: true });
+		const keyFile = '~/.secrets/operator-key';
+		fs.writeFileSync(path.join(home, '.secrets', 'operator-key'), 'ANTHROPIC_API_KEY=sk-test-123\n');
 		settings = { operator: { url: 'https://api.anthropic.com/v1', model: 'claude-haiku-4-5-20251001', provider: 'anthropic', apiKeyFile: keyFile } };
 		anthropic = true;
 		script = [{ content: 'All quiet.' }];
@@ -203,6 +204,15 @@ describe('providers', () => {
 		expect(request.url).toBe('https://api.anthropic.com/v1/messages');
 		expect(request.headers?.['x-api-key']).toBe('sk-test-123');
 		expect(request.system).toContain("deck's voice operator");
+	});
+
+	it('refuses to read a key file outside ~/.secrets', async () => {
+		const keyFile = path.join(dataDir, 'operator-key');
+		fs.writeFileSync(keyFile, 'sk-elsewhere\n');
+		settings = { operator: { url: 'https://model.test/v1', model: 'm', apiKeyFile: keyFile } };
+		const before = requests.length;
+		await expect(operatorChat('Anything?')).rejects.toMatchObject({ status: 400, body: { message: expect.stringContaining('~/.secrets/') } });
+		expect(requests.length).toBe(before);
 	});
 });
 

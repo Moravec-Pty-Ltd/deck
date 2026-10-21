@@ -1,6 +1,13 @@
 <script lang="ts">
 	import type { DeckSession, ServerRuntime, ServerState, SetupStepProgress } from '$lib/types';
-	import { canStart, canStop, isInFlight } from '$lib/servers-client';
+	import {
+		canStart,
+		canStop,
+		isInFlight,
+		serverActionPath,
+		serverLogsPath,
+		sessionServersPath
+	} from '$lib/servers-client';
 	import ShellView from './ShellView.svelte';
 	import ServerChip from './ServerChip.svelte';
 	import {
@@ -40,12 +47,11 @@
 
 	async function load() {
 		const my = ++token;
-		const url = `/api/sessions/${encodeURIComponent(session.id)}/servers`;
 		let res: Response;
 		try {
-			res = await fetch(url);
+			res = await fetch(sessionServersPath(session.id));
 		} catch (e) {
-			return fail(my, e instanceof Error ? e.message : 'failed to load servers');
+			return fail(my, e instanceof Error ? e.message : "Couldn't load servers");
 		}
 		if (my !== token) return;
 		if (!res.ok) return fail(my, `request failed (${res.status})`);
@@ -66,16 +72,13 @@
 	async function post(name: string, body: Record<string, unknown>) {
 		busy = { ...busy, [name]: true };
 		try {
-			const res = await fetch(
-				`/api/sessions/${encodeURIComponent(session.id)}/servers/${encodeURIComponent(name)}`,
-				{
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(body)
-				}
-			);
+			const res = await fetch(serverActionPath(session.id, name), {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(body)
+			});
 			if (!res.ok) {
-				errMsg = (await res.json().catch(() => ({})))?.message ?? 'action failed';
+				errMsg = (await res.json().catch(() => ({})))?.message ?? 'Action failed';
 			} else {
 				errMsg = null;
 			}
@@ -95,10 +98,6 @@
 
 	function toggleLogs(name: string) {
 		openLogs = { ...openLogs, [name]: !openLogs[name] };
-	}
-
-	function logsPath(name: string) {
-		return `/api/sessions/${encodeURIComponent(session.id)}/servers/${encodeURIComponent(name)}/logs`;
 	}
 
 	function stepIcon(step: SetupStepProgress) {
@@ -240,7 +239,7 @@
 					</button>
 					{#if openLogs[s.name]}
 						<div class="mt-1 h-72">
-							<ShellView {session} snapshotPath={logsPath(s.name)} readonly />
+							<ShellView {session} snapshotPath={serverLogsPath(session.id, s.name)} readonly />
 						</div>
 					{/if}
 				</div>

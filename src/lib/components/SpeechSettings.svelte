@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { patchSettings } from '$lib/settings-patch';
-	import { AudioLines, Check, Search } from '@lucide/svelte';
+	import { Check, Search } from '@lucide/svelte';
 
 	// App-wide panel: where voice mode's speech servers are. Both are
 	// OpenAI-shaped endpoints deck proxies; the local chatterbox server offers
@@ -19,8 +19,8 @@
 
 	async function load() {
 		try {
-			const res = await fetch('/api/speech');
-			if (!res.ok) throw new Error('failed to load speech settings');
+			const res = await fetch('/api/agent/speech');
+			if (!res.ok) throw new Error("Couldn't load speech settings");
 			const body = await res.json();
 			ttsUrl = body.config?.ttsUrl ?? '';
 			sttUrl = body.config?.sttUrl ?? '';
@@ -28,7 +28,7 @@
 			voices = body.voices ?? [];
 			status = { tts: body.tts, stt: body.stt };
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'failed to load speech settings';
+			message = e instanceof Error ? e.message : "Couldn't load speech settings";
 		} finally {
 			loaded = true;
 		}
@@ -42,7 +42,7 @@
 		busy = true;
 		message = '';
 		try {
-			const res = await fetch('/api/speech/detect', { method: 'POST' });
+			const res = await fetch('/api/agent/settings/speech/detect', { method: 'POST' });
 			const body = await res.json();
 			if (!body.found) {
 				message = 'No speech server answered on 127.0.0.1:17496.';
@@ -65,16 +65,11 @@
 		message = '';
 		saved = false;
 		try {
-			const speech = {
-				ttsUrl: ttsUrl.trim() || undefined,
-				sttUrl: sttUrl.trim() || undefined,
-				voice: voice.trim() || undefined
-			};
-			await patchSettings('speech', speech);
+			await patchSettings({ speech: { ttsUrl: ttsUrl.trim(), sttUrl: sttUrl.trim(), voice: voice.trim() } });
 			saved = true;
 			await load();
 		} catch (e) {
-			message = e instanceof Error ? e.message : 'save failed';
+			message = e instanceof Error ? e.message : 'Save failed';
 		} finally {
 			busy = false;
 		}
@@ -83,17 +78,15 @@
 
 <div class="card border border-base-300 bg-base-100">
 	<div class="card-body gap-3 p-4">
-		<h2 class="m-0 flex items-center gap-2 text-base font-semibold">
-			<AudioLines size={16} /> Voice mode
-			{#if status}
-				<span class="badge badge-sm {status.tts ? 'badge-success' : 'badge-ghost'}">read {status.tts ? 'on' : 'off'}</span>
-				<span class="badge badge-sm {status.stt ? 'badge-success' : 'badge-ghost'}">talk {status.stt ? 'on' : 'off'}</span>
-			{/if}
-		</h2>
-		<p class="m-0 text-sm opacity-70">
-			Reads a session's replies aloud and sends what you say. Point it at an OpenAI-shaped speech
-			server (POST /v1/audio/speech and /v1/audio/transcriptions); deck proxies both so phones and
-			browsers never reach the server directly.
+		{#if status}
+			<div class="flex flex-wrap items-center gap-2">
+				<span class="badge badge-sm {status.tts ? 'badge-success' : 'badge-ghost'}">Read aloud {status.tts ? 'on' : 'off'}</span>
+				<span class="badge badge-sm {status.stt ? 'badge-success' : 'badge-ghost'}">Dictation {status.stt ? 'on' : 'off'}</span>
+			</div>
+		{/if}
+		<p class="m-0 text-xs opacity-70">
+			Any OpenAI-shaped speech server (POST /v1/audio/speech and /v1/audio/transcriptions). deck
+			proxies both, so phones and browsers never reach the server directly.
 		</p>
 		{#if loaded}
 			<div class="grid gap-2 sm:grid-cols-2">
@@ -114,7 +107,7 @@
 							{/each}
 						</select>
 					{:else}
-						<input class="input input-sm w-full" placeholder="server default" bind:value={voice} />
+						<input class="input input-sm w-full" placeholder="Server default" bind:value={voice} />
 					{/if}
 				</label>
 			</div>
@@ -124,7 +117,7 @@
 				</button>
 				<button class="btn btn-sm btn-primary" onclick={save} disabled={busy}>Save</button>
 				{#if saved}
-					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> saved</span>
+					<span class="flex items-center gap-1 text-xs text-success"><Check size={14} /> Saved</span>
 				{/if}
 				{#if message}
 					<span class="text-xs opacity-70">{message}</span>
