@@ -148,14 +148,14 @@ describe('deriveTopic', () => {
 describe('toApnsPayload', () => {
 	it('maps all fields when present', () => {
 		expect(toApnsPayload({ title: 'Hi', body: 'there', url: '/s/1', tag: 'deck-ask' })).toEqual({
-			aps: { alert: { title: 'Hi', body: 'there' }, sound: 'default', 'thread-id': 'deck-ask' },
+			aps: { alert: { title: 'Hi', body: 'there' }, sound: 'deck-attention.caf', 'thread-id': 'deck-ask' },
 			url: '/s/1'
 		});
 	});
 
 	it('omits absent optional fields rather than sending them as null/undefined', () => {
 		const result = toApnsPayload({ title: 'Hi' });
-		expect(result).toEqual({ aps: { alert: { title: 'Hi' }, sound: 'default' } });
+		expect(result).toEqual({ aps: { alert: { title: 'Hi' }, sound: 'deck-attention.caf' } });
 		expect('body' in result.aps.alert).toBe(false);
 		expect('thread-id' in result.aps).toBe(false);
 		expect('url' in result).toBe(false);
