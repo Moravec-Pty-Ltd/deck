@@ -29,7 +29,7 @@ Siri drives the same actions through App Intents.
   - `DeckLocalModel`: the operator's downloaded models (the shortlist, the
     download, and the MLX bridge to FoundationModels). Separate for the same
     reason: only the app runs a model, and MLX is a large dependency
-- `Apps/DeckApp` - iOS app (iOS 18+): sessions, inbox of blocking questions,
+- `Apps/DeckApp` - iOS app (iOS 26+): sessions, inbox of blocking questions,
   start-from-issue/PR, schedules, QR onboarding, APNs registration
 - `Apps/DeckWatch` - independent-capable watch app (watchOS 11+): inbox with
   one-tap answers, quick-start from issues/PRs, session status, its own APNs
@@ -421,7 +421,7 @@ the clipboard rather than a file reference.
 
 ### The Mac app
 
-`DeckMac` is a native SwiftUI app for macOS 15 and later, not a Catalyst build
+`DeckMac` is a native SwiftUI app for macOS 26 and later, not a Catalyst build
 of the iPad app. It shares the bundle id `tech.moravec.deck` with the iOS app,
 so one App Store record carries both, and links DeckKit, DeckUI (the shared
 session row, tool cards, question card and terminal view) and DeckIntents, so
