@@ -35,6 +35,26 @@ function toolResult(id, content, parent = null) {
 	out({ type: 'user', session_id: sessionId, parent_tool_use_id: parent, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content, is_error: false }] } });
 }
 
+function system(subtype, fields) {
+	out({ type: 'system', subtype, session_id: sessionId, ...fields });
+}
+
+// A background subagent: its call returns a launch receipt at once, it reports
+// progress through claude's task events, and its answer lands in
+// task_notification a few seconds after the turn has ended.
+function backgroundAgent() {
+	const agent = `toolu_${randomUUID()}`;
+	const task_id = `task_${randomUUID()}`;
+	assistant([{ type: 'tool_use', id: agent, name: 'Agent', input: { description: 'Watch the fake build', subagent_type: 'general-purpose', run_in_background: true, prompt: 'Watch it.' } }]);
+	system('task_started', { task_id, tool_use_id: agent, task_type: 'local_agent', description: 'Watch the fake build', subagent_type: 'general-purpose', is_backgrounded: true });
+	toolResult(agent, 'Async agent launched successfully.');
+	system('task_progress', { task_id, description: 'Reading the fake log', usage: { total_tokens: 1500, tool_uses: 1, duration_ms: 1000 } });
+	setTimeout(() => {
+		assistant([{ type: 'text', text: 'Background agent checking' }], agent);
+		system('task_notification', { task_id, status: 'completed', summary: 'Background report: build is green', usage: { total_tokens: 3000, tool_uses: 2, duration_ms: 4000 } });
+	}, 4000);
+}
+
 function streamText(text) {
 	out({ type: 'stream_event', session_id: sessionId, event: { type: 'message_start' } });
 	for (const word of text.split(/(?<= )/)) {
@@ -114,6 +134,7 @@ async function respond(prompt) {
 			toolResult(step, 'README.md', agent);
 			toolResult(agent, 'Subagent report: one file');
 		}
+		if (prompt.includes('[background]')) backgroundAgent();
 		if (prompt.includes('[ask]')) {
 			const id = `toolu_${randomUUID()}`;
 			const questions = [{ question: 'Which colour?', header: 'Colour', multiSelect: false, options: [{ label: 'Red' }, { label: 'Blue' }] }];

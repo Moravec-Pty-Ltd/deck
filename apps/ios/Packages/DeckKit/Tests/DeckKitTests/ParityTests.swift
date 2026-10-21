@@ -699,6 +699,69 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(sent.first?.accept, "text/event-stream")
 	}
 
+	func testTheStreamDropsSubagentDeltasAndPassesExit() async {
+		let frames = [
+			#"event: transcript"#,
+			#"data: {"type":"stream_event","parent_tool_use_id":"a1","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"sub"}}}"#,
+			"",
+			#"event: transcript"#,
+			#"data: {"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"main"}}}"#,
+			"",
+			"event: exit",
+			"data: 1",
+			"",
+			""
+		].joined(separator: "\n")
+		var seen: [String] = []
+		_ = await requests(reply: frames) { client in
+			for try await event in client.sessionEventStream(sessionId: "example") {
+				switch event {
+				case .textDelta(let text): seen.append(text)
+				case .exit: seen.append("exit")
+				default: break
+				}
+			}
+		}
+		XCTAssertEqual(seen, ["main", "exit"])
+	}
+
+	func testSubagentsUseTheAgentRouteAndDecodeTheServerFold() async throws {
+		let reply = #"""
+		{"tasks":{"t1":{"taskId":"t1","toolUseId":"a1","callIndex":3,"description":"Watch the build","subagentType":"general-purpose",
+		"background":true,"status":"running","activity":"Reading a log","tokens":1500,"toolUses":1,"durationMs":1000,"summary":"","listed":false},
+		"t2":{"taskId":"t2","toolUseId":"a2","callIndex":null,"description":"","subagentType":"Explore","background":false,
+		"status":"completed","activity":"","tokens":0,"toolUses":0,"durationMs":0,"summary":"","reportOmitted":true,"listed":false}},
+		"byCall":{"a1":"t1","a2":"t2"},"callIndex":{"a1":3}}
+		"""#
+		var agents: SubagentsState?
+		let sent = await requests(reply: reply) { agents = try await $0.sessionAgents(sessionId: "example") }
+		assertShape(sent, "GET", "/api/agent/sessions/example/agents")
+		XCTAssertEqual(agents?.agent(forCall: "a1")?.activity, "Reading a log")
+		XCTAssertEqual(agents?.agent(forCall: "a2")?.status, .completed)
+		XCTAssertEqual(agents?.running.map(\.taskId), ["t1"])
+		XCTAssertNil(agents?.agent(forCall: "other"))
+		XCTAssertEqual(agents?.agent(forCall: "a1")?.progress, "1s · 1 tool · 2k tokens")
+	}
+
+	/// The same figures as the web's formatDuration.
+	func testSubagentDurationsReadLikeTheWeb() {
+		XCTAssertEqual(SubagentState.duration(42_000), "42s")
+		XCTAssertEqual(SubagentState.duration(86_000), "1m 26s")
+		XCTAssertEqual(SubagentState.duration(7_500_000), "2h 5m")
+		XCTAssertEqual(SubagentState(taskId: "t", toolUseId: "a", status: .completed).progress, "")
+	}
+
+	func testOnlyTaskEventsAndTurnEndsRefetchSubagents() {
+		func event(_ json: String) -> JSONValue { JSONValue.parse(Data(json.utf8))! }
+		XCTAssertTrue(SubagentsState.affects(event(#"{"type":"system","subtype":"task_progress"}"#)))
+		XCTAssertTrue(SubagentsState.affects(event(#"{"type":"system","subtype":"background_tasks_changed"}"#)))
+		XCTAssertTrue(SubagentsState.affects(event(#"{"type":"result"}"#)))
+		XCTAssertTrue(SubagentsState.affects(event(#"{"type":"deck.restart"}"#)))
+		XCTAssertFalse(SubagentsState.affects(event(#"{"type":"system","subtype":"init"}"#)))
+		XCTAssertFalse(SubagentsState.affects(event(#"{"type":"assistant","parent_tool_use_id":"a1"}"#)))
+		XCTAssertTrue(ServerInfo(version: nil, capabilities: ["subagents"]).supports(.subagents))
+	}
+
 	// MARK: - Server settings
 
 	private static let redactedSettings = #"""

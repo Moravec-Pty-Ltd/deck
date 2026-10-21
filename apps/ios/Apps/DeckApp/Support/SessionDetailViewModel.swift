@@ -16,6 +16,10 @@ final class SessionDetailViewModel {
 	var items: [TranscriptItem] = []
 	/// A subagent's items, by the Agent call that launched it; kept out of `items`.
 	var steps: [String: [TranscriptItem]] = [:]
+	/// The session's subagents (status, activity, reports), from the server.
+	private(set) var agents = SubagentsState()
+	private var agentsFetch: Task<Void, Never>?
+	private var agentsStale = false
 	var streamingText = ""
 	var isLoadingTranscript = false
 	var didLoadOnce = false
@@ -113,6 +117,7 @@ final class SessionDetailViewModel {
 					switch event {
 					case .snapshot(let events, let start):
 						applySnapshot(events, start: start)
+						refreshAgents()
 					case .transcript(let event):
 						// An assistant message ends the turn the deltas were
 						// building, and arrives with the same text.
@@ -120,10 +125,13 @@ final class SessionDetailViewModel {
 						builder.append(event)
 						showItems()
 						voice?.hear(event)
+						if SubagentsState.affects(event) { refreshAgents() }
 					case .turnStart:
 						streamingText = ""
 					case .textDelta(let text):
 						streamingText += text
+					case .exit:
+						refreshAgents()
 					case .status:
 						break
 					}
@@ -138,6 +146,24 @@ final class SessionDetailViewModel {
 			isLoadingTranscript = false
 			streamingText = ""
 			try? await Task.sleep(for: .seconds(3))
+		}
+	}
+
+	/// Re-read the server's fold of the session's subagents. Task events can come
+	/// in bursts, so a change landing mid-fetch costs one more fetch, not one each.
+	private func refreshAgents() {
+		guard store.supports(.subagents), let client = store.client else { return }
+		guard agentsFetch == nil else {
+			agentsStale = true
+			return
+		}
+		let id = sessionId
+		agentsFetch = Task { [weak self] in
+			repeat {
+				self?.agentsStale = false
+				if let fresh = try? await client.sessionAgents(sessionId: id), !Task.isCancelled { self?.agents = fresh }
+			} while self?.agentsStale == true && !Task.isCancelled
+			self?.agentsFetch = nil
 		}
 	}
 
