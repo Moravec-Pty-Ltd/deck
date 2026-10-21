@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { DeckSession } from '$lib/types';
+import { pinEnv } from './test-env';
 
 // Point the store at a throwaway data dir before importing, so listProjects
 // reads our fixture projects.json (the same pattern as confine.test.ts).
-const prevDeckData = process.env.DECK_DATA;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-files-data-'));
-process.env.DECK_DATA = dataDir;
+const restoreEnv = pinEnv({ DECK_DATA: dataDir });
 
 const mkrealdir = (p: string) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 const proj = mkrealdir('deck-files-proj-');
@@ -26,8 +26,7 @@ const { listSessionDir } = await import('./file-browser');
 const session = (cwd: string) => ({ id: 'c_test', kind: 'claude', title: 't', cwd }) as unknown as DeckSession;
 
 afterAll(() => {
-	if (prevDeckData === undefined) delete process.env.DECK_DATA;
-	else process.env.DECK_DATA = prevDeckData;
+	restoreEnv();
 	for (const d of [dataDir, proj, outside]) fs.rmSync(d, { recursive: true, force: true });
 });
 
