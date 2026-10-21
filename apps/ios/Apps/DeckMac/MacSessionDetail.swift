@@ -54,6 +54,7 @@ struct MacSessionDetail: View {
 			} else if let viewModel {
 				prHeader(viewModel)
 				transcript(viewModel)
+				AgentsBar(agents: viewModel.agents.running)
 				if let voice, voice.enabled {
 					Divider()
 					VoiceBar(voice: voice)
@@ -322,8 +323,10 @@ private struct MacTranscriptRow: View {
 			.foregroundStyle(.secondary)
 		case .tool(let call):
 			ToolCallCard(call: call)
-			if let steps = viewModel.steps[call.id] {
-				SubagentSteps(steps: steps) { MacTranscriptRow(item: $0, viewModel: viewModel) }
+			let steps = viewModel.steps[call.id] ?? []
+			let agent = viewModel.agents.agent(forCall: call.id)
+			if !steps.isEmpty || agent != nil {
+				SubagentSteps(steps: steps, agent: agent) { MacTranscriptRow(item: $0, viewModel: viewModel) }
 			}
 		case .notice(_, let text, let level):
 			Text(text)

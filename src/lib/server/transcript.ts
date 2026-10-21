@@ -5,6 +5,7 @@ import { emptyCostSummary, foldResult, type CostSummary } from '$lib/session-cos
 import { emptyContext, foldContext, type ContextUsage } from '$lib/context-core';
 import { projectTranscript, type TranscriptMessage } from '$lib/agent-transcript-core';
 import { isAskTool } from '$lib/transcript-groups';
+import { emptyAgents, foldAgents, mayAffectAgents, stopAll, withoutOldReports, type AgentsState } from '$lib/subagents-core';
 import { whenDrained } from './transcript-writer';
 import { RANGE_MAX } from '$lib/transcript-range-core';
 
@@ -384,16 +385,92 @@ function foldResultLines(
 	return summary;
 }
 
+// Every subagent's state over the whole transcript, cached and extended like
+// the cost summary. The snapshot only carries recent events, and a busy session's
+// recent events are almost all subagent steps whose launching call is far back,
+// so the client can't work this out from what it holds.
+interface AgentsIndex {
+	size: number;
+	mtimeMs: number;
+	lines: number;
+	state: AgentsState;
+}
+const agentsCache = new Map<string, AgentsIndex>();
+// task_started carries the agent's whole prompt and task_notification its report,
+// so these lines run larger than results; tool output past this is skipped unread.
+const AGENT_LINE_MAX = 512 * 1024;
+
+function agentsFromIndex(id: string, index: TranscriptIndex): AgentsState {
+	const total = index.newlines.length;
+	const cached = agentsCache.get(id);
+	if (cached && cached.size === index.size && cached.mtimeMs === index.mtimeMs) return cached.state;
+	const grew = !!cached && index.size > cached.size && cached.lines <= total;
+	const state = grew ? cached!.state : emptyAgents();
+	forEachLine(transcriptPath(id), index.newlines, grew ? cached!.lines : 0, total, AGENT_LINE_MAX, (line, i) => {
+		if (!mayAffectAgents(line)) return;
+		try {
+			foldAgents(state, JSON.parse(line), i);
+		} catch {
+			// Unreadable/partial line: skip it, same as the transcript reader.
+		}
+	});
+	return lruSet(agentsCache, id, { size: index.size, mtimeMs: index.mtimeMs, lines: total, state }).state;
+}
+
+// The session's subagents (a copy, safe to change). `live` as for snapshotFrames.
+export function sessionAgents(id: string, live = true): AgentsState {
+	const index = transcriptIndex(id);
+	const agents = structuredClone(index ? agentsFromIndex(id, index) : emptyAgents());
+	if (!live) stopAll(agents);
+	return agents;
+}
+
+// Call `fn` with each line in [from, to) no longer than `max` bytes, read by the
+// index's boundaries so larger lines are never read.
+function forEachLine(
+	file: string,
+	newlines: number[],
+	from: number,
+	to: number,
+	max: number,
+	fn: (line: string, i: number) => void
+): void {
+	if (to <= from) return;
+	let fd: number;
+	try {
+		fd = fs.openSync(file, 'r');
+	} catch {
+		return;
+	}
+	try {
+		for (let i = from; i < to; i++) {
+			const s = lineStart(newlines, i);
+			const len = newlines[i] - s;
+			if (len <= 0 || len > max) continue;
+			const buf = Buffer.allocUnsafe(len);
+			const read = readFull(fd, buf, s, len);
+			fn(buf.toString('utf8', 0, read), i);
+		}
+	} finally {
+		fs.closeSync(fd);
+	}
+}
+
 // The recent-history snapshot split into small frames the client reassembles by
 // `seq`. One big SSE frame doesn't reliably flush through the dev server when the
 // stream opens amid the page-load request burst; ~32KB frames deliver like the
 // old per-line replay did.
-export function snapshotFrames(id: string): { seq: number; n: number; data: string }[] {
+//
+// `live` says whether the session's process is still running. Without one, no
+// subagent can be either, whatever the transcript last said about it.
+export function snapshotFrames(id: string, live = true): { seq: number; n: number; data: string }[] {
 	const tail = readTranscriptTail(id);
+	const agents = withoutOldReports(sessionAgents(id, live), tail.start);
 	const payload = JSON.stringify({
 		start: tail.start,
 		total: tail.total,
 		cost: tail.cost,
+		agents,
 		// Base figure for the context gauge; the client folds live assistant
 		// events on top of it, the same way it folds live results onto `cost`.
 		context: transcriptContext(id),

@@ -21,7 +21,7 @@ import { lastPrLink } from '../pr';
 // Reading the stored transcript (snapshot tail + lazy back-scroll ranges) lives
 // in ./transcript, which serves bounded slices off a per-session line index
 // instead of re-parsing the whole file on each connect.
-export { snapshotFrames, readTranscriptRange } from './transcript';
+export { snapshotFrames, sessionAgents } from './transcript';
 
 // Questions go through deck's blocking MCP `ask` tool instead of the built-in
 // AskUserQuestion, which the headless CLI can only auto-dismiss.
@@ -56,6 +56,12 @@ const IDLE_MS = 20 * 60 * 1000;
 const g = globalThis as { __deckBus?: EventEmitter };
 export const bus = (g.__deckBus ??= new EventEmitter());
 bus.setMaxListeners(200);
+
+// Whether a claude process is alive for the session (busy or idle). Background
+// subagents only run inside one.
+export function hasProcess(id: string): boolean {
+	return procs.has(id);
+}
 
 export function isTurnRunning(id: string) {
 	return procs.get(id)?.running ?? false;
@@ -238,6 +244,9 @@ function startProcess(id: string): Proc {
 	});
 	child.on('exit', (code) => {
 		clearTimeout(proc.idleTimer);
+		// Its subagents died with it, however it was stopped; open views mark any
+		// still shown as running. Not once a respawn has replaced it.
+		if (!procs.has(id) || procs.get(id) === proc) emit(`exit:${id}`, null);
 		// A stop-then-respawn (model switch, idle teardown) can register a new proc
 		// before the old child's exit fires; only clean up if we're still current,
 		// or we'd deregister the live proc and reject its pending asks.

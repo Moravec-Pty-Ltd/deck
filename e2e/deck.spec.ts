@@ -76,6 +76,19 @@ test("folds a subagent's steps into its Agent card", async ({ page }) => {
 	await expect(page.getByText('List the fake repo')).toBeVisible();
 });
 
+test('tracks a background subagent live and shows its report', async ({ page }) => {
+	await openSession(page, 'bg-agent');
+	await send(page, '[background] watch it');
+	await expect(page.getByText('Fake reply to: watch it')).toBeVisible();
+	const bar = page.getByRole('button', { name: '1 agent running' });
+	await expect(bar).toBeVisible();
+	await expect(page.getByText('Reading the fake log').first()).toBeVisible();
+	await expect(page.getByLabel('done')).toBeVisible({ timeout: 10_000 });
+	await expect(bar).toBeHidden();
+	await open(page.getByRole('button', { name: 'result' }), page.getByText('Background report: build is green'));
+	await expect(page.getByText('Async agent launched')).toBeHidden();
+});
+
 test('shows Working while a turn runs and stops it', async ({ page }) => {
 	await openSession(page, 'slow');
 	await send(page, '[slow] take your time');

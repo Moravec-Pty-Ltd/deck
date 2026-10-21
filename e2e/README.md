@@ -35,3 +35,4 @@ interrupt ends the turn. Keywords in the prompt pick the reply:
 | `[file:<path>]` | a reply naming each path, so deck previews the files |
 | `[ask]` | calls deck's MCP `ask` tool and replies with the answer |
 | `[agent]` | an `Agent` tool_use, a subagent's text and `Bash` call tagged with its `parent_tool_use_id`, then the Agent's tool_result |
+| `[background]` | a background `Agent` call with claude's `task_started` and `task_progress` events, then four seconds later a step and its `task_notification` report |

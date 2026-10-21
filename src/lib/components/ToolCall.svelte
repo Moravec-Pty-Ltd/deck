@@ -6,15 +6,21 @@
 	import { toolOutput } from '$lib/toolOutput.svelte';
 	import { toolIcon } from '$lib/tool-icons';
 	import RollingCount from './RollingCount.svelte';
-	import { Circle, CircleDot, CircleCheck, ChevronRight } from '@lucide/svelte';
+	import { Circle, CircleDot, CircleCheck, CircleX, ChevronRight } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
+	import Markdown from './Markdown.svelte';
+	import { formatDuration, isLaunchReceipt, type AgentState } from '$lib/subagents-core';
+	import { formatTokens } from '$lib/context-core';
 
 	type AnyBlock = Record<string, any>;
 	// `steps` counts what a subagent launched by this call has done so far;
-	// `children` renders those steps, only while the card is open.
+	// `children` renders those steps, only while the card is open. `agent` is the
+	// subagent's live state (status, what it's doing, its final report).
 	let {
 		block,
 		result,
+		agent,
+		agentElapsed,
 		steps = 0,
 		open = false,
 		ontoggle,
@@ -22,6 +28,8 @@
 	}: {
 		block: AnyBlock;
 		result?: AnyBlock;
+		agent?: AgentState;
+		agentElapsed?: (agent: AgentState) => number;
 		steps?: number;
 		open?: boolean;
 		ontoggle?: () => void;
@@ -66,8 +74,17 @@
 		return '';
 	}
 
-	const resText = $derived(resultText(result));
+	// A background subagent's call returns a launch receipt at once; its answer
+	// comes later as the agent's report, shown in place of the receipt.
+	const resText = $derived.by(() => {
+		const text = resultText(result);
+		return agent && isLaunchReceipt(text) ? '' : text;
+	});
+	// A foreground agent's answer is already its call result.
 	const isErr = $derived(!!result?.is_error);
+	// What the agent answered: its report, or a foreground agent's call result.
+	const answer = $derived(isErr ? '' : agent?.summary || resText);
+	let answerOpen = $state(false);
 	const MAX = 6000;
 	const clipped = $derived(resText.length > MAX);
 	const shownResult = $derived(clipped ? resText.slice(0, MAX) : resText);
@@ -89,6 +106,9 @@
 	</button>
 {/snippet}
 
+{#if subagentTools.has(name)}
+	{@render agentCard()}
+{:else}
 <div class="mx-1 overflow-hidden rounded-box border border-base-300 bg-base-100 text-sm">
 	<div class="flex items-center gap-2 px-3 py-1.5">
 		<Icon size={14} class="shrink-0 opacity-60" />
@@ -189,3 +209,72 @@
 		{/if}
 	</div>
 </div>
+{/if}
+
+<!-- A subagent's card, kept to two or three short lines so a fan-out of several
+     stays readable on a phone: status and title with the elapsed time, what it
+     is doing while it runs, then its steps, tokens and answer, each opening in
+     place. -->
+{#snippet agentCard()}
+	<div class="mx-1 overflow-hidden rounded-box border border-base-300 bg-base-100 text-sm">
+		<div class="flex items-center gap-2 px-3 pt-1.5">
+			{#if agent?.status === 'running'}
+				<span class="loading loading-spinner loading-xs shrink-0 text-info" aria-label="running"></span>
+			{:else if agent?.status === 'completed'}
+				<CircleCheck size={14} class="shrink-0 text-success" aria-label="done" />
+			{:else if agent?.status === 'failed' || isErr}
+				<CircleX size={14} class="shrink-0 text-error" aria-label="failed" />
+			{:else if agent?.status === 'stopped'}
+				<CircleX size={14} class="shrink-0 text-warning" aria-label="stopped" />
+			{:else}
+				<Icon size={14} class="shrink-0 opacity-60" />
+			{/if}
+			<span class="min-w-0 flex-1 truncate font-medium">{headerArg || 'Subagent'}</span>
+			{#if agent && agent.durationMs > 0}
+				<span class="shrink-0 text-xs tabular-nums opacity-50">
+					{formatDuration(agentElapsed ? agentElapsed(agent) : agent.durationMs)}
+				</span>
+			{/if}
+		</div>
+		{#if agent?.status === 'running'}
+			<div class="truncate pr-3 pl-[2.125rem] text-xs opacity-60">{agent.activity || 'starting…'}</div>
+		{/if}
+		<div class="flex items-center gap-3 pt-0.5 pr-3 pb-1.5 pl-[2.125rem] text-xs">
+			{#if steps > 0 && children}
+				<button
+					type="button"
+					class="flex cursor-pointer select-none items-center gap-0.5 opacity-60 hover:opacity-90"
+					onclick={ontoggle}
+					aria-expanded={open}
+				>
+					<ChevronRight size={12} class="shrink-0 transition-transform {open ? 'rotate-90' : ''}" />
+					<RollingCount value={steps} /> steps
+				</button>
+			{/if}
+			{#if agent && agent.tokens > 0}
+				<span class="tabular-nums opacity-40">{formatTokens(agent.tokens)} tokens</span>
+			{/if}
+			{#if answer}
+				<button
+					type="button"
+					class="ml-auto flex cursor-pointer select-none items-center gap-0.5 opacity-60 hover:opacity-90"
+					onclick={() => (answerOpen = !answerOpen)}
+					aria-expanded={answerOpen}
+				>
+					result <ChevronRight size={12} class="shrink-0 transition-transform {answerOpen ? 'rotate-90' : ''}" />
+				</button>
+			{/if}
+		</div>
+		{#if answerOpen && answer}
+			<div class="mx-3 mb-2 max-h-96 overflow-y-auto rounded-box border border-base-300 px-2 py-1.5">
+				<Markdown source={answer} />
+			</div>
+		{/if}
+		{#if isErr && resText}
+			<div class="terminal-output mx-3 mb-2 max-h-72 overflow-y-auto rounded-box border border-error/40 bg-error/5 px-2 py-1.5 text-error"><AnsiText text={shownResult} /></div>
+		{/if}
+		{#if open && steps > 0 && children}
+			<div class="mx-3 mb-2 space-y-3 border-l border-base-300 pl-2">{@render children()}</div>
+		{/if}
+	</div>
+{/snippet}
