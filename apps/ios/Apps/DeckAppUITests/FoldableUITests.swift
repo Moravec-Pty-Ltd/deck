@@ -12,6 +12,7 @@ final class FoldableUITests: XCTestCase {
 	}
 
 	func testOpenFlatShowsListBesideSession() throws {
+		guard Self.isFoldable else { throw XCTSkip("opened flat needs the iPhone Duo simulator") }
 		let app = try Self.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
 
@@ -27,6 +28,7 @@ final class FoldableUITests: XCTestCase {
 	}
 
 	func testTabletopSplitsTranscriptAboveVoice() throws {
+		guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("the tabletop layout is a phone's") }
 		let app = try Self.launch(environment: ["DECK_HINGE": "tabletop"])
 		app.buttons["Sessions"].firstMatch.tap()
 
@@ -63,6 +65,11 @@ final class FoldableUITests: XCTestCase {
 			attachment.lifetime = .keepAlways
 			add(attachment)
 		}
+	}
+
+	/// Only the simulator says which device it is; the tests run on nothing else.
+	static var isFoldable: Bool {
+		ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"]?.contains("Duo") == true
 	}
 
 	static func launch(environment: [String: String]) throws -> XCUIApplication {

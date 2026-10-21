@@ -62,24 +62,52 @@ cd Packages/DeckKit && swift test
 with a Swift macro, and outside the IDE there is no trust prompt to answer, so
 the build stops at "Macro must be enabled before it can be used".
 
-The UI tests drive the real app against a running deck, so they need one to
-talk to; without the two variables they skip. They only read and cancel, never
-confirm a delete.
+### UI tests
 
-Point them at a deck started with `--host`. Vite with no `--host` binds `[::1]`
-only, so the simulator cannot reach `127.0.0.1:<port>`, and the app then
-renders as if signed in with no data (an empty Inbox, "No projects") rather than
-reporting that it cannot connect, which reads like a bug in the screen under
-test. `curl -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` returning
-000 against a vite that says "ready" is this.
+The UI tests drive the real app against a deck. One command runs them against
+a throwaway one:
 
 ```sh
-TEST_RUNNER_DECK_UITEST_URL=http://localhost:4818 \
-TEST_RUNNER_DECK_UITEST_TOKEN="$(cat ~/.deck/token)" \
-xcodebuild -project Deck.xcodeproj -scheme DeckApp \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  CODE_SIGNING_ALLOWED=NO test
+./uitest.sh                                   # iPhone 17 Pro, then iPad Pro 11-inch (M5)
+./uitest.sh "iPhone Duo"                      # the foldable layouts
+./uitest.sh <simulator-id> -- -only-testing:DeckAppUITests/SearchUITests
 ```
+
+A device is a simulator name or an id from `xcrun simctl list devices
+available`; a name picks one that is not already running. For each device the
+script:
+
+- seeds a temp `DECK_DATA` with `uitest/seed.mjs`: the project `files-proj` (a
+  temp git repo holding the images and `report.csv` a message mentions), and
+  sessions with transcripts ("long transcript", "file previews", "voice
+  smoke", "ask smoke", a session that ran tools) beside a `dev server` shell on
+  a private tmux socket
+- starts deck with `--host 127.0.0.1` on port 4851 (`DECK_UITEST_PORT` moves
+  it), its `HOME` in the temp dir, no inherited `DECK_*` variables, and the fake
+  `claude` and tmux wrapper from `e2e/` first on `PATH`, so a prompt gets a
+  canned reply and no model is called. `uitest/fake-speech.mjs` stands in for
+  the speech server
+- signs the app out (uninstall and keychain reset), runs `xcodebuild test`
+  with `TEST_RUNNER_DECK_UITEST_URL` and `TEST_RUNNER_DECK_UITEST_TOKEN`
+  exported, and pushes each question the deck asks to the simulator with
+  `xcrun simctl push` (`uitest/push-asks.mjs`), standing in for APNs
+
+On exit it stops the servers, kills the tmux socket, shuts down the
+simulators it booted, and deletes the temp dirs and the build in
+`/tmp/dd-uitest-*`. Set `DECK_UITEST_DERIVED_DATA=<dir>` to keep the build
+between runs.
+
+A test that applies to one kind of device skips elsewhere: `PadLayoutUITests`
+on anything but an iPad, the opened-flat `FoldableUITests` off the iPhone Duo
+simulator (the tabletop one forces its layout with `DECK_HINGE=tabletop` on
+any iPhone), `SessionsCompactUITests` wherever the list sits beside the
+session, and `OperatorUITests` where the on-device model is unavailable.
+
+To point the tests at another deck, export the two variables in the shell (as
+trailing `KEY=value` arguments they become build settings and every test
+skips) and start that deck with `--host`: vite with no `--host` binds `[::1]`
+only, so the simulator cannot reach `127.0.0.1:<port>`, and the app renders as
+if signed in with no data rather than saying it cannot connect.
 
 ## TestFlight
 

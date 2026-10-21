@@ -1,9 +1,10 @@
 import XCTest
 
 /// Answers a question from a notification's actions without opening deck.
-/// The test backgrounds the app and waits for an ask push (delivered from
-/// outside with `xcrun simctl push`), long-presses the banner, taps the
-/// second option, and checks the ask resolved on the server.
+/// The test backgrounds the app, has the fixture's "ask smoke" session ask a
+/// question, and waits for its push (delivered from outside with `xcrun simctl
+/// push`, which uitest.sh does), long-presses the banner, taps the second
+/// option, and checks the ask resolved on the server.
 final class NotificationActionUITests: XCTestCase {
 	override func setUp() {
 		continueAfterFailure = false
@@ -39,6 +40,9 @@ final class NotificationActionUITests: XCTestCase {
 			if allow.waitForExistence(timeout: 5) { allow.tap() }
 		}
 		XCUIDevice.shared.press(.home)
+		// [ask] makes the fixture's fake claude ask "Which colour?" through deck.
+		let sessionId = try VoiceUITests.sessionId(titled: "ask smoke", url: url, token: token)
+		try VoiceUITests.send("[ask] Ask me which colour to use.", sessionId: sessionId, url: url, token: token)
 
 		let banner = springboard.descendants(matching: .any)
 			.matching(NSPredicate(format: "label CONTAINS 'Needs your answer'")).firstMatch
