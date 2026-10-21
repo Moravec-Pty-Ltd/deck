@@ -166,6 +166,8 @@ private func emitFrame(
 		}
 	case "transcript":
 		guard let value = JSONValue.parse(Data(data.utf8)) else { return }
+		// A subagent's deltas would cut into the main thread's live bubble.
+		if value["type"].string == "stream_event", !(value["parent_tool_use_id"].string ?? "").isEmpty { return }
 		if let text = textDelta(from: value) {
 			continuation.yield(.textDelta(text))
 		} else if value["type"].string == "stream_event" {

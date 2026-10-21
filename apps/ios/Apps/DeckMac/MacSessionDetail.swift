@@ -322,6 +322,9 @@ private struct MacTranscriptRow: View {
 			.foregroundStyle(.secondary)
 		case .tool(let call):
 			ToolCallCard(call: call)
+			if let steps = viewModel.steps[call.id] {
+				SubagentSteps(steps: steps) { MacTranscriptRow(item: $0, viewModel: viewModel) }
+			}
 		case .notice(_, let text, let level):
 			Text(text)
 				.font(.caption)

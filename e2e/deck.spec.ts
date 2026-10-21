@@ -64,6 +64,18 @@ test('shows a tool card', async ({ page }) => {
 	await expect(page.getByText('Echo a fake line')).toBeVisible();
 });
 
+test("folds a subagent's steps into its Agent card", async ({ page }) => {
+	await openSession(page, 'agent');
+	await send(page, '[agent] fan out');
+	await expect(page.getByText('Fake reply to: fan out')).toBeVisible();
+	await expect(page.getByText('Survey the fake repo')).toBeVisible();
+	const steps = page.getByRole('button', { name: /steps/ });
+	await expect(steps).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.getByText('Subagent looking around')).toBeHidden();
+	await open(steps, page.getByText('Subagent looking around'));
+	await expect(page.getByText('List the fake repo')).toBeVisible();
+});
+
 test('shows Working while a turn runs and stops it', async ({ page }) => {
 	await openSession(page, 'slow');
 	await send(page, '[slow] take your time');

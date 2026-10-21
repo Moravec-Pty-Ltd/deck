@@ -896,6 +896,9 @@ struct TranscriptRow: View {
 				QuestionCard(call: call)
 			} else {
 				ToolCallCard(call: call)
+				if let steps = viewModel?.steps[call.id] {
+					SubagentSteps(steps: steps) { TranscriptRow(item: $0, viewModel: viewModel, voice: voice) }
+				}
 			}
 		case .notice(_, let text, let level):
 			switch level {

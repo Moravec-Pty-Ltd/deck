@@ -14,6 +14,8 @@ final class SessionDetailViewModel {
 	private let store: DeckStore
 
 	var items: [TranscriptItem] = []
+	/// A subagent's items, by the Agent call that launched it; kept out of `items`.
+	var steps: [String: [TranscriptItem]] = [:]
 	var streamingText = ""
 	var isLoadingTranscript = false
 	var didLoadOnce = false
@@ -114,9 +116,9 @@ final class SessionDetailViewModel {
 					case .transcript(let event):
 						// An assistant message ends the turn the deltas were
 						// building, and arrives with the same text.
-						if event["type"].string == "assistant" { streamingText = "" }
+						if event["type"].string == "assistant", (event["parent_tool_use_id"].string ?? "").isEmpty { streamingText = "" }
 						builder.append(event)
-						items = builder.items
+						showItems()
 						voice?.hear(event)
 					case .turnStart:
 						streamingText = ""
@@ -150,7 +152,7 @@ final class SessionDetailViewModel {
 			builder.reset(with: events, startIndex: start)
 			baseIndex = start
 		}
-		items = builder.items
+		showItems()
 		streamingText = ""
 		didLoadOnce = true
 		isLoadingTranscript = false
@@ -173,7 +175,7 @@ final class SessionDetailViewModel {
 			}
 			builder.prepend(contentsOf: slice.events, startIndex: slice.start)
 			baseIndex = slice.start
-			items = builder.items
+			showItems()
 			return true
 		} catch {
 			report(error)
@@ -190,7 +192,17 @@ final class SessionDetailViewModel {
 			if await loadOlder() == false { break }
 		}
 		let prefix = "\(index):"
-		return items.first { $0.id == String(index) || $0.id.hasPrefix(prefix) }?.id
+		// A subagent's step is inside its card, so land on the card.
+		let thread = builder.thread
+		guard let hit = builder.items.first(where: { $0.id == String(index) || $0.id.hasPrefix(prefix) }) else { return nil }
+		return thread.threadItemId(for: hit.id)
+	}
+
+	/// The main thread, with each subagent's items under its launching call.
+	private func showItems() {
+		let thread = builder.thread
+		items = thread.items
+		steps = thread.steps
 	}
 
 	/// The bytes of a stored attachment, fetched once per file for this screen.

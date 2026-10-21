@@ -111,8 +111,45 @@ public struct ToolCallCard: View {
 		case "Glob": return "folder.badge.questionmark"
 		case "TodoWrite": return "checklist"
 		case "WebFetch": return "globe"
-		case "Task": return "sparkles"
+		case "Agent", "Task": return "sparkles"
 		default: return "wrench.and.screwdriver"
+		}
+	}
+}
+
+/// What a subagent did, under the Agent call that launched it: a step count
+/// that opens to its rows, laid out like the thread (runs of tool calls fold).
+/// `row` renders one item, so the app's bubbles and cards are reused.
+public struct SubagentSteps<Row: View>: View {
+	let steps: [TranscriptItem]
+	let row: (TranscriptItem) -> Row
+	@State private var open = false
+
+	public init(steps: [TranscriptItem], @ViewBuilder row: @escaping (TranscriptItem) -> Row) {
+		self.steps = steps
+		self.row = row
+	}
+
+	public var body: some View {
+		DisclosureGroup(isExpanded: $open) {
+			VStack(alignment: .leading, spacing: 10) {
+				ForEach(TranscriptGroup.make(steps, condensed: true)) { group in
+					if group.isCollapsedRun {
+						DisclosureGroup("\(group.toolCount) tool calls") {
+							ForEach(group.items) { row($0) }
+						}
+					} else if let item = group.items.first {
+						row(item)
+					}
+				}
+			}
+			.padding(.leading, 8)
+			.overlay(alignment: .leading) { Rectangle().fill(Color.deckSeparator).frame(width: 1) }
+			.padding(.top, 6)
+		} label: {
+			Text(steps.count == 1 ? "1 step" : "\(steps.count) steps")
+				.font(.caption)
+				.foregroundStyle(.secondary)
 		}
 	}
 }
