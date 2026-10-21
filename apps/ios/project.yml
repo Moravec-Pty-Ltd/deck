@@ -2,9 +2,9 @@ name: Deck
 options:
   bundleIdPrefix: tech.moravec
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
     watchOS: "11.0"
-    macOS: "15.0"
+    macOS: "26.0"
   createIntermediateGroups: true
 settings:
   base:

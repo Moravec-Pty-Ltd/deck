@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
 	name: "DeckKit",
-	platforms: [.iOS(.v18), .watchOS(.v11), .macOS(.v15)],
+	platforms: [.iOS("26.0"), .watchOS(.v11), .macOS("26.0")],
 	products: [
 		.library(name: "DeckKit", targets: ["DeckKit"]),
 		// The app's shared SwiftUI views. Only the iOS (and Mac) app links it; the
