@@ -36,6 +36,7 @@
 		type DirListing
 	} from '$lib/file-browser-core';
 	import Markdown from './Markdown.svelte';
+	import Lightbox from './Lightbox.svelte';
 	import { ensureHighlighter, renderCode } from '$lib/markdown/highlighter.svelte';
 
 	let { session, visible = true }: { session: DeckSession; visible?: boolean } = $props();
@@ -56,6 +57,7 @@
 	let revealed = $state(false);
 	let showSource = $state(false);
 	let wrap = $state(true);
+	let zoomed = $state(false);
 
 	const base = $derived(`/api/sessions/${encodeURIComponent(session.id)}`);
 	const shown = $derived((listing?.entries ?? []).filter((e) => showHidden || !isTucked(e)));
@@ -113,6 +115,7 @@
 			return;
 		}
 		open = entry;
+		zoomed = false;
 		revealed = false;
 		showSource = false;
 		text = null;
@@ -239,7 +242,15 @@
 						<button class="btn btn-sm" onclick={() => (revealed = true)}>Show contents</button>
 					</div>
 				{:else if viewer === 'image'}
-					<img src={fileUrl(session.id, openPath)} alt={open.name} class="mx-auto max-h-[75vh] max-w-full rounded" />
+					<button class="block w-full cursor-zoom-in" onclick={() => (zoomed = true)} aria-label="View {open.name} full size">
+						<img src={fileUrl(session.id, openPath)} alt={open.name} class="mx-auto max-h-[75vh] max-w-full rounded" />
+					</button>
+					{#if zoomed}
+						<Lightbox
+							images={[{ src: fileUrl(session.id, openPath), name: open.name, download: fileUrl(session.id, openPath, true) }]}
+							onclose={() => (zoomed = false)}
+						/>
+					{/if}
 				{:else if viewer === 'pdf'}
 					<iframe src={fileUrl(session.id, openPath)} title={open.name} class="h-[75vh] w-full rounded border-0"></iframe>
 				{:else if viewer === 'video'}
