@@ -7,9 +7,6 @@ import XCTest
 /// Both tests open the rename sheet and cancel: this runs against a live deck,
 /// so it must not rename real sessions.
 final class RenameSessionUITests: XCTestCase {
-	private var serverURL: String? { ProcessInfo.processInfo.environment["DECK_UITEST_URL"] }
-	private var token: String? { ProcessInfo.processInfo.environment["DECK_UITEST_TOKEN"] }
-
 	override func setUp() {
 		continueAfterFailure = false
 	}
@@ -21,7 +18,7 @@ final class RenameSessionUITests: XCTestCase {
 
 		let list = app.collectionViews.firstMatch
 		XCTAssertTrue(list.waitForExistence(timeout: 20), "sessions list never appeared")
-		let row = list.cells.element(boundBy: 0)
+		let row = FoldableUITests.firstSessionRow(in: list)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "no session rows to swipe")
 
 		row.swipeLeft()
@@ -50,7 +47,7 @@ final class RenameSessionUITests: XCTestCase {
 
 		let list = app.collectionViews.firstMatch
 		XCTAssertTrue(list.waitForExistence(timeout: 20))
-		let row = list.cells.element(boundBy: 0)
+		let row = FoldableUITests.firstSessionRow(in: list)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 
@@ -72,28 +69,8 @@ final class RenameSessionUITests: XCTestCase {
 	}
 
 	private func signedInApp() throws -> XCUIApplication {
-		guard let serverURL, let token else {
-			throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests")
-		}
-		let app = XCUIApplication()
-		app.launch()
-
-		// Fresh install: sign in through the manual fields (the QR path needs a camera).
-		let manual = app.buttons["Enter details manually"]
-		if manual.waitForExistence(timeout: 5) {
-			manual.tap()
-			let urlField = app.textFields["Server URL"]
-			XCTAssertTrue(urlField.waitForExistence(timeout: 5))
-			urlField.tap()
-			urlField.typeText(serverURL)
-			let tokenField = app.secureTextFields["Token"]
-			tokenField.tap()
-			tokenField.typeText(token)
-			app.buttons["Connect"].tap()
-		}
-
-		XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20), "never got past sign-in")
-		app.tabBars.buttons["Sessions"].tap()
+		let app = try FoldableUITests.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
 		return app
 	}
 }

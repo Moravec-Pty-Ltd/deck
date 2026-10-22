@@ -13,7 +13,7 @@ final class ComposerKeyboardUITests: XCTestCase {
 	func testSessionComposerStaysVisible() throws {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["long transcript"].firstMatch
+		let row = FoldableUITests.listItem("long transcript", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 

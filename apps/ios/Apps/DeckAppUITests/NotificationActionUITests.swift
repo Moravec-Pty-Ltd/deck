@@ -11,25 +11,14 @@ final class NotificationActionUITests: XCTestCase {
 	}
 
 	func testOptionActionAnswersTheAsk() throws {
+		// The iPad simulator never opens a banner's actions: a long press or a
+		// pull-down both leave the short look.
+		guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("notification actions only open on a phone simulator") }
 		guard let url = ProcessInfo.processInfo.environment["DECK_UITEST_URL"],
 			let token = ProcessInfo.processInfo.environment["DECK_UITEST_TOKEN"]
 		else { throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests") }
 
-		let app = XCUIApplication()
-		app.launch()
-		let manual = app.buttons["Enter details manually"]
-		if manual.waitForExistence(timeout: 5) {
-			manual.tap()
-			let urlField = app.textFields["Server URL"]
-			XCTAssertTrue(urlField.waitForExistence(timeout: 5))
-			urlField.tap()
-			urlField.typeText(url)
-			let tokenField = app.secureTextFields["Token"]
-			tokenField.tap()
-			tokenField.typeText(token)
-			app.buttons["Connect"].tap()
-		}
-		XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20))
+		let app = try FoldableUITests.launch(environment: [:])
 		// Notification permission, so the banner can appear.
 		let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 		app.buttons["openSettings"].firstMatch.tap()

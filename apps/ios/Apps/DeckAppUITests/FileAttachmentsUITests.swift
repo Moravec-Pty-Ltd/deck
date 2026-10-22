@@ -13,7 +13,7 @@ final class FileAttachmentsUITests: XCTestCase {
 	func testPreviewsGalleryAndQuickLook() throws {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["file previews"].firstMatch
+		let row = FoldableUITests.listItem("file previews", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the seeded session\n\(app.debugDescription.prefix(3000))")
 		row.tap()
 
