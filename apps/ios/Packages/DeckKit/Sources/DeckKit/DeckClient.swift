@@ -606,6 +606,20 @@ public final class DeckClient: @unchecked Sendable {
 		_ = try await requestData("DELETE", "/api/agent/schedules/\(seg(id))")
 	}
 
+	// MARK: - Watches
+
+	/// Every watch, or one session's.
+	public func watches(sessionId: String? = nil) async throws -> [Watch] {
+		struct Reply: Decodable { let watches: [Watch] }
+		let query = sessionId.map { [URLQueryItem(name: "sessionId", value: $0)] } ?? []
+		let reply: Reply = try await get("/api/agent/watches", query: query)
+		return reply.watches
+	}
+
+	public func cancelWatch(id: String) async throws {
+		_ = try await requestData("DELETE", "/api/agent/watches/\(seg(id))")
+	}
+
 	public func events(since: Int? = nil, wait: Bool = false) async throws -> EventsResponse {
 		var query: [URLQueryItem] = []
 		if let since { query.append(URLQueryItem(name: "since", value: String(since))) }

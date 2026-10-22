@@ -1,6 +1,7 @@
 import type { CostSummary } from '$lib/session-cost-core';
 import { publicCost, type SessionView } from '$lib/session-view';
 import type { SessionPR, SessionStatus } from '$lib/types';
+import type { Watch } from '$lib/watches';
 
 // The web session list, kept from the agent event log (GET /api/agent/events)
 // instead of re-fetching every session on a timer. A bootstrap (or a gap) hands
@@ -42,6 +43,12 @@ const PATCHES: Record<string, (s: SessionView, e: FeedEvent) => SessionView> = {
 	'awaiting-input': (s, e) => ({ ...s, awaitingInput: !!e.awaitingInput }),
 	'turn-finished': (s, e) => (isCost(e.cost) ? { ...s, cost: publicCost(e.cost) } : s),
 	pr: (s, e) => ({ ...s, pr: (e.pr as SessionPR | null) ?? undefined }),
+	watches: (s, e) => {
+		const next = { ...s };
+		if (Array.isArray(e.watches) && e.watches.length) next.watches = e.watches as Watch[];
+		else delete next.watches;
+		return next;
+	},
 	'session-hidden': (s, e) => {
 		const next = { ...s };
 		if (e.hidden) next.hidden = true;

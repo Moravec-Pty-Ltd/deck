@@ -32,6 +32,7 @@ import { DEMO, demoSessions, demoSession } from './demo';
 import { publishAgentEvent } from './agent-feed';
 import { adhocId, adhocTmuxName, isAdhocId } from './session-title-core';
 import { sessionDigest } from './agent-digest';
+import { cancelSessionWatches } from './watch-store';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
@@ -278,6 +279,7 @@ export async function deleteSession(
 	// and its shared files under the data dir with nothing left to read them.
 	setSessionHidden(id, false);
 	forgetUploads(id);
+	cancelSessionWatches(id);
 	if (isAdhocId(id)) {
 		// Adhoc tmux session: no store write, so bust the list memo by hand.
 		await killTmuxSession(adhocTmuxName(id));

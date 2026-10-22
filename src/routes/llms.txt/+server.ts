@@ -909,6 +909,62 @@ schedule. 409 while the previous run is still going.
 
 Forget the schedule. The sessions it has already started are kept.
 
+## Watches
+
+A timer a claude session sets on itself, with an optional quick check. Use one
+instead of sleeping or looping in the shell: a watch survives a deck restart,
+shows in the session with its countdown, and can be cancelled from any client.
+When it falls due, deck runs the check once in the session's directory (60 s
+limit, killed past it, output tail capped) and sends the session one message:
+the title, the prompt, the exit code and the output tail. If a turn is running
+it waits for the turn to end, and a turn that starts during the check means the
+check runs again once that turn ends. A watch fires once; set a new one if the thing is
+not ready yet. One that fell due while deck was down fires on the first poll after startup
+(within 10 s).
+
+The agent sets them through deck's MCP server:
+
+- \`mcp__deck__watch\` \`{ title, prompt, in | at, command? }\`: exactly one of
+  \`in\` (\`"30s"\`, \`"10m"\`, \`"2h"\`, \`"1h30m"\`) or \`at\` (ISO time or epoch
+  ms), at most 24 hours ahead. At most 5 active per session. Returns the id and
+  the fire time. A \`command\` runs outside the agent's own permission checks,
+  so it is only accepted, and only run, while the session is in
+  \`bypassPermissions\` mode; otherwise the watch is refused, or fires with a
+  "not run" note if the mode changed after it was set.
+- \`mcp__deck__watches\`: this session's active watches.
+- \`mcp__deck__unwatch\` \`{ id }\`: cancel one of this session's watches.
+
+Ready-made checks:
+
+- CI on a PR: \`gh pr checks <n>\`
+- New reviews: \`gh pr view <n> --json reviews\`
+- A URL coming up: \`curl -sf http://localhost:3000/health\`
+
+A session's active watches are also on its digest as \`watches\` (newest first,
+omitted when none), and a \`watches\` event on the cursor carries the new list
+whenever it changes.
+
+### GET /api/agent/watches[?sessionId=]
+
+\`{ "watches": [Watch] }\`, newest first: the active ones plus those that ended
+in the last 24 hours.
+
+\`\`\`json
+{ "id": "wat_...", "sessionId": "c_...", "title": "CI on #42",
+	"prompt": "If CI passed, merge; otherwise fix it.", "command": "gh pr checks 42",
+	"createdAt": 0, "dueAt": 0, "state": "fired", "endedAt": 0,
+	"result": { "exitCode": 0, "output": "...", "timedOut": false } }
+\`\`\`
+
+\`state\` is \`active\`, \`fired\` or \`cancelled\`. \`result\` is set once a
+watch with a command has fired; \`exitCode\` is null when the check timed out
+(\`timedOut: true\`) or could not run.
+
+### DELETE /api/agent/watches/{id}
+
+Cancel it; the agent is not woken. Returns the watch, unchanged if it had
+already ended. 404 when unknown. Deleting a session cancels its watches.
+
 ## Issue sources
 
 Where a project's issues come from (\`GET /api/agent/issues\`): a GitHub repo,
@@ -1198,6 +1254,8 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 	naming the \`project\` and its own \`projectHidden\`, which cannot be read back
 	off the sessions for that same reason)
 - \`session-deleted\` — {}
+- \`watches\`: { watches } (the session's active watches changed; the full new
+	list, empty when none are left)
 - \`run-updated\`: { runId, status, phase, updatedAt } (a workflow run changed;
 	fetch \`GET /api/agent/runs/{id}\` for its digest;
 	\`sessionId\` carries the run id)

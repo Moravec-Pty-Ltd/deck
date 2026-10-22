@@ -190,45 +190,111 @@ public struct SubagentSteps<Row: View>: View {
 	}
 }
 
-/// The session's running subagents, pinned above the composer like the web's
-/// agents bar: how many, opening to what each is doing and how far it has got.
-/// Shows nothing while none run.
-public struct AgentsBar: View {
-	let agents: [SubagentState]
-	@State private var open = false
+/// What a session is waiting on, after its last bubble: its active watches
+/// and subagents, newest first. Three show; "N more" expands the rest and each
+/// watch's check command. Shows nothing when there is nothing to wait on.
+public struct ActivityList: View {
+	let entries: [ActivityEntry]
+	let onCancel: (Watch) async throws -> Void
+	let onOpen: (SubagentState) -> Void
+	@State private var expanded = false
+	/// Cancelled here, hidden before the sessions list catches up.
+	@State private var cancelled = Set<String>()
 
-	public init(agents: [SubagentState]) {
-		self.agents = agents
+	public init(
+		entries: [ActivityEntry], onCancel: @escaping (Watch) async throws -> Void,
+		onOpen: @escaping (SubagentState) -> Void
+	) {
+		self.entries = entries
+		self.onCancel = onCancel
+		self.onOpen = onOpen
+	}
+
+	private var live: [ActivityEntry] {
+		entries.filter { if case .watch(let watch) = $0 { return !cancelled.contains(watch.id) } else { return true } }
 	}
 
 	public var body: some View {
-		if !agents.isEmpty {
-			DisclosureGroup(isExpanded: $open) {
-				VStack(alignment: .leading, spacing: 4) {
-					ForEach(agents, id: \.taskId) { agent in
-						HStack(spacing: 6) {
-							Text(agent.description.isEmpty ? agent.subagentType : agent.description)
-								.fontWeight(.medium)
-								.lineLimit(1)
-							if !agent.activity.isEmpty {
-								Text(agent.activity).foregroundStyle(.secondary).lineLimit(1)
-							}
-							Spacer(minLength: 4)
-							Text(agent.progress).foregroundStyle(.secondary).monospacedDigit()
-						}
+		let view = ActivityFeed.visible(live, expanded: expanded)
+		if !view.shown.isEmpty {
+			VStack(alignment: .leading, spacing: 6) {
+				ForEach(view.shown) { entry in
+					switch entry {
+					case .watch(let watch): watchRow(watch)
+					case .agent(let agent): agentRow(agent)
 					}
 				}
-				.padding(.top, 4)
-			} label: {
-				HStack(spacing: 6) {
-					ProgressView().controlSize(.mini)
-					Text(agents.count == 1 ? "1 agent running" : "\(agents.count) agents running")
+				if view.more > 0 {
+					Button { expanded = true } label: { Label("\(view.more) more", systemImage: "chevron.down") }
+						.buttonStyle(.plain)
+						.foregroundStyle(.secondary)
+				} else if expanded {
+					Button { expanded = false } label: { Label("Show less", systemImage: "chevron.up") }
+						.buttonStyle(.plain)
+						.foregroundStyle(.secondary)
 				}
 			}
 			.font(.caption)
-			.padding(.horizontal)
-			.padding(.vertical, 6)
+			.padding(10)
+			.frame(maxWidth: .infinity, alignment: .leading)
+			.overlay(RoundedRectangle(cornerRadius: DeckStyle.Radius.card).stroke(Color.deckSeparator, lineWidth: 0.5))
+			.accessibilityElement(children: .contain)
+			.accessibilityLabel("Session activity")
 		}
+	}
+
+	private func watchRow(_ watch: Watch) -> some View {
+		HStack(spacing: 8) {
+			Image(systemName: "timer").foregroundStyle(.secondary)
+			VStack(alignment: .leading, spacing: 2) {
+				Text(watch.title).fontWeight(.medium).lineLimit(1)
+				if expanded, let command = watch.command {
+					Text(command).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+				}
+			}
+			Spacer(minLength: 4)
+			TimelineView(.periodic(from: .now, by: 1)) { context in
+				Text(ActivityFeed.countdown(watch.dueAt - context.date.timeIntervalSince1970 * 1000))
+					.monospacedDigit()
+					.foregroundStyle(.secondary)
+			}
+			Button {
+				cancelled.insert(watch.id)
+				Task {
+					do { try await onCancel(watch) } catch { cancelled.remove(watch.id) }
+				}
+			} label: {
+				Image(systemName: "xmark")
+			}
+			.buttonStyle(.borderless)
+			.accessibilityLabel("Cancel watch")
+		}
+	}
+
+	private func agentRow(_ agent: SubagentState) -> some View {
+		Button { onOpen(agent) } label: {
+			HStack(spacing: 8) {
+				switch agent.status {
+				case .running: ProgressView().controlSize(.mini)
+				case .completed: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+				case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+				case .stopped: Image(systemName: "xmark.circle.fill").foregroundStyle(.orange)
+				}
+				Text(agent.description.isEmpty ? agent.subagentType : agent.description)
+					.fontWeight(.medium)
+					.lineLimit(1)
+				if !agent.description.isEmpty, !agent.subagentType.isEmpty {
+					Text("(\(agent.subagentType))").foregroundStyle(.secondary).lineLimit(1)
+				}
+				if agent.isRunning, !agent.activity.isEmpty {
+					Text(agent.activity).foregroundStyle(.secondary).lineLimit(1)
+				}
+				Spacer(minLength: 4)
+				Text(agent.progress).foregroundStyle(.secondary).monospacedDigit()
+			}
+			.contentShape(Rectangle())
+		}
+		.buttonStyle(.plain)
 	}
 }
 

@@ -508,6 +508,9 @@ public final class DeckStore {
 				}
 			}
 			if let pr = event.pr { sessions[index].pr = pr }
+			if event.type == "watches" {
+				sessions[index].watches = event.watches?.isEmpty == false ? event.watches : nil
+			}
 			if let cost = event.cost { sessions[index].cost = cost }
 			if let at = event.at { sessions[index].lastActiveAt = at }
 		}
@@ -750,6 +753,13 @@ public final class DeckStore {
 		let deleted = try await client.deleteFinishedRuns()
 		await refreshRuns()
 		return deleted
+	}
+
+	/// Cancel a watch, then re-read the sessions that carry it.
+	public func cancelWatch(id: String) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await client.cancelWatch(id: id)
+		await refreshSessions()
 	}
 
 	public func send(sessionId: String, text: String) async throws {

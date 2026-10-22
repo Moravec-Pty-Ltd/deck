@@ -122,6 +122,14 @@ describe('applyEvents', () => {
 		expect('hidden' in s.sessions.find((x) => x.id === 'a')!).toBe(false);
 	});
 
+	it('sets and clears the active watches', () => {
+		const watch = { id: 'wat_1', sessionId: 'a', title: 'CI', prompt: 'p', createdAt: 1, dueAt: 2, state: 'active' as const };
+		let s = applyEvents(base(), [ev(11, 'watches', 'a', { watches: [watch] })]);
+		expect(s.sessions.find((x) => x.id === 'a')?.watches).toEqual([watch]);
+		s = applyEvents(s, [ev(12, 'watches', 'a', { watches: [] })]);
+		expect(s.sessions.find((x) => x.id === 'a')).not.toHaveProperty('watches');
+	});
+
 	it('takes the pr, and clears it on null', () => {
 		const pr = { repo: 'acme/app', number: 4, url: 'https://github.com/acme/app/pull/4' };
 		let s = applyEvents(base(), [ev(11, 'pr', 'a', { pr })]);

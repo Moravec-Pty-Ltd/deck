@@ -49,7 +49,8 @@
 		type Chunk,
 		type Row
 	} from '$lib/transcript-groups';
-	import AgentsBar from './AgentsBar.svelte';
+	import ActivityList from './ActivityList.svelte';
+	import type { SessionView } from '$lib/session-view';
 	import {
 		agentForCall,
 		emptyAgents,
@@ -80,7 +81,7 @@
 		persistDraft: persist = true
 	}: {
 		session: DeckSession;
-		sessions?: DeckSession[];
+		sessions?: (DeckSession & Pick<SessionView, 'watches'>)[];
 		projects?: Project[];
 		visible?: boolean;
 		condensed?: boolean;
@@ -1034,6 +1035,15 @@
 				bubbleClass="bg-base-100 text-base-content"
 			/>
 		{/if}
+
+		{#if loaded}
+			<ActivityList
+				watches={sessions.find((s) => s.id === session.id)?.watches ?? []}
+				agents={barAgents}
+				elapsed={agentElapsed}
+				onjump={(a) => void jumpToAgent(a)}
+			/>
+		{/if}
 	</div>
 
 	{#if dragging}
@@ -1070,8 +1080,6 @@
 			{/if}
 		</div>
 	{/if}
-
-	<AgentsBar agents={barAgents} elapsed={agentElapsed} onjump={(a) => void jumpToAgent(a)} />
 
 	{#if voice.enabled}
 		<VoiceBar {voice} />

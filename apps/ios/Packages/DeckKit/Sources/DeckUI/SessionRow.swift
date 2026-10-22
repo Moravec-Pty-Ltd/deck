@@ -16,9 +16,17 @@ public struct SessionRow: View {
 				.padding(.top, 6)
 
 			VStack(alignment: .leading, spacing: 4) {
-				Text(title)
-					.font(.body.weight(.medium))
-					.lineLimit(1)
+				HStack(spacing: 4) {
+					Text(title)
+						.font(.body.weight(.medium))
+						.lineLimit(1)
+					if session.watches?.isEmpty == false {
+						Image(systemName: "timer")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+							.accessibilityLabel("Waiting on a watch")
+					}
+				}
 
 				HStack(spacing: 4) {
 					if let project = projectName {

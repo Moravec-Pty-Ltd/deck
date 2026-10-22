@@ -244,6 +244,22 @@ final class RunsTests: XCTestCase {
 		XCTAssertEqual(store.runs.first?.status, .paused)
 	}
 
+	/// A watches event replaces the session's active watches, and an empty one clears them.
+	func testWatchesEventUpdatesTheSessionsWatches() throws {
+		let store = makeStore()
+		let watch = #"{"id":"wat_1","sessionId":"c_1","title":"CI","prompt":"p","createdAt":1,"dueAt":2,"state":"active"}"#
+		store.apply(try JSONDecoder().decode(EventsResponse.self, from: Data("""
+		{ "snapshot": [{ "id": "c_1", "status": "idle" }],
+		  "events": [{ "seq": 7, "sessionId": "c_1", "type": "watches", "watches": [\(watch)] }], "seq": 7 }
+		""".utf8)))
+		XCTAssertEqual(store.sessions.first?.watches?.map(\.id), ["wat_1"])
+		store.apply(try JSONDecoder().decode(EventsResponse.self, from: Data("""
+		{ "events": [{ "seq": 8, "sessionId": "c_1", "type": "status", "status": "running" },
+		  { "seq": 9, "sessionId": "c_1", "type": "watches", "watches": [] }], "seq": 9 }
+		""".utf8)))
+		XCTAssertNil(store.sessions.first?.watches)
+	}
+
 	/// The phase session's own question events never clear a run's question.
 	func testSessionAskEventsLeaveTheRunAskAlone() async throws {
 		let store = makeStore()
