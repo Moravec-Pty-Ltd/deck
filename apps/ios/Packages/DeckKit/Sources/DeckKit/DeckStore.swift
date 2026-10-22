@@ -532,9 +532,12 @@ public final class DeckStore {
 
 	// MARK: - Refresh
 
-	public func refreshSessions() async {
-		guard let client else { return }
-		if let fresh = try? await client.sessions() { sessions = fresh }
+	/// False when the fetch failed, so a caller can tell "not there" from "couldn't ask".
+	@discardableResult
+	public func refreshSessions() async -> Bool {
+		guard let client, let fresh = try? await client.sessions() else { return false }
+		sessions = fresh
+		return true
 	}
 
 	public func refreshAsks() async {
