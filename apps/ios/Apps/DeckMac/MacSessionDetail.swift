@@ -15,8 +15,7 @@ struct MacSessionDetail: View {
 	@State private var viewModel: SessionDetailViewModel?
 	@State private var terminal: TerminalPoller?
 	@State private var voice: VoiceController?
-	@State private var draft = ""
-	@State private var images: [DeckImage] = []
+	@State private var confirmCrossSend = false
 	@State private var sending = false
 	@State private var compacting = false
 	@State private var sheet: MacSessionSheet?
@@ -29,20 +28,16 @@ struct MacSessionDetail: View {
 	private var session: SessionDigest? { store.sessions.first { $0.id == sessionId } }
 	private var isTerminal: Bool { session?.kind == "shell" && store.supports(.terminal) }
 
-	private var title: String {
-		if let title = session?.title, !title.isEmpty { return title }
-		if let cwd = session?.cwd, let last = cwd.split(separator: "/").last { return String(last) }
-		return sessionId
-	}
+	private var title: String { SessionDetailViewModel.title(of: session, id: sessionId) }
+
 
 	/// Send, stop and compact for ⌘Return, ⌘. and ⇧⌘K (see DeckCommands).
 	private var keyboardActions: DeckSessionActions {
-		let canSend = !sending && !isTerminal
-			&& (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty)
+		let canSend = !sending && !isTerminal && viewModel?.hasDraft == true
 		let canCompact = session?.kind == "claude" && session?.context != nil
 			&& session?.status != .running && !compacting
 		return DeckSessionActions(
-			send: canSend ? { if let viewModel { send(viewModel) } } : nil,
+			send: canSend ? { if let viewModel { sendComposer(viewModel) } } : nil,
 			stop: session?.status == .running ? { Task { await viewModel?.stop() } } : nil,
 			compact: canCompact ? { compact() } : nil)
 	}
@@ -137,6 +132,12 @@ struct MacSessionDetail: View {
 		.onDisappear {
 			viewModel?.leave()
 			OperatorController.shared.resume()
+		}
+		.alert("Send to a different session?", isPresented: $confirmCrossSend) {
+			Button("Cancel", role: .cancel) {}
+			Button("Send") { if let viewModel { send(viewModel) } }
+		} message: {
+			Text("This draft was started in \(viewModel?.draftOriginTitle ?? ""). Send it to \(title)?")
 		}
 		.alert(
 			"Something went wrong",
@@ -276,27 +277,45 @@ struct MacSessionDetail: View {
 	}
 
 	private func composer(_ viewModel: SessionDetailViewModel) -> some View {
-		MacComposer(
-			draft: $draft,
-			images: $images,
-			sending: sending,
-			working: isWorking(viewModel),
-			onStop: { Task { await viewModel.stop() } },
-			onSend: { send(viewModel) },
-			onQuickMessage: { text in Task { await viewModel.sendQuickMessage(text: text) } },
-			onManageQuickMessages: { sheet = .quickMessages },
-			session: session)
+		VStack(alignment: .leading, spacing: 0) {
+			if ComposerDraft.isCrossSession(viewModel.draftOrigin, current: sessionId) {
+				Label("from: \(viewModel.draftOriginTitle)", systemImage: "arrow.left.arrow.right")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(1)
+					.padding([.horizontal, .top])
+			}
+			MacComposer(
+				draft: Bindable(viewModel).draft,
+				images: Bindable(viewModel).draftImages,
+				sending: sending,
+				working: isWorking(viewModel),
+				onStop: { Task { await viewModel.stop() } },
+				onSend: { sendComposer(viewModel) },
+				onQuickMessage: { text in Task { await viewModel.sendQuickMessage(text: text) } },
+				onManageQuickMessages: { sheet = .quickMessages },
+				session: session)
+		}
+	}
+
+	/// A draft that followed the reader from another session asks first.
+	private func sendComposer(_ viewModel: SessionDetailViewModel) {
+		if ComposerDraft.isCrossSession(viewModel.draftOrigin, current: sessionId) {
+			confirmCrossSend = true
+		} else {
+			send(viewModel)
+		}
 	}
 
 	private func send(_ viewModel: SessionDetailViewModel) {
-		let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-		let attached = images
+		let text = viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+		let attached = viewModel.draftImages
 		guard !text.isEmpty || !attached.isEmpty, !sending else { return }
 		sending = true
 		Task {
 			if await viewModel.sendComposer(text: text, images: attached) {
-				draft = ""
-				images = []
+				viewModel.draft = ""
+				viewModel.draftImages = []
 			}
 			sending = false
 		}

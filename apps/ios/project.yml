@@ -222,6 +222,7 @@ targets:
       - path: Apps/DeckApp/Views/ServersSheet.swift
       - path: Apps/DeckApp/Views/FileAttachments.swift
       - path: Apps/DeckApp/Views/FilesSheet.swift
+      - path: Apps/DeckApp/Views/StatusBucketHeader.swift
     dependencies:
       - package: DeckKit
         product: DeckKit

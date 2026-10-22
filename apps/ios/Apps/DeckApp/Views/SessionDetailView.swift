@@ -18,6 +18,11 @@ struct SessionDetailView: View {
 	/// deck's derived id goes with it. Without this the open session would go
 	/// blank the moment it was renamed.
 	var onIdChanged: ((String) -> Void)? = nil
+	/// Set while two sessions show side by side: closes this pane.
+	var onClose: (() -> Void)? = nil
+	/// Whether this pane has the keyboard, with two sessions showing; nil alone.
+	var isActivePane: Bool? = nil
+	var onActivate: (() -> Void)? = nil
 
 	@Environment(DeckStore.self) private var store
 	@Environment(HingeMonitor.self) private var hinge
@@ -62,6 +67,7 @@ struct SessionDetailView: View {
 	/// How far the PR header has been dragged sideways, towards dismissing it.
 	@State private var prDrag: CGFloat = 0
 	@State private var visibleRows = Set<String>()
+	@State private var confirmCrossSend = false
 
 	/// What this screen reads from deck beyond the baseline routes.
 	private static let needs: [DeckCapability] = [.stream, .history, .images, .files]
@@ -111,11 +117,8 @@ struct SessionDetailView: View {
 		await viewModel?.compact()
 	}
 
-	private var title: String {
-		if let title = session?.title, !title.isEmpty { return title }
-		if let cwd = session?.cwd, let last = cwd.split(separator: "/").last { return String(last) }
-		return sessionId
-	}
+	private var title: String { SessionDetailViewModel.title(of: session, id: sessionId) }
+
 
 	/// Send, stop and compact for ⌘Return, ⌘. and ⇧⌘K (see DeckCommands).
 	private var keyboardActions: DeckSessionActions {
@@ -134,7 +137,23 @@ struct SessionDetailView: View {
 			.navigationTitle(title)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar { toolbarContent }
-			.focusedSceneValue(\.deckSession, keyboardActions)
+			.focusedSceneValue(\.deckSession, isActivePane == false ? nil : keyboardActions)
+			.overlay {
+				if isActivePane == true {
+					Rectangle()
+						.stroke(Color.accentColor.opacity(0.35), lineWidth: 2)
+						.allowsHitTesting(false)
+				}
+			}
+			// Simultaneous, so the tap still reaches whatever it landed on.
+			.simultaneousGesture(TapGesture().onEnded { onActivate?() })
+			.onChange(of: isActivePane) { _, active in if active == false { composerFocused = false } }
+			.alert("Send to a different session?", isPresented: $confirmCrossSend) {
+				Button("Cancel", role: .cancel) {}
+				Button("Send") { if let viewModel { send(viewModel) } }
+			} message: {
+				Text("This draft was started in \(viewModel?.draftOriginTitle ?? ""). Send it to \(title)?")
+			}
 			.alert(
 				"Expensive model",
 				isPresented: Binding(
@@ -166,7 +185,10 @@ struct SessionDetailView: View {
 				leaving = false
 			}
 			// Tearing the view down drops focus; that is not the reader's choice.
-			.onChange(of: composerFocused) { _, focused in if !leaving { viewModel?.composerFocused = focused } }
+			.onChange(of: composerFocused) { _, focused in
+				if !leaving { viewModel?.composerFocused = focused }
+				if focused { onActivate?() }
+			}
 			.onChange(of: session?.status) { _, status in
 				if status == .running, let session { ActivityManager.shared.start(session) }
 			}
@@ -184,6 +206,15 @@ struct SessionDetailView: View {
 
 	@ToolbarContentBuilder
 	private var toolbarContent: some ToolbarContent {
+		if let onClose {
+			ToolbarItem(placement: .topBarLeading) {
+				Button(action: onClose) {
+					Image(systemName: "xmark")
+				}
+				.accessibilityLabel("Close session")
+				.accessibilityIdentifier("closePane")
+			}
+		}
 		ToolbarItem(placement: .principal) {
 			Button {
 				showRenameSheet = true
@@ -798,6 +829,12 @@ struct SessionDetailView: View {
 	/// is the button (or ⌘Return).
 	private func composer(_ viewModel: SessionDetailViewModel) -> some View {
 		VStack(alignment: .leading, spacing: 10) {
+			if ComposerDraft.isCrossSession(viewModel.draftOrigin, current: sessionId) {
+				Label("from: \(viewModel.draftOriginTitle)", systemImage: "arrow.left.arrow.right")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(1)
+			}
 			if !viewModel.draftImages.isEmpty {
 				ScrollView(.horizontal, showsIndicators: false) {
 					HStack(spacing: 8) {
@@ -883,6 +920,10 @@ struct SessionDetailView: View {
 		.padding(.horizontal, 8)
 		.padding(.vertical, 6)
 		.disabled(isSending)
+		.onDrop(of: [.image, .plainText, .url, .fileURL], isTargeted: nil) { providers in
+			Task { await drop(providers, into: viewModel) }
+			return true
+		}
 		.onChange(of: photoItems) { _, items in
 			Task { await loadPhotos(items, to: viewModel) }
 		}
@@ -907,7 +948,16 @@ struct SessionDetailView: View {
 		}
 	}
 
+	/// A draft that followed the reader from another session asks first.
 	private func sendComposer(_ viewModel: SessionDetailViewModel) {
+		if ComposerDraft.isCrossSession(viewModel.draftOrigin, current: sessionId) {
+			confirmCrossSend = true
+		} else {
+			send(viewModel)
+		}
+	}
+
+	private func send(_ viewModel: SessionDetailViewModel) {
 		let text = viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines)
 		let images = viewModel.draftImages
 		guard !text.isEmpty || !images.isEmpty else { return }
@@ -943,6 +993,31 @@ struct SessionDetailView: View {
 			guard let image = await Self.image(from: provider), let data = image.pngData() else { continue }
 			viewModel.draftImages.append(DeckImage(mediaType: "image/png", data: data.base64EncodedString()))
 		}
+	}
+
+	/// A drop from the other pane or another app: images attach, text and
+	/// links go into the message on a line of their own, a file by its name.
+	private func drop(_ providers: [NSItemProvider], into viewModel: SessionDetailViewModel) async {
+		for provider in providers {
+			if provider.canLoadObject(ofClass: UIImage.self) {
+				await attach([provider], to: viewModel)
+			} else if let text = await Self.text(from: provider), !text.isEmpty {
+				viewModel.draft += (viewModel.draft.isEmpty ? "" : "\n") + text
+			}
+		}
+	}
+
+	private static func text(from provider: NSItemProvider) async -> String? {
+		if provider.canLoadObject(ofClass: String.self) {
+			return await withCheckedContinuation { continuation in
+				_ = provider.loadObject(ofClass: String.self) { text, _ in continuation.resume(returning: text) }
+			}
+		}
+		guard provider.canLoadObject(ofClass: URL.self) else { return nil }
+		let url: URL? = await withCheckedContinuation { continuation in
+			_ = provider.loadObject(ofClass: URL.self) { url, _ in continuation.resume(returning: url) }
+		}
+		return url.map { $0.isFileURL ? $0.lastPathComponent : $0.absoluteString }
 	}
 
 	private static func image(from provider: NSItemProvider) async -> UIImage? {
@@ -1057,11 +1132,15 @@ struct TranscriptBubble: View {
 					}
 				}
 				if !text.isEmpty {
-					if isUser {
-						Text(text)
-					} else {
-						MarkdownText(text)
+					Group {
+						if isUser {
+							Text(text)
+						} else {
+							MarkdownText(text)
+						}
 					}
+					// Into the other pane's composer, or another app.
+					.draggable(text)
 				}
 				if let viewModel, !text.isEmpty {
 					FileAttachments(text: text, viewModel: viewModel)

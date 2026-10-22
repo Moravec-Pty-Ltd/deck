@@ -32,7 +32,9 @@ struct RootView: View {
 				store.start()
 				ActivityManager.shared.configure(client: store.client)
 				ActivityManager.shared.reconcile(with: store.sessions)
-			case .background: store.stopEventLoop()
+			case .background:
+				store.stopEventLoop()
+				DraftStore.shared.flush()
 			default: break
 			}
 		}
