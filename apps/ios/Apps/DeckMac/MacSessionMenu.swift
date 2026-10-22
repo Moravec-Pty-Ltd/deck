@@ -4,13 +4,9 @@ import DeckUI
 
 /// The sheets a session opens from its menu, its PR header or its composer.
 enum MacSessionSheet: Identifiable {
-	case delete, changes, servers, files, schedule, model, effort, rename, merge, quickMessages
-	case comment(decision: String)
+	case delete, changes, servers, files, schedule, model, effort, rename, merge, review, quickMessages
 
-	var id: String {
-		if case .comment(let decision) = self { return "comment-\(decision)" }
-		return String(describing: self)
-	}
+	var id: Self { self }
 }
 
 /// The session's actions menu, as the phone's: agent and model, thinking,
@@ -124,7 +120,6 @@ struct MacSessionSheetContent: View {
 	let title: String
 	let session: SessionDigest?
 	let viewModel: SessionDetailViewModel
-	@Binding var commentText: String
 	var onModelPicked: (String?) -> Void
 	var onIdChanged: ((String) -> Void)?
 	var onDeleted: (() -> Void)?
@@ -167,12 +162,9 @@ struct MacSessionSheetContent: View {
 				Task { await viewModel.merge(method: method, deleteBranch: deleteBranch) }
 			}
 		case .quickMessages: QuickMessagesSheet()
-		case .comment(let decision):
-			CommentSheet(title: decision == "request-changes" ? "Request changes" : "Comment", text: $commentText) {
-				Task {
-					await viewModel.review(decision: decision, body: commentText)
-					commentText = ""
-				}
+		case .review:
+			ReviewSheet(allowsVerdict: session?.isReviewSession == true) { decision, body in
+				Task { await viewModel.review(decision: decision, body: body) }
 			}
 		}
 	}

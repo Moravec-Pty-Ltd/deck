@@ -105,8 +105,17 @@ const claude = (id, title, ago, extra = {}) => ({
 	model: 'opus',
 	...extra
 });
-// An open PR for the PR header and its actions; repo and number are placeholders.
-const pr = (number) => ({ repo: 'acme/widgets', number, url: `https://github.com/acme/widgets/pull/${number}`, state: 'open', reviewDecision: 'REVIEW_REQUIRED' });
+// An open, mergeable PR for the PR row and its actions; repo and number are placeholders.
+const pr = (number) => ({
+	repo: 'acme/widgets',
+	number,
+	url: `https://github.com/acme/widgets/pull/${number}`,
+	title: 'Stream token diffs',
+	state: 'open',
+	mergeable: 'MERGEABLE',
+	mergeStateStatus: 'CLEAN',
+	reviewDecision: 'REVIEW_REQUIRED'
+});
 const sessions = [
 	claude('c_yolo', 'Yolo badge in session header', 1, { permissionMode: 'bypassPermissions' }),
 	claude('c_stream', 'Stream token diff renderer', 2, { pr: pr(41) }),

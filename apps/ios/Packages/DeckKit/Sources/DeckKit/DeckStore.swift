@@ -184,11 +184,8 @@ public final class DeckStore {
 		if let login = try? await client.currentUserLogin() { userLogin = login }
 	}
 
-	/// Mirrors deck's canMergePr: allow merge only for your own PR (or when the
-	/// author/user is unknown). Hides the merge button on review sessions.
 	public func canMerge(_ pr: SessionPR) -> Bool {
-		guard let author = pr.author, let me = userLogin else { return true }
-		return author == me
+		pr.canMerge(as: userLogin)
 	}
 
 	public func refreshProjectDetails() async {

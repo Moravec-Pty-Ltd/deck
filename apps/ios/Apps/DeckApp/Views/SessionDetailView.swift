@@ -52,15 +52,13 @@ struct SessionDetailView: View {
 	@State private var showQuickManage = false
 	@State private var showRenameSheet = false
 	@State private var compacting = false
-	@State private var showCommentSheet = false
+	@State private var showReviewSheet = false
 	@State private var showChanges = false
 	@State private var showServers = false
 	@State private var showFiles = false
 	@State private var showBrowser = false
 	@State private var showSchedule = false
 	@State private var voice: VoiceController?
-	@State private var commentText = ""
-	@State private var pendingReviewDecision = "comment"
 	/// The transcript row at the top of the screen while older history loads,
 	/// so the prepended rows land above it instead of pushing it out of view.
 	@State private var anchorId: String?
@@ -502,9 +500,13 @@ struct SessionDetailView: View {
 						.frame(maxHeight: viewModel.pendingAsk == nil ? .infinity : nil)
 					}
 					if hasOpenPR, let pr = session?.pr {
-						prActions(viewModel, pr: pr, showsStatus: false)
-							.padding(.horizontal)
-							.padding(.vertical, 8)
+						HStack(spacing: 8) {
+							prActions(viewModel, pr: pr)
+						}
+						.buttonStyle(.bordered)
+						.font(.caption)
+						.padding(.horizontal)
+						.padding(.vertical, 8)
 					}
 					if viewModel.pendingAsk != nil {
 						askCard(viewModel, available: geometry.size.height - upperHeight(in: geometry))
@@ -558,28 +560,31 @@ struct SessionDetailView: View {
 		.frame(maxWidth: .infinity)
 	}
 
-	/// The PR above the transcript: its actions while open, else a status row.
-	/// Swiping it sideways dismisses it.
+	/// The PR above the transcript on one line; a tap opens its actions.
+	/// Swiping it sideways dismisses it. On a table the actions lie on the
+	/// flat half instead, so the standing half only shows the summary.
 	@ViewBuilder
 	private func prHeader(_ viewModel: SessionDetailViewModel, statusOnly: Bool = false) -> some View {
 		if let pr = session?.pr {
 			let canDismiss = store.supports(.prDismiss)
 			Group {
-				if hasOpenPR, !statusOnly {
-					prActions(viewModel, pr: pr, showsStatus: true)
+				if statusOnly {
+					PRSummary(pr: pr)
 				} else {
-					HStack {
-						Image(systemName: "arrow.triangle.pull")
-						PRStatusBadge(pr: pr)
-						Spacer()
-					}
+					PRHeaderRow(
+						pr: pr,
+						canMerge: store.canMerge(pr),
+						onReview: { showReviewSheet = true },
+						onMerge: { showMergeSheet = true },
+						onDismiss: dismissPR(viewModel))
 				}
 			}
-			.padding()
+			.padding(.horizontal)
+			.padding(.vertical, 8)
 			.background(.thinMaterial)
 			.offset(x: prDrag)
 			// High priority with a minimum distance: a tap still reaches the
-			// buttons, a drag cancels them so a swipe never approves.
+			// row, a drag cancels it so a swipe never merges.
 			.highPriorityGesture(
 				DragGesture(minimumDistance: 20)
 					.onChanged { value in
@@ -606,35 +611,31 @@ struct SessionDetailView: View {
 					Button("Dismiss PR") { Task { await viewModel.dismissPR() } }
 				}
 			}
-		}
-	}
-
-	private func prActions(_ viewModel: SessionDetailViewModel, pr: SessionPR, showsStatus: Bool) -> some View {
-		PRSection(
-			pr: pr,
-			canMerge: store.canMerge(pr),
-			onApprove: { Task { await viewModel.review(decision: "approve", body: nil) } },
-			onRequestChanges: { commentPrompt(decision: "request-changes") },
-			onComment: { commentPrompt(decision: "comment") },
-			onMerge: { showMergeSheet = true },
-			showsStatus: showsStatus
-		)
-		.offTheFold(isPresented: $showMergeSheet) {
-			MergeSheet(pr: session?.pr) { method, deleteBranch in
-				Task { await viewModel.merge(method: method, deleteBranch: deleteBranch) }
+			.offTheFold(isPresented: $showMergeSheet) {
+				MergeSheet(pr: session?.pr) { method, deleteBranch in
+					Task { await viewModel.merge(method: method, deleteBranch: deleteBranch) }
+				}
 			}
-		}
-		.offTheFold(isPresented: $showCommentSheet) {
-			CommentSheet(
-				title: pendingReviewDecision == "request-changes" ? "Request changes" : "Comment",
-				text: $commentText
-			) {
-				Task {
-					await viewModel.review(decision: pendingReviewDecision, body: commentText)
-					commentText = ""
+			.offTheFold(isPresented: $showReviewSheet) {
+				ReviewSheet(allowsVerdict: session?.isReviewSession == true) { decision, body in
+					Task { await viewModel.review(decision: decision, body: body) }
 				}
 			}
 		}
+	}
+
+	private func prActions(_ viewModel: SessionDetailViewModel, pr: SessionPR) -> some View {
+		PRActions(
+			pr: pr,
+			canMerge: store.canMerge(pr),
+			onReview: { showReviewSheet = true },
+			onMerge: { showMergeSheet = true },
+			onDismiss: dismissPR(viewModel))
+	}
+
+	private func dismissPR(_ viewModel: SessionDetailViewModel) -> (() -> Void)? {
+		guard store.supports(.prDismiss) else { return nil }
+		return { Task { await viewModel.dismissPR() } }
 	}
 
 	@ViewBuilder
@@ -1039,12 +1040,6 @@ struct SessionDetailView: View {
 			_ = provider.loadObject(ofClass: URL.self) { url, _ in continuation.resume(returning: url) }
 		}
 		return url.map { $0.isFileURL ? $0.lastPathComponent : $0.absoluteString }
-	}
-
-	private func commentPrompt(decision: String) {
-		pendingReviewDecision = decision
-		commentText = ""
-		showCommentSheet = true
 	}
 }
 

@@ -6,6 +6,7 @@ import { isAgentKind, type ServerRuntime } from './types';
 import type { SessionView } from './session-view';
 import { canStart, canStop, isInFlight, type ServerAction } from './servers-client';
 import { CLAUDE_MODELS, modelLabel } from './models';
+import { isReviewSession } from './pr';
 
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 export type ReviewDecision = 'approve' | 'request-changes' | 'comment';
@@ -79,7 +80,8 @@ export interface Command {
 // Review/merge actions on the current session's captured PR. Merge is offered
 // only for a clean, mergeable, open (non-draft) PR, the same gate PrMenu uses;
 // its hint carries the approval tally deck tracks (it has no check-run data).
-function prCommands(ctx: CommandContext, pr: NonNullable<SessionView['pr']>): Command[] {
+// Approve and request changes only in a review session, as PrMenu offers them.
+function prCommands(ctx: CommandContext, pr: NonNullable<SessionView['pr']>, review: boolean): Command[] {
 	const approvals = pr.approvals ?? 0;
 	const cmds: Command[] = [
 		{
@@ -96,7 +98,7 @@ function prCommands(ctx: CommandContext, pr: NonNullable<SessionView['pr']>): Co
 			run: () => ctx.copy(pr.url)
 		}
 	];
-	if (pr.state === 'open') {
+	if (review && pr.state === 'open') {
 		cmds.push({
 			id: 'pr-approve',
 			title: 'Approve PR',
@@ -104,8 +106,8 @@ function prCommands(ctx: CommandContext, pr: NonNullable<SessionView['pr']>): Co
 			run: () => ctx.prAction({ action: 'review', decision: 'approve', body: '' })
 		});
 	}
-	cmds.push(
-		{
+	if (review) {
+		cmds.push({
 			id: 'pr-request-changes',
 			title: 'Request changes on PR…',
 			keywords: ['pr', 'review', 'changes', 'reject'],
@@ -113,7 +115,9 @@ function prCommands(ctx: CommandContext, pr: NonNullable<SessionView['pr']>): Co
 			placeholder: 'Required message',
 			run: (i) =>
 				ctx.prAction({ action: 'review', decision: 'request-changes', body: (i?.text ?? '').trim() })
-		},
+		});
+	}
+	cmds.push(
 		{
 			id: 'pr-comment',
 			title: 'Comment on PR…',
@@ -313,7 +317,7 @@ function jumpCommands(ctx: CommandContext): Command[] {
 export function buildCommands(ctx: CommandContext): Command[] {
 	const s = ctx.session;
 	return [
-		...(s?.pr ? prCommands(ctx, s.pr) : []),
+		...(s?.pr ? prCommands(ctx, s.pr, isReviewSession(s)) : []),
 		...(s ? issueCommands(ctx, s) : []),
 		...(s ? serverCommands(ctx) : []),
 		...(s ? modelCommands(ctx, s) : []),

@@ -141,6 +141,17 @@ public struct SessionPR: Codable, Hashable, Sendable {
 	/// PR author login. When it differs from the signed-in gh user the PR is one
 	/// you are only reviewing, so merge should be hidden.
 	public let author: String?
+	public let title: String?
+	/// `BLOCKED` when branch protection holds an otherwise mergeable PR.
+	public let mergeStateStatus: String?
+
+	/// Mirrors deck's merge gate: an open, mergeable PR of your own. An unknown
+	/// author or login counts as yours, as the server's canMergePr does.
+	public func canMerge(as me: String?) -> Bool {
+		guard state?.lowercased() == "open", mergeable == "MERGEABLE" else { return false }
+		guard let author, let me else { return true }
+		return author == me
+	}
 }
 
 public struct SessionCost: Codable, Hashable, Sendable {
@@ -203,6 +214,13 @@ public struct SessionDigest: Codable, Hashable, Identifiable, Sendable {
 	public var hidden: Bool?
 	/// Its active watches, newest first; absent when none.
 	public var watches: [Watch]?
+
+	/// A review session: its worktree is parked on the captured PR's `pr/<n>`
+	/// ref. Mirrors the web's isReviewSession in src/lib/pr.ts.
+	public var isReviewSession: Bool {
+		guard let number = pr?.number else { return false }
+		return worktree?.branch == "pr/\(number)"
+	}
 }
 
 public struct SessionDetail: Codable, Sendable {

@@ -29,6 +29,7 @@
 		me = null,
 		worktree = false,
 		createdBranch = false,
+		reviewSession = false,
 		onMerged,
 		onChange
 	}: {
@@ -38,6 +39,9 @@
 		me?: string | null;
 		worktree?: boolean;
 		createdBranch?: boolean;
+		// Approve and request changes only make sense on someone else's PR you
+		// are reviewing (isReviewSession); a work session only comments.
+		reviewSession?: boolean;
 		onMerged?: () => void;
 		onChange: () => void;
 	} = $props();
@@ -68,11 +72,22 @@
 	const ownPr = $derived(canMergePr(pr, me));
 	const tallyTitle = $derived(`${approvals} approval${approvals === 1 ? '' : 's'}, ${changes} change request${changes === 1 ? '' : 's'}`);
 
+	const decisions = $derived(
+		(
+			[
+				['approve', 'Approve'],
+				['request-changes', 'Request changes'],
+				['comment', 'Comment']
+			] as const
+		).filter(([value]) => reviewSession || value === 'comment')
+	);
+
 	// Reset the panel/error whenever the menu closes.
 	$effect(() => {
 		if (!open) {
 			panel = 'menu';
 			err = '';
+			decision = reviewSession ? 'approve' : 'comment';
 			// Reset the destructive merge toggles so a prior selection can't carry
 			// into a later merge unintentionally.
 			deleteBranch = false;
@@ -189,16 +204,18 @@
 			</ul>
 		{:else if panel === 'review'}
 			<div class="flex flex-col gap-2">
-				<div class="join w-full">
-					{#each [['approve', 'Approve'], ['request-changes', 'Request changes'], ['comment', 'Comment']] as [value, label] (value)}
-						<button
-							class="btn join-item btn-xs flex-1 {decision === value ? 'btn-active' : 'btn-ghost'}"
-							onclick={() => (decision = value as typeof decision)}
-						>
-							{label}
-						</button>
-					{/each}
-				</div>
+				{#if decisions.length > 1}
+					<div class="join w-full">
+						{#each decisions as [value, label] (value)}
+							<button
+								class="btn join-item btn-xs flex-1 {decision === value ? 'btn-active' : 'btn-ghost'}"
+								onclick={() => (decision = value)}
+							>
+								{label}
+							</button>
+						{/each}
+					</div>
+				{/if}
 				<textarea
 					class="textarea textarea-bordered textarea-sm w-full"
 					rows="3"
