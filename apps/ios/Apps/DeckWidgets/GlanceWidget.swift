@@ -64,7 +64,11 @@ struct GlanceProvider: TimelineProvider {
 				async let sessions = client.sessions()
 				async let runs = client.runs()
 				fresh = DeckGlance(MenuBarDigest(asks: try await asks, sessions: try await sessions, runs: try await runs), at: now)
-			} catch {}
+			} catch {
+				#if DEBUG
+				print("deck widget: could not read deck: \(error)")
+				#endif
+			}
 			if let fresh, let data = try? JSONEncoder().encode(fresh) {
 				UserDefaults.standard.set(data, forKey: Self.cacheKey)
 			}
@@ -98,6 +102,7 @@ struct AnswerAskIntent: AppIntent {
 	func perform() async throws -> some IntentResult {
 		let answer = NotificationAnswer(
 			sessionId: sessionId, runId: nil, askId: askId, header: header, label: label, structured: true)
+		// No client: post() signs in from the keychain, as for a notification answer.
 		await AskNotification.post(answer, client: nil, url: "/s/\(sessionId)")
 		return .result()
 	}
