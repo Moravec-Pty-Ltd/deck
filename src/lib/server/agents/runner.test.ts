@@ -9,6 +9,11 @@ class FakeChild extends EventEmitter {
 	stderr = new EventEmitter();
 	stdin = { end: vi.fn() };
 	killed: string[] = [];
+	constructor(failure?: NodeJS.ErrnoException, autoSpawn = true) {
+		super();
+		// Node's own signal for a started (or unstartable) child, on the next tick.
+		if (autoSpawn) queueMicrotask(() => (failure ? this.emit('error', failure) : this.emit('spawn')));
+	}
 	kill(signal: string) {
 		this.killed.push(signal);
 		return true;
@@ -59,6 +64,13 @@ function appended(type: string) {
 	return vi.mocked(appendEvent).mock.calls.filter((c) => (c[1] as any).type === type);
 }
 
+// A turn that ended in error; returns the error footer's text.
+function erroredText(id: string): string {
+	expect(statuses()).toEqual(['running', 'error']);
+	expect(runner.turnRunning(id)).toBe(false);
+	return (appended('deck.error')[0][1] as any).text;
+}
+
 let seq = 0;
 
 async function startTurn(id: string): Promise<FakeChild> {
@@ -88,11 +100,9 @@ describe('runTurn silence watchdog', () => {
 		await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
 
 		expect(child.killed).toEqual(['SIGTERM']);
-		expect(statuses()).toEqual(['running', 'error']);
-		expect(runner.turnRunning(id)).toBe(false);
-		const [errorEvent] = appended('deck.error');
-		expect((errorEvent[1] as any).text).toContain('connect ECONNREFUSED');
-		expect((errorEvent[1] as any).text).toContain('no output from opencode for 30m');
+		const text = erroredText(id);
+		expect(text).toContain('connect ECONNREFUSED');
+		expect(text).toContain('no output from opencode for 30m');
 		expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: expect.stringContaining('crashed') }));
 	});
 
@@ -199,5 +209,71 @@ describe('agent handoff context', () => {
 		expect(spawn.mock.calls.at(-1)?.[1].at(-1)).toBe('Previous conversation context\n\nCurrent user request:\nContinue');
 		expect(appended('deck.user')[0][1]).toMatchObject({ text: 'Continue' });
 		child.emit('exit', 0, null);
+	});
+});
+
+describe('runTurn spawn failure', () => {
+	it('errors the session with a readable message instead of throwing', async () => {
+		const id = `s_nospawn_${seq}`;
+		const err = Object.assign(new Error('spawn opencode EACCES'), { code: 'EACCES' });
+		spawn.mockReturnValueOnce(new FakeChild(err));
+		await runner.runTurn(session(id), 'go');
+
+		expect(erroredText(id)).toMatch(/^could not start opencode \(EACCES\)/);
+	});
+});
+
+describe('runTurn while the CLI is starting', () => {
+	function slowTurn(id: string) {
+		const slow = new FakeChild(undefined, false);
+		spawn.mockReturnValueOnce(slow);
+		return { slow, turn: runner.runTurn(session(id), 'one') };
+	}
+
+	it.each([false, true])(
+		'drops a turn superseded before its CLI came up, keeping the newer one (stopped first: %s)',
+		async (stoppedFirst) => {
+			const id = `s_startsuper_${stoppedFirst}_${seq}`;
+			const { slow, turn } = slowTurn(id);
+			if (stoppedFirst) runner.interruptTurn(id);
+			const second = await startTurn(id);
+			slow.emit('spawn');
+			await turn;
+
+			expect(slow.killed).toEqual(['SIGTERM']);
+			expect(second.killed).toEqual([]);
+			expect(runner.turnRunning(id)).toBe(true);
+			expect(statuses()).toEqual(['running', 'running']);
+			expect(appended('result')).toHaveLength(0);
+		}
+	);
+
+	it('honours a stop pressed before the CLI came up', async () => {
+		const id = `s_startstop_${seq}`;
+		const { slow, turn } = slowTurn(id);
+		expect(runner.turnRunning(id)).toBe(true);
+		runner.interruptTurn(id);
+		slow.emit('spawn');
+		await turn;
+
+		expect(slow.killed).toEqual(['SIGTERM']);
+		expect(runner.turnRunning(id)).toBe(false);
+		expect(statuses()).toEqual(['running', 'idle']);
+		expect(appended('result')).toHaveLength(1);
+	});
+
+	it('keeps a newer turn running when the turn it replaced exits during its start', async () => {
+		const id = `s_startexit_${seq}`;
+		const first = await startTurn(id);
+		const slow = new FakeChild(undefined, false);
+		spawn.mockReturnValueOnce(slow);
+		const turn = runner.runTurn(session(id), 'two');
+		first.emit('exit', null, 'SIGTERM');
+		slow.emit('spawn');
+		await turn;
+
+		expect(statuses()).toEqual(['running', 'running']);
+		expect(appended('result')).toHaveLength(0);
+		expect(runner.turnRunning(id)).toBe(true);
 	});
 });
