@@ -9,9 +9,8 @@ import Observation
 // answers one at a time. The phone captures through an AVAudioEngine tap (so
 // hands-free can watch the level before a take starts); the watch records
 // with AVAudioRecorder and has no hands-free. The Mac has no AVAudioSession:
-// it captures through the same engine tap and plays straight to the default
-// output, push-to-talk only, since nothing there cancels the speaker's echo
-// out of an open mic.
+// it captures through the same engine tap with voice processing on (its echo
+// cancellation) and plays straight to the default output.
 
 public enum VoiceError: LocalizedError {
 	case microphoneUnavailable
@@ -74,6 +73,8 @@ public final class VoiceController {
 	public var persistsSettings = true
 	/// Called when the queue of speech has drained, for a follow-up window.
 	public var onPlaybackFinished: (() -> Void)?
+	private var transcript = ""
+	private var wordsAt: TimeInterval?
 	#if os(iOS)
 	/// Every captured audio buffer, on the audio thread, while the mic is
 	/// monitoring: a wake-word recogniser reads the same tap as the recorder.
@@ -96,6 +97,9 @@ public final class VoiceController {
 	private var playToken = 0
 	private var prefetched: [String: Task<Data, Error>] = [:]
 	private var detector = VoiceDetector(threshold: VadSensitivity.medium.threshold)
+	// Speech that opened the detector over a reply without cutting it; it
+	// becomes a take once the reply ends.
+	private var startMissed = false
 	private var takeTimer: Task<Void, Never>?
 	private var cancelled = false
 	private var lastText = ""
@@ -126,10 +130,8 @@ public final class VoiceController {
 		self.sessionId = sessionId
 		self.handlers = handlers
 		self.settings = VoiceSettings.load()
-		#if os(iOS)
-		self.capture = EngineCapture(supportsMonitoring: true)
-		#elseif os(macOS)
-		self.capture = EngineCapture(supportsMonitoring: false)
+		#if os(iOS) || os(macOS)
+		self.capture = EngineCapture()
 		#else
 		self.capture = RecorderCapture()
 		#endif
@@ -409,6 +411,7 @@ public final class VoiceController {
 	public func startRecording() {
 		guard enabled, !recording, !awaitingPermission else { return }
 		error = nil
+		startMissed = false
 		stopPlayback()
 		guard micPermitted else {
 			requestMicrophone { [weak self] in self?.startRecording() }
@@ -500,9 +503,12 @@ public final class VoiceController {
 			return
 		}
 		detector.reset()
+		startMissed = false
 		capture.onLevel = { [weak self] level in self?.onLevel(level) }
 		do {
 			try capture.startMonitoring()
+			// Monitoring can find it has no echo cancellation; the mic then closes.
+			if !supportsHandsFree { capture.stopMonitoring() }
 			rest()
 		} catch {
 			self.error = error.localizedDescription
@@ -512,19 +518,33 @@ public final class VoiceController {
 	private func stopHandsFree() {
 		if !recording { capture.stopMonitoring() }
 		detector.reset()
+		startMissed = false
 		if status == .listening, !recording {
 			status = .idle
 			caption = ""
 		}
 	}
 
+	/// The recogniser's transcript so far.
+	public func heard(_ transcript: String) {
+		if BargeIn.addsWords(transcript, to: self.transcript) { wordsAt = Date().timeIntervalSinceReferenceDate }
+		self.transcript = transcript
+	}
+
 	private func onLevel(_ level: Float) {
 		self.level = min(1, level * 6)
 		guard settings.handsFree, supportsHandsFree else { return }
-		switch detector.update(level: level, at: Date().timeIntervalSinceReferenceDate) {
-		case .start where !recording && status != .transcribing && listenGate: startRecording()
-		case .stop where recording: stopRecording()
-		default: break
+		let now = Date().timeIntervalSinceReferenceDate
+		let edge = detector.update(level: level, at: now)
+		if edge == .stop { startMissed = false }
+		if edge == .start, status == .speaking { startMissed = true }
+		if edge == .stop, recording {
+			stopRecording()
+		} else if status == .speaking {
+			// Talking over a reply takes the turn even with the gate shut.
+			if !recording, BargeIn.interrupts(detector, now: now, wordsAt: wordsAt) { startRecording() }
+		} else if edge == .start || startMissed, !recording, status != .transcribing, listenGate {
+			startRecording()
 		}
 	}
 }
@@ -621,20 +641,24 @@ final class EngineCapture: TakeCapture {
 	/// A second reader of the tap (a wake-word recogniser), on the audio thread.
 	nonisolated(unsafe) var onBuffer: ((AVAudioPCMBuffer) -> Void)?
 	/// Whether the engine may stay running between takes for hands-free.
-	let supportsMonitoring: Bool
+	private(set) var supportsMonitoring = true
 
 	private let engine = AVAudioEngine()
 	private let sink = TakeSink()
 	private var takeStart: Date?
 	private var monitoring = false
 
-	init(supportsMonitoring: Bool) {
-		self.supportsMonitoring = supportsMonitoring
-	}
-
 	func startMonitoring() throws {
 		guard !monitoring else { return }
 		let input = engine.inputNode
+		#if os(macOS)
+		// Echo cancellation, so an open mic doesn't hear the reply; it changes
+		// the input format, so the format is read after it. An input that
+		// refuses it keeps push-to-talk but not hands-free.
+		if !input.isVoiceProcessingEnabled {
+			do { try input.setVoiceProcessingEnabled(true) } catch { supportsMonitoring = false }
+		}
+		#endif
 		let format = input.outputFormat(forBus: 0)
 		// installTap raises an Objective-C exception (uncatchable here) on an
 		// empty format, which is what a missing or denied microphone yields.

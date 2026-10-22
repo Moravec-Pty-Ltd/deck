@@ -198,6 +198,11 @@ public struct VoiceDetector: Sendable {
 	public enum State: Sendable { case silent, opening, open, closing }
 
 	public private(set) var state: State = .silent
+	/// While loud, when this run of speech began, bridging dips shorter than
+	/// `BargeIn.gapSeconds` between words; nil while quiet.
+	public var loudSince: TimeInterval? { quietSince == nil ? runStart : nil }
+	private var runStart: TimeInterval?
+	private var quietSince: TimeInterval?
 	public var threshold: Float
 	public var closeSeconds: TimeInterval
 	private let openSeconds: TimeInterval
@@ -209,11 +214,23 @@ public struct VoiceDetector: Sendable {
 		self.closeSeconds = closeSeconds
 	}
 
-	public mutating func reset() { state = .silent }
+	public mutating func reset() {
+		state = .silent
+		runStart = nil
+		quietSince = nil
+	}
 
 	/// Feed one level reading; returns the edge the recorder should act on.
 	public mutating func update(level: Float, at now: TimeInterval) -> Edge? {
 		let loud = level >= threshold
+		if loud {
+			let gapEnded = quietSince.map { now - $0 >= BargeIn.gapSeconds } ?? false
+			runStart = gapEnded ? now : runStart ?? now
+			quietSince = nil
+		} else {
+			quietSince = quietSince ?? now
+			if let quietSince, now - quietSince >= BargeIn.gapSeconds { runStart = nil }
+		}
 		switch state {
 		case .silent:
 			if loud { state = .opening; since = now }
@@ -225,6 +242,32 @@ public struct VoiceDetector: Sendable {
 			if loud { state = .open } else if now - since >= closeSeconds { state = .silent; return .stop }
 		}
 		return nil
+	}
+}
+
+/// When speech over a reply cuts it off.
+public enum BargeIn {
+	/// Unbroken loudness must hold this long, longer than a take needs to open,
+	/// so the reply's own echo or a cough doesn't.
+	public static let holdSeconds: TimeInterval = 0.45
+	/// A dip this short is the gap between words, not the end of speech.
+	public static let gapSeconds: TimeInterval = 0.12
+	/// How recent new words must be; a recogniser reports them up to a second
+	/// after they are said.
+	public static let wordsSeconds: TimeInterval = 1
+
+	/// New words from a recogniser while the detector is open on speech, so a
+	/// short "stop" counts; else unbroken loudness held for `holdSeconds`, which
+	/// also covers a recogniser that is down or has stalled.
+	public static func interrupts(_ vad: VoiceDetector, now: TimeInterval, wordsAt: TimeInterval?) -> Bool {
+		if vad.state == .open || vad.state == .closing, let wordsAt, now - wordsAt <= wordsSeconds { return true }
+		return vad.loudSince.map { now - $0 >= holdSeconds } ?? false
+	}
+
+	/// Whether a recogniser's latest transcript adds words to the last one; it
+	/// resends the whole transcript on every revision.
+	public static func addsWords(_ transcript: String, to previous: String) -> Bool {
+		transcript.split(separator: " ").count > previous.split(separator: " ").count
 	}
 }
 
@@ -283,7 +326,7 @@ public enum VoiceAudio {
 	}
 
 	/// Whether the mic stays open once a take ends: only for hands-free, and
-	/// only where the capture can monitor (the Mac and the watch cannot, so a
+	/// only where the capture can monitor (the watch cannot, so a
 	/// hands-free setting carried over from elsewhere must not leave the mic on).
 	public static func keepsMicOpen(handsFree: Bool, supportsMonitoring: Bool) -> Bool {
 		handsFree && supportsMonitoring
