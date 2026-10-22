@@ -80,11 +80,10 @@ test('tracks a background subagent live and shows its report', async ({ page }) 
 	await openSession(page, 'bg-agent');
 	await send(page, '[background] watch it');
 	await expect(page.getByText('Fake reply to: watch it')).toBeVisible();
-	const bar = page.getByRole('button', { name: '1 agent running' });
-	await expect(bar).toBeVisible();
-	await expect(page.getByText('Reading the fake log').first()).toBeVisible();
+	const row = page.getByRole('list', { name: 'Session activity' }).getByRole('button', { name: /Watch the fake build/ });
+	await expect(row).toContainText('Reading the fake log');
 	await expect(page.getByLabel('done')).toBeVisible({ timeout: 10_000 });
-	await expect(bar).toBeHidden();
+	await expect(row).toBeHidden();
 	await open(page.getByRole('button', { name: 'result' }), page.getByText('Background report: build is green'));
 	await expect(page.getByText('Async agent launched')).toBeHidden();
 });
