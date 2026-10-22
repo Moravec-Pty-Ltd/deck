@@ -114,6 +114,7 @@ public struct PRHeaderRow: View {
 			.menuStyle(.button)
 			.buttonStyle(.plain)
 			.accessibilityIdentifier("prRow")
+			// A blocked PR force-merges past branch protection: menu only, never one tap.
 			if canMerge, !PRDisplay.isBlocked(pr) {
 				Button("Merge", action: onMerge)
 					.buttonStyle(.borderedProminent)
