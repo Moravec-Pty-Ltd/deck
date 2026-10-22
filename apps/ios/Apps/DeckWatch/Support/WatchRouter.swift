@@ -7,17 +7,17 @@ enum WatchTab: Hashable {
 	case inbox, start, sessions, voiceOperator
 }
 
-/// Shared navigation state for the single root NavigationStack. Kept at the App
-/// level (not inside WatchRootView) so the push-notification delegate can jump
-/// to Inbox from outside the view hierarchy.
+/// Shared navigation state for the single root NavigationStack. Owned by the
+/// push-notification delegate (not WatchRootView) so a notification tap can
+/// route before any view exists.
 @MainActor
 @Observable
 final class WatchRouter {
 	var tab: WatchTab = .inbox
 	var path = NavigationPath()
-	/// A session to open once it appears in the store (e.g. from a notification
-	/// tap on cold launch, before the session list has loaded).
-	var pendingSessionId: String?
+	/// The session the latest notification tap asked for, so a slower earlier
+	/// tap doesn't push over it.
+	private var opening: String?
 
 	func popToRoot() {
 		path = NavigationPath()
@@ -30,12 +30,26 @@ final class WatchRouter {
 		self.tab = tab
 	}
 
-	/// Open a specific session (from a notification). Lands on the Sessions tab
-	/// and drills into the session once it is available.
-	func openSession(_ id: String) {
-		popToRoot()
-		tab = .sessions
-		pendingSessionId = id
+	/// Open a specific session (from a notification). Refetches the list when
+	/// the session is newer than it, and falls back to the Inbox when deck
+	/// doesn't know the session.
+	func openSession(_ id: String, in store: DeckStore) async {
+		show(.sessions)
+		opening = id
+		defer { if opening == id { opening = nil } }
+		// A tap that wakes the watch can beat its network, so retry a failed fetch.
+		var fetched = store.sessions.contains { $0.id == id }
+		for attempt in 0..<3 where !fetched {
+			if attempt > 0 { try? await Task.sleep(for: .seconds(2)) }
+			fetched = await store.refreshSessions()
+		}
+		// The user moved on, or a newer tap took over.
+		guard opening == id, tab == .sessions, path.isEmpty else { return }
+		if let session = store.sessions.first(where: { $0.id == id }) {
+			path.append(session)
+		} else if fetched {
+			show(.inbox)
+		}
 	}
 }
 

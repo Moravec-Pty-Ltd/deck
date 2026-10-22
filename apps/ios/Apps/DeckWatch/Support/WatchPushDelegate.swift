@@ -4,11 +4,13 @@ import DeckKit
 
 /// App-level delegate (wired via @WKApplicationDelegateAdaptor in
 /// DeckWatchMain): requests notification authorization + APNs registration
-/// once signed in, and routes a notification tap to the Inbox.
+/// once signed in, and routes a notification tap to its session or the Inbox.
+/// Owns the store and router so a tap that cold-launches the app can route
+/// before any view has appeared.
 @MainActor
 final class WatchPushDelegate: NSObject, WKApplicationDelegate {
-	var store: DeckStore?
-	var router: WatchRouter?
+	let store = DeckStore()
+	let router = WatchRouter()
 
 	private var didRequestAuthorization = false
 
@@ -32,7 +34,7 @@ final class WatchPushDelegate: NSObject, WKApplicationDelegate {
 	}
 
 	func didRegisterForRemoteNotifications(withDeviceToken deviceToken: Data) {
-		guard let client = store?.client else { return }
+		guard let client = store.client else { return }
 		let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
 		Task {
 			#if DEBUG
@@ -55,18 +57,12 @@ extension WatchPushDelegate: UNUserNotificationCenterDelegate {
 		didReceive response: UNNotificationResponse
 	) async {
 		let userInfo = response.notification.request.content.userInfo
-		if let id = Self.sessionId(from: userInfo) {
-			router?.openSession(id)
+		if let url = userInfo["url"] as? String, let id = DeckLink.sessionId(from: url) {
+			// Don't hold the tap response open for a network fetch.
+			Task { await router.openSession(id, in: store) }
 		} else {
-			router?.show(.inbox)
+			router.show(.inbox)
 		}
-	}
-
-	/// Extract a session id from the notification's deep-link url (e.g. "/s/c_1").
-	static func sessionId(from userInfo: [AnyHashable: Any]) -> String? {
-		guard let url = userInfo["url"] as? String,
-			let range = url.range(of: "/s/") else { return nil }
-		return url[range.upperBound...].split(separator: "/").first.map(String.init)
 	}
 
 	nonisolated func userNotificationCenter(
