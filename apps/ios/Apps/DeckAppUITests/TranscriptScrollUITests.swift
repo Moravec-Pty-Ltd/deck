@@ -23,7 +23,7 @@ final class TranscriptScrollUITests: XCTestCase {
 		sleep(3)
 		XCTAssertTrue(latest.isHittable, "the latest message should be on screen without scrolling")
 		XCTAssertTrue(window.contains(latest.frame), "latest message frame \(latest.frame) should sit inside the window \(window)")
-		let composer = app.textFields["Message"]
+		let composer = app.textViews["sessionComposer"]
 		XCTAssertTrue(composer.exists)
 		XCTAssertLessThan(latest.frame.maxY, composer.frame.minY, "the latest message sits just above the composer")
 
@@ -51,7 +51,7 @@ final class TranscriptScrollUITests: XCTestCase {
 		let row = app.staticTexts["long transcript"].firstMatch
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
-		let composer = app.textFields["Message"]
+		let composer = app.textViews["sessionComposer"]
 		XCTAssertTrue(composer.waitForExistence(timeout: 20))
 		composer.tap()
 		XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))

@@ -17,7 +17,7 @@ final class ComposerKeyboardUITests: XCTestCase {
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 
-		let field = app.textFields["Message"]
+		let field = app.textViews["sessionComposer"]
 		XCTAssertTrue(field.waitForExistence(timeout: 20))
 		field.tap()
 		field.typeText(draft)

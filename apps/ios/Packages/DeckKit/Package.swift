@@ -57,7 +57,7 @@ let package = Package(
 				.product(name: "Tokenizers", package: "swift-transformers")
 			]
 		),
-		.testTarget(name: "DeckKitTests", dependencies: ["DeckKit", "DeckIntents", "DeckBrowser", "DeckLocalModel"])
+		.testTarget(name: "DeckKitTests", dependencies: ["DeckKit", "DeckUI", "DeckIntents", "DeckBrowser", "DeckLocalModel"])
 	],
 	swiftLanguageModes: [.v5]
 )

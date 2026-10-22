@@ -22,6 +22,10 @@ struct MacComposer: View {
 	@State private var importing = false
 	@State private var dropTargeted = false
 	@State private var attachFailures = 0
+	@State private var pasteMonitor: Any?
+	@FocusState private var fieldFocused: Bool
+	@State private var windowIsKey = false
+	@Environment(\.controlActiveState) private var activeState
 
 	static let maxImages = 8
 
@@ -99,7 +103,20 @@ struct MacComposer: View {
 				RoundedRectangle(cornerRadius: DeckStyle.Radius.control)
 					.stroke(Color(nsColor: .separatorColor), lineWidth: 0.5))
 			.onSubmit { if canSend { onSend() } }
+			.focused($fieldFocused)
 			.accessibilityIdentifier("sessionComposer")
+			// The monitor sees every window's keys; only the key window's composer answers.
+			.onChange(of: activeState, initial: true) { windowIsKey = activeState == .key }
+			// The field editor takes ⌘V before onPasteCommand and drops an image,
+			// so an image on the clipboard is caught on the way in.
+			.onAppear {
+				guard pasteMonitor == nil else { return }
+				pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { pasteImage($0) ? nil : $0 }
+			}
+			.onDisappear {
+				if let pasteMonitor { NSEvent.removeMonitor(pasteMonitor) }
+				pasteMonitor = nil
+			}
 	}
 
 	private var quickMessages: some View {
@@ -166,40 +183,26 @@ struct MacComposer: View {
 	}
 
 	private func attach(_ providers: [NSItemProvider]) async {
-		for provider in providers {
-			if let data = try? await provider.imageData() { attach(data) } else { attachFailures += 1 }
+		for provider in providers where images.count < Self.maxImages {
+			if let image = await ImagePaste.image(from: provider) { images.append(image) } else { attachFailures += 1 }
 		}
 	}
 
-	/// PNG and JPEG go as they are; anything else (TIFF from a screenshot
-	/// paste, HEIC) is re-encoded as PNG, which deck and the model both take.
+	/// ⌘V in the field with an image and no rich text on the clipboard
+	/// (the same rule as the phone's field).
+	private func pasteImage(_ event: NSEvent) -> Bool {
+		guard fieldFocused, windowIsKey, store.supports(.images),
+			event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+			event.charactersIgnoringModifiers == "v" else { return false }
+		let board = NSPasteboard.general
+		guard board.availableType(from: [.rtf, .rtfd]) == nil,
+			let type = board.types?.first(where: { UTType($0.rawValue)?.conforms(to: .image) == true }) else { return false }
+		if let data = board.data(forType: type) { attach(data) } else { attachFailures += 1 }
+		return true
+	}
+
 	private func attach(_ data: Data) {
 		guard images.count < Self.maxImages else { return }
-		if data.isEmpty {
-			attachFailures += 1
-		} else if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
-			images.append(DeckImage(mediaType: "image/png", data: data.base64EncodedString()))
-		} else if data.starts(with: [0xFF, 0xD8, 0xFF]) {
-			images.append(DeckImage(mediaType: "image/jpeg", data: data.base64EncodedString()))
-		} else if let image = NSImage(data: data), let png = Self.png(image) {
-			images.append(DeckImage(mediaType: "image/png", data: png.base64EncodedString()))
-		} else {
-			attachFailures += 1
-		}
-	}
-
-	private static func png(_ image: NSImage) -> Data? {
-		guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return nil }
-		return rep.representation(using: .png, properties: [:])
-	}
-}
-
-extension NSItemProvider {
-	fileprivate func imageData() async throws -> Data? {
-		try await withCheckedThrowingContinuation { continuation in
-			_ = loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
-				if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: data) }
-			}
-		}
+		if let image = ImagePaste.image(from: data) { images.append(image) } else { attachFailures += 1 }
 	}
 }

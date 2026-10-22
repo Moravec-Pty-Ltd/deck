@@ -37,9 +37,9 @@ struct SessionDetailView: View {
 	@State private var stackedHeight: CGFloat = 0
 	@State private var isSending = false
 	@AppStorage("condensedTranscript") private var condensedTranscript = true
-	@State private var composerFieldId = 0
 	@State private var photoItems: [PhotosPickerItem] = []
-	@FocusState private var composerFocused: Bool
+	@State private var composerFocused = false
+	@State private var pasteFailures = 0
 	@State private var leaving = false
 	@State private var showDeleteSheet = false
 	@State private var showMergeSheet = false
@@ -862,30 +862,34 @@ struct SessionDetailView: View {
 				}
 				.frame(height: 56)
 			}
-			TextField("Message", text: Bindable(viewModel).draft, axis: .vertical)
-				.textFieldStyle(.plain)
-				.lineLimit(1...5)
-				.id(composerFieldId)
-				.focused($composerFocused)
-				// Here, not in the view's onAppear: the field only exists once the
-				// body has left its loading state, and focus set earlier is lost.
-				.onAppear { if viewModel.composerFocused { composerFocused = true } }
-				.accessibilityIdentifier("sessionComposer")
+			if pasteFailures > 0 {
+				Text("Couldn't paste that image")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.task(id: pasteFailures) {
+						guard (try? await Task.sleep(for: .seconds(4))) != nil else { return }
+						pasteFailures = 0
+					}
+			}
+			ComposerTextField(text: Bindable(viewModel).draft, isFocused: $composerFocused) { providers in
+				Task { await attach(providers, to: viewModel) }
+			}
+			.overlay(alignment: .topLeading) {
+				if viewModel.draft.isEmpty {
+					Text("Message")
+						.foregroundStyle(.tertiary)
+						.allowsHitTesting(false)
+						.accessibilityHidden(true)
+				}
+			}
+			// Here, not in the view's onAppear: the field only exists once the
+			// body has left its loading state, and focus set earlier is lost.
+			.onAppear { if viewModel.composerFocused { composerFocused = true } }
 			HStack(spacing: 18) {
 				PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
 					Image(systemName: "photo.on.rectangle")
 				}
 				.accessibilityLabel("Attach photos")
-				// A system paste control rather than our own button. Asking
-				// UIPasteboard whether it has an image is a read, and with a
-				// Universal Clipboard item from another device answering it means
-				// fetching the item, which raises "Allow Paste?". This is drawn by
-				// the system and the tap itself is the permission, so nothing asks.
-				PasteButton(supportedContentTypes: [.image]) { providers in
-					Task { await attach(providers, to: viewModel) }
-				}
-				.labelStyle(.iconOnly)
-				.buttonBorderShape(.circle)
 				if store.supports(.quickMessages) {
 					Menu {
 						let offered = store.quickMessages(for: session)
@@ -960,6 +964,7 @@ struct SessionDetailView: View {
 				Image(systemName: "xmark.circle.fill")
 					.foregroundStyle(.white, .black.opacity(0.6))
 			}
+			.accessibilityLabel("Remove image")
 			.offset(x: 4, y: -4)
 		}
 	}
@@ -983,7 +988,6 @@ struct SessionDetailView: View {
 			if await viewModel.sendComposer(text: text, images: images) {
 				viewModel.draft = ""
 				viewModel.draftImages = []
-				composerFieldId += 1
 				composerFocused = true
 			}
 			isSending = false
@@ -993,21 +997,22 @@ struct SessionDetailView: View {
 	private func loadPhotos(_ items: [PhotosPickerItem], to viewModel: SessionDetailViewModel) async {
 		for item in items {
 			guard viewModel.draftImages.count < 8 else { break }
-			if let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty {
-				let isPNG = data.starts(with: [0x89, 0x50, 0x4E, 0x47])
-				viewModel.draftImages.append(DeckImage(
-					mediaType: isPNG ? "image/png" : "image/jpeg",
-					data: data.base64EncodedString()))
+			if let data = try? await item.loadTransferable(type: Data.self), let image = ImagePaste.image(from: data) {
+				viewModel.draftImages.append(image)
 			}
 		}
 		photoItems = []
 	}
 
-	/// Attach what the paste control handed over, up to the composer's limit.
+	/// Attach images pasted into the field or dropped, up to the composer's limit.
 	private func attach(_ providers: [NSItemProvider], to viewModel: SessionDetailViewModel) async {
-		for provider in providers where viewModel.draftImages.count < 8 {
-			guard let image = await Self.image(from: provider), let data = image.pngData() else { continue }
-			viewModel.draftImages.append(DeckImage(mediaType: "image/png", data: data.base64EncodedString()))
+		for provider in providers.filter(ImagePaste.hasImage) where viewModel.draftImages.count < 8 {
+			if let image = await ImagePaste.image(from: provider) {
+				// Checked again: another paste may have filled the draft while this one loaded.
+				if viewModel.draftImages.count < 8 { viewModel.draftImages.append(image) }
+			} else {
+				pasteFailures += 1
+			}
 		}
 	}
 
@@ -1015,7 +1020,7 @@ struct SessionDetailView: View {
 	/// links go into the message on a line of their own, a file by its name.
 	private func drop(_ providers: [NSItemProvider], into viewModel: SessionDetailViewModel) async {
 		for provider in providers {
-			if provider.canLoadObject(ofClass: UIImage.self) {
+			if ImagePaste.hasImage(provider) {
 				await attach([provider], to: viewModel)
 			} else if let text = await Self.text(from: provider), !text.isEmpty {
 				viewModel.draft += (viewModel.draft.isEmpty ? "" : "\n") + text
@@ -1034,15 +1039,6 @@ struct SessionDetailView: View {
 			_ = provider.loadObject(ofClass: URL.self) { url, _ in continuation.resume(returning: url) }
 		}
 		return url.map { $0.isFileURL ? $0.lastPathComponent : $0.absoluteString }
-	}
-
-	private static func image(from provider: NSItemProvider) async -> UIImage? {
-		guard provider.canLoadObject(ofClass: UIImage.self) else { return nil }
-		return await withCheckedContinuation { continuation in
-			provider.loadObject(ofClass: UIImage.self) { object, _ in
-				continuation.resume(returning: object as? UIImage)
-			}
-		}
 	}
 
 	private func commentPrompt(decision: String) {
