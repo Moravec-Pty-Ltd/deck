@@ -142,6 +142,7 @@ describe('deriveTopic', () => {
 
 	it('respects a configurable base topic', () => {
 		expect(deriveTopic('com.example.app', 'watchos')).toBe('com.example.app.watchkitapp');
+		expect(deriveTopic('com.example.app', 'widgets')).toBe('com.example.app.push-type.widgets');
 	});
 });
 
@@ -171,6 +172,7 @@ describe('registerDeviceSchema', () => {
 	it('accepts a macos device', () => {
 		const parsed = registerDeviceSchema.parse({ token: 'aB01', platform: 'macos', env: 'development' });
 		expect(parsed.platform).toBe('macos');
+		expect(registerDeviceSchema.parse({ token: 'aB01', platform: 'widgets', env: 'production' }).platform).toBe('widgets');
 	});
 
 	it('rejects a non-hex token', () => {

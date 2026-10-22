@@ -1,6 +1,6 @@
 import type { DeckSession } from '$lib/types';
 import { answerText } from './http';
-import { pendingAskId, resolveAsk } from './ask';
+import { pendingAskId, resolveAsk, wasSettled } from './ask';
 import { recordAnswer } from './claude';
 
 // One structured pick per question, as the ask card posts it and the transcript
@@ -24,26 +24,29 @@ export function parseAnswers(raw: unknown): StructuredAnswer[] | undefined {
 	return answers;
 }
 
-// The ask the answer is for: the id the client named (`askId` from the agent
-// API's listing, `toolUseId` from the web ask card), else the session's pending
-// ask when the server knows it.
-function askIdFor(sessionId: string, body: Record<string, unknown>): string | undefined {
+// The ask the client says it is answering (`askId` from the agent API's
+// listing, `toolUseId` from the web ask card), if it named one.
+export function namedAskId(body: Record<string, unknown>): string | undefined {
 	for (const key of ['askId', 'toolUseId']) {
 		const v = body[key];
 		if (typeof v === 'string' && v) return v;
 	}
-	return pendingAskId(sessionId);
+	return undefined;
 }
 
 // Answer a session's blocking ask. Shared by the web and agent answer routes so
 // both persist structured picks the same way: the picks are recorded on the
 // transcript against the ask's tool_use id (so the card shows them answered on
 // reload, from any client), then the pending entry resolves with the text and
-// the turn continues. Returns whether anything was waiting.
+// the turn continues. Returns whether anything was waiting. An answer naming an
+// ask already settled is turned down: a widget or notification still showing
+// an answered question must not answer the session's next one.
 export function answerAsk(session: DeckSession, body: Record<string, unknown>): boolean {
 	const text = answerText(body);
 	const answers = parseAnswers(body.answers);
-	const askId = askIdFor(session.id, body);
+	const named = namedAskId(body);
+	if (named && wasSettled(session.id, named)) return false;
+	const askId = named ?? pendingAskId(session.id);
 	if (askId && answers) recordAnswer(session.id, askId, answers);
 	return resolveAsk(session.id, text);
 }

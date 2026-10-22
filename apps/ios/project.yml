@@ -105,6 +105,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: tech.moravec.deck.widgets
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
+      # The glance widget reads deck with the app's credentials and takes
+      # WidgetKit pushes.
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckWidgets/DeckWidgets.debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Apps/DeckWidgets/DeckWidgets.release.entitlements
   DeckShare:
     type: app-extension
     platform: iOS

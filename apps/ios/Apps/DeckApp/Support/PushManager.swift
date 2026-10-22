@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import UserNotifications
+import WidgetKit
 import DeckKit
 
 /// Owns notification authorization/registration and hands the APNs device
@@ -21,6 +22,8 @@ final class PushManager: NSObject, UNUserNotificationCenterDelegate {
 
 	func requestAuthorizationAndRegister() {
 		Task {
+			// The widget's pushes need no notification permission.
+			await WidgetPush.register(await WidgetCenter.shared.currentPushInfo, client: store?.client)
 			let center = UNUserNotificationCenter.current()
 			let granted = (try? await center.requestAuthorization(options: [.alert, .badge, .sound])) ?? false
 			guard granted else { return }
