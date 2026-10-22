@@ -1,17 +1,19 @@
 import type { SpeechCapabilities, SpeechSegment, SpokenQuestion } from './speech-core';
-import { RECORDING_MAX_MS, RECORDING_MIN_MS, VAD_CLOSE_MS, VAD_OPEN_MS, VAD_THRESHOLD } from './speech-core';
+import { PRE_ROLL_MS, RECORDING_MAX_MS, RECORDING_MIN_MS, TAKE_SAMPLE_RATE, VAD_CLOSE_MS, VAD_OPEN_MS, VAD_THRESHOLD } from './speech-core';
+import captureWorklet from './pcm-capture.worklet.js?url';
 import {
 	answerAskFlow,
 	askAnswerText,
 	askPrompt,
 	DEFAULT_VOICE_SETTINGS,
+	downsample,
 	errorText,
 	isUsableTake,
 	LISTENING_CAPTION,
 	nextSegment,
 	parseVoiceSettings,
+	PcmRing,
 	serializeVoiceSettings,
-	pickRecorderType,
 	restingCaption,
 	restingStatus,
 	rms,
@@ -19,6 +21,7 @@ import {
 	TRANSCRIBING_CAPTION,
 	vadAction,
 	VoiceDetector,
+	wavBytes,
 	type AskFlow,
 	type Utterance,
 	type VoiceSettings
@@ -26,8 +29,10 @@ import {
 
 // Voice mode for one session in the browser: reads replies through deck's
 // speech proxy (sentence segments, prefetched one ahead), records push-to-talk
-// (or hands-free, energy-gated) audio through the MediaRecorder and sends the
-// transcript on, and walks a blocking question's answers one at a time.
+// (or hands-free, energy-gated) audio as PCM from an AudioWorklet and sends
+// the transcript on, and walks a blocking question's answers one at a time.
+// The capture runs whenever the mic is open, so a take starts with the second
+// of audio before the detector opened it and keeps the first word.
 // Everything reactive is a rune so the bar renders straight off it; the pure
 // pieces are in voice-core.ts, which is where the branching is tested.
 
@@ -92,15 +97,20 @@ export class VoiceSession {
 	private playing = false;
 	private playToken = 0;
 	private stream: MediaStream | null = null;
-	private recorder: MediaRecorder | null = null;
-	private chunks: BlobPart[] = [];
+	// The take's PCM while one is open, starting with the pre-roll.
+	private take: Float32Array[] | null = null;
+	// True while a take waits on the mic; a release meanwhile clears it.
+	private starting = false;
 	private recordStart = 0;
 	private recordTimer: ReturnType<typeof setTimeout> | undefined;
 	private cancelled = false;
 	private context: AudioContext | null = null;
-	private analyser: AnalyserNode | null = null;
-	private meterTimer: ReturnType<typeof setInterval> | undefined;
-	private detector = new VoiceDetector(VAD_THRESHOLD.medium, VAD_OPEN_MS, VAD_CLOSE_MS);
+	private captureModule: Promise<void> | null = null;
+	private source: MediaStreamAudioSourceNode | null = null;
+	private capture: AudioWorkletNode | null = null;
+	private ring: PcmRing | null = null;
+	private sampleRate = 48_000;
+	private detector = new VoiceDetector(VAD_THRESHOLD.medium, VAD_OPEN_MS, VAD_CLOSE_MS.normal);
 	// The last assistant text of the turn, read when chattiness is final-only.
 	private lastText = '';
 
@@ -151,7 +161,7 @@ export class VoiceSession {
 	updateSettings(next: VoiceSettings): void {
 		this.settings = next;
 		saveVoiceSettings(next);
-		this.detector.setThreshold(VAD_THRESHOLD[next.sensitivity]);
+		this.tuneDetector();
 		if (!this.enabled) return;
 		if (next.handsFree) void this.startHandsFree();
 		else this.stopHandsFree();
@@ -338,46 +348,59 @@ export class VoiceSession {
 	// Hold-to-talk began (or the detector opened). Reading stops: the reply
 	// supersedes it.
 	async startRecording(): Promise<void> {
-		if (!this.enabled || this.recorder) return;
+		if (!this.enabled || this.micBusy) return;
 		this.error = '';
 		this.stopPlayback();
+		this.starting = true;
 		try {
-			const stream = await this.openMic();
-			this.beginTake(stream);
+			await this.openTake();
 		} catch (e) {
 			this.error = errorText(e, 'microphone unavailable');
 			this.status = 'idle';
 		}
+		this.starting = false;
 	}
 
-	private beginTake(stream: MediaStream): void {
-		const type = pickRecorderType((t) => MediaRecorder.isTypeSupported(t));
-		const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
-		this.chunks = [];
+	// A take is open or on its way.
+	private get micBusy(): boolean {
+		return !!this.take || this.starting;
+	}
+
+	// Released (or the mic closed) while it was starting: no take, and
+	// hold-to-talk closes the mic.
+	private async openTake(): Promise<void> {
+		await this.startCapture(await this.openMic());
+		if (this.starting && this.capture) this.beginTake();
+		else this.releaseMic();
+	}
+
+	private beginTake(): void {
+		this.take = this.ring?.read() ?? [];
 		this.cancelled = false;
-		recorder.ondataavailable = (e) => {
-			if (e.data.size) this.chunks.push(e.data);
-		};
-		recorder.onstop = () => void this.finishTake(recorder.mimeType || type || 'audio/webm');
-		recorder.start(250);
-		this.recorder = recorder;
 		this.recording = true;
 		this.recordStart = Date.now();
 		this.status = 'listening';
 		this.caption = LISTENING_CAPTION;
 		this.recordTimer = setTimeout(() => this.stopRecording(), RECORDING_MAX_MS);
-		this.startMeter(stream);
 	}
 
 	stopRecording(): void {
 		clearTimeout(this.recordTimer);
-		const recorder = this.recorder;
-		if (!recorder) return;
-		this.recorder = null;
+		const take = this.take;
+		this.starting = false;
+		if (!take) return;
+		this.take = null;
 		this.recording = false;
-		if (recorder.state !== 'inactive') recorder.stop();
+		// The clock starts with the take, so the pre-roll is not counted.
+		const ms = Date.now() - this.recordStart;
+		this.releaseMic();
+		void this.finishTake(take, this.sampleRate, ms);
+	}
+
+	// Hold-to-talk closes the mic between takes; hands-free keeps it listening.
+	private releaseMic(): void {
 		if (this.settings.handsFree) return;
-		this.stopMeter();
+		this.stopCapture();
 		this.closeMic();
 	}
 
@@ -388,13 +411,13 @@ export class VoiceSession {
 		this.caption = '';
 	}
 
-	private async finishTake(type: string): Promise<void> {
-		const blob = new Blob(this.chunks, { type });
-		this.chunks = [];
-		if (!isUsableTake(this.cancelled, Date.now() - this.recordStart, blob.size, RECORDING_MIN_MS)) {
+	private async finishTake(take: Float32Array[], sampleRate: number, ms: number): Promise<void> {
+		const frames = take.reduce((n, c) => n + c.length, 0);
+		if (!isUsableTake(this.cancelled, ms, frames, RECORDING_MIN_MS)) {
 			this.restAfterTake();
 			return;
 		}
+		const blob = new Blob([wavBytes(downsample(take, sampleRate, TAKE_SAMPLE_RATE), TAKE_SAMPLE_RATE)], { type: 'audio/wav' });
 		this.status = 'transcribing';
 		this.caption = TRANSCRIBING_CAPTION;
 		try {
@@ -412,6 +435,7 @@ export class VoiceSession {
 
 	private async transcribe(blob: Blob): Promise<string> {
 		const res = await fetch('/api/agent/speech/transcribe', { method: 'POST', headers: { 'content-type': blob.type }, body: blob });
+		if (res.status === 413) throw new Error('recording too large for the server (raise BODY_SIZE_LIMIT)');
 		if (!res.ok) throw new Error(`transcribe ${res.status}`);
 		return ((await res.json()) as { text: string }).text.trim();
 	}
@@ -433,49 +457,75 @@ export class VoiceSession {
 		else void this.speak(askPrompt(step.flow));
 	}
 
-	// ---- Level meter and hands-free detector ----
+	// ---- Capture, level meter and hands-free detector ----
 
-	private startMeter(stream: MediaStream): void {
-		if (this.meterTimer) return;
-		const analyser = this.attachAnalyser(stream);
-		if (!analyser) return;
-		const buffer = new Float32Array(analyser.fftSize);
-		this.meterTimer = setInterval(() => {
-			analyser.getFloatTimeDomainData(buffer);
-			const level = rms(buffer);
-			this.level = Math.min(1, level * 6);
-			if (this.settings.handsFree) this.onLevel(level);
-		}, 50);
+	// Mic PCM flows through the worklet for as long as the mic is open: into the
+	// pre-roll ring always, into the take while one is open.
+	private async startCapture(stream: MediaStream): Promise<void> {
+		const context = this.runningContext();
+		if (this.capture) return;
+		await this.loadCaptureModule(context);
+		// Started by another call meanwhile, or the mic closed while loading.
+		if (this.capture || stream !== this.stream) return;
+		const source = context.createMediaStreamSource(stream);
+		const capture = new AudioWorkletNode(context, 'pcm-capture');
+		capture.port.onmessage = (e: MessageEvent<Float32Array>) => this.onPcm(e.data);
+		source.connect(capture);
+		// The output is silence; connecting it keeps the node processing everywhere.
+		capture.connect(context.destination);
+		this.sampleRate = context.sampleRate;
+		this.ring = new PcmRing(Math.round((context.sampleRate * PRE_ROLL_MS) / 1000));
+		this.source = source;
+		this.capture = capture;
 	}
 
-	private attachAnalyser(stream: MediaStream): AnalyserNode | null {
-		try {
-			this.context ??= new AudioContext();
-			const analyser = this.context.createAnalyser();
-			analyser.fftSize = 1024;
-			this.context.createMediaStreamSource(stream).connect(analyser);
-			this.analyser = analyser;
-			return analyser;
-		} catch {
-			return null;
-		}
+	// A context the system suspended (an interruption) delivers nothing, so
+	// every start asks it to run.
+	private runningContext(): AudioContext {
+		const context = (this.context ??= new AudioContext());
+		void context.resume().catch(() => {});
+		return context;
 	}
 
-	private stopMeter(): void {
-		clearInterval(this.meterTimer);
-		this.meterTimer = undefined;
-		this.analyser?.disconnect();
-		this.analyser = null;
+	// Once per context; a failed load is retried on the next take.
+	private loadCaptureModule(context: AudioContext): Promise<void> {
+		return (this.captureModule ??= context.audioWorklet.addModule(captureWorklet).catch((e) => {
+			this.captureModule = null;
+			throw e;
+		}));
+	}
+
+	private stopCapture(): void {
+		this.capture?.port.postMessage('stop');
+		if (this.capture) this.capture.port.onmessage = null;
+		this.capture?.disconnect();
+		this.source?.disconnect();
+		this.capture = null;
+		this.source = null;
+		this.ring = null;
 		this.level = 0;
+	}
+
+	private onPcm(chunk: Float32Array): void {
+		this.take?.push(chunk);
+		this.ring?.push(chunk);
+		const level = rms(chunk);
+		this.level = Math.min(1, level * 6);
+		if (this.settings.handsFree) this.onLevel(level);
+	}
+
+	private tuneDetector(): void {
+		this.detector.setThreshold(VAD_THRESHOLD[this.settings.sensitivity]);
+		this.detector.setCloseMs(VAD_CLOSE_MS[this.settings.endOfSpeech]);
 	}
 
 	private async startHandsFree(): Promise<void> {
 		if (!this.enabled || !this.canListen) return;
 		try {
 			const stream = await this.openMic();
-			this.detector.setThreshold(VAD_THRESHOLD[this.settings.sensitivity]);
+			this.tuneDetector();
 			this.detector.reset();
-			this.startMeter(stream);
+			await this.startCapture(stream);
 			this.restAfterTake();
 		} catch (e) {
 			this.error = errorText(e, 'microphone unavailable');
@@ -483,15 +533,17 @@ export class VoiceSession {
 	}
 
 	private stopHandsFree(): void {
-		this.stopMeter();
 		this.detector.reset();
-		if (!this.recorder) this.closeMic();
+		if (!this.take) {
+			this.stopCapture();
+			this.closeMic();
+		}
 		if (this.status !== 'listening') return;
 		this.status = 'idle';
 		this.caption = '';
 	}
 
-	// The detector's edges drive the recorder in hands-free mode; a take that
+	// The detector's edges open and close takes in hands-free mode; a take that
 	// is still transcribing keeps the mic closed.
 	private onLevel(level: number): void {
 		const action = vadAction(this.detector.update(level, Date.now()), this.recording, this.status === 'transcribing');
@@ -503,5 +555,6 @@ export class VoiceSession {
 		this.disable();
 		this.context?.close().catch(() => {});
 		this.context = null;
+		this.captureModule = null;
 	}
 }

@@ -31,19 +31,34 @@ public enum VadSensitivity: String, CaseIterable, Codable, Sendable {
 	}
 }
 
+/// How long a pause ends a hands-free take.
+public enum EndOfSpeech: String, CaseIterable, Codable, Sendable {
+	case short, normal, long
+
+	public var closeSeconds: TimeInterval {
+		switch self {
+		case .short: return 1.2
+		case .normal: return 2
+		case .long: return 3
+		}
+	}
+}
+
 public struct VoiceSettings: Codable, Equatable, Sendable {
 	public var chattiness: Chattiness = .everyUpdate
 	public var handsFree = true
 	public var sensitivity: VadSensitivity = .medium
+	public var endOfSpeech: EndOfSpeech = .normal
 	/// Bumped when a default changes for everyone. Both clients save the whole
 	/// object, so a stored false is not a choice until it carries this version.
 	public private(set) var version = VoiceSettings.currentVersion
 	static let currentVersion = 2
 
-	public init(chattiness: Chattiness = .everyUpdate, handsFree: Bool = true, sensitivity: VadSensitivity = .medium) {
+	public init(chattiness: Chattiness = .everyUpdate, handsFree: Bool = true, sensitivity: VadSensitivity = .medium, endOfSpeech: EndOfSpeech = .normal) {
 		self.chattiness = chattiness
 		self.handsFree = handsFree
 		self.sensitivity = sensitivity
+		self.endOfSpeech = endOfSpeech
 	}
 
 	// Each key is optional so settings saved before a key existed keep the rest
@@ -54,6 +69,7 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 		let stored = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
 		handsFree = stored < Self.currentVersion ? true : try container.decodeIfPresent(Bool.self, forKey: .handsFree) ?? true
 		sensitivity = try container.decodeIfPresent(VadSensitivity.self, forKey: .sensitivity) ?? .medium
+		endOfSpeech = (try? container.decodeIfPresent(EndOfSpeech.self, forKey: .endOfSpeech)) ?? .normal
 	}
 
 	static let defaultsKey = "deck.voice.settings"
@@ -71,10 +87,12 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 }
 
 /// Speech must hold above the threshold this long to open the mic, and drop
-/// below it this long to close it.
+/// below it this long (the end-of-speech setting) to close it.
 public enum VoiceTiming {
 	public static let openSeconds: TimeInterval = 0.2
-	public static let closeSeconds: TimeInterval = 1.2
+	public static let closeSeconds = EndOfSpeech.normal.closeSeconds
+	/// How much audio from before the detector opened a take starts with.
+	public static let preRollSeconds: TimeInterval = 1
 	public static let maxTakeSeconds: TimeInterval = 120
 	public static let minTakeSeconds: TimeInterval = 0.5
 }
@@ -181,8 +199,8 @@ public struct VoiceDetector: Sendable {
 
 	public private(set) var state: State = .silent
 	public var threshold: Float
+	public var closeSeconds: TimeInterval
 	private let openSeconds: TimeInterval
-	private let closeSeconds: TimeInterval
 	private var since: TimeInterval = 0
 
 	public init(threshold: Float, openSeconds: TimeInterval = VoiceTiming.openSeconds, closeSeconds: TimeInterval = VoiceTiming.closeSeconds) {
@@ -208,6 +226,27 @@ public struct VoiceDetector: Sendable {
 		}
 		return nil
 	}
+}
+
+// MARK: - Pre-roll
+
+/// The newest `capacity` bytes: the lead-in a take starts with, since the
+/// detector only opens once speech is already under way.
+public struct PcmRing: Sendable {
+	public private(set) var data = Data()
+	private let capacity: Int
+
+	public init(capacity: Int) {
+		self.capacity = capacity
+	}
+
+	public mutating func append(_ bytes: Data) {
+		data.append(bytes)
+		// A fresh copy, so the dropped bytes are freed and indices start at 0.
+		if data.count > capacity { data = Data(data.suffix(capacity)) }
+	}
+
+	public mutating func removeAll() { data = Data() }
 }
 
 // MARK: - Audio helpers
@@ -250,7 +289,8 @@ public enum VoiceAudio {
 		handsFree && supportsMonitoring
 	}
 
-	/// Whether a finished take is worth transcribing.
+	/// Whether a finished take is worth transcribing. `seconds` runs from when
+	/// the take began, so the pre-roll before it is not counted.
 	public static func isUsableTake(cancelled: Bool, seconds: TimeInterval, bytes: Int) -> Bool {
 		!cancelled && seconds >= VoiceTiming.minTakeSeconds && bytes > 0
 	}

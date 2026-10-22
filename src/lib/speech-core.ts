@@ -194,6 +194,7 @@ export function matchSpokenAnswer(transcript: string, options: SpokenOption[]): 
 
 export type Chattiness = 'every-update' | 'final-only';
 export type VadSensitivity = 'low' | 'medium' | 'high';
+export type EndOfSpeech = 'short' | 'normal' | 'long';
 
 // RMS thresholds (0..1 amplitude) for the energy detector, per sensitivity.
 // High opens on quieter speech and so also on more room noise.
@@ -203,8 +204,16 @@ export const VAD_THRESHOLD: Record<VadSensitivity, number> = {
 	high: 0.02
 };
 // Speech must hold above the threshold this long to open the mic, and drop
-// below it this long to close it.
+// below it this long (the end-of-speech setting) to close it.
 export const VAD_OPEN_MS = 200;
-export const VAD_CLOSE_MS = 1200;
+export const VAD_CLOSE_MS: Record<EndOfSpeech, number> = {
+	short: 1200,
+	normal: 2000,
+	long: 3000
+};
+// How much audio from before the detector opened a take starts with.
+export const PRE_ROLL_MS = 1000;
+// Takes upload as 16 kHz WAV, like the apps', to stay small.
+export const TAKE_SAMPLE_RATE = 16_000;
 export const RECORDING_MAX_MS = 120_000;
 export const RECORDING_MIN_MS = 500;

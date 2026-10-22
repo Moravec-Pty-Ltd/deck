@@ -49,7 +49,7 @@ spreads `process.env`), so the hook inherits them without any per-harness config
 ```sh
 export DECK_BASE_URL="https://your-deck-host:4818"
 export NTFY_TOPIC="your-ntfy-topic"
-PORT=4818 node build/index.js
+PORT=4818 BODY_SIZE_LIMIT=4M node build/index.js
 ```
 
 > Future enhancement: issue #77 shipped the `DECK_SESSION_ID` half this relies

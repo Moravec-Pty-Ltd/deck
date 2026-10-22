@@ -134,6 +134,7 @@ public final class VoiceController {
 		self.capture = RecorderCapture()
 		#endif
 		detector.threshold = settings.sensitivity.threshold
+		detector.closeSeconds = settings.endOfSpeech.closeSeconds
 	}
 
 	/// Asks deck what the speech server offers; a request lost to a cold
@@ -186,6 +187,7 @@ public final class VoiceController {
 	private func applySettings() {
 		if persistsSettings { settings.save() }
 		detector.threshold = settings.sensitivity.threshold
+		detector.closeSeconds = settings.endOfSpeech.closeSeconds
 		guard enabled else { return }
 		// Hands-free is the one mode that needs echo cancellation; switching it
 		// changes the session mode, which must happen with the mic closed.
@@ -609,9 +611,10 @@ protocol TakeCapture: AnyObject {
 
 #if os(iOS) || os(macOS)
 /// AVAudioEngine input tap: levels flow whenever the engine runs, and a take
-/// is the 16 kHz 16-bit mono PCM captured between begin and end, wrapped as
-/// WAV for upload. The tap runs on the audio thread, so the take state sits
-/// behind a lock and only the level callback hops to the main actor.
+/// is the 16 kHz 16-bit mono PCM captured between begin and end, led by the
+/// pre-roll from just before begin, wrapped as WAV for upload. The tap runs on
+/// the audio thread, so the take state sits behind a lock and only the level
+/// callback hops to the main actor.
 @MainActor
 final class EngineCapture: TakeCapture {
 	var onLevel: ((Float) -> Void)?
@@ -669,22 +672,27 @@ final class EngineCapture: TakeCapture {
 	}
 }
 
-/// The audio-thread half of EngineCapture: measures every buffer and, while a
-/// take is open, converts it to 16 kHz Int16 mono and appends it.
+/// The audio-thread half of EngineCapture: measures every buffer, converts it
+/// to 16 kHz Int16 mono, and keeps the last second of it as pre-roll; a take
+/// starts from that pre-roll and appends from there.
 private final class TakeSink: @unchecked Sendable {
 	private let lock = NSLock()
 	private var converter: AVAudioConverter?
 	private var taking = false
 	private var pcm = Data()
+	private var ring = PcmRing(capacity: Int(VoiceTiming.preRollSeconds * 16_000) * 2)
 	private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
 
 	func prepare(from format: AVAudioFormat) {
-		lock.withLock { converter = AVAudioConverter(from: format, to: targetFormat) }
+		lock.withLock {
+			converter = AVAudioConverter(from: format, to: targetFormat)
+			ring.removeAll()
+		}
 	}
 
 	func begin() {
 		lock.withLock {
-			pcm = Data()
+			pcm = ring.data
 			taking = true
 		}
 	}
@@ -698,14 +706,16 @@ private final class TakeSink: @unchecked Sendable {
 		}
 	}
 
-	/// Returns the buffer's level; keeps its samples when a take is open.
+	/// Returns the buffer's level; keeps its samples as pre-roll, and in the
+	/// take when one is open.
 	func consume(_ buffer: AVAudioPCMBuffer) -> Float {
 		let level = buffer.floatChannelData.map { channels in
 			VoiceAudio.rms(UnsafeBufferPointer(start: channels[0], count: Int(buffer.frameLength)))
 		} ?? 0
 		lock.withLock {
-			guard taking, let converter, let converted = convert(buffer, with: converter) else { return }
-			pcm.append(converted)
+			guard let converter, let converted = convert(buffer, with: converter) else { return }
+			if taking { pcm.append(converted) }
+			ring.append(converted)
 		}
 		return level
 	}

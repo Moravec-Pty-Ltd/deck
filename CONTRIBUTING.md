@@ -27,7 +27,7 @@ To run the production build locally:
 
 ```sh
 pnpm build
-PORT=4818 node build/index.js
+PORT=4818 BODY_SIZE_LIMIT=4M node build/index.js
 ```
 
 ## Before you open a pull request

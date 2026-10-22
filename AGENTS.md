@@ -32,7 +32,7 @@ pnpm test                                     # vitest
 pnpm test:e2e                                 # playwright, headless chromium (see e2e/README.md)
 pnpm check                                    # svelte-check: types + Svelte diagnostics
 pnpm audit                                    # fallow: dead code, complexity, duplication
-pnpm build && PORT=4818 node build/index.js   # production build
+pnpm build && PORT=4818 BODY_SIZE_LIMIT=4M node build/index.js   # production build
 ```
 
 Run `pnpm check` and `pnpm test` before claiming a change is done. A husky
