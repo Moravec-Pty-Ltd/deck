@@ -74,7 +74,8 @@ struct GlanceProvider: TimelineProvider {
 			}
 			let entries = fresh.map { [GlanceEntry(date: now, glance: $0), GlanceEntry(date: now + 5 * 60, glance: $0, showsAge: true)] }
 				?? [GlanceEntry(date: now, glance: Self.cached, showsAge: true)]
-			completion(Timeline(entries: entries, policy: .after(now + 15 * 60)))
+			// Sooner after a failure; WidgetKit may still stretch it.
+			completion(Timeline(entries: entries, policy: .after(now + (fresh == nil ? 3 : 15) * 60)))
 		}
 	}
 }
