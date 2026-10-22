@@ -105,7 +105,7 @@ final class TranscriptUITests: XCTestCase {
 		let row = app.staticTexts["Stream token diff renderer"].firstMatch
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
-		XCTAssertTrue(app.textFields["Message"].waitForExistence(timeout: 20))
+		XCTAssertTrue(app.textViews["sessionComposer"].waitForExistence(timeout: 20))
 
 		let sessionId = try VoiceUITests.sessionId(titled: "Stream token diff renderer", url: url, token: token)
 		addTeardownBlock { try? VoiceUITests.stop(sessionId: sessionId, url: url, token: token) }
@@ -116,7 +116,7 @@ final class TranscriptUITests: XCTestCase {
 		let stop = app.buttons["Stop"]
 		XCTAssertTrue(stop.waitForExistence(timeout: 5), "the working row has no Stop")
 		XCTAssertFalse(app.navigationBars.buttons["Stop"].exists, "Stop is no longer in the navigation bar")
-		XCTAssertLessThan(stop.frame.maxY, app.textFields["Message"].frame.minY, "Stop sits above the composer")
+		XCTAssertLessThan(stop.frame.maxY, app.textViews["sessionComposer"].frame.minY, "Stop sits above the composer")
 		stop.tap()
 		XCTAssertTrue(app.staticTexts["Working…"].waitForNonExistence(timeout: 30), "Stop should end the turn")
 	}
