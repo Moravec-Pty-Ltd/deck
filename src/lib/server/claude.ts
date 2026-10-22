@@ -1,9 +1,6 @@
 import { handoffPrompt } from './session-agent-core';
 import { backgroundTaskCount, IDLE_MS, teardownDecision } from './idle-teardown-core';
 import { type ChildProcess } from 'node:child_process';
-// cross-spawn so the `claude` CLI also resolves when installed as a Windows
-// .cmd/.bat shim, which node:child_process.spawn can't launch directly.
-import spawn from 'cross-spawn';
 import { EventEmitter } from 'node:events';
 import { appendLine, whenDrained } from './transcript-writer';
 import { persistImage } from './images';
@@ -17,7 +14,9 @@ import { agentEnv } from './agents/env';
 import { findModelProfile, resolveModelArg } from './model-profiles';
 import { isFlagSafe } from './agents/args';
 import { AGENT_BINARIES } from './agents/binaries';
+import { spawnAgent } from './agents/spawn';
 import { lastPrLink } from '../pr';
+import type { DeckSession } from '$lib/types';
 
 // Reading the stored transcript (snapshot tail + lazy back-scroll ranges) lives
 // in ./transcript, which serves bounded slices off a per-session line index
@@ -171,10 +170,9 @@ function notifyTurnEnd(id: string, event: Record<string, unknown>) {
 	});
 }
 
-// A non-zero exit mid-turn: error footer on the transcript, error status, and a
-// push so an unattended session isn't silently dead.
-function reportCrash(id: string, proc: Proc, code: number | null) {
-	const text = proc.stderrTail.trim() || `claude exited with code ${code}`;
+// A non-zero exit mid-turn or a failed start: error footer on the transcript,
+// error status, and a push so an unattended session isn't silently dead.
+function reportCrash(id: string, text: string) {
 	appendEvent(id, { type: 'deck.error', text, ts: Date.now() });
 	setStatus(id, 'error');
 	notify({
@@ -187,10 +185,7 @@ function reportCrash(id: string, proc: Proc, code: number | null) {
 	});
 }
 
-function startProcess(id: string): Proc {
-	const session = getStoredSession(id);
-	if (!session || session.kind !== 'claude') throw new Error('not a claude session');
-
+function claudeArgs(id: string, session: DeckSession): string[] {
 	const args = [
 		'--input-format', 'stream-json',
 		'--output-format', 'stream-json',
@@ -203,8 +198,7 @@ function startProcess(id: string): Proc {
 	// Same flag-injection guard as the pi/codex spawns (see agents/args.ts).
 	// A model profile names a locally-configured backend rather than a claude
 	// shortname, so send its own model id (or no --model at all) and carry its
-	// env onto the child below.
-	const profile = findModelProfile(session.model);
+	// env onto the child (see startProcess).
 	const modelArg = resolveModelArg(session.model);
 	if (isFlagSafe(modelArg)) args.push('--model', modelArg!);
 	// Reasoning effort (issue #178): absent runs the CLI default. The value is one
@@ -224,12 +218,37 @@ function startProcess(id: string): Proc {
 		'--append-system-prompt', `${ASK_PROMPT}\n\n${FILES_PROMPT}\n\n${WATCH_PROMPT}`,
 		'--mcp-config', JSON.stringify({ mcpServers: { deck: { type: 'http', url: mcpUrl(id) } } })
 	);
+	return args;
+}
 
-	const child = spawn(AGENT_BINARIES.claude, args, {
-		cwd: session.cwd,
-		env: agentEnv(id, session.cwd, profile?.env),
-		stdio: ['pipe', 'pipe', 'pipe']
-	});
+// A failed spawn never registers a proc, so the session errors here instead of
+// on exit. Undefined tells the caller there is no process to write to.
+async function startProcess(id: string, token: object): Promise<Proc | undefined> {
+	const session = getStoredSession(id);
+	if (!session || session.kind !== 'claude') throw new Error('not a claude session');
+	const profile = findModelProfile(session.model);
+
+	let child: ChildProcess | undefined;
+	let failure: Error | undefined;
+	try {
+		child = await spawnAgent(AGENT_BINARIES.claude, claudeArgs(id, session), {
+			cwd: session.cwd,
+			env: agentEnv(id, session.cwd, profile?.env),
+			stdio: ['pipe', 'pipe', 'pipe']
+		});
+	} catch (err) {
+		failure = err as Error;
+	}
+	// stopProcess ran while it started (the session is being deleted).
+	if (starting.get(id)?.token !== token) {
+		child?.kill('SIGTERM');
+		return undefined;
+	}
+	if (!child) {
+		rejectAsk(id, 'process failed to start');
+		reportCrash(id, failure!.message);
+		return undefined;
+	}
 	const proc: Proc = { child, running: false, buf: '', stderrTail: '', reqSeq: 0, backgroundTasks: 0 };
 	procs.set(id, proc);
 
@@ -264,7 +283,7 @@ function startProcess(id: string): Proc {
 		rejectAsk(id, 'process exited');
 		if (!proc.running) return;
 		if (code === 0) setStatus(id, 'idle');
-		else reportCrash(id, proc, code);
+		else reportCrash(id, proc.stderrTail.trim() || `claude exited with code ${code}`);
 	});
 
 	return proc;
@@ -369,12 +388,22 @@ function handleEvent(id: string, proc: Proc, event: Record<string, unknown>) {
 	appendEvent(id, event);
 }
 
-function ensureProcess(id: string): Proc {
-	let proc = procs.get(id);
-	if (!proc || proc.child.exitCode !== null || proc.child.killed) {
-		proc = startProcess(id);
+// Messages sent while a process is starting share that one start.
+const starting = new Map<string, { token: object; proc: Promise<Proc | undefined> }>();
+
+function ensureProcess(id: string): Promise<Proc | undefined> {
+	const proc = procs.get(id);
+	if (proc && proc.child.exitCode === null && !proc.child.killed) return Promise.resolve(proc);
+	let entry = starting.get(id);
+	if (!entry) {
+		const token = {};
+		const pending = startProcess(id, token).finally(() => {
+			if (starting.get(id)?.token === token) starting.delete(id);
+		});
+		entry = { token, proc: pending };
+		starting.set(id, entry);
 	}
-	return proc;
+	return entry.proc;
 }
 
 export interface ImageInput {
@@ -394,8 +423,6 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 	const session = getStoredSession(id);
 	if (!session || session.kind !== 'claude') throw new Error('not a claude session');
 	await ensureMcp(); // the MCP server must be listening before the process spawns
-	const proc = ensureProcess(id);
-	if (proc.idleTimer) clearTimeout(proc.idleTimer);
 	const hasImages = !!images && images.length > 0;
 	// Persist attachments out-of-band; the transcript keeps only file references so
 	// the JSONL (and every full re-parse of it) stays small. The CLI still gets the
@@ -408,9 +435,15 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 		answers: meta?.answers,
 		ts: Date.now()
 	});
+	// After the message is recorded, so a spawn failure's error lands below it.
+	const proc = await ensureProcess(id);
+	if (!proc) return;
+	if (proc.idleTimer) clearTimeout(proc.idleTimer);
 	proc.running = true;
 	setStatus(id, 'running');
-	const prompt = handoffPrompt(session.pendingHandoff, text);
+	// Re-read: a message that shared this start may already have sent the handoff.
+	const { pendingHandoff } = getStoredSession(id) ?? session;
+	const prompt = handoffPrompt(pendingHandoff, text);
 	const content: unknown = hasImages
 		? [
 				...(prompt ? [{ type: 'text', text: prompt }] : []),
@@ -423,7 +456,7 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 	proc.child.stdin!.write(
 		JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n'
 	);
-	if (session.pendingHandoff) updateSession(id, { pendingHandoff: undefined });
+	if (pendingHandoff) updateSession(id, { pendingHandoff: undefined });
 }
 
 // Stop the current turn but keep the session alive (control_request interrupt).
@@ -443,6 +476,7 @@ export function interrupt(id: string) {
 
 // Hard-stop the process entirely (used on session deletion).
 export function stopProcess(id: string) {
+	starting.delete(id);
 	const proc = procs.get(id);
 	if (!proc) return;
 	clearTimeout(proc.idleTimer);

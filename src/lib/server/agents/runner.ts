@@ -1,6 +1,4 @@
 import type { ChildProcess } from 'node:child_process';
-// cross-spawn so pi/codex resolve when installed as Windows .cmd/.bat shims.
-import spawn from 'cross-spawn';
 import { handoffPrompt } from '../session-agent-core';
 import type { DeckSession } from '$lib/types';
 import { appendEvent, setStatus, bus } from '../claude';
@@ -13,6 +11,7 @@ import { piDriver } from './pi';
 import { codexDriver } from './codex';
 import { opencodeDriver } from './opencode';
 import { describeLimit, silenceLimitMs, startSilenceWatchdog } from './watchdog-core';
+import { spawnAgent } from './spawn';
 
 // Per-turn agents (pi, codex, opencode): each user message spawns a fresh CLI
 // process that streams JSONL to completion, parsed by a driver into deck's
@@ -21,12 +20,19 @@ const drivers: Record<string, AgentDriver> = { pi: piDriver, codex: codexDriver,
 
 const g = globalThis as { __deckAgentProcs?: Map<string, ChildProcess> };
 const procs = (g.__deckAgentProcs ??= new Map());
+// The turn whose CLI is still starting, per session. A newer message replaces
+// it, and the older turn drops its child once that child is up.
+const starting = new Map<string, { stopped?: boolean }>();
 
 export function turnRunning(id: string): boolean {
-	return procs.has(id);
+	return procs.has(id) || starting.has(id);
 }
 
 export function interruptTurn(id: string) {
+	// A turn still starting kills its child once it is up, and ends there.
+	const start = starting.get(id);
+	if (start) start.stopped = true;
+	starting.delete(id);
 	procs.get(id)?.kill('SIGTERM');
 }
 
@@ -61,18 +67,43 @@ export async function runTurn(session: DeckSession, text: string) {
 
 	// One turn at a time: a new message interrupts any in-flight turn (resume
 	// picks up whatever the agent already committed to its session/thread).
+	// Deregister it now so its exit, which may land while this turn's CLI is
+	// still starting, can't report the session idle.
 	procs.get(session.id)?.kill('SIGTERM');
+	procs.delete(session.id);
 
 	appendEvent(session.id, { type: 'deck.user', text, ts: Date.now() });
 	setStatus(session.id, 'running');
 
 	const started = Date.now();
 	const turn = driver.buildTurn(session, handoffPrompt(session.pendingHandoff, text), session.agentSessionId);
-	const child = spawn(turn.cmd, turn.args, {
-		cwd: session.cwd,
-		env: agentEnv(session.id, session.cwd),
-		stdio: ['pipe', 'pipe', 'pipe']
-	});
+	const token: { stopped?: boolean } = {};
+	starting.set(session.id, token);
+	let child: ChildProcess | undefined;
+	let failure: Error | undefined;
+	try {
+		child = await spawnAgent(turn.cmd, turn.args, {
+			cwd: session.cwd,
+			env: agentEnv(session.id, session.cwd),
+			stdio: ['pipe', 'pipe', 'pipe']
+		});
+	} catch (err) {
+		failure = err as Error;
+	}
+	if (starting.get(session.id) !== token) {
+		child?.kill('SIGTERM');
+		// Stopped, and no newer turn has taken over: nothing else ends this one.
+		if (token.stopped && !starting.has(session.id) && !procs.has(session.id)) {
+			appendEvent(session.id, resultEvent());
+			setStatus(session.id, 'idle');
+		}
+		return;
+	}
+	starting.delete(session.id);
+	if (!child) {
+		reportCrash(session.id, session.kind, failure!.message);
+		return;
+	}
 	procs.set(session.id, child);
 
 	let sawResult = false;
@@ -131,14 +162,6 @@ export async function runTurn(session: DeckSession, text: string) {
 		// nothing to stdout is working, not stalled.
 		watchdog.bump();
 		stderrTail = (stderrTail + chunk.toString()).slice(-4000);
-	});
-
-	child.on('error', (err) => {
-		watchdog.stop();
-		if (procs.get(session.id) !== child) return;
-		procs.delete(session.id);
-		appendEvent(session.id, deckError(`failed to start ${session.kind}: ${err.message}`));
-		setStatus(session.id, 'error');
 	});
 
 	child.on('exit', (code, signal) => {
