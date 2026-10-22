@@ -488,11 +488,14 @@ export interface SkillStatus {
 // Where voice mode's speech servers are (issue: voice chat). Both are
 // OpenAI-shaped HTTP endpoints deck proxies for its clients: `ttsUrl` serves
 // POST /v1/audio/speech, `sttUrl` POST /v1/audio/transcriptions. Absent means
-// that half of voice mode is unavailable. Lives in ~/.deck/settings.json only,
+// that half of voice mode is unavailable. `streamUrl`, optional, is a WebSocket
+// speaking the OpenAI Realtime transcription events, which lets voice mode end
+// a take on the live words rather than a fixed pause. Lives in ~/.deck/settings.json only,
 // so a private host never lands in the public repo.
 export interface SpeechSettings {
 	ttsUrl?: string;
 	sttUrl?: string;
+	streamUrl?: string;
 	voice?: string;
 }
 

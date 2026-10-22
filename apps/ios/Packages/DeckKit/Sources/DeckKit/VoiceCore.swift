@@ -201,6 +201,8 @@ public struct VoiceDetector: Sendable {
 	/// While loud, when this run of speech began, bridging dips shorter than
 	/// `BargeIn.gapSeconds` between words; nil while quiet.
 	public var loudSince: TimeInterval? { quietSince == nil ? runStart : nil }
+	/// While quiet, when the quiet began; nil while loud.
+	public var silentSince: TimeInterval? { quietSince }
 	private var runStart: TimeInterval?
 	private var quietSince: TimeInterval?
 	public var threshold: Float
@@ -268,6 +270,32 @@ public enum BargeIn {
 	/// resends the whole transcript on every revision.
 	public static func addsWords(_ transcript: String, to previous: String) -> Bool {
 		transcript.split(separator: " ").count > previous.split(separator: " ").count
+	}
+}
+
+/// When a live transcript lets a take close early: a finished sentence ends
+/// after a short pause instead of the end-of-speech setting.
+public enum VoiceEndpoint {
+	/// Silence the transcriber must have heard before a finished sentence ends
+	/// a take. A streaming model emits a word up to about 0.9 s after it is
+	/// said (Voxtral Realtime at a 480 ms delay; 0.65 s at 240 ms), so by then
+	/// the live text holds everything said before the pause.
+	public static let settledSeconds: TimeInterval = 1
+	// Words a sentence doesn't end on: a trailing one means more is coming.
+	private static let trailingWords: Set = ["and", "but", "or", "so", "because", "then", "um", "uh", "er", "like", "the", "a", "an", "to", "of", "with", "if", "that"]
+
+	public static func looksFinished(_ transcript: String) -> Bool {
+		let t = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard t.range(of: #"[.!?]["')\]]*$"#, options: .regularExpression) != nil,
+			t.range(of: #"(\.\.\.|…)["')\]]*$"#, options: .regularExpression) == nil else { return false }
+		let lower = t.lowercased()
+		guard let last = lower.range(of: #"[a-z']+(?=[^a-z']*$)"#, options: .regularExpression) else { return true }
+		return !trailingWords.contains(String(lower[last]))
+	}
+
+	/// Whether the live text can end the take now and be sent as is.
+	public static func settled(transcript: String, heardSilence: TimeInterval) -> Bool {
+		heardSilence >= settledSeconds && looksFinished(transcript)
 	}
 }
 

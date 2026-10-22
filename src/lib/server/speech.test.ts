@@ -28,6 +28,7 @@ beforeEach(() => {
 	mocks.settings.mockReturnValue({ speech: { ttsUrl: 'http://tts.test/', sttUrl: 'http://tts.test', voice: 'cortana' } });
 	mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
 		if (url.endsWith('/health')) return reply({ voices: ['cortana', 'other'], default_voice: 'cortana', stt: 'whisper' });
+		if (url === 'http://stream.test/v1/models') return reply({ data: [] });
 		if (url.endsWith('/v1/audio/speech')) return reply(wav);
 		if (url.endsWith('/v1/audio/transcriptions')) {
 			const form = init?.body as FormData;
@@ -44,9 +45,13 @@ describe('capabilities', () => {
 		expect(body).toMatchObject({ tts: true, stt: true, voice: 'cortana', voices: ['cortana', 'other'] });
 		expect(body.config).toEqual({ ttsUrl: 'http://tts.test', sttUrl: 'http://tts.test', voice: 'cortana' });
 	});
+	it('reports a streaming server whose HTTP side answers', async () => {
+		mocks.settings.mockReturnValue({ speech: { sttUrl: 'http://tts.test', streamUrl: 'ws://stream.test/v1/realtime?model=example' } });
+		expect((await speech.speechCapabilities()).stream).toBe(true);
+	});
 	it('reports nothing when unconfigured or unreachable', async () => {
 		mocks.settings.mockReturnValue({});
-		expect(await speech.speechCapabilities()).toEqual({ tts: false, stt: false, voice: null, voices: [] });
+		expect(await speech.speechCapabilities()).toEqual({ tts: false, stt: false, stream: false, voice: null, voices: [] });
 		mocks.settings.mockReturnValue({ speech: { ttsUrl: 'http://down.test' } });
 		mocks.fetch.mockRejectedValue(new Error('refused'));
 		expect((await speech.speechCapabilities()).tts).toBe(false);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchSpokenAnswer, questionSpeech, segmentSpeech, spokenText } from './speech-core';
+import { looksFinished, settledTake, matchSpokenAnswer, questionSpeech, segmentSpeech, spokenText } from './speech-core';
 
 describe('spokenText', () => {
 	it('drops code blocks and tables to a marker and strips syntax', () => {
@@ -99,5 +99,20 @@ describe('questions', () => {
 		expect(matchSpokenAnswer('rewrite and then patch it', options)).toBeNull();
 		expect(matchSpokenAnswer('', options)).toBeNull();
 		expect(matchSpokenAnswer('two', [])).toBeNull();
+	});
+});
+
+describe('endpointing', () => {
+	it('treats a sentence with closing punctuation as finished', () => {
+		for (const t of ['Open the pull request.', 'Is it done?', 'Stop!', 'He said "go."', ' Run the tests. ']) expect(looksFinished(t), t).toBe(true);
+	});
+	it('keeps listening through a trailing word, an ellipsis or no punctuation', () => {
+		for (const t of ['', 'Open the pull request', 'Open the pull request and.', 'and...', 'Run the tests…', 'I want to.', 'Fix it, um.'])
+			expect(looksFinished(t), t).toBe(false);
+	});
+	it('ends a take on a finished sentence once a second of silence was heard', () => {
+		expect(settledTake('Open the pull request.', 1000)).toBe(true);
+		expect(settledTake('Open the pull request.', 600)).toBe(false);
+		expect(settledTake('Open the pull request and', 3000)).toBe(false);
 	});
 });

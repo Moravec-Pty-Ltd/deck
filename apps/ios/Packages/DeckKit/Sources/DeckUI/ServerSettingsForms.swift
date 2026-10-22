@@ -76,6 +76,8 @@ public struct ServerSpeechSection: View {
 				.accessibilityIdentifier("serverSpeechTTS")
 			TextField("Transcription URL (STT)", text: optionalText($model.speech.sttUrl))
 				.urlEntry()
+			TextField("Streaming transcription URL (optional)", text: optionalText($model.speech.streamUrl))
+				.urlEntry()
 			if model.voices.isEmpty {
 				TextField("Voice", text: optionalText($model.speech.voice))
 					.plainEntry()

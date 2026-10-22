@@ -8,6 +8,7 @@ import {
 	speechConfig,
 	transcribeAudio
 } from './speech';
+import { dropStream, liveStream, openStream } from './speech-stream';
 
 // Voice-mode handlers, each shared verbatim by a browser route under
 // /api/speech and its agent API twin under /api/agent/speech.
@@ -68,4 +69,63 @@ export async function speechTranscribeRoute({ request }: { request: Request }): 
 	} catch (e) {
 		error(502, e instanceof Error ? e.message : 'transcription failed');
 	}
+}
+
+// ---- Streaming takes ----
+
+// Open a streaming transcription for one take: `{ id }`.
+export async function speechStreamOpenRoute(): Promise<Response> {
+	if (!speechConfig().streamUrl) error(400, 'no streaming speech server configured');
+	try {
+		return json({ id: await openStream() });
+	} catch (e) {
+		error(502, e instanceof Error ? e.message : 'could not open the stream');
+	}
+}
+
+// A take's PCM (16 kHz 16-bit little-endian mono) as the raw body.
+async function streamChunk(request: Request): Promise<Buffer> {
+	if (!isAudioType(request.headers.get('content-type') ?? 'application/octet-stream')) error(400, 'send 16 kHz 16-bit mono PCM as audio/pcm');
+	const pcm = Buffer.from(await request.arrayBuffer());
+	if (pcm.length % 2) error(400, 'PCM must be whole 16-bit samples');
+	if (pcm.length > MAX_AUDIO_BYTES) error(413, 'chunk too large');
+	return pcm;
+}
+
+function streamFor(params: Partial<Record<string, string>>) {
+	const stream = liveStream(params.id ?? '');
+	if (!stream) error(404, 'unknown or expired stream');
+	return stream;
+}
+
+// Append a chunk; replies with the live transcript, including that chunk's
+// words when the server decodes them promptly: `{ text }`. A failed
+// stream is dropped, and the client falls back to uploading the take.
+export async function speechStreamChunkRoute({ request, params }: { request: Request; params: Partial<Record<string, string>> }): Promise<Response> {
+	const stream = streamFor(params);
+	const pcm = await streamChunk(request);
+	try {
+		await stream.append(pcm);
+		return json({ text: stream.text.trim() });
+	} catch (e) {
+		dropStream(params.id ?? '');
+		error(502, e instanceof Error ? e.message : 'stream failed');
+	}
+}
+
+// The take's last chunk (may be empty), then the final transcript, the same
+// `{ text, seconds }` as the batch route.
+export async function speechStreamEndRoute({ request, params }: { request: Request; params: Partial<Record<string, string>> }): Promise<Response> {
+	const stream = streamFor(params);
+	const pcm = await streamChunk(request);
+	let text: string;
+	try {
+		void stream.append(pcm);
+		text = await stream.finish();
+	} catch (e) {
+		error(502, e instanceof Error ? e.message : 'stream failed');
+	} finally {
+		dropStream(params.id ?? '');
+	}
+	return json({ text, seconds: stream.seconds });
 }

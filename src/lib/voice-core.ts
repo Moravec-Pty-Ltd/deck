@@ -130,6 +130,11 @@ export class VoiceDetector {
 		return this.transition(loud, now);
 	}
 
+	// While quiet, when the quiet began; null while loud.
+	get silentSince(): number | null {
+		return this.quietSince;
+	}
+
 	// While loud, when this run of speech began, bridging dips shorter than
 	// LOUD_GAP_MS between words; null while quiet.
 	get loudSince(): number | null {
@@ -226,6 +231,16 @@ export function downsample(chunks: Float32Array[], from: number, to: number): Fl
 	return out;
 }
 
+// Samples in [-1, 1] as 16-bit little-endian PCM, what a streamed take sends.
+export function pcm16Bytes(samples: Float32Array): Uint8Array<ArrayBuffer> {
+	const view = new DataView(new ArrayBuffer(samples.length * 2));
+	samples.forEach((s, i) => {
+		const v = Math.max(-1, Math.min(1, s));
+		view.setInt16(i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+	});
+	return new Uint8Array(view.buffer);
+}
+
 // A 16-bit mono PCM WAV file from samples in [-1, 1], the format the apps
 // upload too.
 export function wavBytes(samples: Float32Array, sampleRate: number): ArrayBuffer {
@@ -244,10 +259,7 @@ export function wavBytes(samples: Float32Array, sampleRate: number): ArrayBuffer
 	view.setUint16(34, 16, true);
 	text(36, 'data');
 	view.setUint32(40, samples.length * 2, true);
-	samples.forEach((s, i) => {
-		const v = Math.max(-1, Math.min(1, s));
-		view.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
-	});
+	new Uint8Array(view.buffer).set(pcm16Bytes(samples), 44);
 	return view.buffer;
 }
 

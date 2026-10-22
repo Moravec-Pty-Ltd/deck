@@ -104,6 +104,16 @@ public final class VoiceController {
 	private var cancelled = false
 	private var lastText = ""
 	private var awaitingPermission = false
+	// The open take's live transcription, while it is answering; nil falls
+	// back to uploading the whole take when it ends.
+	private var streamId: String?
+	private var streamLoop: Task<Void, Never>?
+	private var streamSend: Task<Bool, Never>?
+	// Live text that ended the take; sent without the server's final pass.
+	private var settledText: String?
+	#if os(macOS)
+	private var activity: NSObjectProtocol?
+	#endif
 
 	private var micPermitted: Bool { MicrophoneAccess.granted }
 
@@ -164,6 +174,10 @@ public final class VoiceController {
 			return
 		}
 		enabled = true
+		#if os(macOS)
+		// App Nap would throttle capture and requests while the window is hidden.
+		activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Voice mode")
+		#endif
 		watchRoute()
 		startKeepAlive()
 		if settings.handsFree { startHandsFree() }
@@ -181,7 +195,10 @@ public final class VoiceController {
 		status = .idle
 		routeObserver.map(NotificationCenter.default.removeObserver)
 		routeObserver = nil
-		#if !os(macOS)
+		#if os(macOS)
+		activity.map(ProcessInfo.processInfo.endActivity)
+		activity = nil
+		#else
 		try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 		#endif
 	}
@@ -432,6 +449,47 @@ public final class VoiceController {
 			try? await Task.sleep(for: .seconds(VoiceTiming.maxTakeSeconds))
 			if !Task.isCancelled { self?.stopRecording() }
 		}
+		if capabilities?.stream == true, capture.supportsStreaming {
+			streamLoop = Task { [weak self] in await self?.streamTake() }
+		}
+	}
+
+	// Cancelled when the take ends, which is what ties a late open to its take.
+	private func streamTake() async {
+		guard let id = try? await client.openTranscriptStream(), !Task.isCancelled else { return }
+		streamId = id
+		while !Task.isCancelled {
+			try? await Task.sleep(for: .milliseconds(250))
+			guard !Task.isCancelled, streamId == id else { return }
+			let cutAt = Date().timeIntervalSinceReferenceDate
+			let pcm = capture.drainStream()
+			guard !pcm.isEmpty else { continue }
+			let send = Task { await sendChunk(id, pcm, heardUntil: cutAt) }
+			streamSend = send
+			_ = await send.value
+		}
+	}
+
+	// Hands-free, a finished sentence the transcriber heard enough silence
+	// after ends the take there, with its text, rather than waiting out the
+	// end-of-speech pause.
+	private func sendChunk(_ id: String, _ pcm: Data, heardUntil: TimeInterval) async -> Bool {
+		do {
+			let text = try await client.streamAudio(id: id, pcm: pcm)
+			guard streamId == id else { return true }
+			if !text.isEmpty { caption = text }
+			if settings.handsFree, supportsHandsFree, let quiet = detector.silentSince,
+				VoiceEndpoint.settled(transcript: text, heardSilence: heardUntil - quiet) {
+				settledText = text
+				stopRecording()
+				// The detector is mid-close; reset it so the next words open a new take.
+				detector.reset()
+			}
+			return true
+		} catch {
+			if streamId == id { streamId = nil }
+			return false
+		}
 	}
 
 	public func stopRecording() {
@@ -439,7 +497,15 @@ public final class VoiceController {
 		guard recording else { return }
 		recording = false
 		level = 0
+		let stream = streamId.map { (id: $0, sending: streamSend) }
+		let settled = settledText
+		settledText = nil
+		streamId = nil
+		streamLoop?.cancel()
+		streamLoop = nil
+		streamSend = nil
 		let take = capture.endTake()
+		let tail = capture.drainStream()
 		if !VoiceAudio.keepsMicOpen(handsFree: settings.handsFree, supportsMonitoring: supportsHandsFree) { capture.stopMonitoring() }
 		guard let take, VoiceAudio.isUsableTake(cancelled: cancelled, seconds: take.seconds, bytes: take.data.count) else {
 			rest()
@@ -447,7 +513,7 @@ public final class VoiceController {
 		}
 		status = .transcribing
 		caption = "Transcribing…"
-		Task { await transcribe(take) }
+		Task { await transcribe(take, stream: stream.map { ($0.id, $0.sending, tail) }, settled: settled) }
 	}
 
 	public func cancelRecording() {
@@ -455,9 +521,21 @@ public final class VoiceController {
 		stopRecording()
 	}
 
-	private func transcribe(_ take: Take) async {
+	// A settled take sends its live text; otherwise the stream's final
+	// transcript, else the whole take uploaded.
+	private func transcribe(_ take: Take, stream: (id: String, sending: Task<Bool, Never>?, tail: Data)?, settled: String?) async {
+		if let stream, let settled {
+			Task { [client] in _ = try? await client.endTranscriptStream(id: stream.id, pcm: stream.tail) }
+			await deliver(settled.trimmingCharacters(in: .whitespacesAndNewlines))
+			rest()
+			return
+		}
 		do {
-			let result = try await client.transcribe(audio: take.data, mimeType: take.mimeType)
+			var streamed: Transcription?
+			if let stream, await stream.sending?.value ?? true {
+				streamed = try? await client.endTranscriptStream(id: stream.id, pcm: stream.tail)
+			}
+			let result = if let streamed { streamed } else { try await client.transcribe(audio: take.data, mimeType: take.mimeType) }
 			await deliver(result.text.trimmingCharacters(in: .whitespacesAndNewlines))
 		} catch {
 			self.error = error.localizedDescription
@@ -623,10 +701,14 @@ struct Take {
 protocol TakeCapture: AnyObject {
 	var onLevel: ((Float) -> Void)? { get set }
 	var supportsMonitoring: Bool { get }
+	/// Whether a take's PCM can be streamed while it is open.
+	var supportsStreaming: Bool { get }
 	func startMonitoring() throws
 	func stopMonitoring()
 	func beginTake() throws
 	func endTake() -> Take?
+	/// The take's 16 kHz 16-bit mono PCM captured since the last drain.
+	func drainStream() -> Data
 }
 
 #if os(iOS) || os(macOS)
@@ -642,6 +724,7 @@ final class EngineCapture: TakeCapture {
 	nonisolated(unsafe) var onBuffer: ((AVAudioPCMBuffer) -> Void)?
 	/// Whether the engine may stay running between takes for hands-free.
 	private(set) var supportsMonitoring = true
+	let supportsStreaming = true
 
 	private let engine = AVAudioEngine()
 	private let sink = TakeSink()
@@ -694,6 +777,8 @@ final class EngineCapture: TakeCapture {
 		takeStart = nil
 		return Take(data: VoiceAudio.wav(pcm16: pcm, sampleRate: 16_000), mimeType: "audio/wav", seconds: seconds)
 	}
+
+	func drainStream() -> Data { sink.drain() }
 }
 
 /// The audio-thread half of EngineCapture: measures every buffer, converts it
@@ -704,6 +789,8 @@ private final class TakeSink: @unchecked Sendable {
 	private var converter: AVAudioConverter?
 	private var taking = false
 	private var pcm = Data()
+	// The take's PCM not yet streamed; left after end so the last of it can be.
+	private var pending = Data()
 	private var ring = PcmRing(capacity: Int(VoiceTiming.preRollSeconds * 16_000) * 2)
 	private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
 
@@ -717,6 +804,7 @@ private final class TakeSink: @unchecked Sendable {
 	func begin() {
 		lock.withLock {
 			pcm = ring.data
+			pending = pcm
 			taking = true
 		}
 	}
@@ -730,6 +818,13 @@ private final class TakeSink: @unchecked Sendable {
 		}
 	}
 
+	func drain() -> Data {
+		lock.withLock {
+			defer { pending = Data() }
+			return pending
+		}
+	}
+
 	/// Returns the buffer's level; keeps its samples as pre-roll, and in the
 	/// take when one is open.
 	func consume(_ buffer: AVAudioPCMBuffer) -> Float {
@@ -738,7 +833,10 @@ private final class TakeSink: @unchecked Sendable {
 		} ?? 0
 		lock.withLock {
 			guard let converter, let converted = convert(buffer, with: converter) else { return }
-			if taking { pcm.append(converted) }
+			if taking {
+				pcm.append(converted)
+				pending.append(converted)
+			}
 			ring.append(converted)
 		}
 		return level
@@ -770,6 +868,7 @@ private final class TakeSink: @unchecked Sendable {
 final class RecorderCapture: TakeCapture {
 	var onLevel: ((Float) -> Void)?
 	let supportsMonitoring = false
+	let supportsStreaming = false
 
 	private var recorder: AVAudioRecorder?
 	private var meter: Task<Void, Never>?
@@ -812,6 +911,8 @@ final class RecorderCapture: TakeCapture {
 		guard let data = try? Data(contentsOf: url) else { return nil }
 		return Take(data: data, mimeType: "audio/mp4", seconds: seconds)
 	}
+
+	func drainStream() -> Data { Data() }
 }
 #endif
 

@@ -9,11 +9,14 @@ import Observation
 public struct SpeechServerSettings: Codable, Equatable, Sendable {
 	public var ttsUrl: String?
 	public var sttUrl: String?
+	/// A WebSocket for live transcription, which lets a take end on the words.
+	public var streamUrl: String?
 	public var voice: String?
 
-	public init(ttsUrl: String? = nil, sttUrl: String? = nil, voice: String? = nil) {
+	public init(ttsUrl: String? = nil, sttUrl: String? = nil, streamUrl: String? = nil, voice: String? = nil) {
 		self.ttsUrl = ttsUrl
 		self.sttUrl = sttUrl
+		self.streamUrl = streamUrl
 		self.voice = voice
 	}
 }
@@ -158,7 +161,7 @@ public enum ServerSettingsPatch: Equatable, Sendable {
 		switch self {
 		case .speech(let s):
 			return ["speech": [
-				"ttsUrl": Self.trim(s.ttsUrl), "sttUrl": Self.trim(s.sttUrl), "voice": Self.trim(s.voice)
+				"ttsUrl": Self.trim(s.ttsUrl), "sttUrl": Self.trim(s.sttUrl), "streamUrl": Self.trim(s.streamUrl), "voice": Self.trim(s.voice)
 			]]
 		case .operator(let url, let model, let provider, let apiKeyFile, let key):
 			var block: [String: Any] = [
