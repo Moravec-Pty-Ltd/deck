@@ -135,7 +135,7 @@ extension VoiceController {
 	public var captionText: String {
 		if !caption.isEmpty { return caption }
 		if ask != nil { return "Say an option, its number, or a reply." }
-		return "Hold the button to talk."
+		return settings.handsFree && supportsHandsFree ? "Talk whenever you like." : "Hold the button to talk."
 	}
 
 	public var statusLabel: String {
@@ -232,7 +232,7 @@ struct VoiceSettingsMenu: View {
 				ForEach(Chattiness.allCases, id: \.self) { Text($0.label).tag($0) }
 			}
 			if voice.supportsHandsFree {
-				Toggle("Hands-free (experimental)", isOn: Binding(
+				Toggle("Hands-free", isOn: Binding(
 					get: { voice.settings.handsFree },
 					set: { voice.settings.handsFree = $0 }))
 					.disabled(!voice.canListen)

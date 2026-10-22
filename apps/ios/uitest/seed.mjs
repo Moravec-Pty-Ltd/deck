@@ -105,14 +105,16 @@ const claude = (id, title, ago, extra = {}) => ({
 	model: 'opus',
 	...extra
 });
+// An open PR for the PR header and its actions; repo and number are placeholders.
+const pr = (number) => ({ repo: 'acme/widgets', number, url: `https://github.com/acme/widgets/pull/${number}`, state: 'open', reviewDecision: 'REVIEW_REQUIRED' });
 const sessions = [
 	claude('c_yolo', 'Yolo badge in session header', 1, { permissionMode: 'bypassPermissions' }),
-	claude('c_stream', 'Stream token diff renderer', 2),
+	claude('c_stream', 'Stream token diff renderer', 2, { pr: pr(41) }),
 	{ id: 's_dev', kind: 'shell', title: 'dev server', cwd: project, createdAt: now - 36 * 60 * minute, lastActiveAt: now - 3 * minute, status: 'idle', tmuxName: 'deck-dev', managed: true },
 	claude('c_long', 'long transcript', 4),
 	claude('c_files', 'file previews', 5),
 	claude('c_voice', 'voice smoke', 6),
-	claude('c_ask', 'ask smoke', 7)
+	claude('c_ask', 'ask smoke', 7, { pr: pr(42) })
 ];
 
 const jsonl = (events) => events.map((e) => JSON.stringify(e)).join('\n') + '\n';

@@ -32,6 +32,32 @@ final class TranscriptScrollUITests: XCTestCase {
 		app.swipeDown()
 		sleep(2)
 		XCTAssertFalse(latest.isHittable, "scrolling up must not snap back to the end")
+
+		// Scrolled away, a button jumps back to the latest message, then goes.
+		let jump = app.buttons["Jump to latest"]
+		XCTAssertTrue(jump.waitForExistence(timeout: 5), "no jump-to-latest button once scrolled up")
+		XCTAssertLessThan(jump.frame.maxY, composer.frame.minY, "the button floats above the composer")
+		jump.tap()
+		sleep(2)
+		XCTAssertTrue(latest.waitForExistence(timeout: 5))
+		XCTAssertTrue(latest.isHittable, "the button lands on the latest message")
+		XCTAssertTrue(jump.waitForNonExistence(timeout: 5), "the button hides at the end")
+	}
+
+	/// Tapping the transcript puts the keyboard away; there is no button for it.
+	func testTappingTheTranscriptHidesTheKeyboard() throws {
+		let app = try FoldableUITests.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = app.staticTexts["long transcript"].firstMatch
+		XCTAssertTrue(row.waitForExistence(timeout: 20))
+		row.tap()
+		let composer = app.textFields["Message"]
+		XCTAssertTrue(composer.waitForExistence(timeout: 20))
+		composer.tap()
+		XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+		XCTAssertFalse(app.buttons["Hide the keyboard"].exists)
+		app.staticTexts["Reply 60, the latest message."].tap()
+		XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "a tap on the transcript should hide the keyboard")
 	}
 
 	func testSearchHitOpensAtTheHitNotTheEnd() throws {

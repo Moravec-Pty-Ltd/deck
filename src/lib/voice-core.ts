@@ -18,17 +18,25 @@ export interface VoiceSettings {
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 	chattiness: 'every-update',
-	handsFree: false,
+	handsFree: true,
 	sensitivity: 'medium'
 };
+
+const VOICE_SETTINGS_VERSION = 2;
+
+export function serializeVoiceSettings(settings: VoiceSettings): string {
+	return JSON.stringify({ ...settings, v: VOICE_SETTINGS_VERSION });
+}
 
 export function parseVoiceSettings(raw: string | null): VoiceSettings {
 	if (!raw) return DEFAULT_VOICE_SETTINGS;
 	try {
-		const o = JSON.parse(raw) as Partial<VoiceSettings>;
+		const o = JSON.parse(raw) as Partial<VoiceSettings> & { v?: number };
 		return {
 			chattiness: o.chattiness === 'final-only' ? 'final-only' : 'every-update',
-			handsFree: o.handsFree === true,
+			// Settings saved before v2 stored the old hold-to-talk default, so they
+			// move to hands-free once; a later choice of hold-to-talk sticks.
+			handsFree: (o.v ?? 0) >= VOICE_SETTINGS_VERSION ? o.handsFree !== false : true,
 			sensitivity: o.sensitivity === 'low' || o.sensitivity === 'high' ? o.sensitivity : 'medium'
 		};
 	} catch {

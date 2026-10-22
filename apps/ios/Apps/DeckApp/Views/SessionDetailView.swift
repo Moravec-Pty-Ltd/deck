@@ -26,15 +26,14 @@ struct SessionDetailView: View {
 
 	@State private var viewModel: SessionDetailViewModel?
 	@State private var terminal: TerminalPoller?
-	@State private var composerText = ""
 	/// The phone layout's height, which caps how tall a pending question grows.
 	@State private var stackedHeight: CGFloat = 0
 	@State private var isSending = false
 	@AppStorage("condensedTranscript") private var condensedTranscript = true
 	@State private var composerFieldId = 0
-	@State private var attachedImages: [DeckImage] = []
 	@State private var photoItems: [PhotosPickerItem] = []
 	@FocusState private var composerFocused: Bool
+	@State private var leaving = false
 	@State private var showDeleteSheet = false
 	@State private var showMergeSheet = false
 	@State private var showModelSheet = false
@@ -60,6 +59,9 @@ struct SessionDetailView: View {
 	@State private var anchorId: String?
 	@State private var focused = false
 	@State private var highlightedId: String?
+	/// How far the PR header has been dragged sideways, towards dismissing it.
+	@State private var prDrag: CGFloat = 0
+	@State private var visibleRows = Set<String>()
 
 	/// What this screen reads from deck beyond the baseline routes.
 	private static let needs: [DeckCapability] = [.stream, .history, .images, .files]
@@ -117,8 +119,7 @@ struct SessionDetailView: View {
 
 	/// Send, stop and compact for ⌘Return, ⌘. and ⇧⌘K (see DeckCommands).
 	private var keyboardActions: DeckSessionActions {
-		let canSend = !isSending && !isTerminal
-			&& (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty)
+		let canSend = !isSending && !isTerminal && viewModel?.hasDraft == true
 		let canCompact = session?.kind == "claude" && session?.context != nil
 			&& session?.status != .running && !compacting
 		return DeckSessionActions(
@@ -134,41 +135,6 @@ struct SessionDetailView: View {
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar { toolbarContent }
 			.focusedSceneValue(\.deckSession, keyboardActions)
-			.sheet(isPresented: $showDeleteSheet) {
-				DeleteSessionSheet(hasWorktree: session?.worktree != nil) { deleteWorktree, deleteBranch in
-					Task {
-						if await viewModel?.delete(deleteWorktree: deleteWorktree, deleteBranch: deleteBranch) == true {
-							dismiss()
-						}
-					}
-				}
-			}
-			.sheet(isPresented: $showChanges) {
-				ChangesSheet(sessionId: sessionId, title: title)
-			}
-			.sheet(isPresented: $showServers) {
-				ServersSheet(sessionId: sessionId, title: title)
-			}
-			.sheet(isPresented: $showFiles) {
-				if let viewModel { FilesSheet(sessionId: sessionId, viewModel: viewModel) }
-			}
-			.sheet(isPresented: $showBrowser) {
-				NavigationStack { BrowserView(sessionId: sessionId, isModal: true) }
-			}
-			.sheet(isPresented: $showSchedule) {
-				NavigationStack { SchedulesView(startFor: sessionId) }
-			}
-			.sheet(isPresented: $showModelSheet, onDismiss: applyModelPick) {
-				if let kind = session?.kind {
-					ModelPickerSheet(
-						kind: kind,
-						current: session?.model,
-						available: store.knownModels(for: kind)
-					) { model in
-						modelPick = ModelPick(model: model)
-					}
-				}
-			}
 			.alert(
 				"Expensive model",
 				isPresented: Binding(
@@ -197,7 +163,10 @@ struct SessionDetailView: View {
 					if controller.capabilities == nil { Task { await controller.loadCapabilities() } }
 				}
 				if let session, session.status == .running { ActivityManager.shared.start(session) }
+				leaving = false
 			}
+			// Tearing the view down drops focus; that is not the reader's choice.
+			.onChange(of: composerFocused) { _, focused in if !leaving { viewModel?.composerFocused = focused } }
 			.onChange(of: session?.status) { _, status in
 				if status == .running, let session { ActivityManager.shared.start(session) }
 			}
@@ -207,6 +176,7 @@ struct SessionDetailView: View {
 				if on { OperatorController.shared.pause() } else { OperatorController.shared.resume() }
 			}
 			.onDisappear {
+				leaving = true
 				if shared == nil { viewModel?.leave() }
 				if voice?.enabled != true { OperatorController.shared.resume() }
 			}
@@ -214,21 +184,27 @@ struct SessionDetailView: View {
 
 	@ToolbarContentBuilder
 	private var toolbarContent: some ToolbarContent {
-		ToolbarItem(placement: .topBarTrailing) {
-			if session?.status == .running {
-				Button("Stop", role: .destructive) {
-					Task { await viewModel?.stop() }
-				}
+		ToolbarItem(placement: .principal) {
+			Button {
+				showRenameSheet = true
+			} label: {
+				Text(title)
+					.font(.headline)
+					.lineLimit(1)
 			}
-		}
-		ToolbarItem(placement: .topBarTrailing) {
-			if let voice, voice.canRead {
-				Button {
-					if voice.enabled { voice.disable() } else { voice.enable() }
-				} label: {
-					Image(systemName: voice.enabled ? "waveform.circle.fill" : "waveform.circle")
+			.buttonStyle(.plain)
+			.accessibilityHint("Rename")
+			.accessibilityIdentifier("renameSession")
+			.offTheFold(isPresented: $showRenameSheet) {
+				RenameSessionSheet(current: title) { newTitle in
+					do {
+						let id = try await store.rename(sessionId: sessionId, title: newTitle)
+						if id != sessionId { onIdChanged?(id) }
+						return nil
+					} catch {
+						return error.localizedDescription
+					}
 				}
-				.accessibilityLabel(voice.enabled ? "Turn voice mode off" : "Turn voice mode on")
 			}
 		}
 		ToolbarItem(placement: .topBarTrailing) {
@@ -239,9 +215,25 @@ struct SessionDetailView: View {
 			}
 			.accessibilityLabel("Browser")
 			.accessibilityIdentifier("openBrowser")
+			.offTheFold(isPresented: $showBrowser) {
+				NavigationStack { BrowserView(sessionId: sessionId, isModal: true) }
+			}
 		}
 		ToolbarItem(placement: .topBarTrailing) {
-			Menu {
+			sessionMenu
+		}
+	}
+
+	private var sessionMenu: some View {
+		Menu {
+			Section {
+				Picker("Transcript", selection: $condensedTranscript) {
+					Label("Chat", systemImage: "bubble.left.and.bubble.right").tag(true)
+					Label("Thread", systemImage: "list.bullet.indent").tag(false)
+				}
+				.pickerStyle(.inline)
+			}
+			Section {
 				if isAgentSession {
 					Menu {
 						ForEach(store.kinds.filter { $0.available && $0.kind != "shell" }) { agent in
@@ -278,22 +270,8 @@ struct SessionDetailView: View {
 					.disabled(session?.status == .running || compacting)
 					.accessibilityIdentifier("compactSession")
 				}
-				if session?.kind == "claude" {
-					// deck restarts only an idle session (a running turn is a 409).
-					Button {
-						Task { await viewModel?.restart() }
-					} label: {
-						Label("Restart claude", systemImage: "arrow.clockwise")
-					}
-					.disabled(session?.status == .running)
-					.accessibilityIdentifier("restartSession")
-				}
-				Button {
-					showRenameSheet = true
-				} label: {
-					Label("Rename", systemImage: "pencil")
-				}
-				.accessibilityIdentifier("renameSession")
+			}
+			Section {
 				if store.supports(.diff) {
 					Button {
 						showChanges = true
@@ -325,6 +303,8 @@ struct SessionDetailView: View {
 					Label("Repeat on a schedule", systemImage: "clock.arrow.2.circlepath")
 				}
 				.accessibilityIdentifier("scheduleSession")
+			}
+			Section {
 				ForEach(session?.issues ?? [], id: \.id) { issue in
 					if let urlString = issue.url, let link = URL(string: urlString) {
 						Button {
@@ -343,6 +323,7 @@ struct SessionDetailView: View {
 						Label("PR #\(pr.number ?? 0)", systemImage: "arrow.triangle.pull")
 					}
 				}
+				// Swiping the PR header dismisses it too, but a swipe is easy to miss.
 				if session?.pr != nil, store.supports(.prDismiss) {
 					Button {
 						Task { await viewModel?.dismissPR() }
@@ -351,16 +332,65 @@ struct SessionDetailView: View {
 					}
 					.accessibilityIdentifier("dismissPR")
 				}
+			}
+			Section {
+				if session?.kind == "claude" {
+					// deck restarts only an idle session (a running turn is a 409).
+					Button {
+						Task { await viewModel?.restart() }
+					} label: {
+						Label("Restart claude", systemImage: "arrow.clockwise")
+					}
+					.disabled(session?.status == .running)
+					.accessibilityIdentifier("restartSession")
+				}
 				Button(role: .destructive) {
 					showDeleteSheet = true
 				} label: {
 					Label("Delete session", systemImage: "trash")
 				}
-			} label: {
-				Image(systemName: "ellipsis.circle")
 			}
-			.accessibilityLabel("Session actions")
-			.accessibilityIdentifier("sessionMenu")
+		} label: {
+			Image(systemName: "ellipsis.circle")
+		}
+		.accessibilityLabel("Session actions")
+		.accessibilityIdentifier("sessionMenu")
+		.offTheFold(isPresented: $showModelSheet, onDismiss: applyModelPick) {
+			if let kind = session?.kind {
+				ModelPickerSheet(
+					kind: kind,
+					current: session?.model,
+					available: store.knownModels(for: kind)
+				) { model in
+					modelPick = ModelPick(model: model)
+				}
+			}
+		}
+		.offTheFold(isPresented: $showEffortSheet) {
+			EffortPickerSheet(current: session?.effort) { effort in
+				Task { await viewModel?.changeEffort(effort) }
+			}
+		}
+		.offTheFold(isPresented: $showChanges) {
+			ChangesSheet(sessionId: sessionId, title: title)
+		}
+		.offTheFold(isPresented: $showServers) {
+			ServersSheet(sessionId: sessionId, title: title)
+		}
+		.offTheFold(isPresented: $showFiles) {
+			if let viewModel { FilesSheet(sessionId: sessionId, viewModel: viewModel) }
+		}
+		.offTheFold(isPresented: $showSchedule) {
+			NavigationStack { SchedulesView(startFor: sessionId) }
+		}
+		.offTheFold(isPresented: $showDeleteSheet) {
+			DeleteSessionSheet(hasWorktree: session?.worktree != nil) { deleteWorktree, deleteBranch in
+				Task {
+					if await viewModel?.delete(deleteWorktree: deleteWorktree, deleteBranch: deleteBranch) == true {
+						dismiss()
+					}
+				}
+			}
 		}
 	}
 
@@ -374,41 +404,6 @@ struct SessionDetailView: View {
 					tabletop(viewModel)
 				} else {
 					stacked(viewModel)
-				}
-			}
-			.sheet(isPresented: $showMergeSheet) {
-				MergeSheet(pr: session?.pr) { method, deleteBranch in
-					Task { await viewModel.merge(method: method, deleteBranch: deleteBranch) }
-				}
-			}
-			.sheet(isPresented: $showQuickManage) {
-				QuickMessagesSheet()
-			}
-			.sheet(isPresented: $showRenameSheet) {
-				RenameSessionSheet(current: title) { newTitle in
-					do {
-						let id = try await store.rename(sessionId: sessionId, title: newTitle)
-						if id != sessionId { onIdChanged?(id) }
-						return nil
-					} catch {
-						return error.localizedDescription
-					}
-				}
-			}
-			.sheet(isPresented: $showEffortSheet) {
-				EffortPickerSheet(current: session?.effort) { effort in
-					Task { await viewModel.changeEffort(effort) }
-				}
-			}
-			.sheet(isPresented: $showCommentSheet) {
-				CommentSheet(
-					title: pendingReviewDecision == "request-changes" ? "Request changes" : "Comment",
-					text: $commentText
-				) {
-					Task {
-						await viewModel.review(decision: pendingReviewDecision, body: commentText)
-						commentText = ""
-					}
 				}
 			}
 			.alert(
@@ -431,7 +426,6 @@ struct SessionDetailView: View {
 	private func stacked(_ viewModel: SessionDetailViewModel) -> some View {
 		VStack(spacing: 0) {
 			prHeader(viewModel)
-			transcriptPicker
 			transcript(viewModel)
 			if session?.status == .running {
 				workingIndicator
@@ -442,25 +436,21 @@ struct SessionDetailView: View {
 				Divider()
 				VoiceBar(voice: voice)
 			}
-			Divider()
 			composer(viewModel)
 		}
 		.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { stackedHeight = $0 }
 	}
 
 	/// Half open on a table: the transcript stands on the upper half, voice
-	/// mode lies on the lower half where the hands are, with the question card
-	/// and the composer under it.
+	/// mode lies on the lower half where the hands are, with the PR actions,
+	/// the question card, Stop and the composer under it: a tap on the
+	/// standing half wobbles it.
 	private func tabletop(_ viewModel: SessionDetailViewModel) -> some View {
 		GeometryReader { geometry in
 			VStack(spacing: 0) {
 				VStack(spacing: 0) {
-					prHeader(viewModel)
-					transcriptPicker
+					prHeader(viewModel, statusOnly: true)
 					transcript(viewModel)
-					if session?.status == .running {
-						workingIndicator
-					}
 					AgentsBar(agents: viewModel.agents.running)
 				}
 				.frame(height: upperHeight(in: geometry))
@@ -468,7 +458,9 @@ struct SessionDetailView: View {
 				VStack(spacing: 0) {
 					// The keyboard takes the flat half while typing, so the voice
 					// controls step aside for it.
-					if !composerFocused, let voice {
+					// The invitation steps aside for a question or PR actions; the
+					// composer's voice button still turns voice mode on.
+					if !composerFocused, let voice, voice.enabled || (viewModel.pendingAsk == nil && !hasOpenPR) {
 						Group {
 							if voice.enabled {
 								VoiceDeck(voice: voice)
@@ -478,19 +470,28 @@ struct SessionDetailView: View {
 						}
 						.frame(maxHeight: viewModel.pendingAsk == nil ? .infinity : nil)
 					}
+					if hasOpenPR, let pr = session?.pr {
+						prActions(viewModel, pr: pr, showsStatus: false)
+							.padding(.horizontal)
+							.padding(.vertical, 8)
+					}
 					if viewModel.pendingAsk != nil {
 						askCard(viewModel, available: geometry.size.height - upperHeight(in: geometry))
 						Spacer(minLength: 0)
 					} else if composerFocused || voice == nil {
 						Spacer(minLength: 0)
 					}
-					Divider()
+					if session?.status == .running {
+						workingIndicator
+					}
 					composer(viewModel)
 				}
 				.frame(maxHeight: .infinity)
 			}
 		}
 	}
+
+	private var hasOpenPR: Bool { session?.pr?.state?.lowercased() == "open" }
 
 	/// How much of this view stands above the fold: from its top down to the
 	/// window's midline, leaving the composer room below when the keyboard
@@ -510,7 +511,9 @@ struct SessionDetailView: View {
 			if let voice, voice.canRead {
 				Button("Start voice mode") { voice.enable() }
 					.buttonStyle(.borderedProminent)
-				Text("Replies are read aloud. Hold the button to talk back.")
+				Text(voice.settings.handsFree && voice.supportsHandsFree
+					? "Replies are read aloud, and you can talk back hands-free."
+					: "Replies are read aloud. Hold the button to talk back.")
 					.font(.footnote)
 					.foregroundStyle(.secondary)
 			} else {
@@ -524,40 +527,83 @@ struct SessionDetailView: View {
 		.frame(maxWidth: .infinity)
 	}
 
+	/// The PR above the transcript: its actions while open, else a status row.
+	/// Swiping it sideways dismisses it.
 	@ViewBuilder
-	private func prHeader(_ viewModel: SessionDetailViewModel) -> some View {
+	private func prHeader(_ viewModel: SessionDetailViewModel, statusOnly: Bool = false) -> some View {
 		if let pr = session?.pr {
-			if pr.state?.lowercased() == "open" {
-				PRSection(
-					pr: pr,
-					canMerge: store.canMerge(pr),
-					onApprove: { Task { await viewModel.review(decision: "approve", body: nil) } },
-					onRequestChanges: { commentPrompt(decision: "request-changes") },
-					onComment: { commentPrompt(decision: "comment") },
-					onMerge: { showMergeSheet = true }
-				)
-				.padding()
-				.background(.thinMaterial)
-			} else {
-				HStack {
-					Image(systemName: "arrow.triangle.pull")
-					PRStatusBadge(pr: pr)
-					Spacer()
+			let canDismiss = store.supports(.prDismiss)
+			Group {
+				if hasOpenPR, !statusOnly {
+					prActions(viewModel, pr: pr, showsStatus: true)
+				} else {
+					HStack {
+						Image(systemName: "arrow.triangle.pull")
+						PRStatusBadge(pr: pr)
+						Spacer()
+					}
 				}
-				.padding()
-				.background(.thinMaterial)
+			}
+			.padding()
+			.background(.thinMaterial)
+			.offset(x: prDrag)
+			// High priority with a minimum distance: a tap still reaches the
+			// buttons, a drag cancels them so a swipe never approves.
+			.highPriorityGesture(
+				DragGesture(minimumDistance: 20)
+					.onChanged { value in
+						// A drag that turns vertical lets go rather than dismissing.
+						prDrag = abs(value.translation.width) > abs(value.translation.height) ? value.translation.width : 0
+					}
+					.onEnded { value in
+						// A flick counts as well as a long drag.
+						guard abs(prDrag) > 100 || (prDrag != 0 && abs(value.predictedEndTranslation.width) > 200) else {
+							withAnimation { prDrag = 0 }
+							return
+						}
+						withAnimation { prDrag = prDrag > 0 ? 1000 : -1000 }
+						Task {
+							await viewModel.dismissPR()
+							withAnimation { prDrag = 0 }
+						}
+					},
+				// Without dismiss support the drag stays off so it cannot cancel taps.
+				including: canDismiss ? .all : .subviews)
+			.accessibilityElement(children: .contain)
+			.accessibilityActions {
+				if canDismiss {
+					Button("Dismiss PR") { Task { await viewModel.dismissPR() } }
+				}
 			}
 		}
 	}
 
-	private var transcriptPicker: some View {
-		Picker("Transcript", selection: $condensedTranscript) {
-			Text("Chat").tag(true)
-			Text("Thread").tag(false)
+	private func prActions(_ viewModel: SessionDetailViewModel, pr: SessionPR, showsStatus: Bool) -> some View {
+		PRSection(
+			pr: pr,
+			canMerge: store.canMerge(pr),
+			onApprove: { Task { await viewModel.review(decision: "approve", body: nil) } },
+			onRequestChanges: { commentPrompt(decision: "request-changes") },
+			onComment: { commentPrompt(decision: "comment") },
+			onMerge: { showMergeSheet = true },
+			showsStatus: showsStatus
+		)
+		.offTheFold(isPresented: $showMergeSheet) {
+			MergeSheet(pr: session?.pr) { method, deleteBranch in
+				Task { await viewModel.merge(method: method, deleteBranch: deleteBranch) }
+			}
 		}
-		.pickerStyle(.segmented)
-		.padding(.horizontal)
-		.padding(.vertical, 8)
+		.offTheFold(isPresented: $showCommentSheet) {
+			CommentSheet(
+				title: pendingReviewDecision == "request-changes" ? "Request changes" : "Comment",
+				text: $commentText
+			) {
+				Task {
+					await viewModel.review(decision: pendingReviewDecision, body: commentText)
+					commentText = ""
+				}
+			}
+		}
 	}
 
 	@ViewBuilder
@@ -578,6 +624,11 @@ struct SessionDetailView: View {
 		HStack {
 			WorkingLabel()
 			Spacer()
+			// ⌘. is the same stop (DeckCommands).
+			Button("Stop", systemImage: "stop.circle", role: .destructive) {
+				Task { await viewModel?.stop() }
+			}
+			.controlSize(.small)
 		}
 		.padding(.horizontal)
 		.padding(.vertical, 6)
@@ -591,7 +642,9 @@ struct SessionDetailView: View {
 					if viewModel.hasOlderHistory {
 						olderHistoryRow(viewModel)
 					}
-					ForEach(TranscriptGroup.make(viewModel.items, condensed: condensedTranscript)) { group in
+					let groups = TranscriptGroup.make(viewModel.items, condensed: condensedTranscript)
+					ForEach(groups) { group in
+						Group {
 						if group.isCollapsedRun {
 							DisclosureGroup("\(group.toolCount) tool calls") {
 								ForEach(group.items) { TranscriptRow(item: $0, viewModel: viewModel, voice: voice) }
@@ -607,6 +660,10 @@ struct SessionDetailView: View {
 											.padding(-4)
 									}
 								}
+						}
+						}
+						.onScrollVisibilityChange(threshold: 0.1) { visible in
+							noteVisibility(group.id, visible, in: groups, viewModel)
 						}
 					}
 					if !viewModel.streamingText.isEmpty {
@@ -627,6 +684,12 @@ struct SessionDetailView: View {
 				.padding()
 			}
 			.scrollDismissesKeyboard(.interactively)
+			// Simultaneous, so rows, links and disclosures still take the tap.
+			.simultaneousGesture(TapGesture().onEnded { composerFocused = false })
+			.onAppear {
+				// Back where the reader was when a fold or unfold laid this out again.
+				if !viewModel.isNearBottom, let top = viewModel.topRowId { proxy.scrollTo(top, anchor: .top) }
+			}
 			.onScrollGeometryChange(for: ScrollEdges.self) { geometry in
 				ScrollEdges(offset: geometry.contentOffset.y, top: geometry.contentOffset.y + geometry.contentInsets.top)
 			} action: { old, edges in
@@ -659,6 +722,22 @@ struct SessionDetailView: View {
 					self.anchorId = nil
 				}
 			}
+			.overlay(alignment: .bottom) {
+				if !viewModel.isNearBottom {
+					Button {
+						viewModel.isNearBottom = true
+						withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+					} label: {
+						Image(systemName: "arrow.down")
+							.font(.body.weight(.semibold))
+							.frame(width: 36, height: 36)
+					}
+					.buttonStyle(.plain)
+					.deckGlass(in: Circle())
+					.padding(.bottom, 8)
+					.accessibilityLabel("Jump to latest")
+				}
+			}
 			.overlay {
 				if viewModel.items.isEmpty && viewModel.streamingText.isEmpty {
 					if viewModel.didLoadOnce {
@@ -676,6 +755,14 @@ struct SessionDetailView: View {
 				}
 			}
 		}
+	}
+
+	/// Keeps the top row on screen in the model, for putting the reader back
+	/// after a fold or unfold. Per row rather than scrollTargetLayout, which
+	/// anchors the scroll view to a row and so stops it opening at the end.
+	private func noteVisibility(_ id: String, _ visible: Bool, in groups: [TranscriptGroup], _ viewModel: SessionDetailViewModel) {
+		if visible { visibleRows.insert(id) } else { visibleRows.remove(id) }
+		if let top = groups.first(where: { visibleRows.contains($0.id) }) { viewModel.topRowId = top.id }
 	}
 
 	private func olderHistoryRow(_ viewModel: SessionDetailViewModel) -> some View {
@@ -706,19 +793,46 @@ struct SessionDetailView: View {
 		}
 	}
 
+	/// One rounded piece: the attachments and the message on top, the controls
+	/// in a row underneath, send at the end. Return adds a line, so sending
+	/// is the button (or ⌘Return).
 	private func composer(_ viewModel: SessionDetailViewModel) -> some View {
-		VStack(spacing: 6) {
-			if !attachedImages.isEmpty {
+		VStack(alignment: .leading, spacing: 10) {
+			if !viewModel.draftImages.isEmpty {
 				ScrollView(.horizontal, showsIndicators: false) {
 					HStack(spacing: 8) {
-						ForEach(attachedImages) { image in
-							attachmentThumbnail(image)
+						ForEach(viewModel.draftImages) { image in
+							attachmentThumbnail(image, viewModel: viewModel)
 						}
 					}
+					.padding(.top, 4)
 				}
 				.frame(height: 56)
 			}
-			HStack(alignment: .bottom, spacing: 8) {
+			TextField("Message", text: Bindable(viewModel).draft, axis: .vertical)
+				.textFieldStyle(.plain)
+				.lineLimit(1...5)
+				.id(composerFieldId)
+				.focused($composerFocused)
+				// Here, not in the view's onAppear: the field only exists once the
+				// body has left its loading state, and focus set earlier is lost.
+				.onAppear { if viewModel.composerFocused { composerFocused = true } }
+				.accessibilityIdentifier("sessionComposer")
+			HStack(spacing: 18) {
+				PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
+					Image(systemName: "photo.on.rectangle")
+				}
+				.accessibilityLabel("Attach photos")
+				// A system paste control rather than our own button. Asking
+				// UIPasteboard whether it has an image is a read, and with a
+				// Universal Clipboard item from another device answering it means
+				// fetching the item, which raises "Allow Paste?". This is drawn by
+				// the system and the tap itself is the permission, so nothing asks.
+				PasteButton(supportedContentTypes: [.image]) { providers in
+					Task { await attach(providers, to: viewModel) }
+				}
+				.labelStyle(.iconOnly)
+				.buttonBorderShape(.circle)
 				if store.supports(.quickMessages) {
 					Menu {
 						let offered = store.quickMessages(for: session)
@@ -738,58 +852,43 @@ struct SessionDetailView: View {
 						}
 					} label: {
 						Image(systemName: "text.append")
-							.font(.title2)
+					}
+					.accessibilityLabel("Quick messages")
+					.offTheFold(isPresented: $showQuickManage) {
+						QuickMessagesSheet()
 					}
 				}
-				PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
-					Image(systemName: "photo.on.rectangle")
-						.font(.title2)
-				}
-				// A system paste control rather than our own button. Asking
-				// UIPasteboard whether it has an image is a read, and with a
-				// Universal Clipboard item from another device answering it means
-				// fetching the item, which raises "Allow Paste?". This is drawn by
-				// the system and the tap itself is the permission, so nothing asks.
-				PasteButton(supportedContentTypes: [.image]) { providers in
-					Task { await attach(providers) }
-				}
-				.labelStyle(.iconOnly)
-				.buttonBorderShape(.circle)
-				TextField("Message", text: $composerText, axis: .vertical)
-					.textFieldStyle(.roundedBorder)
-					.lineLimit(1...5)
-					.id(composerFieldId)
-					.focused($composerFocused)
-					.accessibilityIdentifier("sessionComposer")
-				// Our own control rather than a keyboard toolbar item: the system
-				// draws those as a floating pill over the composer.
-				if composerFocused {
+				if let voice, voice.canRead {
 					Button {
-						composerFocused = false
+						if voice.enabled { voice.disable() } else { voice.enable() }
 					} label: {
-						Image(systemName: "keyboard.chevron.compact.down")
-							.font(.title3)
+						Image(systemName: voice.enabled ? "waveform.circle.fill" : "waveform.circle")
 					}
-					.accessibilityLabel("Hide the keyboard")
+					.accessibilityLabel(voice.enabled ? "Turn voice mode off" : "Turn voice mode on")
 				}
+				Spacer(minLength: 0)
 				Button {
 					sendComposer(viewModel)
 				} label: {
 					Image(systemName: "arrow.up.circle.fill")
-						.font(.title2)
+						.font(.title)
 				}
-				.disabled(composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachedImages.isEmpty)
+				.disabled(!viewModel.hasDraft)
+				.accessibilityLabel("Send")
 			}
+			.font(.title3)
 		}
-		.padding()
-		.deckGlass(in: Rectangle())
+		.padding(12)
+		.deckGlass(in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
+		.padding(.horizontal, 8)
+		.padding(.vertical, 6)
 		.disabled(isSending)
 		.onChange(of: photoItems) { _, items in
-			Task { await loadPhotos(items) }
+			Task { await loadPhotos(items, to: viewModel) }
 		}
 	}
 
-	private func attachmentThumbnail(_ image: DeckImage) -> some View {
+	private func attachmentThumbnail(_ image: DeckImage, viewModel: SessionDetailViewModel) -> some View {
 		ZStack(alignment: .topTrailing) {
 			if let data = Data(base64Encoded: image.data), let uiImage = UIImage(data: data) {
 				Image(uiImage: uiImage)
@@ -799,7 +898,7 @@ struct SessionDetailView: View {
 					.clipShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
 			}
 			Button {
-				attachedImages.removeAll { $0.id == image.id }
+				viewModel.draftImages.removeAll { $0.id == image.id }
 			} label: {
 				Image(systemName: "xmark.circle.fill")
 					.foregroundStyle(.white, .black.opacity(0.6))
@@ -809,15 +908,15 @@ struct SessionDetailView: View {
 	}
 
 	private func sendComposer(_ viewModel: SessionDetailViewModel) {
-		let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-		let images = attachedImages
+		let text = viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+		let images = viewModel.draftImages
 		guard !text.isEmpty || !images.isEmpty else { return }
 		guard !isSending else { return }
 		isSending = true
 		Task {
 			if await viewModel.sendComposer(text: text, images: images) {
-				composerText = ""
-				attachedImages = []
+				viewModel.draft = ""
+				viewModel.draftImages = []
 				composerFieldId += 1
 				composerFocused = true
 			}
@@ -825,12 +924,12 @@ struct SessionDetailView: View {
 		}
 	}
 
-	private func loadPhotos(_ items: [PhotosPickerItem]) async {
+	private func loadPhotos(_ items: [PhotosPickerItem], to viewModel: SessionDetailViewModel) async {
 		for item in items {
-			guard attachedImages.count < 8 else { break }
+			guard viewModel.draftImages.count < 8 else { break }
 			if let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty {
 				let isPNG = data.starts(with: [0x89, 0x50, 0x4E, 0x47])
-				attachedImages.append(DeckImage(
+				viewModel.draftImages.append(DeckImage(
 					mediaType: isPNG ? "image/png" : "image/jpeg",
 					data: data.base64EncodedString()))
 			}
@@ -839,10 +938,10 @@ struct SessionDetailView: View {
 	}
 
 	/// Attach what the paste control handed over, up to the composer's limit.
-	private func attach(_ providers: [NSItemProvider]) async {
-		for provider in providers where attachedImages.count < 8 {
+	private func attach(_ providers: [NSItemProvider], to viewModel: SessionDetailViewModel) async {
+		for provider in providers where viewModel.draftImages.count < 8 {
 			guard let image = await Self.image(from: provider), let data = image.pngData() else { continue }
-			attachedImages.append(DeckImage(mediaType: "image/png", data: data.base64EncodedString()))
+			viewModel.draftImages.append(DeckImage(mediaType: "image/png", data: data.base64EncodedString()))
 		}
 	}
 
@@ -1024,4 +1123,40 @@ struct QuestionCard: View {
 /// A pick from the model sheet; `model` nil is "back to the default".
 private struct ModelPick {
 	let model: String?
+}
+
+/// A sheet, except with the window split on the fold, where a sheet would
+/// straddle it: there it is a popover from the control that opened it, which
+/// stays on the session's half.
+private struct OffTheFold<Sheet: View>: ViewModifier {
+	@Environment(HingeMonitor.self) private var hinge
+	@Environment(\.horizontalSizeClass) private var sizeClass
+	@Binding var isPresented: Bool
+	var onDismiss: (() -> Void)?
+	@ViewBuilder var sheet: () -> Sheet
+
+	func body(content: Content) -> some View {
+		let half = hinge.splitWidth(sizeClass)
+		content
+			.sheet(isPresented: shown(half == nil), onDismiss: onDismiss, content: sheet)
+			.popover(isPresented: shown(half != nil)) {
+				sheet()
+					.frame(width: min((half ?? 0) - 32, 480), height: hinge.windowSize.height * 0.7)
+			}
+			.onChange(of: isPresented) { _, presented in
+				if !presented, half != nil { onDismiss?() }
+			}
+	}
+
+	private func shown(_ here: Bool) -> Binding<Bool> {
+		Binding(get: { here && isPresented }, set: { isPresented = $0 })
+	}
+}
+
+private extension View {
+	func offTheFold<Sheet: View>(
+		isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil, @ViewBuilder sheet: @escaping () -> Sheet
+	) -> some View {
+		modifier(OffTheFold(isPresented: isPresented, onDismiss: onDismiss, sheet: sheet))
+	}
 }

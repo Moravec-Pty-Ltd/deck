@@ -37,9 +37,24 @@ final class VoiceUITests: XCTestCase {
 
 		let toggle = app.buttons["Turn voice mode on"]
 		XCTAssertTrue(toggle.waitForExistence(timeout: 20), "the voice toggle appears once /api/agent/speech reports tts")
+		XCTAssertFalse(app.navigationBars.buttons["Turn voice mode on"].exists, "the toggle is in the composer, not the nav bar")
 		toggle.tap()
-		XCTAssertTrue(app.staticTexts["Voice on"].waitForExistence(timeout: 5), "voice bar missing\n\(app.debugDescription)")
+		// Hands-free is the default: on means listening, with nothing to hold.
+		Self.allowMicrophone()
+		// A simulator without a microphone says so instead of listening.
+		let listening = app.staticTexts["Hands-free"]
+		let noMic = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'No microphone'")).firstMatch
+		XCTAssertTrue(listening.waitForExistence(timeout: 10) || noMic.exists, "voice mode should listen at once\n\(app.debugDescription.prefix(3000))")
 		XCTAssertTrue(app.buttons["Hold to talk"].exists)
+
+		// Hold-to-talk for the rest, so noise in the room cannot start a take.
+		app.buttons["Voice settings"].tap()
+		let handsFree = app.descendants(matching: .any).matching(NSPredicate(
+			format: "label == 'Hands-free' AND (elementType == %d OR elementType == %d)",
+			XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.switch.rawValue)).firstMatch
+		XCTAssertTrue(handsFree.waitForExistence(timeout: 5), "voice settings offer hands-free\n\(app.debugDescription.prefix(3000))")
+		handsFree.tap()
+		XCTAssertTrue(app.staticTexts["Voice on"].waitForExistence(timeout: 5), "voice bar missing\n\(app.debugDescription)")
 
 		// Provoke a reply from outside the app, like a turn finishing on its own.
 		let sessionId = try Self.sessionId(url: url, token: token)
@@ -57,6 +72,16 @@ final class VoiceUITests: XCTestCase {
 		XCTAssertFalse(app.buttons["Hold to talk"].exists)
 	}
 
+	/// Answers the microphone prompt if it comes up; it only does on a fresh install.
+	static func allowMicrophone() {
+		let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+		guard alert.waitForExistence(timeout: 5) else { return }
+		for label in ["Allow", "OK"] where alert.buttons[label].exists {
+			alert.buttons[label].tap()
+			return
+		}
+	}
+
 	static func sessionId(titled title: String = "voice smoke", url: String, token: String) throws -> String {
 		var request = URLRequest(url: URL(string: "\(url)/api/agent/sessions")!)
 		request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -68,8 +93,8 @@ final class VoiceUITests: XCTestCase {
 		return id
 	}
 
-	static func send(_ text: String, sessionId: String, url: String, token: String) throws {
-		var request = URLRequest(url: URL(string: "\(url)/api/agent/sessions/\(sessionId)/message")!)
+	static func send(_ text: String, sessionId: String, url: String, token: String, route: String = "message") throws {
+		var request = URLRequest(url: URL(string: "\(url)/api/agent/sessions/\(sessionId)/\(route)")!)
 		request.httpMethod = "POST"
 		request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")

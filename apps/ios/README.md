@@ -170,15 +170,16 @@ provisioning profile are created on the first archive.
 
 ## Voice mode
 
-The waveform button on a session reads each new reply aloud and lets you
-talk back: hold the mic button (release sends, drag off cancels), Skip moves
-to the next reply, Stop halts reading and interrupts the turn. Blocking
-questions are read with numbered options; say an option, its number, or a
-free-text reply. The bar's settings pick how much is read (every update or the
-final reply only) and turn on the experimental hands-free mode (an open mic
-with an energy detector; sensitivity adjustable) which can interrupt a reply
-mid-sentence. Reading continues behind the lock screen for the session you
-turned it on for; the watch reads while its Voice screen is open.
+The waveform button in a session's composer reads each new reply aloud and
+lets you talk back: just speak, or with hands-free off hold the mic button
+(release sends, drag off cancels). Skip moves to the next reply, Stop halts
+reading and interrupts the turn. Blocking questions are read with numbered
+options; say an option, its number, or a free-text reply. The bar's settings
+pick how much is read (every update or the final reply only) and switch
+hands-free mode, on by default (an open mic with an energy detector;
+sensitivity adjustable), which can interrupt a reply mid-sentence. Reading
+continues behind the lock screen for the session you turned it on for; the
+watch reads while its Voice screen is open.
 
 It needs deck configured with a speech server (**Settings > Voice** on the
 web, or **Settings > deck server settings** here); the button only appears when `GET /api/agent/speech` reports one. The phone

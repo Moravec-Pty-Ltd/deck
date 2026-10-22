@@ -187,7 +187,8 @@ struct MacSessionDetail: View {
 						onApprove: { Task { await viewModel.review(decision: "approve", body: nil) } },
 						onRequestChanges: { sheet = .comment(decision: "request-changes") },
 						onComment: { sheet = .comment(decision: "comment") },
-						onMerge: { sheet = .merge })
+						onMerge: { sheet = .merge },
+						showsStatus: true)
 				} else {
 					HStack {
 						Image(systemName: "arrow.triangle.pull")
