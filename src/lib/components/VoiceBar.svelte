@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { Mic, SkipForward, Square, Settings2, X } from '@lucide/svelte';
 	import type { VoiceSession } from '$lib/voice.svelte';
+	import type { EndOfSpeech } from '$lib/speech-core';
 	import { haptic } from '$lib/haptics';
 
 	// The strip between the transcript and the composer while voice mode is on:
 	// what is being read (or heard), hold-to-talk, Skip, Stop, and the per-device
-	// settings (chattiness, hands-free, sensitivity). Desktop can hold the space
-	// bar instead of the button, or click the button once to toggle a long take.
+	// settings (chattiness, hands-free, sensitivity, end of speech). Desktop can
+	// hold the space bar instead of the button, or click the button once to
+	// toggle a long take.
 
 	let { voice }: { voice: VoiceSession } = $props();
 
@@ -179,6 +181,18 @@
 						<option value="low">Low</option>
 						<option value="medium">Medium</option>
 						<option value="high">High</option>
+					</select>
+				</label>
+				<label class="flex items-center gap-2">
+					<span class="whitespace-nowrap opacity-70">End of speech</span>
+					<select
+						class="select select-sm"
+						value={voice.settings.endOfSpeech}
+						onchange={(e) => voice.updateSettings({ ...voice.settings, endOfSpeech: (e.currentTarget as HTMLSelectElement).value as EndOfSpeech })}
+					>
+						<option value="short">Short</option>
+						<option value="normal">Normal</option>
+						<option value="long">Long</option>
 					</select>
 				</label>
 			{/if}

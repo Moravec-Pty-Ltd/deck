@@ -63,6 +63,38 @@ final class VoiceCoreTests: XCTestCase {
 		XCTAssertEqual(vad.state, .silent, "a blip shorter than openSeconds is ignored")
 	}
 
+	func testDefaultEndOfSpeechWaitsOutAShortPause() {
+		func run(pause: TimeInterval) -> VoiceDetector.Edge? {
+			var vad = VoiceDetector(threshold: 0.05)
+			var edge: VoiceDetector.Edge?
+			for t in stride(from: 0.0, through: 0.3, by: 0.05) { _ = vad.update(level: 0.1, at: t) }
+			for t in stride(from: 0.35, through: 0.3 + pause, by: 0.05) where edge == nil { edge = vad.update(level: 0.01, at: t) }
+			return edge
+		}
+		XCTAssertNil(run(pause: 1.5))
+		XCTAssertEqual(run(pause: 3), .stop)
+		var vad = VoiceDetector(threshold: 0.05)
+		vad.closeSeconds = EndOfSpeech.long.closeSeconds
+		_ = vad.update(level: 0.1, at: 0)
+		XCTAssertEqual(vad.update(level: 0.1, at: 0.25), .start)
+		_ = vad.update(level: 0.01, at: 0.3)
+		XCTAssertNil(vad.update(level: 0.01, at: 2.5), "a long setting waits past the default")
+		XCTAssertEqual(vad.update(level: 0.01, at: 3.3), .stop)
+	}
+
+	func testPreRollKeepsTheNewestBytesOldestFirst() {
+		var ring = PcmRing(capacity: 4)
+		XCTAssertEqual(ring.data, Data())
+		ring.append(Data([1, 2]))
+		XCTAssertEqual(ring.data, Data([1, 2]))
+		ring.append(Data([3, 4, 5]))
+		XCTAssertEqual(ring.data, Data([2, 3, 4, 5]))
+		ring.append(Data([6, 7, 8, 9, 10, 11]))
+		XCTAssertEqual(ring.data, Data([8, 9, 10, 11]))
+		ring.removeAll()
+		XCTAssertEqual(ring.data, Data())
+	}
+
 	func testWavHeaderAndTakeRules() {
 		let pcm = Data([0, 0, 255, 127])
 		let wav = VoiceAudio.wav(pcm16: pcm, sampleRate: 16_000)
@@ -84,7 +116,8 @@ final class VoiceCoreTests: XCTestCase {
 		defaults.removePersistentDomain(forName: "deck-voice-tests")
 		XCTAssertEqual(VoiceSettings.load(from: defaults), VoiceSettings())
 		XCTAssertTrue(VoiceSettings().handsFree, "hands-free is the default")
-		let custom = VoiceSettings(chattiness: .finalOnly, handsFree: false, sensitivity: .high)
+		XCTAssertEqual(VoiceSettings().endOfSpeech, .normal)
+		let custom = VoiceSettings(chattiness: .finalOnly, handsFree: false, sensitivity: .high, endOfSpeech: .long)
 		custom.save(to: defaults)
 		XCTAssertEqual(VoiceSettings.load(from: defaults), custom)
 		// Saved before hands-free had a key: the rest survives, hands-free defaults on.
@@ -98,6 +131,11 @@ final class VoiceCoreTests: XCTestCase {
 		XCTAssertFalse(VoiceSettings.load(from: defaults).handsFree)
 		defaults.set(Data(#"{"version":2}"#.utf8), forKey: "deck.voice.settings")
 		XCTAssertTrue(VoiceSettings.load(from: defaults).handsFree)
+		defaults.set(Data(#"{"version":2,"endOfSpeech":"short","sensitivity":"high"}"#.utf8), forKey: "deck.voice.settings")
+		XCTAssertEqual(VoiceSettings.load(from: defaults).endOfSpeech, .short)
+		defaults.set(Data(#"{"version":2,"endOfSpeech":"forever","sensitivity":"high"}"#.utf8), forKey: "deck.voice.settings")
+		XCTAssertEqual(VoiceSettings.load(from: defaults).endOfSpeech, .normal)
+		XCTAssertEqual(VoiceSettings.load(from: defaults).sensitivity, .high)
 	}
 
 	func testSpeechRequestsUseDecksProxies() async throws {

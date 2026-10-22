@@ -5,7 +5,7 @@ import DeckUI
 
 /// The strip between the transcript and the composer while voice mode is on:
 /// what is being read (or heard), hold-to-talk, Skip, Stop, and the per-device
-/// settings (chattiness, hands-free, sensitivity).
+/// settings (chattiness, hands-free, sensitivity, end of speech).
 public struct VoiceBar: View {
 	@Bindable var voice: VoiceController
 
@@ -241,6 +241,11 @@ struct VoiceSettingsMenu: View {
 						get: { voice.settings.sensitivity },
 						set: { voice.settings.sensitivity = $0 })) {
 						ForEach(VadSensitivity.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+					}
+					Picker("End of speech", selection: Binding(
+						get: { voice.settings.endOfSpeech },
+						set: { voice.settings.endOfSpeech = $0 })) {
+						ForEach(EndOfSpeech.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
 					}
 				}
 			}

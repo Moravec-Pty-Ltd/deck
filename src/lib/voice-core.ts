@@ -1,9 +1,9 @@
-import { matchSpokenAnswer, questionSpeech, type SpokenQuestion, type Chattiness, type VadSensitivity } from './speech-core';
+import { matchSpokenAnswer, questionSpeech, type SpokenQuestion, type Chattiness, type EndOfSpeech, type VadSensitivity } from './speech-core';
 
 // Node-free state for voice mode, shared by the web bar and unit-tested here:
 // the utterance queue (what is left to read), the question flow (which
 // question a spoken reply answers), and the per-device settings shape. The
-// audio element, recorder and detector live in voice.svelte.ts.
+// audio element, capture and detector live in voice.svelte.ts.
 
 export interface Utterance {
 	// Segments still to play, in order; the head is the one playing.
@@ -14,12 +14,14 @@ export interface VoiceSettings {
 	chattiness: Chattiness;
 	handsFree: boolean;
 	sensitivity: VadSensitivity;
+	endOfSpeech: EndOfSpeech;
 }
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 	chattiness: 'every-update',
 	handsFree: true,
-	sensitivity: 'medium'
+	sensitivity: 'medium',
+	endOfSpeech: 'normal'
 };
 
 const VOICE_SETTINGS_VERSION = 2;
@@ -37,7 +39,8 @@ export function parseVoiceSettings(raw: string | null): VoiceSettings {
 			// Settings saved before v2 stored the old hold-to-talk default, so they
 			// move to hands-free once; a later choice of hold-to-talk sticks.
 			handsFree: (o.v ?? 0) >= VOICE_SETTINGS_VERSION ? o.handsFree !== false : true,
-			sensitivity: o.sensitivity === 'low' || o.sensitivity === 'high' ? o.sensitivity : 'medium'
+			sensitivity: o.sensitivity === 'low' || o.sensitivity === 'high' ? o.sensitivity : 'medium',
+			endOfSpeech: o.endOfSpeech === 'short' || o.endOfSpeech === 'long' ? o.endOfSpeech : 'normal'
 		};
 	} catch {
 		return DEFAULT_VOICE_SETTINGS;
@@ -109,6 +112,10 @@ export class VoiceDetector {
 		this.threshold = threshold;
 	}
 
+	setCloseMs(closeMs: number) {
+		this.closeMs = closeMs;
+	}
+
 	// Feed one level reading; returns 'start' when the mic should open,
 	// 'stop' when it should close, else null.
 	update(level: number, now: number): 'start' | 'stop' | null {
@@ -155,10 +162,68 @@ export function isUsableTake(cancelled: boolean, durationMs: number, bytes: numb
 	return !cancelled && durationMs >= minMs && bytes > 0;
 }
 
-// The recorder container to ask for, first supported wins; undefined lets the
-// browser pick.
-export function pickRecorderType(supported: (type: string) => boolean): string | undefined {
-	return ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'].find(supported);
+// The newest chunks holding at least `capacity` samples, oldest first: the
+// lead-in a take starts with, since the detector only opens once speech is
+// already under way. Chunks are shared, never copied or written.
+export class PcmRing {
+	private chunks: Float32Array[] = [];
+	private total = 0;
+
+	constructor(private capacity: number) {}
+
+	push(chunk: Float32Array): void {
+		this.chunks.push(chunk);
+		this.total += chunk.length;
+		while (this.total - this.chunks[0].length >= this.capacity) this.total -= this.chunks.shift()!.length;
+	}
+
+	read(): Float32Array[] {
+		return [...this.chunks];
+	}
+}
+
+// Joins the chunks and box-filters them down to `to` Hz: each output sample
+// averages the inputs it covers, enough low-pass for speech going to the
+// recogniser.
+export function downsample(chunks: Float32Array[], from: number, to: number): Float32Array {
+	const input = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+	chunks.reduce((at, c) => (input.set(c, at), at + c.length), 0);
+	if (to >= from) return input;
+	const ratio = from / to;
+	const out = new Float32Array(Math.floor(input.length / ratio));
+	for (let i = 0; i < out.length; i++) {
+		const a = Math.floor(i * ratio);
+		const b = Math.floor((i + 1) * ratio);
+		let sum = 0;
+		for (let j = a; j < b; j++) sum += input[j];
+		out[i] = sum / (b - a);
+	}
+	return out;
+}
+
+// A 16-bit mono PCM WAV file from samples in [-1, 1], the format the apps
+// upload too.
+export function wavBytes(samples: Float32Array, sampleRate: number): ArrayBuffer {
+	const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
+	const text = (at: number, s: string) => [...s].forEach((ch, i) => view.setUint8(at + i, ch.charCodeAt(0)));
+	text(0, 'RIFF');
+	view.setUint32(4, 36 + samples.length * 2, true);
+	text(8, 'WAVE');
+	text(12, 'fmt ');
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true);
+	view.setUint16(22, 1, true);
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true);
+	view.setUint16(32, 2, true);
+	view.setUint16(34, 16, true);
+	text(36, 'data');
+	view.setUint32(40, samples.length * 2, true);
+	samples.forEach((s, i) => {
+		const v = Math.max(-1, Math.min(1, s));
+		view.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+	});
+	return view.buffer;
 }
 
 // Where the bar rests once a take (or playback) ends: hands-free keeps
