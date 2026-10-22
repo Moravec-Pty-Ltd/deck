@@ -31,8 +31,14 @@ final class SessionDetailViewModel {
 	/// The screen's own state, kept here because a fold or unfold lays the view
 	/// out afresh: the composer draft, whether it had the keyboard, and the
 	/// transcript row at the top of the screen.
-	var draft = ""
-	var draftImages: [DeckImage] = []
+	var draft = "" { didSet { draftChanged() } }
+	var draftImages: [DeckImage] = [] { didSet { draftChanged() } }
+	/// The session the draft was started in, which may be another one when the
+	/// saved draft followed the reader here.
+	private(set) var draftOrigin: String?
+	/// Set while init adopts the saved draft, whose origin must not be
+	/// re-derived from this session halfway through.
+	@ObservationIgnored private var restoring = false
 	var composerFocused = false
 	var topRowId: String?
 
@@ -64,10 +70,41 @@ final class SessionDetailViewModel {
 	init(sessionId: String, store: DeckStore) {
 		self.sessionId = sessionId
 		self.store = store
+		// A terminal has no composer, so it must not take the draft from one.
+		let isShell = store.sessions.first { $0.id == sessionId }?.kind == "shell"
+		if !isShell, let saved = DraftStore.shared.claim(for: sessionId) {
+			restoring = true
+			defer { restoring = false }
+			draft = saved.text
+			draftImages = saved.images
+			draftOrigin = saved.originSessionId
+		}
+	}
+
+	private var composerDraft: ComposerDraft {
+		ComposerDraft(text: draft, images: draftImages, originSessionId: draftOrigin)
+	}
+
+	private func draftChanged() {
+		guard !restoring else { return }
+		draftOrigin = ComposerDraft.nextOrigin(draftOrigin, isEmpty: !hasDraft, current: sessionId)
+		DraftStore.shared.update(composerDraft, from: sessionId)
 	}
 
 	var session: SessionDigest? {
 		store.sessions.first { $0.id == sessionId }
+	}
+
+	static func title(of session: SessionDigest?, id: String) -> String {
+		if let title = session?.title, !title.isEmpty { return title }
+		if let cwd = session?.cwd, let last = cwd.split(separator: "/").last { return String(last) }
+		return id
+	}
+
+	/// The name of the session the draft was started in, for the "from:" chip.
+	var draftOriginTitle: String {
+		let origin = draftOrigin ?? ""
+		return Self.title(of: store.sessions.first { $0.id == origin }, id: origin)
 	}
 
 	/// The voice controller, made on first use so screens without a speech
@@ -107,10 +144,12 @@ final class SessionDetailViewModel {
 	var isPolling: Bool { streamTask != nil }
 
 	/// Leaving the session ends voice mode; playback must not outlive the
-	/// screen that shows what is being read.
+	/// screen that shows what is being read. A draft left behind becomes the
+	/// saved one, for the next composer to pick up.
 	func leave() {
 		voice?.disable()
 		stopPolling()
+		DraftStore.shared.release(composerDraft, from: sessionId)
 	}
 
 	private func runStream() async {

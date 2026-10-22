@@ -253,6 +253,7 @@ struct AttachmentImage: View {
 				Image(platformImage: platformImage)
 					.resizable()
 					.scaledToFill()
+					.draggable(Image(platformImage: platformImage))
 			} else if failed {
 				Image(systemName: "photo")
 					.foregroundStyle(.secondary)

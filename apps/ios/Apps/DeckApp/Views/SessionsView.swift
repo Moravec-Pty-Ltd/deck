@@ -21,6 +21,10 @@ struct SessionsView: View {
 	/// Settings over the list instead.
 	var openSettingsTab: (() -> Void)?
 	@State private var open: SessionTarget?
+	/// A second session in the list's place, on a wide layout.
+	@State private var beside: SessionTarget?
+	@State private var focusedPane = Pane.main
+	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
 	@State private var path: [SessionTarget] = []
 	@State private var models = OpenSessionModel()
 	@State private var pendingDelete: DeleteRequest?
@@ -46,14 +50,34 @@ struct SessionsView: View {
 		var index: Int? = nil
 	}
 
+	enum Pane { case main, beside }
+
 	private var wide: Bool { sizeClass == .regular && !hinge.isTabletop }
 
 	/// The fold owns the split: half the window each side of the hinge.
 	private var foldWidth: CGFloat? { hinge.splitWidth(sizeClass) }
 
+	private var twoUp: Bool { wide && beside != nil }
+
+	/// The session typing goes to: the focused pane's with two showing.
+	private var activeTarget: SessionTarget? {
+		twoUp && focusedPane == .beside ? beside : open
+	}
+
 	var body: some View {
 		Group {
-			if wide, let foldWidth {
+			if twoUp {
+				HStack(spacing: 0) {
+					NavigationStack {
+						if let beside { session(beside, pane: .beside) }
+					}
+					.frame(width: foldWidth)
+					.frame(maxWidth: foldWidth ?? .infinity)
+					Divider()
+					NavigationStack { detail }
+						.frame(maxWidth: .infinity)
+				}
+			} else if wide, let foldWidth {
 				HStack(spacing: 0) {
 					NavigationStack { sidebar }
 						.frame(width: foldWidth)
@@ -79,6 +103,17 @@ struct SessionsView: View {
 			}
 		}
 		.onChange(of: wide, initial: true) { _, wide in
+			// One session fits: the one with focus stays, the other leaves.
+			if !wide, let beside {
+				if focusedPane == .beside {
+					models.promote()
+					open = beside
+				} else {
+					models.close(.beside)
+				}
+				self.beside = nil
+				focusedPane = .main
+			}
 			path = wide ? [] : (open.map { [$0] } ?? [])
 		}
 		.onChange(of: path) { _, path in
@@ -86,9 +121,10 @@ struct SessionsView: View {
 		}
 		.onChange(of: open) { _, open in
 			if !wide, path.last != open { path = open.map { [$0] } ?? [] }
-			if open == nil { models.close() }
-			openSessionId = open?.sessionId
+			if open == nil { models.close(.main) }
+			if let open, open.sessionId == beside?.sessionId { close(.beside) }
 		}
+		.onChange(of: activeTarget?.sessionId) { _, id in openSessionId = id }
 		.onChange(of: command) { _, command in
 			guard let command else { return }
 			self.command = nil
@@ -96,12 +132,15 @@ struct SessionsView: View {
 		}
 		.onChange(of: deepLinkSessionId) { _, sessionId in
 			guard let sessionId else { return }
-			open = SessionTarget(sessionId: sessionId)
+			show(SessionTarget(sessionId: sessionId))
 			deepLinkSessionId = nil
 		}
 		// A deleted session's detail goes with it.
 		.onChange(of: store.sessions.map(\.id)) { _, ids in
-			if let open, !ids.contains(open.sessionId) { self.open = nil }
+			if let beside, !ids.contains(beside.sessionId) { close(.beside) }
+			if let open, !ids.contains(open.sessionId) {
+				if beside != nil { close(.main) } else { self.open = nil }
+			}
 		}
 		.onDisappear { models.close() }
 	}
@@ -118,14 +157,75 @@ struct SessionsView: View {
 		}
 	}
 
-	private func session(_ target: SessionTarget) -> some View {
+	private func session(_ target: SessionTarget, pane: Pane = .main) -> some View {
 		SessionDetailView(
 			sessionId: target.sessionId,
 			focusIndex: target.index,
-			shared: models.model(for: target, store: store),
-			onIdChanged: { open = SessionTarget(sessionId: $0) }
+			shared: models.model(for: target, pane: pane, store: store),
+			onIdChanged: { id in
+				if pane == .main { open = SessionTarget(sessionId: id) } else { beside = SessionTarget(sessionId: id) }
+			},
+			onClose: twoUp ? { close(pane) } : nil,
+			isActivePane: twoUp ? focusedPane == pane : nil,
+			onActivate: twoUp ? { focusedPane = pane } : nil
 		)
 		.id(target)
+	}
+
+	/// Closing the second pane brings the list back; closing the first moves
+	/// the second into its place, still live.
+	private func close(_ pane: Pane) {
+		if pane == .main, let beside {
+			models.promote()
+			self.beside = nil
+			open = beside
+		} else {
+			beside = nil
+			models.close(.beside)
+		}
+		focusedPane = .main
+	}
+
+	/// A list row: opens its session, swipes to delete, rename or hide, and
+	/// beside an open session can open a second one in the list's place.
+	private func row(_ session: SessionDigest) -> some View {
+		link(to: SessionTarget(sessionId: session.id)) {
+			SessionRow(session: session)
+		}
+		// Deliberately not a destructive-role button, and no full
+		// swipe: both make the list animate the row out, while the
+		// row stays put (this only opens the confirm sheet). The
+		// count mismatch that follows aborts the app.
+		.swipeActions(edge: .trailing, allowsFullSwipe: false) {
+			Button {
+				pendingDelete = DeleteRequest(sessions: [session])
+			} label: {
+				Label("Delete", systemImage: "trash")
+			}
+			.tint(.red)
+			Button {
+				pendingRename = session
+			} label: {
+				Label("Rename", systemImage: "pencil")
+			}
+			.tint(.indigo)
+			Button {
+				setHidden(session, true)
+			} label: {
+				Label("Hide", systemImage: "eye.slash")
+			}
+			.tint(.gray)
+		}
+		.contextMenu {
+			if wide, let open, open.sessionId != session.id {
+				Button {
+					beside = SessionTarget(sessionId: session.id)
+					focusedPane = .beside
+				} label: {
+					Label("Open beside", systemImage: "rectangle.split.2x1")
+				}
+			}
+		}
 	}
 
 	/// A row that opens its session: pushes it on a phone; beside the list it
@@ -158,6 +258,16 @@ struct SessionsView: View {
 		return SessionSearch.byName(q, in: list)
 	}
 
+	/// Opens a session in the pane that has focus, so a shortcut or a link
+	/// lands where the reader is working.
+	private func show(_ target: SessionTarget) {
+		if twoUp, focusedPane == .beside, target.sessionId != open?.sessionId {
+			beside = target
+		} else {
+			open = target
+		}
+	}
+
 	private func handle(_ command: SessionsCommand) {
 		switch command {
 		case .focusSearch:
@@ -166,9 +276,13 @@ struct SessionsView: View {
 			if wide { columns = .all } else { open = nil }
 			searchFocused = true
 		case .step(let offset):
-			let ids = listedSessions.map(\.id)
-			if let next = SessionStepper.step(from: open?.sessionId, by: offset, in: ids) {
-				open = SessionTarget(sessionId: next)
+			// The other pane's session is skipped, or stepping would stall on it.
+			let other = twoUp ? (focusedPane == .beside ? open : beside)?.sessionId : nil
+			let ids = (isFiltering ? listedSessions
+				: SessionGrouping.ordered(store.activeSessions, by: grouping, projects: store.projects))
+				.map(\.id).filter { $0 != other }
+			if let next = SessionStepper.step(from: activeTarget?.sessionId, by: offset, in: ids) {
+				show(SessionTarget(sessionId: next))
 			}
 		case .openSettings:
 			if let openSettingsTab { openSettingsTab() } else { open = nil; pushSettings = true }
@@ -230,43 +344,15 @@ struct SessionsView: View {
 				// while the search field is active is what a UIKit list handles
 				// worst, and the Mac crashed on it.
 				List(selection: wide ? $open : nil) {
-					Section {
-						ForEach(listedSessions) { session in
-							link(to: SessionTarget(sessionId: session.id)) {
-								SessionRow(session: session)
-							}
-							// Deliberately not a destructive-role button, and no full
-							// swipe: both make the list animate the row out, while the
-							// row stays put (this only opens the confirm sheet). The
-							// count mismatch that follows aborts the app.
-							.swipeActions(edge: .trailing, allowsFullSwipe: false) {
-								Button {
-									pendingDelete = DeleteRequest(sessions: [session])
-								} label: {
-									Label("Delete", systemImage: "trash")
-								}
-								.tint(.red)
-								Button {
-									pendingRename = session
-								} label: {
-									Label("Rename", systemImage: "pencil")
-								}
-								.tint(.indigo)
-								Button {
-									setHidden(session, true)
-								} label: {
-									Label("Hide", systemImage: "eye.slash")
-								}
-								.tint(.gray)
-							}
-						}
-					} header: {
-						if isFiltering && !listedSessions.isEmpty { Text("Sessions") }
-					}
-
-					// What was said, under the names, for when a phrase is all you
-					// remember.
 					if isFiltering {
+						Section {
+							ForEach(listedSessions) { row($0) }
+						} header: {
+							if !listedSessions.isEmpty { Text("Sessions") }
+						}
+
+						// What was said, under the names, for when a phrase is all you
+						// remember.
 						Section {
 							ForEach(hits) { hit in
 								link(to: SessionTarget(sessionId: hit.sessionId, index: hit.index)) {
@@ -280,6 +366,25 @@ struct SessionsView: View {
 							}
 						} header: {
 							if !hits.isEmpty { Text("In what was said") }
+						}
+					} else if grouping == .status {
+						ForEach(SessionGrouping.byStatus(store.activeSessions)) { section in
+							Section {
+								ForEach(section.sessions) { row($0) }
+							} header: {
+								StatusBucketHeader(bucket: section.bucket)
+							}
+						}
+					} else {
+						ForEach(SessionGrouping.byProject(store.activeSessions, projects: store.projects)) { section in
+							Section(section.name) {
+								ForEach(section.subgroups) { subgroup in
+									Text(subgroup.label)
+										.font(.caption)
+										.foregroundStyle(.secondary)
+									ForEach(subgroup.sessions) { row($0) }
+								}
+							}
 						}
 					}
 
@@ -300,6 +405,17 @@ struct SessionsView: View {
 		.onChange(of: query) { _, text in runSearch(text) }
 		.refreshable { await store.refreshSessions() }
 		.toolbar {
+			if !isSelecting {
+				ToolbarItem(placement: .topBarTrailing) {
+					Menu {
+						Button(grouping.toggleLabel) { grouping = grouping.toggled }
+					} label: {
+						Image(systemName: "rectangle.3.group")
+					}
+					.accessibilityLabel("Grouping")
+					.accessibilityIdentifier("groupingMenu")
+				}
+			}
 			if !store.activeSessions.isEmpty && deleteProgress == nil {
 				ToolbarItem(placement: .topBarTrailing) {
 					if isSelecting {
@@ -332,7 +448,7 @@ struct SessionsView: View {
 			SettingsView()
 		}
 		.sheet(isPresented: $showReviews) {
-			ReviewsView { sessionId in open = SessionTarget(sessionId: sessionId) }
+			ReviewsView { sessionId in show(SessionTarget(sessionId: sessionId)) }
 		}
 		// A bar of our own rather than .bottomBar toolbar items: the tab bar
 		// owns the bottom of the screen, so those never show up.
@@ -363,6 +479,9 @@ struct SessionsView: View {
 					// open session pointed at it rather than letting it vanish.
 					if id != session.id, open?.sessionId == session.id {
 						open = SessionTarget(sessionId: id)
+					}
+					if id != session.id, beside?.sessionId == session.id {
+						beside = SessionTarget(sessionId: id)
 					}
 					return nil
 				} catch {
@@ -577,27 +696,36 @@ enum SessionsCommand: Equatable {
 	case openSettings
 }
 
-/// The open session's model, kept across folds and unfolds (which lay the
-/// session out afresh) so its transcript stream, voice mode, draft and scroll
-/// position carry on.
+/// The open sessions' models, one per pane, kept across folds and unfolds
+/// (which lay the session out afresh) so each transcript stream, voice mode,
+/// draft and scroll position carries on.
 @MainActor
 final class OpenSessionModel {
-	private var current: SessionDetailViewModel?
-	private var target: SessionsView.SessionTarget?
+	private var slots: [SessionsView.Pane: (target: SessionsView.SessionTarget, model: SessionDetailViewModel)] = [:]
 
-	func model(for target: SessionsView.SessionTarget, store: DeckStore) -> SessionDetailViewModel {
-		if self.target == target, let current { return current }
-		current?.leave()
+	func model(for target: SessionsView.SessionTarget, pane: SessionsView.Pane, store: DeckStore) -> SessionDetailViewModel {
+		if let slot = slots[pane], slot.target == target { return slot.model }
+		slots[pane]?.model.leave()
 		let model = SessionDetailViewModel(sessionId: target.sessionId, store: store)
-		current = model
-		self.target = target
+		slots[pane] = (target, model)
 		return model
 	}
 
+	func close(_ pane: SessionsView.Pane) {
+		slots.removeValue(forKey: pane)?.model.leave()
+	}
+
 	func close() {
-		current?.leave()
-		current = nil
-		target = nil
+		// Beside first: the last to leave owns the saved draft, and the main
+		// pane is the one the list returns to.
+		close(.beside)
+		close(.main)
+	}
+
+	/// The beside pane's model takes the main slot without leaving.
+	func promote() {
+		slots[.main]?.model.leave()
+		slots[.main] = slots.removeValue(forKey: .beside)
 	}
 }
 

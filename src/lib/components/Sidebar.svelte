@@ -23,7 +23,7 @@
 		type RecentError,
 		type ReviewDecision
 	} from '$lib/morabot-core';
-	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff } from '@lucide/svelte';
+	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Columns2 } from '@lucide/svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
@@ -45,11 +45,13 @@
 		onQuickAdd: (path: string) => void;
 		onShellHere: (session: SessionView) => void;
 		onDelete: (session: SessionView, neighbor?: SessionView | null) => void;
+		// Wide screens only: show this session beside the open one.
+		onOpenBeside?: (session: SessionView) => void;
 		// Re-fetch the page's sessions and projects, so a hide shows up at once
 		// rather than waiting on the feed.
 		onChanged: () => void;
 	}
-	let { projects, sessions, serverStates, reviews, currentId, deletingIds, onQuickAdd, onShellHere, onDelete, onChanged }: Props =
+	let { projects, sessions, serverStates, reviews, currentId, deletingIds, onQuickAdd, onShellHere, onDelete, onOpenBeside, onChanged }: Props =
 		$props();
 
 	// morabot review section (issue #188). Hidden entirely unless the integration is
@@ -215,6 +217,16 @@
 				title={`New session in ${proj.label}`}
 			>
 				<Plus size={12} class="text-primary" />
+			</button>
+		{/if}
+		{#if onOpenBeside && s.id !== currentId}
+			<button
+				class="btn btn-ghost btn-xs max-lg:hidden"
+				onclick={() => onOpenBeside(s)}
+				aria-label={`Open ${s.title} beside`}
+				title="Open beside the current session"
+			>
+				<Columns2 size={12} />
 			</button>
 		{/if}
 		{#if !s.hidden}

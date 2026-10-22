@@ -76,7 +76,8 @@
 		visible = true,
 		condensed = false,
 		controls,
-		focusIndex = null
+		focusIndex = null,
+		persistDraft: persist = true
 	}: {
 		session: DeckSession;
 		sessions?: DeckSession[];
@@ -85,6 +86,9 @@
 		condensed?: boolean;
 		controls?: Snippet;
 		focusIndex?: number | null;
+		// False for a second pane on screen: its draft stays in memory so it never
+		// reads or fights over the one global localStorage draft.
+		persistDraft?: boolean;
 	} = $props();
 
 	// A single global composer draft, persisted so a cold reload / iOS PWA relaunch
@@ -92,7 +96,7 @@
 	// switch, so the draft carries across switches — see the session $effect below).
 	const DRAFT_KEY = 'deck:composer:draft';
 	const restored =
-		typeof localStorage !== 'undefined' ? parseDraft(localStorage.getItem(DRAFT_KEY)) : null;
+		persist && typeof localStorage !== 'undefined' ? parseDraft(localStorage.getItem(DRAFT_KEY)) : null;
 
 	type AnyEvent = Record<string, any>;
 
@@ -737,7 +741,7 @@
 	// draft clears the key. The attachment budget is applied in serializeDraft.
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	function persistDraft(draft: Draft) {
-		if (typeof localStorage === 'undefined') return;
+		if (!persist || typeof localStorage === 'undefined') return;
 		try {
 			const raw = serializeDraft(draft);
 			if (raw) localStorage.setItem(DRAFT_KEY, raw);
@@ -767,7 +771,7 @@
 		uploads = [];
 		uploadError = '';
 		originSessionId = null;
-		if (typeof localStorage !== 'undefined') {
+		if (persist && typeof localStorage !== 'undefined') {
 			try {
 				localStorage.removeItem(DRAFT_KEY);
 			} catch {

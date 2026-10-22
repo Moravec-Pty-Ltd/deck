@@ -20,6 +20,7 @@ struct MacMainView: View {
 	@Environment(\.openWindow) private var openWindow
 	@Environment(\.openSettings) private var openSettings
 	@State private var selection: MacPane? = .inbox
+	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
 	@State private var query = ""
 	@State private var deepLinkRunId: String?
 	@State private var showPalette = false
@@ -94,7 +95,9 @@ struct MacMainView: View {
 	/// The sessions the sidebar lists, in its order: what ⌘[ and ⌘] step through.
 	private var listedSessions: [SessionDigest] {
 		let q = query.trimmingCharacters(in: .whitespaces)
-		return q.isEmpty ? store.activeSessions : SessionSearch.byName(q, in: store.activeSessions)
+		return q.isEmpty
+			? SessionGrouping.ordered(store.activeSessions, by: grouping, projects: store.projects)
+			: SessionSearch.byName(q, in: store.activeSessions)
 	}
 
 	private func step(_ offset: Int) {
@@ -159,6 +162,7 @@ private struct MacSidebar: View {
 	@Binding var selection: MacPane?
 	@Binding var query: String
 	let listed: [SessionDigest]
+	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
 
 	private var isFiltering: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -178,16 +182,33 @@ private struct MacSidebar: View {
 				Label("Schedules", systemImage: "clock.arrow.2.circlepath").tag(MacPane.schedules)
 				Label("Start", systemImage: "plus.circle").tag(MacPane.start)
 			}
-			Section("Sessions") {
-				ForEach(listed) { session in
-					SessionRow(session: session).tag(MacPane.session(session.id))
+			if isFiltering {
+				Section("Sessions") {
+					ForEach(listed) { row($0) }
+				}
+			} else if grouping == .status {
+				ForEach(SessionGrouping.byStatus(store.activeSessions)) { section in
+					Section {
+						ForEach(section.sessions) { row($0) }
+					} header: {
+						StatusBucketHeader(bucket: section.bucket)
+					}
+				}
+			} else {
+				ForEach(SessionGrouping.byProject(store.activeSessions, projects: store.projects)) { section in
+					Section(section.name) {
+						ForEach(section.subgroups) { subgroup in
+							Text(subgroup.label)
+								.font(.caption)
+								.foregroundStyle(.secondary)
+							ForEach(subgroup.sessions) { row($0) }
+						}
+					}
 				}
 			}
 			if !isFiltering, !store.hiddenSessions.isEmpty {
 				Section("Hidden") {
-					ForEach(store.hiddenSessions) { session in
-						SessionRow(session: session).tag(MacPane.session(session.id))
-					}
+					ForEach(store.hiddenSessions) { row($0) }
 				}
 			}
 		}
@@ -208,12 +229,24 @@ private struct MacSidebar: View {
 		.toolbar {
 			ToolbarItem {
 				Button {
+					grouping = grouping.toggled
+				} label: {
+					Label(grouping.toggleLabel, systemImage: "rectangle.3.group")
+				}
+				.help(grouping.toggleLabel)
+			}
+			ToolbarItem {
+				Button {
 					Task { await store.refreshSessions() }
 				} label: {
 					Label("Refresh", systemImage: "arrow.clockwise")
 				}
 			}
 		}
+	}
+
+	private func row(_ session: SessionDigest) -> some View {
+		SessionRow(session: session).tag(MacPane.session(session.id))
 	}
 
 	@ViewBuilder

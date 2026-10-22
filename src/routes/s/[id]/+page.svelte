@@ -27,6 +27,7 @@
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import { DeleteFlow, requestDelete } from '$lib/delete-flow.svelte';
 	import { goto } from '$app/navigation';
+	import { resolveBeside } from '$lib/beside-core';
 	import { Menu, X, Ticket, Check, ChevronDown } from '@lucide/svelte';
 	import Popover from '$lib/components/Popover.svelte';
 	import { onMount } from 'svelte';
@@ -91,6 +92,24 @@
 		const live = sessions.find((s) => s.id === session.id);
 		return live ? live.pr : session.pr;
 	});
+
+	// Second session beside the main one (`?beside=<id>`), lg+ only: it takes the
+	// sidebar's column until closed. Gone from the feed (deleted) reads as closed.
+	const beside = $derived(
+		resolveBeside(page.url.searchParams.get('beside'), session.id, sessions)
+	);
+	let activePane = $state<'main' | 'beside'>('main');
+	function openBeside(s: SessionView) {
+		const u = new URL(page.url);
+		u.searchParams.set('beside', s.id);
+		goto(u, { keepFocus: true });
+	}
+	function closeBeside() {
+		const u = new URL(page.url);
+		u.searchParams.delete('beside');
+		goto(u, { replaceState: true, keepFocus: true });
+		activePane = 'main';
+	}
 
 	// The session's name, same trust order as liveModel: the poll reflects a
 	// rename made on another device, the page-load value covers the first 5s.
@@ -219,7 +238,10 @@
 	// the delete lands (replaceState so Back doesn't reopen the now-gone session);
 	// deleting any other row is unchanged.
 	const del = new DeleteFlow(refresh, (s) => {
-		if (s.id === session.id) goto(pendingHref, { replaceState: true });
+		if (s.id !== session.id) return;
+		// With a session beside, it becomes the main one.
+		const next = beside ? `/s/${encodeURIComponent(beside.id)}` : pendingHref;
+		goto(next, { replaceState: true });
 	});
 	function onDeleteSession(s: SessionView, neighbor?: SessionView | null) {
 		if (s.id === session.id) pendingHref = neighbor ? `/s/${encodeURIComponent(neighbor.id)}` : '/';
@@ -336,11 +358,35 @@
 		onQuickAdd={quickAdd}
 		onShellHere={shellHere}
 		onDelete={onDeleteSession}
+		onOpenBeside={openBeside}
 		onChanged={refresh}
 	/>
 {/snippet}
 
 <div class="flex h-full" class:select-none={resizing} class:cursor-col-resize={resizing}>
+	{#if beside}
+		<!-- Same two-pane rule as the sidebar: lg+ only, closing brings the list back. -->
+		<div
+			class="hidden h-full min-w-0 flex-1 flex-col border-r border-base-300 px-2 pt-2 lg:flex {activePane === 'beside' ? 'ring-1 ring-inset ring-primary/30' : ''}"
+			onfocusin={() => (activePane = 'beside')}
+		>
+			<div class="mb-2 flex items-center gap-2">
+				<span class="min-w-0 flex-1 truncate text-sm font-medium" title={beside.title}>{beside.title}</span>
+				<button class="btn btn-ghost btn-xs" onclick={closeBeside} aria-label="Close session beside">
+					<X size={14} />
+				</button>
+			</div>
+			<div class="min-h-0 flex-1">
+				{#key beside.id}
+					{#if beside.kind === 'shell'}
+						<ShellView session={beside} visible={true} />
+					{:else}
+						<ClaudeView session={beside} {sessions} {projects} persistDraft={false} />
+					{/if}
+				{/key}
+			</div>
+		</div>
+	{:else}
 	<div
 		class="relative hidden h-full lg:block lg:shrink-0"
 		style="width: {sidebarWidth}px"
@@ -373,8 +419,13 @@
 			></div>
 		</div>
 	</div>
+	{/if}
 
-	<div class="flex h-full min-w-0 flex-1 flex-col px-2 pt-2">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="flex h-full min-w-0 flex-1 flex-col px-2 pt-2 {beside && activePane === 'main' ? 'lg:ring-1 lg:ring-inset lg:ring-primary/30' : ''}"
+		onfocusin={() => (activePane = 'main')}
+	>
 		{#if del.error}
 			<div class="alert alert-error mb-2 py-2 text-sm" role="alert">
 				<span class="flex-1 break-words">{del.error}</span>
