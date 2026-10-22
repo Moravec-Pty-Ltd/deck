@@ -11,6 +11,15 @@ public struct NotificationAnswer: Equatable, Sendable {
 	public let label: String
 	public let structured: Bool
 
+	public init(sessionId: String?, runId: String?, askId: String?, header: String, label: String, structured: Bool) {
+		self.sessionId = sessionId
+		self.runId = runId
+		self.askId = askId
+		self.header = header
+		self.label = label
+		self.structured = structured
+	}
+
 	/// `optionSlot` is the numbered option action picked, `typed` the reply
 	/// text; at most one is set.
 	public init?(userInfo: [AnyHashable: Any], optionSlot: Int?, typed: String?) {

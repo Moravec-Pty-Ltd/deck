@@ -12,7 +12,7 @@ struct SessionActivityWidget: Widget {
 		} dynamicIsland: { context in
 			DynamicIsland {
 				DynamicIslandExpandedRegion(.leading) {
-					StatusDot(state: context.state).padding(.leading, 4)
+					StatusDot(state: context.state).font(.caption).padding(.leading, 4)
 				}
 				DynamicIslandExpandedRegion(.trailing) {
 					Elapsed(startedAt: context.attributes.startedAt, state: context.state)
@@ -26,13 +26,13 @@ struct SessionActivityWidget: Widget {
 					CardBody(context: context)
 				}
 			} compactLeading: {
-				StatusDot(state: context.state)
+				StatusDot(state: context.state).font(.caption)
 			} compactTrailing: {
 				Elapsed(startedAt: context.attributes.startedAt, state: context.state)
 					.font(.caption2.monospacedDigit())
 					.frame(maxWidth: 44)
 			} minimal: {
-				StatusDot(state: context.state)
+				StatusDot(state: context.state).font(.caption)
 			}
 			.widgetURL(sessionURL(context.attributes.sessionId))
 		}
@@ -74,20 +74,24 @@ private struct Elapsed: View {
 	}
 }
 
+/// The status as a symbol whose shape, not only its colour, tells the states
+/// apart: StandBy's night mode tints everything red.
 private struct StatusDot: View {
 	let state: SessionActivityAttributes.ContentState
 
-	private var color: Color {
-		if state.awaitingInput { return .orange }
+	private var symbol: (name: String, color: Color) {
+		if state.awaitingInput { return ("questionmark.circle.fill", .orange) }
 		switch state.status {
-		case "running": return .green
-		case "idle": return .gray
-		default: return .red
+		case "running": return ("play.circle.fill", .green)
+		case "idle": return ("checkmark.circle.fill", .gray)
+		default: return ("exclamationmark.triangle.fill", .red)
 		}
 	}
 
 	var body: some View {
-		Circle().fill(color).frame(width: 10, height: 10)
+		Image(systemName: symbol.name)
+			.foregroundStyle(symbol.color)
+			.accessibilityLabel(statusLine(state))
 	}
 }
 
@@ -100,6 +104,7 @@ private struct CardBody: View {
 			Text(context.state.lastText.isEmpty ? statusLine(context.state) : context.state.lastText)
 				.font(.footnote)
 				.lineLimit(3)
+				.privacySensitive()
 			HStack {
 				Text(costLine(context.state))
 					.font(.caption2)
@@ -120,8 +125,17 @@ private struct CardBody: View {
 
 private struct LockScreenCard: View {
 	let context: ActivityViewContext<SessionActivityAttributes>
+	@Environment(\.isActivityFullscreen) private var fullscreen
 
 	var body: some View {
+		if fullscreen {
+			StandByCard(attributes: context.attributes, state: context.state)
+		} else {
+			card
+		}
+	}
+
+	private var card: some View {
 		VStack(alignment: .leading, spacing: 6) {
 			HStack(spacing: 8) {
 				StatusDot(state: context.state)
@@ -136,6 +150,52 @@ private struct LockScreenCard: View {
 			CardBody(context: context)
 		}
 		.padding(12)
+		.activityBackgroundTint(Color.black.opacity(0.6))
+	}
+}
+
+/// StandBy's full-screen card. StandBy scales the lock-screen presentation up
+/// about 2x within the same height, so this keeps lock-screen sizes and spends
+/// them on what reads from across a desk: status in words, elapsed time, the
+/// title, and Stop as a large target beside it.
+struct StandByCard: View {
+	let attributes: SessionActivityAttributes
+	let state: SessionActivityAttributes.ContentState
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 6) {
+			HStack(spacing: 6) {
+				StatusDot(state: state)
+				Text(statusLine(state))
+				Spacer()
+				Elapsed(startedAt: attributes.startedAt, state: state)
+					.monospacedDigit()
+			}
+			.font(.subheadline.weight(.semibold))
+			HStack(spacing: 10) {
+				Text(attributes.title)
+					.font(.title2.bold())
+					.lineLimit(2)
+					.minimumScaleFactor(0.7)
+				Spacer(minLength: 0)
+				if state.status == "running" {
+					Button(intent: StopSessionActivityIntent(sessionId: attributes.sessionId)) {
+						Label("Stop", systemImage: "stop.fill").font(.headline)
+					}
+					.buttonStyle(.borderedProminent)
+					.controlSize(.large)
+					.tint(.red)
+				}
+			}
+			if !state.lastText.isEmpty {
+				Text(state.lastText)
+					.font(.footnote)
+					.foregroundStyle(.secondary)
+					.lineLimit(2)
+					.privacySensitive()
+			}
+		}
+		.padding(14)
 		.activityBackgroundTint(Color.black.opacity(0.6))
 	}
 }

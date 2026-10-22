@@ -156,7 +156,7 @@ interface Target {
 
 interface SendHeaders {
 	topic: string;
-	pushType: 'alert' | 'liveactivity';
+	pushType: 'alert' | 'liveactivity' | 'widgets';
 	priority: '10' | '5';
 }
 
@@ -206,13 +206,32 @@ function send(target: Target, headers: SendHeaders, payload: unknown): Promise<b
 	});
 }
 
-async function sendToDevice(device: core.ApnsDevice, payload: core.ApnsPayload): Promise<void> {
+// A widget token only takes WidgetKit's "content changed" push, whatever the
+// notification was.
+async function sendToDevice(device: core.ApnsDevice, payload: core.ApnsPayload | typeof core.WIDGET_PAYLOAD): Promise<void> {
+	const widgets = device.platform === 'widgets';
 	const dead = await send(
 		{ token: device.token, env: device.env, label: `a ${device.platform}/${device.env} device` },
-		{ topic: core.deriveTopic(config.topic, device.platform), pushType: 'alert', priority: '10' },
-		payload
+		{
+			topic: core.deriveTopic(config.topic, device.platform),
+			pushType: widgets ? 'widgets' : 'alert',
+			priority: widgets ? '5' : '10'
+		},
+		widgets ? core.WIDGET_PAYLOAD : payload
 	);
 	if (dead) unregisterDevice(device.token);
+}
+
+// Reload the phone's widget: an ask was answered or withdrawn, which sends no
+// notification of its own. Never throws.
+export async function apnsWidgetsChanged(): Promise<void> {
+	if (!apnsEnabled) return;
+	try {
+		const widgets = loadDevices().filter((d) => d.platform === 'widgets');
+		await Promise.all(widgets.map((d) => sendToDevice(d, core.WIDGET_PAYLOAD)));
+	} catch (err) {
+		console.error('[deck] apnsWidgetsChanged failed:', err);
+	}
 }
 
 // Fire-and-forget push to every registered device; never throws, mirroring

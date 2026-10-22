@@ -6,7 +6,9 @@
 
 import { z } from 'zod';
 
-export type ApnsPlatform = 'ios' | 'watchos' | 'macos';
+// `widgets` is the phone's home-screen widget: its own WidgetKit push token,
+// which only ever gets a "content changed" push that reloads it.
+export type ApnsPlatform = 'ios' | 'watchos' | 'macos' | 'widgets';
 export type ApnsEnv = 'development' | 'production';
 
 export interface ApnsDevice {
@@ -22,7 +24,7 @@ export interface ApnsDevice {
 // quickmessages.ts's schema.parse -> 400-on-throw pattern.
 export const registerDeviceSchema = z.object({
 	token: z.string().regex(/^[0-9a-fA-F]{1,200}$/),
-	platform: z.enum(['ios', 'watchos', 'macos']),
+	platform: z.enum(['ios', 'watchos', 'macos', 'widgets']),
 	env: z.enum(['development', 'production'])
 });
 
@@ -113,11 +115,16 @@ export function shouldRegenerateJwt(issuedAtMs: number | null, nowMs: number): b
 
 // ---- topic derivation ----
 
-// The Mac app shares the iOS bundle id, so only the watch gets a suffix.
-
+// The Mac app shares the iOS bundle id, so only the watch and the widget
+// pushes get a suffix.
 export function deriveTopic(baseTopic: string, platform: ApnsPlatform): string {
-	return platform === 'watchos' ? `${baseTopic}.watchkitapp` : baseTopic;
+	if (platform === 'watchos') return `${baseTopic}.watchkitapp`;
+	if (platform === 'widgets') return `${baseTopic}.push-type.widgets`;
+	return baseTopic;
 }
+
+// WidgetKit reloads the widget's timeline on this; it carries no content.
+export const WIDGET_PAYLOAD = { aps: { 'content-changed': true } } as const;
 
 // ---- payload mapping ----
 

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeckSession } from '$lib/types';
 
-const mocks = vi.hoisted(() => ({ pendingId: vi.fn(), resolve: vi.fn(), record: vi.fn(), session: vi.fn() }));
-vi.mock('./ask', () => ({ pendingAskId: mocks.pendingId, resolveAsk: mocks.resolve }));
+const mocks = vi.hoisted(() => ({ pendingId: vi.fn(), resolve: vi.fn(), record: vi.fn(), session: vi.fn(), blockedRun: vi.fn(), runAction: vi.fn(), settled: vi.fn() }));
+vi.mock('./ask', () => ({ pendingAskId: mocks.pendingId, resolveAsk: mocks.resolve, wasSettled: mocks.settled }));
 vi.mock('./claude', () => ({ recordAnswer: mocks.record }));
 vi.mock('./http', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./http')>()),
@@ -11,6 +11,7 @@ vi.mock('./http', async (importOriginal) => ({
 }));
 vi.mock('./sessions', () => ({ getSession: vi.fn(), deleteSession: vi.fn() }));
 vi.mock('./event-log', () => ({ currentLogSeq: () => 7 }));
+vi.mock('./workflow-runner', () => ({ blockedRunForSession: mocks.blockedRun, runAction: mocks.runAction }));
 const { answerAsk, parseAnswers } = await import('./answer');
 const { POST: web } = await import('../../routes/api/sessions/[id]/answer/+server');
 const { POST: agent } = await import('../../routes/api/agent/sessions/[id]/answer/+server');
@@ -44,6 +45,16 @@ describe('answerAsk', () => {
 		answerAsk(session, { text: 'Rewrite', answers });
 		expect(mocks.record).not.toHaveBeenCalled();
 	});
+	it('turns down an answer for an ask already settled', () => {
+		mocks.settled.mockImplementation((_: string, id: string) => id === 'toolu_old');
+		expect(answerAsk(session, { text: 'Blue', askId: 'toolu_old', answers })).toBe(false);
+		expect(mocks.resolve).not.toHaveBeenCalled();
+		expect(mocks.record).not.toHaveBeenCalled();
+		// The pending ask's id may still be the previous one while its lookup lags.
+		mocks.pendingId.mockReturnValue('toolu_older');
+		expect(answerAsk(session, { text: 'Blue', askId: 'toolu_new', answers })).toBe(true);
+		expect(mocks.record).toHaveBeenCalledWith('example', 'toolu_new', answers);
+	});
 	it('rejects an empty answer before touching the ask', () => {
 		expect(() => answerAsk(session, { text: '  ' })).toThrow();
 		expect(mocks.resolve).not.toHaveBeenCalled();
@@ -67,5 +78,13 @@ describe('answer routes share one behaviour', () => {
 		mocks.resolve.mockReturnValue(false);
 		expect(await (await post(agent, { text: 'late' })).json()).toEqual({ ok: false, reason: 'no-pending-ask' });
 		expect(await (await post(web, { text: 'late' })).json()).toEqual({ ok: false });
+	});
+	it('answers a blocked run only when no session ask is named', async () => {
+		mocks.resolve.mockReturnValue(false);
+		mocks.blockedRun.mockReturnValue({ id: 'r_1' });
+		expect(await (await post(agent, { text: 'Blue', askId: 'toolu_old' })).json()).toEqual({ ok: false, reason: 'no-pending-ask' });
+		expect(mocks.runAction).not.toHaveBeenCalled();
+		expect(await (await post(agent, { text: 'go on' })).json()).toEqual({ ok: true, seq: 7 });
+		expect(mocks.runAction).toHaveBeenCalledWith('r_1', 'answer', { text: 'go on' });
 	});
 });

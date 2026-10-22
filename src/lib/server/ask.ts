@@ -1,5 +1,6 @@
 import { getStoredSession } from './store';
 import { notify, type NotifyPayload } from './push';
+import { apnsWidgetsChanged } from './apns';
 import { publishAgentEvent } from './agent-feed';
 import { latestAskToolUseId } from './transcript';
 import { ASK_ACTION_SLOTS, askNotificationBody } from './apns-core';
@@ -35,8 +36,12 @@ export interface PendingAsk {
 	askedAt: number;
 }
 
-const g = globalThis as { __deckAsks?: Map<string, Pending> };
+const g = globalThis as { __deckAsks?: Map<string, Pending>; __deckSettledAsks?: Map<string, Set<string>> };
 const pending = (g.__deckAsks ??= new Map());
+// The tool_use ids of each session's asks that were answered or withdrawn, so
+// an answer still naming one (a widget or notification left showing it) is
+// turned down instead of answering the session's next question.
+const settled = (g.__deckSettledAsks ??= new Map());
 
 // Announce the ask on the agent feed and to devices once its tool_use id is
 // known (or the lookup gave up), unless the ask was already settled or
@@ -87,7 +92,9 @@ export function registerAsk(
 		const settle = () => {
 			if (pending.get(sessionId) !== entry) return false;
 			pending.delete(sessionId);
+			if (entry.askId) settled.set(sessionId, (settled.get(sessionId) ?? new Set()).add(entry.askId));
 			publishAgentEvent(sessionId, 'awaiting-input', { awaitingInput: false, source: 'mcp' });
+			void apnsWidgetsChanged();
 			return true;
 		};
 		const entry: Pending = {
@@ -131,6 +138,10 @@ export function listPendingAsks(): PendingAsk[] {
 // The tool_use id of a session's pending ask, when known.
 export function pendingAskId(sessionId: string): string | undefined {
 	return pending.get(sessionId)?.askId;
+}
+
+export function wasSettled(sessionId: string, askId: string): boolean {
+	return settled.get(sessionId)?.has(askId) ?? false;
 }
 
 // Resolve the pending ask for a session with the user's answer text. Returns
