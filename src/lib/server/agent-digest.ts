@@ -4,6 +4,7 @@ import { isAgentKind } from '$lib/types';
 import { baseUrl } from './config';
 import { sessionLastResult, transcriptContext, transcriptCostSummary } from './transcript';
 import type { ContextUsage } from '$lib/context-core';
+import { activeWatches } from './watch-store';
 
 // A session that has produced no figures yet carries no `context` at all,
 // rather than a `{ used: 0, window: 0 }` a consumer would have to special-case.
@@ -29,6 +30,11 @@ function shellFlags(s: DeckSession): Pick<AgentSessionDigest, 'managed' | 'attac
 	};
 }
 
+function watchesField(id: string): Pick<AgentSessionDigest, 'watches'> {
+	const watches = activeWatches(id);
+	return watches.length ? { watches } : {};
+}
+
 export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): AgentSessionDigest {
 	return {
 		id: s.id,
@@ -52,7 +58,8 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		cost: isAgentKind(s.kind) ? publicCost(transcriptCostSummary(s.id)) : undefined,
 		// Same: one bounded tail read, cached against the file's size and mtime.
 		context: isAgentKind(s.kind) ? definedContext(s.id) : undefined,
-		lastResult: opts?.lastResult && isAgentKind(s.kind) ? sessionLastResult(s.id) : undefined
+		lastResult: opts?.lastResult && isAgentKind(s.kind) ? sessionLastResult(s.id) : undefined,
+		...watchesField(s.id)
 	};
 }
 

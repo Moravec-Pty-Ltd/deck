@@ -760,6 +760,67 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(SubagentState(taskId: "t", toolUseId: "a", status: .completed).progress, "")
 	}
 
+	// MARK: - Watches
+
+	static let watchJSON = #"""
+	{"id":"w1","sessionId":"example","title":"CI on #42","prompt":"Check CI and carry on","command":"gh pr checks 42",
+	"createdAt":1000,"dueAt":61000,"state":"active"}
+	"""#
+
+	func testSessionDigestDecodesItsActiveWatches() throws {
+		let json = #"{"id":"example","status":"idle","watches":["# + Self.watchJSON + "]}"
+		let session = try JSONDecoder().decode(SessionDigest.self, from: Data(json.utf8))
+		XCTAssertEqual(session.watches?.first?.command, "gh pr checks 42")
+		XCTAssertEqual(session.watches?.first?.state, .active)
+		XCTAssertEqual(session.watches?.first?.dueDate, Date(timeIntervalSince1970: 61))
+		let none = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle"}"#.utf8))
+		XCTAssertNil(none.watches)
+	}
+
+	func testWatchesListAndCancelUseTheAgentRoutes() async throws {
+		let fired = #"""
+		{"id":"w2","sessionId":"example","title":"Up","prompt":"","createdAt":1,"dueAt":2,"state":"fired","endedAt":3,
+		"result":{"exitCode":null,"output":"","timedOut":true}}
+		"""#
+		var list: [Watch] = []
+		let sent = await requests(reply: #"{"watches":["# + Self.watchJSON + "," + fired + "]}") {
+			list = try await $0.watches(sessionId: "example")
+		}
+		assertShape(sent, "GET", "/api/agent/watches", query: "sessionId=example")
+		XCTAssertEqual(list.map(\.state), [.active, .fired])
+		XCTAssertNil(list[1].result?.exitCode)
+		XCTAssertEqual(list[1].result?.timedOut, true)
+		let other = try JSONDecoder().decode(Watch.self, from: Data(Self.watchJSON.replacingOccurrences(of: "active", with: "snoozed").utf8))
+		XCTAssertEqual(other.state, .unknown)
+
+		let cancel = await requests { try await $0.cancelWatch(id: "w1") }
+		assertShape(cancel, "DELETE", "/api/agent/watches/w1")
+	}
+
+	/// The same merge, cap and countdown as the web's activity-core.
+	func testActivityMergesNewestFirstAndCapsAtThree() {
+		let watch = { (id: String, at: Double) in Watch(id: id, sessionId: "s", title: id, createdAt: at, dueAt: at + 1000) }
+		let agent = { (id: String) in SubagentState(taskId: id, toolUseId: id, status: .running) }
+		let start: [String: Double] = ["a1": 150, "a2": 50]
+		let list = ActivityFeed.entries(
+			watches: [watch("w1", 100), watch("w2", 200)], agents: [agent("a1"), agent("a2")],
+			agentStart: { start[$0.taskId] ?? 0 })
+		XCTAssertEqual(list.map(\.id), ["w:w2", "a:a1", "w:w1", "a:a2"])
+
+		let five = ActivityFeed.entries(watches: (1...5).map { watch("w\($0)", Double($0)) }, agents: [], agentStart: { _ in 0 })
+		let capped = ActivityFeed.visible(five, expanded: false)
+		XCTAssertEqual(capped.shown.count, 3)
+		XCTAssertEqual(capped.more, 2)
+		XCTAssertEqual(ActivityFeed.visible(five, expanded: true).shown.count, 5)
+		XCTAssertEqual(ActivityFeed.visible(Array(five.prefix(3)), expanded: false).more, 0)
+
+		XCTAssertEqual(ActivityFeed.countdown(0), "due")
+		XCTAssertEqual(ActivityFeed.countdown(-5), "due")
+		XCTAssertEqual(ActivityFeed.countdown(4 * 60_000 + 12_000), "4m 12s")
+		XCTAssertEqual(ActivityFeed.countdown(63 * 60_000), "1h 3m")
+		XCTAssertEqual(ActivityFeed.countdown(500), "1s")
+	}
+
 	func testOnlyTaskEventsAndTurnEndsRefetchSubagents() {
 		func event(_ json: String) -> JSONValue { JSONValue.parse(Data(json.utf8))! }
 		XCTAssertTrue(SubagentsState.affects(event(#"{"type":"system","subtype":"task_progress"}"#)))

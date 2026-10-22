@@ -49,7 +49,6 @@ struct MacSessionDetail: View {
 			} else if let viewModel {
 				prHeader(viewModel)
 				transcript(viewModel)
-				AgentsBar(agents: viewModel.agents.running)
 				if let voice, voice.enabled {
 					Divider()
 					VoiceBar(voice: voice)
@@ -244,6 +243,7 @@ struct MacSessionDetail: View {
 					if !viewModel.streamingText.isEmpty {
 						MacBubble(text: viewModel.streamingText, isUser: false, viewModel: nil)
 					}
+					ActivityList(entries: viewModel.activity, onCancel: viewModel.cancelWatch, onOpen: viewModel.open)
 					if isWorking(viewModel) {
 						MacWorkingRow()
 					}
@@ -254,6 +254,14 @@ struct MacSessionDetail: View {
 				.frame(maxWidth: .infinity)
 			}
 			.followsTranscriptEnd(isNearBottom: Bindable(viewModel).isNearBottom, proxy: proxy)
+			.onChange(of: viewModel.jumpTo) { _, id in
+				guard let id else { return }
+				viewModel.jumpTo = nil
+				let groups = TranscriptGroup.make(viewModel.items, condensed: true)
+				guard let group = groups.first(where: { $0.items.contains { $0.id == id } }) else { return }
+				viewModel.isNearBottom = false
+				withAnimation { proxy.scrollTo(group.id, anchor: .top) }
+			}
 		}
 	}
 

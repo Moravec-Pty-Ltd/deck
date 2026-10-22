@@ -6,6 +6,7 @@ import { pollServers } from './devservers';
 import { retireReviewSession, syncCapturedPrs } from './pr';
 import { pollAutomation } from './automation';
 import { pollSchedules } from './scheduler';
+import { pollWatches } from './watcher';
 import { pollRuns } from './workflow-runner';
 import { notify } from './push';
 import { publishAgentEvent } from './agent-feed';
@@ -122,6 +123,13 @@ function start() {
 		void pollSchedules().catch(() => {});
 	}, 30_000);
 	scheduleTimer.unref();
+
+	// Watches (issue #277) likewise: minute-ish precision, and a 60s check must not
+	// hold up the other polls. Single-flight internally.
+	const watchTimer = setInterval(() => {
+		void pollWatches().catch(() => {});
+	}, 10_000);
+	watchTimer.unref();
 }
 
 // Before start(), and before anything else schedules work against the data

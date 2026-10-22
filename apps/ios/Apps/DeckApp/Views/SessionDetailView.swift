@@ -23,6 +23,8 @@ struct SessionDetailView: View {
 	/// Whether this pane has the keyboard, with two sessions showing; nil alone.
 	var isActivePane: Bool? = nil
 	var onActivate: (() -> Void)? = nil
+	/// Off while the foldable's list pane shows this session's activity list.
+	var embedsActivity = true
 
 	@Environment(DeckStore.self) private var store
 	@Environment(HingeMonitor.self) private var hinge
@@ -461,7 +463,6 @@ struct SessionDetailView: View {
 			if session?.status == .running {
 				workingIndicator
 			}
-			AgentsBar(agents: viewModel.agents.running)
 			askCard(viewModel, available: stackedHeight)
 			if let voice, voice.enabled {
 				Divider()
@@ -482,7 +483,6 @@ struct SessionDetailView: View {
 				VStack(spacing: 0) {
 					prHeader(viewModel, statusOnly: true)
 					transcript(viewModel)
-					AgentsBar(agents: viewModel.agents.running)
 				}
 				.frame(height: upperHeight(in: geometry))
 				Divider()
@@ -707,6 +707,9 @@ struct SessionDetailView: View {
 						}
 						.id("streaming")
 					}
+					if embedsActivity {
+						ActivityList(entries: viewModel.activity, onCancel: viewModel.cancelWatch, onOpen: viewModel.open)
+					}
 					// A fixed-size end marker to scroll to: aiming at the last row
 					// itself lands short while the lazy stack is still estimating
 					// heights it has not laid out.
@@ -744,6 +747,19 @@ struct SessionDetailView: View {
 						try? await Task.sleep(for: .seconds(2.5))
 						highlightedId = nil
 					}
+				}
+			}
+			.onChange(of: viewModel.jumpTo) { _, id in
+				guard let id else { return }
+				viewModel.jumpTo = nil
+				let groups = TranscriptGroup.make(viewModel.items, condensed: condensedTranscript)
+				guard let group = groups.first(where: { $0.items.contains { $0.id == id } }) else { return }
+				viewModel.isNearBottom = false
+				withAnimation { proxy.scrollTo(group.id, anchor: .top) }
+				highlightedId = group.id
+				Task {
+					try? await Task.sleep(for: .seconds(2.5))
+					if highlightedId == group.id { highlightedId = nil }
 				}
 			}
 			.onChange(of: viewModel.items.count) { _, _ in

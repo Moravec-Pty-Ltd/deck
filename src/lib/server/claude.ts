@@ -35,6 +35,11 @@ const ASK_PROMPT =
 const FILES_PROMPT =
 	'When you make a file for the user to look at (a screenshot, an export, a report), save it under `.deck/out/` in your working directory (create the folder with a `.gitignore` containing `*` if it is missing), not under /tmp, and give its absolute path in your reply: deck shows images inline and other files as downloads, but only for paths inside the project.';
 
+// Waiting in the shell dies with the process and is invisible in deck; a watch
+// survives restarts and shows in the session (issue #277).
+const WATCH_PROMPT =
+	'To wait for CI, a review, a deploy or some time, call `mcp__deck__watch` with a delay (`in: "10m"`) and, optionally, a quick check `command` (e.g. `gh pr checks 42`), then end your turn instead of sleeping or looping in the shell. A check command is only accepted when this session skips permission prompts; otherwise set the watch without one and check yourself when it fires. deck runs the check when the time comes and sends the result back to you; if it is not ready yet, set a new watch. `mcp__deck__watches` lists yours and `mcp__deck__unwatch` cancels one.';
+
 interface Proc {
 	child: ChildProcess;
 	running: boolean;
@@ -215,8 +220,8 @@ function startProcess(id: string): Proc {
 	// it through without a permission prompt (which headless mode can't answer).
 	args.push(
 		'--disallowedTools', 'AskUserQuestion',
-		'--allowedTools', 'mcp__deck__ask',
-		'--append-system-prompt', `${ASK_PROMPT}\n\n${FILES_PROMPT}`,
+		'--allowedTools', 'mcp__deck__ask,mcp__deck__watch,mcp__deck__watches,mcp__deck__unwatch',
+		'--append-system-prompt', `${ASK_PROMPT}\n\n${FILES_PROMPT}\n\n${WATCH_PROMPT}`,
 		'--mcp-config', JSON.stringify({ mcpServers: { deck: { type: 'http', url: mcpUrl(id) } } })
 	);
 

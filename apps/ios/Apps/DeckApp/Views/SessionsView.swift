@@ -42,6 +42,8 @@ struct SessionsView: View {
 	@State private var pushSettings = false
 	@State private var columns = NavigationSplitViewVisibility.all
 	@State private var showReviews = false
+	/// On the fold with one session open, its activity list in the list's place.
+	@State private var activityInList = false
 	@FocusState private var searchFocused: Bool
 
 	/// The session that is open, at a message when it came from a search hit.
@@ -58,6 +60,17 @@ struct SessionsView: View {
 	private var foldWidth: CGFloat? { hinge.splitWidth(sizeClass) }
 
 	private var twoUp: Bool { wide && beside != nil }
+
+	/// The open session's model, on the fold with one session showing: the
+	/// one its pane uses, so the list pane can show that session's activity.
+	private var foldModel: SessionDetailViewModel? {
+		guard wide, foldWidth != nil, !twoUp, let open else { return nil }
+		return models.model(for: open, pane: .main, store: store)
+	}
+
+	private var canShowActivityInList: Bool { foldModel?.activity.isEmpty == false }
+
+	private var activityInListPane: Bool { activityInList && canShowActivityInList }
 
 	/// The session typing goes to: the focused pane's with two showing.
 	private var activeTarget: SessionTarget? {
@@ -79,8 +92,10 @@ struct SessionsView: View {
 				}
 			} else if wide, let foldWidth {
 				HStack(spacing: 0) {
-					NavigationStack { sidebar }
-						.frame(width: foldWidth)
+					NavigationStack {
+						if activityInListPane, let foldModel { activityPane(foldModel) } else { sidebar }
+					}
+					.frame(width: foldWidth)
 					Divider()
 					NavigationStack { detail }
 				}
@@ -125,6 +140,7 @@ struct SessionsView: View {
 			if let open, open.sessionId == beside?.sessionId { close(.beside) }
 		}
 		.onChange(of: activeTarget?.sessionId) { _, id in openSessionId = id }
+		.onChange(of: canShowActivityInList) { _, can in if !can { activityInList = false } }
 		.onChange(of: command) { _, command in
 			guard let command else { return }
 			self.command = nil
@@ -167,9 +183,29 @@ struct SessionsView: View {
 			},
 			onClose: twoUp ? { close(pane) } : nil,
 			isActivePane: twoUp ? focusedPane == pane : nil,
-			onActivate: twoUp ? { focusedPane = pane } : nil
+			onActivate: twoUp ? { focusedPane = pane } : nil,
+			embedsActivity: !(pane == .main && activityInListPane)
 		)
 		.id(target)
+	}
+
+	private func activityPane(_ model: SessionDetailViewModel) -> some View {
+		ScrollView {
+			ActivityList(entries: model.activity, onCancel: model.cancelWatch, onOpen: model.open)
+				.padding()
+		}
+		.navigationTitle("Activity")
+		.toolbar {
+			ToolbarItem(placement: .topBarLeading) { activityToggle }
+		}
+	}
+
+	private var activityToggle: some View {
+		Button { activityInList.toggle() } label: {
+			Image(systemName: activityInList ? "list.bullet" : "timer")
+		}
+		.accessibilityLabel(activityInList ? "Show sessions" : "Show activity")
+		.accessibilityIdentifier("toggleActivity")
 	}
 
 	/// Closing the second pane brings the list back; closing the first moves
@@ -442,6 +478,9 @@ struct SessionsView: View {
 					.accessibilityLabel("Reviews")
 					.accessibilityIdentifier("openReviews")
 				}
+			}
+			if canShowActivityInList {
+				ToolbarItem(placement: .topBarLeading) { activityToggle }
 			}
 		}
 		.navigationDestination(isPresented: $pushSettings) {

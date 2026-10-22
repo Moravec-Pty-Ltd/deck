@@ -5,12 +5,16 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { registerAsk, type AskQuestion } from './ask';
+import { WatchError } from './watch-core';
+import { activeWatches, cancelWatch, createWatch, getWatch } from './watch-store';
+import type { Watch } from '$lib/watches';
 
 // Deck hosts a tiny Streamable-HTTP MCP server on localhost and points each
-// spawned `claude` at /mcp/<sessionId>. It exposes one tool, `ask`, that mirrors
+// spawned `claude` at /mcp/<sessionId>. Its main tool, `ask`, mirrors
 // the built-in AskUserQuestion but *blocks* until the user answers in the deck
 // UI — which the headless `-p` CLI can't do for the native tool. The deck
-// session id is taken from the URL path and bound into each tool handler.
+// session id is taken from the URL path and bound into each tool handler. The
+// watch tools (issue #277) let the agent set a timer that wakes it later.
 
 const ASK_INPUT = {
 	questions: z
@@ -32,6 +36,70 @@ const ASK_INPUT = {
 		.describe('One or more questions to put to the user')
 };
 
+const WATCH_INPUT = {
+	title: z.string().describe('Short name for what you are waiting for, e.g. "CI on #42"'),
+	prompt: z.string().describe('What to do when it fires; sent back to you with the check result'),
+	in: z.string().optional().describe('Delay such as "30s", "10m", "2h" or "1h30m" (give this or `at`)'),
+	at: z.union([z.string(), z.number()]).optional().describe('ISO time or epoch ms to fire at (give this or `in`)'),
+	command: z
+		.string()
+		.optional()
+		.describe('Optional quick shell check run once in your working directory when it fires (60s limit), e.g. `gh pr checks 42`. Only accepted when this session skips permission prompts')
+};
+
+function text(t: string, isError = false) {
+	return { content: [{ type: 'text' as const, text: t }], ...(isError ? { isError: true } : {}) };
+}
+
+function describeWatch(w: Watch): string {
+	const secs = Math.max(0, Math.round((w.dueAt - Date.now()) / 1000));
+	const left = secs < 120 ? `${secs}s` : `${Math.round(secs / 60)} min`;
+	return `${w.id}: "${w.title}" fires at ${new Date(w.dueAt).toISOString()} (in about ${left})${w.command ? `, check \`${w.command}\`` : ''}`;
+}
+
+function registerWatchTools(server: McpServer, deckId: string): void {
+	server.registerTool(
+		'watch',
+		{
+			title: 'Set a watch',
+			description:
+				'Wake this session later: deck sends `prompt` back to you at the time, with the exit code and output tail of `command` if you gave one. Returns at once; end your turn after calling it instead of sleeping or polling in the shell. Fires once; set another if what you wait for is not ready yet. At most 5 active, at most 24 h ahead.',
+			inputSchema: WATCH_INPUT
+		},
+		async (args) => {
+			try {
+				return text(`Watch set. ${describeWatch(createWatch(deckId, args))}. End your turn now; deck will message you.`);
+			} catch (e) {
+				if (e instanceof WatchError) return text(e.message, true);
+				throw e;
+			}
+		}
+	);
+	server.registerTool(
+		'watches',
+		{ title: 'List watches', description: "This session's active watches.", inputSchema: {} },
+		async () => {
+			const watches = activeWatches(deckId);
+			return text(watches.length ? watches.map(describeWatch).join('\n') : 'No active watches.');
+		}
+	);
+	server.registerTool(
+		'unwatch',
+		{
+			title: 'Cancel a watch',
+			description: 'Cancel one of this session\'s watches by id.',
+			inputSchema: { id: z.string().describe('The watch id, e.g. wat_abc12345') }
+		},
+		async ({ id }) => {
+			const watch = getWatch(id);
+			if (watch?.sessionId !== deckId) return text(`No watch ${id} in this session.`, true);
+			if (watch.state !== 'active') return text(`${id} already ${watch.state}.`);
+			cancelWatch(id);
+			return text(`Cancelled ${id}.`);
+		}
+	);
+}
+
 function buildServer(deckId: string): McpServer {
 	const server = new McpServer({ name: 'deck', version: '1.0.0' });
 	server.registerTool(
@@ -47,6 +115,7 @@ function buildServer(deckId: string): McpServer {
 			return { content: [{ type: 'text' as const, text }] };
 		}
 	);
+	registerWatchTools(server, deckId);
 	return server;
 }
 

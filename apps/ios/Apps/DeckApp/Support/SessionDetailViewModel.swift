@@ -17,7 +17,13 @@ final class SessionDetailViewModel {
 	/// A subagent's items, by the Agent call that launched it; kept out of `items`.
 	var steps: [String: [TranscriptItem]] = [:]
 	/// The session's subagents (status, activity, reports), from the server.
-	private(set) var agents = SubagentsState()
+	private(set) var agents = SubagentsState() { didSet { noteAgents(was: oldValue) } }
+	/// When each subagent began, in epoch ms, for ordering the activity list.
+	@ObservationIgnored private var agentStart: [String: Double] = [:]
+	/// Subagents that just finished, kept on the activity list a few seconds.
+	private var lingering = Set<String>()
+	/// The transcript row the activity list asked to show, taken by the view.
+	var jumpTo: String?
 	private var agentsFetch: Task<Void, Never>?
 	private var agentsStale = false
 	var streamingText = ""
@@ -196,6 +202,36 @@ final class SessionDetailViewModel {
 			isLoadingTranscript = false
 			streamingText = ""
 			try? await Task.sleep(for: .seconds(3))
+		}
+	}
+
+	/// The session's active watches and its running (or just finished)
+	/// subagents, newest first.
+	var activity: [ActivityEntry] {
+		let watches = store.sessions.first { $0.id == sessionId }?.watches ?? []
+		let shown = agents.tasks.values.filter { $0.isRunning || lingering.contains($0.taskId) }
+		return ActivityFeed.entries(watches: watches, agents: shown) { [agentStart] in agentStart[$0.taskId] ?? 0 }
+	}
+
+	func cancelWatch(_ watch: Watch) async throws {
+		try await store.cancelWatch(id: watch.id)
+	}
+
+	func open(_ agent: SubagentState) {
+		jumpTo = "tool-\(agent.toolUseId)"
+	}
+
+	private func noteAgents(was old: SubagentsState) {
+		let now = Date().timeIntervalSince1970 * 1000
+		for agent in agents.running where agentStart[agent.taskId] == nil {
+			agentStart[agent.taskId] = now - Double(agent.durationMs)
+		}
+		let ended = Set(old.running.map(\.taskId)).subtracting(agents.running.map(\.taskId))
+		guard !ended.isEmpty else { return }
+		lingering.formUnion(ended)
+		Task { [weak self] in
+			try? await Task.sleep(for: .seconds(4))
+			self?.lingering.subtract(ended)
 		}
 	}
 

@@ -23,7 +23,7 @@
 		type RecentError,
 		type ReviewDecision
 	} from '$lib/morabot-core';
-	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Columns2 } from '@lucide/svelte';
+	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Columns2, Timer } from '@lucide/svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
@@ -177,6 +177,9 @@
 					<span class="truncate text-xs leading-tight opacity-60">{proj.label}</span>
 				{/if}
 			</div>
+			{#if s.watches?.length}
+				<span class="shrink-0" title="Waiting on a watch" aria-label="Waiting on a watch"><Timer size={11} class="opacity-60" /></span>
+			{/if}
 			{#if serverDot(s.id)}
 				{@const st = serverDot(s.id)!}
 				<span class="size-1.5 shrink-0 rounded-full {SERVER_DOT[st]}" title={`servers: ${SERVER_LABEL[st]}`}></span>

@@ -201,6 +201,8 @@ public struct SessionDigest: Codable, Hashable, Identifiable, Sendable {
 	/// Set only on a hidden session, whether it was hidden itself or its project
 	/// was. deck answers that once so no client re-derives it.
 	public var hidden: Bool?
+	/// Its active watches, newest first; absent when none.
+	public var watches: [Watch]?
 }
 
 public struct SessionDetail: Codable, Sendable {
@@ -388,6 +390,8 @@ public struct DeckEvent: Codable, Sendable {
 	public let updatedAt: Double?
 	/// `pairing`: a device asked for access (`state` pending, with its `code`)
 	/// or the request was decided (approved or denied).
+	/// `watches`: the session's full new list of active watches, empty when none are left.
+	public let watches: [Watch]?
 	public let pairingId: String?
 	public let code: String?
 	public let state: String?
