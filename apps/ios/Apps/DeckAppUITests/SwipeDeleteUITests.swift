@@ -40,10 +40,13 @@ final class SwipeDeleteUITests: XCTestCase {
 
 		let list = app.collectionViews.firstMatch
 		XCTAssertTrue(list.waitForExistence(timeout: 20))
-		XCTAssertTrue(list.cells.element(boundBy: 0).waitForExistence(timeout: 20))
+		XCTAssertTrue(FoldableUITests.firstSessionRow(in: list).waitForExistence(timeout: 20))
 
 		for index in 0..<6 {
-			let row = list.cells.element(boundBy: index % max(1, min(3, list.cells.count)))
+			// Looked up afresh each time, as the list reorders; headers are cells too.
+			let rows = list.cells.allElementsBoundByIndex.filter { $0.staticTexts.count > 1 }
+			guard !rows.isEmpty else { continue }
+			let row = rows[index % min(3, rows.count)]
 			guard row.exists else { continue }
 			row.swipeLeft()
 			let delete = app.buttons["Delete"]
