@@ -4,9 +4,6 @@ import XCTest
 /// `DECK_UITEST_URL` / `DECK_UITEST_TOKEN` (see the repo README); without them
 /// the tests skip, so they never fail a machine that has no deck to talk to.
 final class SwipeDeleteUITests: XCTestCase {
-	private var serverURL: String? { ProcessInfo.processInfo.environment["DECK_UITEST_URL"] }
-	private var token: String? { ProcessInfo.processInfo.environment["DECK_UITEST_TOKEN"] }
-
 	override func setUp() {
 		continueAfterFailure = false
 	}
@@ -19,7 +16,7 @@ final class SwipeDeleteUITests: XCTestCase {
 
 		let list = app.collectionViews.firstMatch
 		XCTAssertTrue(list.waitForExistence(timeout: 20), "sessions list never appeared")
-		let row = list.cells.element(boundBy: 0)
+		let row = FoldableUITests.firstSessionRow(in: list)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "no session rows to swipe")
 
 		row.swipeLeft()
@@ -43,10 +40,13 @@ final class SwipeDeleteUITests: XCTestCase {
 
 		let list = app.collectionViews.firstMatch
 		XCTAssertTrue(list.waitForExistence(timeout: 20))
-		XCTAssertTrue(list.cells.element(boundBy: 0).waitForExistence(timeout: 20))
+		XCTAssertTrue(FoldableUITests.firstSessionRow(in: list).waitForExistence(timeout: 20))
 
 		for index in 0..<6 {
-			let row = list.cells.element(boundBy: index % max(1, min(3, list.cells.count)))
+			// Looked up afresh each time, as the list reorders; headers are cells too.
+			let rows = list.cells.allElementsBoundByIndex.filter { $0.staticTexts.count > 1 }
+			guard !rows.isEmpty else { continue }
+			let row = rows[index % min(3, rows.count)]
 			guard row.exists else { continue }
 			row.swipeLeft()
 			let delete = app.buttons["Delete"]
@@ -61,28 +61,8 @@ final class SwipeDeleteUITests: XCTestCase {
 	}
 
 	private func signedInApp() throws -> XCUIApplication {
-		guard let serverURL, let token else {
-			throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests")
-		}
-		let app = XCUIApplication()
-		app.launch()
-
-		// Fresh install: sign in through the manual fields (the QR path needs a camera).
-		let manual = app.buttons["Enter details manually"]
-		if manual.waitForExistence(timeout: 5) {
-			manual.tap()
-			let urlField = app.textFields["Server URL"]
-			XCTAssertTrue(urlField.waitForExistence(timeout: 5))
-			urlField.tap()
-			urlField.typeText(serverURL)
-			let tokenField = app.secureTextFields["Token"]
-			tokenField.tap()
-			tokenField.typeText(token)
-			app.buttons["Connect"].tap()
-		}
-
-		XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20), "never got past sign-in")
-		app.tabBars.buttons["Sessions"].tap()
+		let app = try FoldableUITests.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
 		return app
 	}
 }

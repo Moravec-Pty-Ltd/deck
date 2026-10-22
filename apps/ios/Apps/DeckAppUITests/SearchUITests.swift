@@ -10,26 +10,8 @@ final class SearchUITests: XCTestCase {
 	}
 
 	func testSearchOpensTheMatchingSession() throws {
-		guard let url = ProcessInfo.processInfo.environment["DECK_UITEST_URL"],
-			let token = ProcessInfo.processInfo.environment["DECK_UITEST_TOKEN"]
-		else { throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests") }
-
-		let app = XCUIApplication()
-		app.launch()
-		let manual = app.buttons["Enter details manually"]
-		if manual.waitForExistence(timeout: 5) {
-			manual.tap()
-			let urlField = app.textFields["Server URL"]
-			XCTAssertTrue(urlField.waitForExistence(timeout: 5))
-			urlField.tap()
-			urlField.typeText(url)
-			let tokenField = app.secureTextFields["Token"]
-			tokenField.tap()
-			tokenField.typeText(token)
-			app.buttons["Connect"].tap()
-		}
-		XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20))
-		app.tabBars.buttons["Sessions"].tap()
+		let app = try FoldableUITests.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
 
 		// On iPad the field lives in the sidebar's navigation bar, so look there
 		// as well as at the top level.
@@ -46,7 +28,8 @@ final class SearchUITests: XCTestCase {
 		XCTAssertTrue(hit.waitForExistence(timeout: 20), "no search hit rendered\n\(app.debugDescription.prefix(3000))")
 		hit.tap()
 		XCTAssertTrue(app.navigationBars["voice smoke"].waitForExistence(timeout: 20), "the hit should open its session")
-		XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'You picked'")).firstMatch.waitForExistence(timeout: 20))
+		// In the transcript: on iPad the hit's own row stays in the list beside it.
+		XCTAssertTrue(app.scrollViews.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'You picked'")).firstMatch.waitForExistence(timeout: 20))
 	}
 
 	/// Typing a session's name lists it under "Sessions", ahead of anything

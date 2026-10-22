@@ -95,11 +95,16 @@ export function rms(samples: ArrayLike<number>): number {
 
 export type VadState = 'silent' | 'opening' | 'open' | 'closing';
 
+// A dip this short is the gap between words, not the end of speech.
+const LOUD_GAP_MS = 120;
+
 // Energy-gated voice activity: speech must hold above the threshold for
 // `openMs` to open, and stay below it for `closeMs` to close. Time is passed
 // in so it unit-tests without timers.
 export class VoiceDetector {
 	state: VadState = 'silent';
+	private runStart: number | null = null;
+	private quietSince: number | null = null;
 	private since = 0;
 
 	constructor(
@@ -120,8 +125,26 @@ export class VoiceDetector {
 	// 'stop' when it should close, else null.
 	update(level: number, now: number): 'start' | 'stop' | null {
 		const loud = level >= this.threshold;
+		this.trackLoudness(loud, now);
 		if (this.state === 'silent' || this.state === 'open') return this.settle(loud, now);
 		return this.transition(loud, now);
+	}
+
+	// While loud, when this run of speech began, bridging dips shorter than
+	// LOUD_GAP_MS between words; null while quiet.
+	get loudSince(): number | null {
+		return this.quietSince === null ? this.runStart : null;
+	}
+
+	private trackLoudness(loud: boolean, now: number): void {
+		if (loud) {
+			const gapEnded = this.quietSince !== null && now - this.quietSince >= LOUD_GAP_MS;
+			this.runStart = gapEnded ? now : (this.runStart ?? now);
+			this.quietSince = null;
+			return;
+		}
+		this.quietSince ??= now;
+		if (now - this.quietSince >= LOUD_GAP_MS) this.runStart = null;
 	}
 
 	// In a settled state a change of loudness starts the timer for the other.
@@ -148,6 +171,8 @@ export class VoiceDetector {
 
 	reset() {
 		this.state = 'silent';
+		this.runStart = null;
+		this.quietSince = null;
 	}
 }
 
@@ -243,15 +268,37 @@ export function restingCaption(status: 'listening' | 'idle', caption: string): s
 	return status === 'listening' && !current ? LISTENING_CAPTION : current;
 }
 
+// Unbroken loudness must hold this long to cut off a reply, longer than a take
+// needs to open, so the reply's own echo or a cough doesn't.
+export const BARGE_IN_HOLD_MS = 450;
+
 // What a detector edge means for the recorder: open only when nothing is
-// being captured or transcribed; close whenever it says so.
+// being captured or transcribed; close whenever it says so. While a reply
+// plays, `loudSince` decides instead: speech held for BARGE_IN_HOLD_MS opens a
+// take, which stops the reply.
 export function vadAction(
 	edge: 'start' | 'stop' | null,
 	recording: boolean,
-	transcribing: boolean
+	transcribing: boolean,
+	speaking: boolean,
+	loudSince: number | null,
+	now: number
 ): 'start' | 'stop' | null {
-	if (edge === 'start') return recording || transcribing ? null : 'start';
+	if (edge === 'stop') return edge;
+	if (recording || transcribing) return null;
+	if (speaking) return loudSince !== null && now - loudSince >= BARGE_IN_HOLD_MS ? 'start' : null;
 	return edge;
+}
+
+// Speech that opened the detector over a reply without cutting it stays
+// pending until its stop edge, and acts as a start once the reply ends.
+export function missedStart(
+	edge: 'start' | 'stop' | null,
+	speaking: boolean,
+	missed: boolean
+): { edge: 'start' | 'stop' | null; missed: boolean } {
+	const pending = edge !== 'stop' && (missed || (edge === 'start' && speaking));
+	return { edge: pending && !speaking ? 'start' : edge, missed: pending };
 }
 
 // The segment to warm while the head plays: the rest of this utterance, else

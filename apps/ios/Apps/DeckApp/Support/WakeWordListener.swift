@@ -14,6 +14,8 @@ final class WakeWordListener {
 	/// a wake word that does not land can be seen rather than guessed at.
 	var onHeard: ((String) -> Void)?
 	var onError: ((String) -> Void)?
+	/// A new recognition task began; its transcript starts from nothing.
+	var onTaskStart: (() -> Void)?
 	private(set) var running = false
 	private(set) var available = false
 
@@ -67,6 +69,7 @@ final class WakeWordListener {
 		request.requiresOnDeviceRecognition = false
 		request.contextualStrings = ["deck", "hey deck"]
 		feeder.set(request)
+		onTaskStart?()
 		task = recognizer.recognitionTask(with: request) { [weak self] result, error in
 			Task { @MainActor in self?.handle(result, error) }
 		}

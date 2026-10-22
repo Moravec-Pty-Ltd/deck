@@ -15,7 +15,7 @@ final class SessionsCompactUITests: XCTestCase {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
 
-		let row = app.staticTexts["Yolo badge in session header"].firstMatch
+		let row = FoldableUITests.listItem("Yolo badge in session header", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the demo sessions\n\(app.debugDescription.prefix(3000))")
 		XCTAssertFalse(app.staticTexts["No session open"].exists, "a phone has no detail column")
 		row.tap()

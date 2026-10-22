@@ -20,6 +20,7 @@ import {
 	startAskFlow,
 	TRANSCRIBING_CAPTION,
 	vadAction,
+	missedStart,
 	VoiceDetector,
 	wavBytes,
 	type AskFlow,
@@ -111,6 +112,9 @@ export class VoiceSession {
 	private ring: PcmRing | null = null;
 	private sampleRate = 48_000;
 	private detector = new VoiceDetector(VAD_THRESHOLD.medium, VAD_OPEN_MS, VAD_CLOSE_MS.normal);
+	// Speech that opened the detector over a reply without cutting it; it
+	// becomes a take once the reply ends.
+	private startMissed = false;
 	// The last assistant text of the turn, read when chattiness is final-only.
 	private lastText = '';
 
@@ -350,6 +354,7 @@ export class VoiceSession {
 	async startRecording(): Promise<void> {
 		if (!this.enabled || this.micBusy) return;
 		this.error = '';
+		this.startMissed = false;
 		this.stopPlayback();
 		this.starting = true;
 		try {
@@ -525,6 +530,7 @@ export class VoiceSession {
 			const stream = await this.openMic();
 			this.tuneDetector();
 			this.detector.reset();
+			this.startMissed = false;
 			await this.startCapture(stream);
 			this.restAfterTake();
 		} catch (e) {
@@ -534,6 +540,7 @@ export class VoiceSession {
 
 	private stopHandsFree(): void {
 		this.detector.reset();
+		this.startMissed = false;
 		if (!this.take) {
 			this.stopCapture();
 			this.closeMic();
@@ -546,7 +553,12 @@ export class VoiceSession {
 	// The detector's edges open and close takes in hands-free mode; a take that
 	// is still transcribing keeps the mic closed.
 	private onLevel(level: number): void {
-		const action = vadAction(this.detector.update(level, Date.now()), this.recording, this.status === 'transcribing');
+		const now = Date.now();
+		const edge = this.detector.update(level, now);
+		const speaking = this.status === 'speaking';
+		const pending = missedStart(edge, speaking, this.startMissed);
+		this.startMissed = pending.missed;
+		const action = vadAction(pending.edge, this.recording, this.status === 'transcribing', speaking, this.detector.loudSince, now);
 		if (action === 'start') void this.startRecording();
 		if (action === 'stop') this.stopRecording();
 	}

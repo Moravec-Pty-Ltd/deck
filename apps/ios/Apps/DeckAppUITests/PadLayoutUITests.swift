@@ -16,7 +16,7 @@ final class PadLayoutUITests: XCTestCase {
 	func testListSitsBesideTheSessionInBothOrientations() throws {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["long transcript"].firstMatch
+		let row = FoldableUITests.listItem("long transcript", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the fixture sessions\n\(app.debugDescription.prefix(3000))")
 		row.tap()
 		XCTAssertTrue(app.navigationBars["long transcript"].waitForExistence(timeout: 20))

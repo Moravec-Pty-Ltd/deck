@@ -93,8 +93,12 @@ final class OperatorController {
 		#if os(iOS)
 		controller.onAudioBuffer = { [wake] buffer in wake.append(buffer) }
 		wake.onWake = { [weak self] in self?.heardWakeWord() }
-		wake.onHeard = { [weak self] text in self?.wakeHeard = String(text.suffix(60)) }
+		wake.onHeard = { [weak self] text in
+			self?.wakeHeard = String(text.suffix(60))
+			self?.voice?.heard(text)
+		}
 		wake.onError = { [weak self] text in self?.wakeError = text }
+		wake.onTaskStart = { [weak self] in self?.voice?.heard("") }
 		#endif
 		Task { await controller.loadCapabilities() }
 	}

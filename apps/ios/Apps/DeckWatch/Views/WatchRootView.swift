@@ -28,18 +28,8 @@ struct WatchRootView: View {
 				.navigationDestination(for: SessionDigest.self) { SessionDetailView(session: $0) }
 				.navigationDestination(for: VoiceRoute.self) { VoiceView(session: $0.session) }
 			}
-			.onChange(of: store.sessions) { _, _ in resolvePendingSession() }
-			.onChange(of: router.pendingSessionId) { _, _ in resolvePendingSession() }
 		} else {
 			PairingView()
 		}
-	}
-
-	/// Once the session named by a notification tap is in the store, drill into it.
-	private func resolvePendingSession() {
-		guard let id = router.pendingSessionId,
-			let session = store.sessions.first(where: { $0.id == id }) else { return }
-		router.path.append(session)
-		router.pendingSessionId = nil
 	}
 }
