@@ -82,6 +82,55 @@ final class VoiceCoreTests: XCTestCase {
 		XCTAssertEqual(vad.update(level: 0.01, at: 3.3), .stop)
 	}
 
+	func testBargeInNeedsALongerHoldWithoutARecogniser() {
+		var vad = VoiceDetector(threshold: 0.05)
+		func cuts(_ level: Float, at t: TimeInterval) -> Bool {
+			_ = vad.update(level: level, at: t)
+			return BargeIn.interrupts(vad, now: t, wordsAt: nil)
+		}
+		XCTAssertFalse(cuts(0.1, at: 10))
+		XCTAssertFalse(cuts(0.1, at: 10 + VoiceTiming.openSeconds), "the take-opening hold alone doesn't stop a reply")
+		XCTAssertTrue(cuts(0.1, at: 10 + BargeIn.holdSeconds + 0.01))
+		vad.reset()
+		XCTAssertFalse(cuts(0.2, at: 20))
+		XCTAssertFalse(cuts(0.0, at: 20.05))
+		XCTAssertFalse(cuts(0.0, at: 20.25), "a cough, then a pause")
+		XCTAssertFalse(cuts(0.2, at: 20.3))
+		XCTAssertFalse(cuts(0.2, at: 20.3 + BargeIn.holdSeconds - 0.01), "the hold restarts after the pause")
+		vad.reset()
+		XCTAssertFalse(cuts(0.2, at: 25))
+		XCTAssertFalse(cuts(0.0, at: 25.2))
+		XCTAssertFalse(cuts(0.2, at: 25.3))
+		XCTAssertTrue(cuts(0.2, at: 25 + BargeIn.holdSeconds + 0.01), "a gap between words keeps the hold")
+		vad.reset()
+		XCTAssertFalse(cuts(0.2, at: 40))
+		XCTAssertFalse(cuts(0.0, at: 40.1))
+		XCTAssertFalse(cuts(0.2, at: 40.4), "a long gap with no readings in it still ends the run")
+		vad.reset()
+		XCTAssertFalse(cuts(0.2, at: 30))
+		XCTAssertFalse(cuts(0.2, at: 30.25), "a cough long enough to open the detector")
+		XCTAssertFalse(cuts(0.0, at: 30.5), "has ended by the hold")
+	}
+
+	func testBargeInWithARecogniserTakesNewWordsWhileSpeechIsOpen() {
+		var vad = VoiceDetector(threshold: 0.05)
+		_ = vad.update(level: 0.1, at: 10)
+		XCTAssertFalse(BargeIn.interrupts(vad, now: 10.1, wordsAt: 10.1), "words before the detector opens")
+		_ = vad.update(level: 0.1, at: 10.25)
+		XCTAssertFalse(BargeIn.interrupts(vad, now: 10.3, wordsAt: nil), "loud but no words yet")
+		_ = vad.update(level: 0.0, at: 10.4)
+		XCTAssertTrue(BargeIn.interrupts(vad, now: 10.9, wordsAt: 10.9), "a short \"stop\", reported after it ended")
+		XCTAssertFalse(BargeIn.interrupts(vad, now: 10.9, wordsAt: 9.5), "words from earlier")
+		vad.reset()
+		_ = vad.update(level: 0.1, at: 20)
+		_ = vad.update(level: 0.1, at: 20.46)
+		XCTAssertTrue(BargeIn.interrupts(vad, now: 20.46, wordsAt: nil), "a silent recogniser leaves the loudness hold")
+		XCTAssertTrue(BargeIn.addsWords("stop", to: ""))
+		XCTAssertTrue(BargeIn.addsWords("hey there stop", to: "hey there"))
+		XCTAssertFalse(BargeIn.addsWords("hey their", to: "hey there"), "a revision adds nothing")
+		XCTAssertFalse(BargeIn.addsWords("", to: "hey there"), "a restarted recogniser")
+	}
+
 	func testPreRollKeepsTheNewestBytesOldestFirst() {
 		var ring = PcmRing(capacity: 4)
 		XCTAssertEqual(ring.data, Data())

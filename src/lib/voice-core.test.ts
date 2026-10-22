@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answerAskFlow, askAnswerText, askPrompt, downsample, errorText, isUsableTake, nextSegment, parseVoiceSettings, PcmRing, serializeVoiceSettings, restingCaption, restingStatus, rms, startAskFlow, vadAction, VoiceDetector, wavBytes } from './voice-core';
+import { answerAskFlow, askAnswerText, askPrompt, downsample, errorText, isUsableTake, nextSegment, parseVoiceSettings, PcmRing, serializeVoiceSettings, restingCaption, restingStatus, rms, startAskFlow, vadAction, BARGE_IN_HOLD_MS, missedStart, VoiceDetector, wavBytes } from './voice-core';
 import { VAD_CLOSE_MS, VAD_OPEN_MS } from './speech-core';
 
 describe('voice settings', () => {
@@ -143,11 +143,42 @@ describe('bar state helpers', () => {
 		expect(restingCaption('listening', 'ship it')).toBe('ship it');
 	});
 	it('opens the mic only when free, closes on demand', () => {
-		expect(vadAction('start', false, false)).toBe('start');
-		expect(vadAction('start', true, false)).toBeNull();
-		expect(vadAction('start', false, true)).toBeNull();
-		expect(vadAction('stop', true, false)).toBe('stop');
-		expect(vadAction(null, false, false)).toBeNull();
+		expect(vadAction('start', false, false, false, null, 0)).toBe('start');
+		expect(vadAction('start', true, false, false, null, 0)).toBeNull();
+		expect(vadAction('start', false, true, false, null, 0)).toBeNull();
+		expect(vadAction('stop', true, false, false, null, 0)).toBe('stop');
+		expect(vadAction(null, false, false, false, null, 0)).toBeNull();
+	});
+	it('cuts off a reply only once speech has held past the barge-in hold', () => {
+		const vad = new VoiceDetector(0.05, VAD_OPEN_MS, VAD_CLOSE_MS.normal);
+		const at = (level: number, t: number) => vadAction(vad.update(level, t), false, false, true, vad.loudSince, t);
+		expect(at(0.1, 1000)).toBeNull();
+		expect(at(0.1, 1000 + VAD_OPEN_MS)).toBeNull(); // the take-opening edge alone doesn't stop the reply
+		expect(at(0.1, 1000 + BARGE_IN_HOLD_MS)).toBe('start');
+		vad.reset();
+		expect(at(0.2, 5000)).toBeNull();
+		expect(at(0.0, 5050)).toBeNull();
+		expect(at(0.0, 5250)).toBeNull(); // a cough, then a pause
+		expect(at(0.2, 5300)).toBeNull();
+		expect(at(0.2, 5300 + BARGE_IN_HOLD_MS - 1)).toBeNull(); // the hold restarts after the pause
+		vad.reset();
+		expect(at(0.2, 7000)).toBeNull();
+		expect(at(0.0, 7200)).toBeNull();
+		expect(at(0.2, 7300)).toBeNull();
+		expect(at(0.2, 7000 + BARGE_IN_HOLD_MS)).toBe('start'); // a gap between words keeps the hold
+		vad.reset();
+		expect(at(0.2, 8000)).toBeNull();
+		expect(at(0.2, 8000 + VAD_OPEN_MS)).toBeNull(); // a cough long enough to open the detector
+		expect(at(0.0, 8000 + BARGE_IN_HOLD_MS)).toBeNull(); // has ended by the hold
+		expect(vadAction(null, false, true, true, 0, 10_000)).toBeNull(); // still transcribing the last take
+		expect(vadAction('stop', false, false, true, null, 0)).toBe('stop');
+	});
+	it('holds speech that opened over a reply until its stop edge', () => {
+		expect(missedStart('start', true, false)).toEqual({ edge: 'start', missed: true });
+		expect(missedStart(null, true, true)).toEqual({ edge: null, missed: true }); // the reply still plays
+		expect(missedStart(null, false, true)).toEqual({ edge: 'start', missed: true }); // the reply ended
+		expect(missedStart('stop', false, true)).toEqual({ edge: 'stop', missed: false });
+		expect(missedStart('start', false, false)).toEqual({ edge: 'start', missed: false }); // an ordinary start
 	});
 	it('prefetches the next segment across utterances', () => {
 		const a = { id: 'a', text: '' };
