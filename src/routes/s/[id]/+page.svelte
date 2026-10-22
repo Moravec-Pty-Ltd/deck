@@ -31,6 +31,7 @@
 	import { Menu, X, Ticket, Check, ChevronDown } from '@lucide/svelte';
 	import Popover from '$lib/components/Popover.svelte';
 	import { onMount } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { agentGet, sessionPath } from '$lib/agent-api';
 	import { transcriptMode } from '$lib/transcript-mode.svelte';
 	import {
@@ -77,6 +78,10 @@
 	let gitRepo = $state(false);
 	let changedCount = $state<number | null>(null);
 	const liveKind = $derived(sessions.find((s) => s.id === session.id)?.kind ?? session.kind);
+	// On a tabletop fold the PR actions move from the header down to the flat
+	// half with the composer (ClaudeView's flatActions), while the transcript shows.
+	const tabletop = new MediaQuery('(vertical-viewport-segments: 2)', false);
+	const prOnFlatHalf = $derived(tabletop.current && liveKind !== 'shell' && (tab === 'main' || tab === 'chat'));
 	const liveStatus = $derived(
 		sessions.find((s) => s.id === session.id)?.status ?? session.status
 	);
@@ -363,11 +368,25 @@
 	/>
 {/snippet}
 
+{#snippet prMenu()}
+	{#if livePr}
+		<PrMenu
+			id={session.id}
+			pr={livePr}
+			me={data.me}
+			worktree={!!session.worktree}
+			createdBranch={!!session.worktree?.createdBranch}
+			onMerged={mergeCleanup}
+			onChange={refresh}
+		/>
+	{/if}
+{/snippet}
+
 <div class="flex h-full" class:select-none={resizing} class:cursor-col-resize={resizing}>
 	{#if beside}
 		<!-- Same two-pane rule as the sidebar: lg+ only, closing brings the list back. -->
 		<div
-			class="hidden h-full min-w-0 flex-1 flex-col border-r border-base-300 px-2 pt-2 lg:flex {activePane === 'beside' ? 'ring-1 ring-inset ring-primary/30' : ''}"
+			class="fold-start fold-beside hidden h-full min-w-0 flex-1 flex-col border-r border-base-300 px-2 pt-2 lg:flex {activePane === 'beside' ? 'ring-1 ring-inset ring-primary/30' : ''}"
 			onfocusin={() => (activePane = 'beside')}
 		>
 			<div class="mb-2 flex items-center gap-2">
@@ -388,7 +407,7 @@
 		</div>
 	{:else}
 	<div
-		class="relative hidden h-full lg:block lg:shrink-0"
+		class="fold-start fold-sidebar relative hidden h-full lg:block lg:shrink-0"
 		style="width: {sidebarWidth}px"
 	>
 		<aside class="h-full overflow-y-auto pt-1">
@@ -440,7 +459,7 @@
 		{/if}
 		<div class="mb-2 flex flex-wrap items-center gap-2">
 			<button
-				class="btn btn-ghost btn-sm shrink-0 lg:hidden"
+				class="fold-hide btn btn-ghost btn-sm shrink-0 lg:hidden"
 				onclick={() => (sidebarOpen = true)}
 				aria-label="Open sessions"
 			>
@@ -480,17 +499,7 @@
 				{:else if issueChips.length > 1}
 					<IssueMenu issues={issueChips} />
 				{/if}
-				{#if livePr}
-					<PrMenu
-						id={session.id}
-						pr={livePr}
-						me={data.me}
-						worktree={!!session.worktree}
-						createdBranch={!!session.worktree?.createdBranch}
-						onMerged={mergeCleanup}
-						onChange={refresh}
-					/>
-				{/if}
+				{#if !prOnFlatHalf}{@render prMenu()}{/if}
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
 			<div class="flex items-center gap-2">
@@ -556,6 +565,7 @@
 						visible={tab === 'main' || tab === 'chat'}
 						condensed={transcriptTab === 'chat'}
 						focusIndex={focusIndex}
+						flatActions={livePr && prOnFlatHalf ? prMenu : undefined}
 					>
 						{#snippet controls()}
 							{#key `${session.id}:${liveKind}`}
@@ -607,7 +617,7 @@
 </div>
 
 {#if sidebarOpen}
-	<div class="fixed inset-0 z-40 lg:hidden">
+	<div class="fold-hide fixed inset-0 z-40 lg:hidden">
 		<button
 			class="absolute inset-0 bg-black/40"
 			onclick={() => (sidebarOpen = false)}

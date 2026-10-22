@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
-	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+	import { MediaQuery, SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { DeckSession, Project } from '$lib/types';
 	import { indexForward, indexOlderBatch, type Answer } from '$lib/transcript-index';
 	import {
@@ -77,6 +77,7 @@
 		visible = true,
 		condensed = false,
 		controls,
+		flatActions,
 		focusIndex = null,
 		persistDraft: persist = true
 	}: {
@@ -86,6 +87,8 @@
 		visible?: boolean;
 		condensed?: boolean;
 		controls?: Snippet;
+		// Shown above the composer on the flat half of a tabletop fold (the PR actions).
+		flatActions?: Snippet;
 		focusIndex?: number | null;
 		// False for a second pane on screen: its draft stays in memory so it never
 		// reads or fights over the one global localStorage draft.
@@ -102,6 +105,27 @@
 	type AnyEvent = Record<string, any>;
 
 	let events = $state<AnyEvent[]>([]);
+
+	// Half open on a table (Chromium's Viewport Segments API): the transcript
+	// stands on the top segment and the open question moves down to the flat one
+	// with the composer, as the iPhone app does. Never matches elsewhere.
+	const tabletop = new MediaQuery('(vertical-viewport-segments: 2)', false);
+	// The open question: the latest top-level ask, unanswered, with no turn end
+	// after it, while the server still holds it open (an aborted ask leaves
+	// neither an answer nor always a result behind).
+	const pendingAsk = $derived.by(() => {
+		if (!tabletop.current || !sessions.find((s) => s.id === session.id)?.awaitingInput) return null;
+		for (let i = events.length - 1; i >= 0; i--) {
+			const ev = events[i];
+			if (ev.type === 'result') return null;
+			if (ev.type !== 'assistant' || parentOf(ev)) continue;
+			const ask = (ev.message?.content ?? []).findLast(
+				(b: Record<string, any>) => b.type === 'tool_use' && isAskTool(b)
+			);
+			if (ask) return answeredQuestions.has(ask.id) ? null : ask;
+		}
+		return null;
+	});
 	// Session-level cost/turns/duration total. Seeded from the snapshot's
 	// server-computed base (the recent-history window can't hold every result of a
 	// long session), then extended as live results stream in.
@@ -915,12 +939,14 @@
 				<div class="pt-1"><Markdown source={block.thinking} /></div>
 			</details>
 		{:else if isAskTool(block)}
-			<AskQuestion
-				{block}
-				answered={answeredQuestions.has(block.id)}
-				answer={answeredQuestions.get(block.id)}
-				onanswer={(text, answers) => answerQuestion(block.id, text, answers)}
-			/>
+			{#if block.id !== pendingAsk?.id}
+				<AskQuestion
+					{block}
+					answered={answeredQuestions.has(block.id)}
+					answer={answeredQuestions.get(block.id)}
+					onanswer={(text, answers) => answerQuestion(block.id, text, answers)}
+				/>
+			{/if}
 		{:else}
 			{@const steps = thread.nested.get(block.id)}
 			<ToolCall
@@ -1054,12 +1080,30 @@
 
 	{#if !atBottom}
 		<button
-			class="btn btn-circle btn-sm absolute bottom-28 left-1/2 -translate-x-1/2 border border-base-300"
+			class="fold-jump btn btn-circle btn-sm absolute bottom-28 left-1/2 -translate-x-1/2 border border-base-300"
 			onclick={forceScroll}
 			aria-label="Jump to latest"
 		>
 			<ArrowDown size={16} />
 		</button>
+	{/if}
+
+	<!-- Everything below the transcript; on a tabletop fold it fills the flat
+	     segment (.fold-flat in layout.css). -->
+	<div class="fold-flat">
+	{#if pendingAsk}
+		{@const ask = pendingAsk}
+		<div class="py-2">
+			{#key ask.id}
+				<AskQuestion
+					block={ask}
+					onanswer={(text, answers) => answerQuestion(ask.id, text, answers)}
+				/>
+			{/key}
+		</div>
+	{/if}
+	{#if tabletop.current && flatActions}
+		<div class="flex justify-end py-1">{@render flatActions()}</div>
 	{/if}
 
 	{#if cost.results > 0 || context.used > 0}
@@ -1205,6 +1249,7 @@
 			</div>
 		</div>
 		</div>
+	</div>
 	</div>
 
 	<Modal

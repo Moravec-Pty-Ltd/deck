@@ -195,3 +195,67 @@ test('adds a project', async ({ page }) => {
 	expect((await res.json()).map((p: { path: string }) => p.path)).toContain(dir);
 	await expect(page.getByText('example').first()).toBeVisible();
 });
+
+// Chrome's foldable emulation: one display feature (the hinge) splits the
+// viewport into two segments, as DevTools' dual-screen devices do.
+async function fold(page: Page, displayFeature: { orientation: 'vertical' | 'horizontal'; offset: number; maskLength: number }) {
+	const cdp = await page.context().newCDPSession(page);
+	const { width, height } = page.viewportSize()!;
+	await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false, displayFeature });
+}
+
+async function box(locator: Locator) {
+	const b = await locator.boundingBox();
+	expect(b).not.toBeNull();
+	return b!;
+}
+
+test('book posture puts the sidebar and the session on either side of the hinge', async ({ page }) => {
+	await page.setViewportSize({ width: 900, height: 700 });
+	await openSession(page, 'book');
+	const sidebar = page.locator('.fold-sidebar aside');
+	// Below lg, unfolded: the sidebar is a drawer, as today.
+	await expect(sidebar).toBeHidden();
+	await expect(page.getByRole('button', { name: 'Open sessions' })).toBeVisible();
+
+	await fold(page, { orientation: 'vertical', offset: 440, maskLength: 20 });
+	await expect(sidebar).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Open sessions' })).toBeHidden();
+	await expect(sidebar.getByText('Sessions', { exact: true })).toBeVisible();
+	const left = await box(sidebar);
+	expect(left.x).toBe(0);
+	expect(left.x + left.width).toBe(440);
+	expect((await box(page.locator('.fold-sidebar'))).width).toBe(460);
+	for (const control of [page.getByPlaceholder(/^Message/), page.getByRole('button', { name: 'Send' })]) {
+		const b = await box(control);
+		expect(b.x).toBeGreaterThanOrEqual(460);
+		expect(b.x + b.width).toBeLessThanOrEqual(900);
+	}
+});
+
+test('tabletop puts the transcript on the top segment and the composer and ask on the bottom', async ({ page }) => {
+	await page.setViewportSize({ width: 900, height: 700 });
+	await openSession(page, 'tabletop');
+	await fold(page, { orientation: 'horizontal', offset: 330, maskLength: 20 });
+	await send(page, '[ask] pick one');
+	const question = page.getByText('Which colour?');
+	await expect(question).toBeVisible();
+	await expect(question).toHaveCount(1);
+
+	const transcript = await box(page.locator('[class~="@container"]'));
+	expect(transcript.y + transcript.height).toBeLessThanOrEqual(330);
+	expect(await page.locator('.fold-flat').evaluate((el) => el.getBoundingClientRect().top)).toBe(330);
+	for (const control of [question, page.getByRole('button', { name: 'Blue' }), page.locator('textarea'), page.getByRole('button', { name: 'Send', exact: true })]) {
+		// The flat half scrolls when the question and composer outgrow it.
+		await control.scrollIntoViewIfNeeded();
+		const b = await box(control);
+		expect(b.y).toBeGreaterThanOrEqual(350);
+		expect(Math.round(b.y + b.height)).toBeLessThanOrEqual(700);
+	}
+
+	await page.getByRole('button', { name: 'Blue' }).click();
+	await page.getByRole('button', { name: 'Send answer' }).click();
+	await expect(page.getByText(/You answered: .*Blue/)).toBeVisible();
+	// Answered, the question goes back to its place in the transcript.
+	expect((await box(page.getByText('Which colour?'))).y).toBeLessThan(330);
+});
