@@ -134,7 +134,7 @@
 
 	{#if open}
 		<div
-			class="absolute inset-x-2 bottom-full z-20 mb-1 rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg sm:inset-x-3 sm:left-auto sm:w-96"
+			class="fold-skills absolute inset-x-2 bottom-full z-20 mb-1 rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-lg sm:inset-x-3 sm:left-auto sm:w-96"
 		>
 			{#if browsing}
 				<input

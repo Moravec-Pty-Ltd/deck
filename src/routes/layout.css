@@ -341,7 +341,9 @@ h3,
 	display: none;
 }
 
-@media (max-width: 39.99rem) {
+/* A fold also gets the drawer: a fixed sheet can be held to one segment (see the
+   foldables section below), an anchored dropdown can cross the hinge. */
+@media (max-width: 39.99rem), (horizontal-viewport-segments: 2), (vertical-viewport-segments: 2) {
 	.popover-host[open] > .popover-backdrop {
 		display: block;
 		position: fixed;
@@ -410,6 +412,82 @@ dialog.modal:focus-visible {
 @media (max-width: 39.99rem) {
 	.deck-modal-box {
 		padding-bottom: max(1.5rem, calc(1rem + env(safe-area-inset-bottom)));
+	}
+}
+
+/* ── foldables (Chromium's Viewport Segments API). These only match while the
+   browser reports two segments, so every other browser keeps the layout above.
+   Like the iPhone app: in book posture the sidebar fills the left segment and the
+   session the right; half open on a table the transcript stands on the top
+   segment and the composer, voice, question and PR actions lie on the bottom
+   one. Nothing sits in the hinge between segments. */
+@media (horizontal-viewport-segments: 2) {
+	/* The left column ends where the right segment starts and pads out the
+	   hinge. !important beats the persisted drag width, an inline style. */
+	.fold-start {
+		flex: none;
+		width: env(viewport-segment-left 1 0) !important;
+		padding-right: calc(env(viewport-segment-left 1 0) - env(viewport-segment-right 0 0));
+	}
+	.fold-sidebar {
+		display: block;
+	}
+	.fold-sidebar > [role='slider'],
+	.fold-hide {
+		display: none;
+	}
+	.fold-beside {
+		display: flex;
+	}
+	dialog.modal {
+		padding-left: env(viewport-segment-left 1 0);
+	}
+	.popover-host > .popover-panel {
+		left: env(viewport-segment-left 1 0);
+		width: auto;
+	}
+}
+@media (vertical-viewport-segments: 2) {
+	/* The session page runs to the bottom edge, so the flat half is measured up
+	   from there: the bottom segment plus the hinge, which it pads out. */
+	:root {
+		--fold-flat: calc(100dvh - env(viewport-segment-bottom 0 0));
+	}
+	.fold-flat {
+		display: flex;
+		flex: none;
+		flex-direction: column;
+		height: var(--fold-flat);
+		padding-top: calc(env(viewport-segment-top 0 1) - env(viewport-segment-bottom 0 0));
+		overflow-y: auto;
+		/* Room for the edge-to-edge (-mx-2) rows, which would scroll sideways. */
+		margin-inline: -0.5rem;
+		padding-inline: 0.5rem;
+	}
+	/* Bottom-aligned, but still scrollable when it overflows (justify-content
+	   would cut off the top). */
+	.fold-flat > :first-child {
+		margin-top: auto;
+	}
+	.fold-jump {
+		bottom: calc(var(--fold-flat) + 1rem);
+	}
+	/* The skill picker would clip inside the scrolling flat half; it opens on
+	   the top segment instead, just above the hinge. */
+	.fold-skills {
+		position: fixed;
+		bottom: var(--fold-flat);
+		max-height: env(viewport-segment-height 0 0);
+		overflow-y: auto;
+	}
+	dialog.modal {
+		padding-top: env(viewport-segment-top 0 1);
+	}
+	.modal-box {
+		max-height: calc(env(viewport-segment-height 0 1) - 2rem);
+	}
+	.popover-host > .popover-panel {
+		max-height: env(viewport-segment-height 0 1);
 	}
 }
 
