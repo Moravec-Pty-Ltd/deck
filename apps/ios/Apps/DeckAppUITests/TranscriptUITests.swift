@@ -12,7 +12,7 @@ final class TranscriptUITests: XCTestCase {
 		app.buttons["Sessions"].firstMatch.tap()
 		// A session that has run tools, not whichever is newest: other tests
 		// leave fresh sessions on top that have only chatted.
-		let row = app.staticTexts["Yolo badge in session header"].firstMatch
+		let row = FoldableUITests.listItem("Yolo badge in session header", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the fixture sessions\n\(app.debugDescription.prefix(3000))")
 		row.tap()
 
@@ -76,7 +76,7 @@ final class TranscriptUITests: XCTestCase {
 	func testSwipingThePRHeaderDismissesIt() throws {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["Stream token diff renderer"].firstMatch
+		let row = FoldableUITests.listItem("Stream token diff renderer", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 		let approve = app.buttons["Approve"]
@@ -102,7 +102,7 @@ final class TranscriptUITests: XCTestCase {
 		else { throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests") }
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["Stream token diff renderer"].firstMatch
+		let row = FoldableUITests.listItem("Stream token diff renderer", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 		XCTAssertTrue(app.textViews["sessionComposer"].waitForExistence(timeout: 20))

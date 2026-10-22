@@ -16,7 +16,7 @@ final class FoldableUITests: XCTestCase {
 		let app = try Self.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
 
-		let row = app.staticTexts["Stream token diff renderer"].firstMatch
+		let row = Self.listItem("Stream token diff renderer", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the demo session\n\(app.debugDescription.prefix(3000))")
 		XCTAssertTrue(app.staticTexts["No session open"].exists, "the detail column starts empty beside the list")
 		row.tap()
@@ -32,7 +32,7 @@ final class FoldableUITests: XCTestCase {
 		let app = try Self.launch(environment: ["DECK_HINGE": "tabletop"])
 		app.buttons["Sessions"].firstMatch.tap()
 
-		let row = app.staticTexts["Yolo badge in session header"].firstMatch
+		let row = Self.listItem("Yolo badge in session header", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 
@@ -64,7 +64,7 @@ final class FoldableUITests: XCTestCase {
 		guard Self.isFoldable else { throw XCTSkip("opened flat needs the iPhone Duo simulator") }
 		let app = try Self.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["Stream token diff renderer"].firstMatch
+		let row = Self.listItem("Stream token diff renderer", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 		let window = app.windows.firstMatch.frame
@@ -99,7 +99,7 @@ final class FoldableUITests: XCTestCase {
 		else { throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests") }
 		let app = try Self.launch(environment: ["DECK_HINGE": "tabletop"])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["ask smoke"].firstMatch
+		let row = Self.listItem("ask smoke", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 
@@ -158,5 +158,22 @@ final class FoldableUITests: XCTestCase {
 		// On the open display the tabs sit in a rail rather than a tab bar.
 		XCTAssertTrue(app.buttons["Inbox"].firstMatch.waitForExistence(timeout: 20), "no tabs\n\(app.debugDescription.prefix(3000))")
 		return app
+	}
+
+	/// A row of the sessions list, scrolled into view: the list builds only the
+	/// rows on screen, and grouped, the fixture's sessions run past a phone's.
+	static func listItem(_ label: String, in app: XCUIApplication) -> XCUIElement {
+		let item = app.staticTexts[label].firstMatch
+		let list = app.collectionViews.firstMatch
+		_ = list.cells.firstMatch.waitForExistence(timeout: 20)
+		for _ in 0..<5 where !item.exists { list.swipeUp() }
+		return item
+	}
+
+	/// The first session in the list. On iPad the list is a sidebar, whose
+	/// group headers are cells too; a header holds one label, a session several.
+	static func firstSessionRow(in list: XCUIElement) -> XCUIElement {
+		_ = list.cells.firstMatch.waitForExistence(timeout: 20)
+		return list.cells.allElementsBoundByIndex.first { $0.staticTexts.count > 1 } ?? list.cells.firstMatch
 	}
 }

@@ -13,23 +13,9 @@ final class LiveActivityUITests: XCTestCase {
 			let token = ProcessInfo.processInfo.environment["DECK_UITEST_TOKEN"]
 		else { throw XCTSkip("set DECK_UITEST_URL and DECK_UITEST_TOKEN to run the UI tests") }
 
-		let app = XCUIApplication()
-		app.launch()
-		let manual = app.buttons["Enter details manually"]
-		if manual.waitForExistence(timeout: 5) {
-			manual.tap()
-			let urlField = app.textFields["Server URL"]
-			XCTAssertTrue(urlField.waitForExistence(timeout: 5))
-			urlField.tap()
-			urlField.typeText(url)
-			let tokenField = app.secureTextFields["Token"]
-			tokenField.tap()
-			tokenField.typeText(token)
-			app.buttons["Connect"].tap()
-		}
-		XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20))
-		app.tabBars.buttons["Sessions"].tap()
-		let row = app.staticTexts["voice smoke"].firstMatch
+		let app = try FoldableUITests.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = FoldableUITests.listItem("voice smoke", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 		XCTAssertTrue(app.buttons["sessionMenu"].waitForExistence(timeout: 20))

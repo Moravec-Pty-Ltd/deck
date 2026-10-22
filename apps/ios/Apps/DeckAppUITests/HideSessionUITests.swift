@@ -16,7 +16,7 @@ final class HideSessionUITests: XCTestCase {
 
 		let list = app.collectionViews.firstMatch
 		XCTAssertTrue(list.waitForExistence(timeout: 20), "sessions list never appeared")
-		let row = list.cells.element(boundBy: 0)
+		let row = FoldableUITests.firstSessionRow(in: list)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "no session rows to swipe")
 		// Hold onto which session this is, so the assertions below follow it
 		// rather than whatever ends up first.
@@ -32,7 +32,7 @@ final class HideSessionUITests: XCTestCase {
 		addTeardownBlock { try? self.setSessionHidden(id: self.firstSessionId(named: title), false) }
 		hide.tap()
 
-		let section = app.staticTexts["Hidden"]
+		let section = FoldableUITests.listItem("Hidden", in: app)
 		XCTAssertTrue(
 			section.waitForExistence(timeout: 20),
 			"hiding did not add a Hidden section\n\(app.debugDescription.prefix(3000))")

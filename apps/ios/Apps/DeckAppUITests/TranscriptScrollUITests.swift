@@ -12,7 +12,7 @@ final class TranscriptScrollUITests: XCTestCase {
 	func testOpensAtTheLatestMessage() throws {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["long transcript"].firstMatch
+		let row = FoldableUITests.listItem("long transcript", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the seeded session\n\(app.debugDescription.prefix(3000))")
 		row.tap()
 
@@ -48,7 +48,7 @@ final class TranscriptScrollUITests: XCTestCase {
 	func testTappingTheTranscriptHidesTheKeyboard() throws {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let row = app.staticTexts["long transcript"].firstMatch
+		let row = FoldableUITests.listItem("long transcript", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
 		let composer = app.textViews["sessionComposer"]
@@ -72,7 +72,8 @@ final class TranscriptScrollUITests: XCTestCase {
 		XCTAssertTrue(hit.waitForExistence(timeout: 20), "no search hit\n\(app.debugDescription.prefix(3000))")
 		hit.tap()
 
-		let target = app.staticTexts["Step 30?"]
+		// In the transcript: on iPad the hit's own row stays in the list beside it.
+		let target = app.scrollViews.staticTexts["Step 30?"]
 		XCTAssertTrue(target.waitForExistence(timeout: 20))
 		sleep(3)
 		XCTAssertTrue(target.isHittable, "the hit should be on screen")
