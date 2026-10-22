@@ -78,6 +78,35 @@ public enum PRDisplay {
 		let state = pr.state?.capitalized
 		return [number, state].compactMap { $0 }.joined(separator: " · ")
 	}
+
+	/// GitHub's overall review decision, as the web's PrMenu words it.
+	public static func verdict(for pr: SessionPR) -> (label: String, color: Color)? {
+		switch pr.reviewDecision {
+		case "APPROVED": return ("Approved", .prOpen)
+		case "CHANGES_REQUESTED": return ("Changes requested", .prClosed)
+		case "REVIEW_REQUIRED": return ("Review required", .secondary)
+		default: return nil
+		}
+	}
+
+	/// Whether it can merge, or why not; a closed or merged PR shows its state.
+	public static func readiness(for pr: SessionPR) -> (label: String, color: Color)? {
+		switch pr.state?.lowercased() {
+		case "merged": return ("Merged", .prMerged)
+		case "closed": return ("Closed", .prClosed)
+		case "draft": return ("Draft", .prDraft)
+		case "open": break
+		default: return nil
+		}
+		if pr.mergeable == "CONFLICTING" { return ("Conflicts", .prClosed) }
+		if isBlocked(pr) { return ("Blocked", .orange) }
+		if pr.mergeable == "MERGEABLE" { return ("Ready", .prOpen) }
+		return nil
+	}
+
+	public static func isBlocked(_ pr: SessionPR) -> Bool {
+		pr.mergeStateStatus == "BLOCKED"
+	}
 }
 
 /// Green ticks per approval, red crosses per change-request (capped), mirroring

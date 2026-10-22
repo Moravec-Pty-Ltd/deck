@@ -24,6 +24,7 @@
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
 	import { aggregateState } from '$lib/servers';
+	import { isReviewSession } from '$lib/pr';
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import { DeleteFlow, requestDelete } from '$lib/delete-flow.svelte';
 	import { goto } from '$app/navigation';
@@ -376,6 +377,7 @@
 			me={data.me}
 			worktree={!!session.worktree}
 			createdBranch={!!session.worktree?.createdBranch}
+			reviewSession={isReviewSession({ worktree: session.worktree, pr: livePr })}
 			onMerged={mergeCleanup}
 			onChange={refresh}
 		/>

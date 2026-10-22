@@ -111,9 +111,10 @@ final class FoldableUITests: XCTestCase {
 		XCTAssertTrue(send.waitForExistence(timeout: 60), "no ask card\n\(app.debugDescription.prefix(3000))")
 
 		let window = app.windows.firstMatch.frame
-		let approve = app.buttons["Approve"]
-		XCTAssertTrue(approve.waitForExistence(timeout: 10), "needs the fixture's PR on 'ask smoke'")
-		XCTAssertGreaterThan(approve.frame.midY, window.midY, "PR actions lie on the flat half")
+		let review = app.buttons["prReview"]
+		XCTAssertTrue(review.waitForExistence(timeout: 10), "needs the fixture's PR on 'ask smoke'")
+		XCTAssertGreaterThan(review.frame.midY, window.midY, "PR actions lie on the flat half")
+		XCTAssertFalse(app.buttons["prRow"].exists, "the standing half only shows the PR, so a tap cannot wobble it")
 		XCTAssertGreaterThan(send.frame.midY, window.midY)
 		attach(app, "tabletop-pr-ask")
 	}

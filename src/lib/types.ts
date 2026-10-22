@@ -150,8 +150,7 @@ export interface SessionPR {
 	repo: string;
 	number: number;
 	seenAt: number;
-	// PR title, set when a session is started in Review mode (server sync doesn't
-	// fetch it, so it's only present for review-seeded PRs). Feeds [pr_title].
+	// PR title: seeded by Review mode, then kept current by the sync. Feeds [pr_title].
 	title?: string;
 	state?: PrState;
 	checkedAt?: number;

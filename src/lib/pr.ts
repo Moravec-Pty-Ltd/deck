@@ -168,10 +168,11 @@ export type PrSyncPatch = Pick<
 	| 'changesRequested'
 	| 'author'
 	| 'myReview'
+	| 'title'
 >;
 
 const PR_FIELDS =
-	'state isDraft mergeable mergeStateStatus reviewDecision author{login} latestReviews(first:100){nodes{state author{login}}}';
+	'title state isDraft mergeable mergeStateStatus reviewDecision author{login} latestReviews(first:100){nodes{state author{login}}}';
 
 // One aliased GraphQL selection per captured PR, so a single request covers every
 // non-terminal PR across all repos. Aliases are positional (p0, p1, ...) and the
@@ -222,6 +223,7 @@ interface GhReviewNode {
 }
 
 interface GhPrNode {
+	title?: string;
 	state: string;
 	isDraft: boolean;
 	mergeable: string;
@@ -262,7 +264,9 @@ function prPatch(node: GhPrNode | undefined, me: string | null): PrSyncPatch | n
 		reviewDecision: pickDecision(node.reviewDecision),
 		author: node.author?.login,
 		myReview: myReviewState(reviews, me),
-		...reviewCounts(reviews)
+		...reviewCounts(reviews),
+		// Only when GitHub sent one: an undefined key would wipe a stored title.
+		...(node.title ? { title: node.title } : {})
 	};
 }
 

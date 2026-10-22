@@ -19,7 +19,6 @@ struct MacSessionDetail: View {
 	@State private var sending = false
 	@State private var compacting = false
 	@State private var sheet: MacSessionSheet?
-	@State private var commentText = ""
 	/// The model picked in the sheet, acted on once the sheet has gone so an
 	/// expensive-model confirm has somewhere to present.
 	@State private var modelPick: String??
@@ -66,7 +65,6 @@ struct MacSessionDetail: View {
 			if let viewModel {
 				MacSessionSheetContent(
 					sheet: sheet, sessionId: sessionId, title: title, session: session, viewModel: viewModel,
-					commentText: $commentText,
 					onModelPicked: { modelPick = .some($0) },
 					onIdChanged: onIdChanged,
 					onDeleted: onDeleted)
@@ -179,26 +177,15 @@ struct MacSessionDetail: View {
 	@ViewBuilder
 	private func prHeader(_ viewModel: SessionDetailViewModel) -> some View {
 		if let pr = session?.pr {
-			Group {
-				if pr.state?.lowercased() == "open" {
-					PRSection(
-						pr: pr,
-						canMerge: store.canMerge(pr),
-						onApprove: { Task { await viewModel.review(decision: "approve", body: nil) } },
-						onRequestChanges: { sheet = .comment(decision: "request-changes") },
-						onComment: { sheet = .comment(decision: "comment") },
-						onMerge: { sheet = .merge },
-						showsStatus: true)
-				} else {
-					HStack {
-						Image(systemName: "arrow.triangle.pull")
-						PRStatusBadge(pr: pr)
-						Spacer()
-					}
-				}
-			}
-			.padding()
-			.background(.thinMaterial)
+			PRHeaderRow(
+				pr: pr,
+				canMerge: store.canMerge(pr),
+				onReview: { sheet = .review },
+				onMerge: { sheet = .merge },
+				onDismiss: store.supports(.prDismiss) ? { Task { await viewModel.dismissPR() } } : nil)
+				.padding(.horizontal)
+				.padding(.vertical, 8)
+				.background(.thinMaterial)
 			Divider()
 		}
 	}

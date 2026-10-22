@@ -202,6 +202,13 @@ describe('parsePrSyncResponse', () => {
 		expect(parsePrSyncResponse(raw, 1, null)[0]?.author).toBeUndefined();
 	});
 
+	it('carries the title only when GitHub sends one, so a stored title is never wiped', () => {
+		const titled = JSON.stringify({ data: { p0: node({ title: 'Stream token diffs' }) } });
+		expect(parsePrSyncResponse(titled, 1, null)[0]?.title).toBe('Stream token diffs');
+		const untitled = parsePrSyncResponse(JSON.stringify({ data: { p0: node() } }), 1, null)[0];
+		expect(untitled && 'title' in untitled).toBe(false);
+	});
+
 	it('maps an open draft to the draft state', () => {
 		const raw = JSON.stringify({ data: { p0: node({ isDraft: true }) } });
 		expect(parsePrSyncResponse(raw, 1, null)[0]?.state).toBe('draft');

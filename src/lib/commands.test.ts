@@ -22,6 +22,9 @@ function pr(over: Partial<SessionPR> = {}): SessionPR {
 	return { url: 'https://github.com/acme/web/pull/7', repo: 'acme/web', number: 7, seenAt: 0, ...over };
 }
 
+// A review session: parked on the PR's pr/<n> ref, so Approve and Request changes apply.
+const reviewing = { worktree: { repo: '/path/to/web', branch: 'pr/7', createdBranch: true } };
+
 function server(name: string, state: ServerState): ServerRuntime {
 	return { name, state, tmuxName: name, ports: [], setup: [] };
 }
@@ -70,8 +73,8 @@ describe('buildCommands', () => {
 		expect(ids(ctx({ notificationsSupported: true }))).toContain('toggle-notifications');
 	});
 
-	it('a session with an open mergeable PR exposes the full PR action set', () => {
-		const list = ids(ctx({ session: session({ pr: pr({ state: 'open', mergeable: 'MERGEABLE' }) }) }));
+	it('a review session with an open mergeable PR exposes the full PR action set', () => {
+		const list = ids(ctx({ session: session({ ...reviewing, pr: pr({ state: 'open', mergeable: 'MERGEABLE' }) }) }));
 		expect(list).toEqual(
 			expect.arrayContaining([
 				'pr-open',
@@ -90,9 +93,16 @@ describe('buildCommands', () => {
 		expect(ids(ctx({ session: session({ pr: pr({ state: 'merged', mergeable: 'MERGEABLE' }) }) }))).not.toContain('pr-merge');
 	});
 
+	it('offers only Comment, not Approve or Request changes, outside a review session', () => {
+		const list = ids(ctx({ session: session({ pr: pr({ state: 'open' }) }) }));
+		expect(list).toContain('pr-comment');
+		expect(list).not.toContain('pr-approve');
+		expect(list).not.toContain('pr-request-changes');
+	});
+
 	it('hides Approve unless the PR is open', () => {
-		expect(ids(ctx({ session: session({ pr: pr({ state: 'draft' }) }) }))).not.toContain('pr-approve');
-		expect(ids(ctx({ session: session({ pr: pr({ state: 'closed' }) }) }))).not.toContain('pr-approve');
+		expect(ids(ctx({ session: session({ ...reviewing, pr: pr({ state: 'draft' }) }) }))).not.toContain('pr-approve');
+		expect(ids(ctx({ session: session({ ...reviewing, pr: pr({ state: 'closed' }) }) }))).not.toContain('pr-approve');
 	});
 
 	it('surfaces an Open issue command per issue that has a url', () => {
@@ -161,7 +171,7 @@ describe('buildCommands', () => {
 
 describe('command dispatch', () => {
 	it('Approve posts an empty-body approve review', async () => {
-		const c = ctx({ session: session({ pr: pr({ state: 'open' }) }) });
+		const c = ctx({ session: session({ ...reviewing, pr: pr({ state: 'open' }) }) });
 		const approve = buildCommands(c).find((cmd) => cmd.id === 'pr-approve')!;
 		await approve.run();
 		expect(c.prAction).toHaveBeenCalledWith({ action: 'review', decision: 'approve', body: '' });
@@ -194,7 +204,7 @@ describe('command dispatch', () => {
 	});
 
 	it('Request changes trims the message into a request-changes review', async () => {
-		const c = ctx({ session: session({ pr: pr({ state: 'open' }) }) });
+		const c = ctx({ session: session({ ...reviewing, pr: pr({ state: 'open' }) }) });
 		const rc = buildCommands(c).find((cmd) => cmd.id === 'pr-request-changes')!;
 		expect(rc.step).toBe('text');
 		await rc.run({ text: '  needs tests  ' });
@@ -207,7 +217,7 @@ describe('command dispatch', () => {
 });
 
 describe('filterCommands', () => {
-	const c = ctx({ session: session({ pr: pr({ state: 'open', mergeable: 'MERGEABLE' }) }) });
+	const c = ctx({ session: session({ ...reviewing, pr: pr({ state: 'open', mergeable: 'MERGEABLE' }) }) });
 	const all = buildCommands(c);
 
 	it('empty query keeps every command in registry order', () => {

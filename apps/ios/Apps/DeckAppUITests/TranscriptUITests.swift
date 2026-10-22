@@ -72,26 +72,44 @@ final class TranscriptUITests: XCTestCase {
 		XCTAssertEqual(app.state, .runningForeground)
 	}
 
-	/// Swiping the PR header sideways dismisses the PR; its buttons still tap.
-	func testSwipingThePRHeaderDismissesIt() throws {
+	/// The PR is one row: a tap opens its menu, a work session's review only
+	/// comments, a ready PR merges from the row, and a sideways swipe
+	/// dismisses it without tapping anything.
+	func testThePRRowOpensItsMenuAndSwipesAway() throws {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
 		let row = FoldableUITests.listItem("Stream token diff renderer", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
-		let approve = app.buttons["Approve"]
-		XCTAssertTrue(approve.waitForExistence(timeout: 20), "needs the fixture's PR on 'Stream token diff renderer'\n\(app.debugDescription.prefix(3000))")
+		let prRow = app.buttons["prRow"]
+		XCTAssertTrue(prRow.waitForExistence(timeout: 20), "needs the fixture's PR on 'Stream token diff renderer'\n\(app.debugDescription.prefix(3000))")
+		XCTAssertLessThan(prRow.frame.height, 60, "the PR header is one line")
+		XCTAssertTrue(prRow.label.contains("Stream token diffs"), "the row shows the PR title: \(prRow.label)")
 		let shot = XCTAttachment(screenshot: app.screenshot())
 		shot.name = "session-with-pr"
 		shot.lifetime = .keepAlways
 		add(shot)
-		app.buttons["Comment"].tap()
-		XCTAssertTrue(app.navigationBars["Comment"].waitForExistence(timeout: 5), "a tap on the header's buttons still works")
+
+		prRow.tap()
+		let review = app.buttons["prReview"]
+		XCTAssertTrue(review.waitForExistence(timeout: 5), "a tap opens the PR menu")
+		XCTAssertTrue(app.buttons["prDismiss"].exists)
+		review.tap()
+		XCTAssertTrue(app.navigationBars["Comment"].waitForExistence(timeout: 5), "a work session's review only comments")
+		XCTAssertFalse(app.buttons["Approve"].exists)
 		app.buttons["Cancel"].tap()
-		app.buttons["Merge"].swipeLeft()
-		XCTAssertTrue(approve.waitForNonExistence(timeout: 10), "the swipe should dismiss the PR")
-		XCTAssertFalse(app.navigationBars.matching(NSPredicate(format: "identifier BEGINSWITH 'Merge'")).firstMatch.exists, "a swipe that starts on Merge must not tap it")
-		XCTAssertFalse(app.navigationBars["Comment"].exists, "a swipe must not open the comment sheet")
+
+		let merge = app.buttons["prMerge"]
+		XCTAssertTrue(merge.waitForExistence(timeout: 5), "a ready PR merges from the row")
+		merge.tap()
+		XCTAssertTrue(app.navigationBars.matching(NSPredicate(format: "identifier BEGINSWITH 'Merge'")).firstMatch.waitForExistence(timeout: 5))
+		app.buttons["Cancel"].tap()
+
+		// Started on the menu, the harder case: a swipe must win over its tap.
+		XCTAssertTrue(prRow.waitForExistence(timeout: 5))
+		prRow.swipeLeft()
+		XCTAssertTrue(prRow.waitForNonExistence(timeout: 10), "the swipe should dismiss the PR")
+		XCTAssertFalse(review.exists, "a swipe must not open the PR menu")
 	}
 
 	/// While a turn runs, Stop sits in the working row above the composer, not
