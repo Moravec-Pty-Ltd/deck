@@ -31,6 +31,7 @@ struct SessionsView: View {
 	/// Bumped a moment after the window changes width, to build the fold's
 	/// session pane again (see below).
 	@State private var paneBuild = 0
+	@State private var railWidth: CGFloat = 0
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
 	@State private var models = OpenSessionModel()
 	@State private var pendingDelete: DeleteRequest?
@@ -93,16 +94,18 @@ struct SessionsView: View {
 	var body: some View {
 		Group {
 			if twoUp {
-				HStack(spacing: 0) {
+				clearOfRail(HStack(spacing: 0) {
 					NavigationStack {
 						if let beside { session(beside, pane: .beside) }
 					}
 					.frame(width: foldWidth)
 					.frame(maxWidth: foldWidth ?? .infinity)
+					.overlay(alignment: .top) { focusBar(.beside) }
 					Divider()
 					NavigationStack { detail }
 						.frame(maxWidth: .infinity)
-				}
+						.overlay(alignment: .top) { focusBar(.main) }
+				})
 			} else if wide, foldWidth == nil {
 				NavigationSplitView(columnVisibility: $columns) {
 					sidebar
@@ -116,7 +119,7 @@ struct SessionsView: View {
 			} else {
 				// The phone's list and the fold's left half are one stack, so
 				// folding and unfolding keep the list where it was.
-				HStack(spacing: 0) {
+				clearOfRail(HStack(spacing: 0) {
 					NavigationStack(path: phonePath) {
 						if activityInListPane, let foldModel {
 							activityPane(foldModel)
@@ -135,7 +138,7 @@ struct SessionsView: View {
 						NavigationStack { detail }
 							.id(paneBuild)
 					}
-				}
+				})
 			}
 		}
 		.task(id: hinge.windowSize.width) {
@@ -187,6 +190,29 @@ struct SessionsView: View {
 			}
 		}
 		.onDisappear { models.close() }
+	}
+
+	/// Keeps the fold's panes off the tab rail, which the open display puts
+	/// along the trailing edge as a safe area inset. Reaching under it, the
+	/// session's bar handed its buttons to the rail's column and its working
+	/// row ran under the rail; the left pane took the rail's inset too and
+	/// stopped short of the fold.
+	private func clearOfRail(_ content: some View) -> some View {
+		content
+			.padding(.trailing, railWidth)
+			.ignoresSafeArea(.container, edges: .trailing)
+			.onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.trailing } action: { railWidth = $0 }
+	}
+
+	/// The active pane's mark, along its top edge above its title.
+	@ViewBuilder
+	private func focusBar(_ pane: Pane) -> some View {
+		if focusedPane == pane {
+			Rectangle()
+				.fill(Color.accentColor)
+				.frame(height: 3)
+				.allowsHitTesting(false)
+		}
 	}
 
 	@ViewBuilder

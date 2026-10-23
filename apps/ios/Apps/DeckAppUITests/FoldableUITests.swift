@@ -92,6 +92,42 @@ final class FoldableUITests: XCTestCase {
 		app.buttons["Cancel"].tap()
 	}
 
+	/// Two sessions side by side each fill their half of the fold, with their
+	/// own header, close button and composer, all clear of the tab rail.
+	func testTwoSessionsSplitOnTheFold() throws {
+		guard Self.isFoldable else { throw XCTSkip("opened flat needs the iPhone Duo simulator") }
+		let app = try Self.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = Self.listItem("Stream token diff renderer", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20))
+		row.tap()
+		XCTAssertTrue(app.buttons["renameSession"].waitForExistence(timeout: 20))
+		Self.listItem("Yolo badge in session header", in: app).press(forDuration: 1)
+		app.buttons["Open beside"].tap()
+		let closes = app.buttons.matching(identifier: "closePane")
+		XCTAssertTrue(closes.element(boundBy: 1).waitForExistence(timeout: 20), "no second session\n\(app.debugDescription.prefix(3000))")
+		sleep(2)
+		attach(app, "two-up")
+
+		let window = app.windows.firstMatch.frame
+		let rail = app.buttons["Inbox"].firstMatch.frame.minX
+		let frames = { (id: String, type: XCUIElement.ElementType) in
+			app.descendants(matching: type).matching(identifier: id).allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
+		}
+		let close = frames("closePane", .button), composers = frames("sessionComposer", .textView), transcripts = frames("transcript", .scrollView)
+		let found = "window \(window) rail \(rail) close \(close) composers \(composers) transcripts \(transcripts)"
+		XCTAssertEqual(close.count, 2, found)
+		XCTAssertEqual(composers.count, 2, found)
+		XCTAssertEqual(transcripts.count, 2, found)
+		XCTAssertLessThan(close[0].maxX, window.midX, "the left pane closes from its own header: \(found)")
+		XCTAssertGreaterThan(close[1].minX, window.midX, "the right pane closes from its own header: \(found)")
+		XCTAssertEqual(transcripts[0].maxX, window.midX, accuracy: 2, "the left pane reaches the fold: \(found)")
+		XCTAssertEqual(transcripts[1].minX, window.midX, accuracy: 2, "the right pane starts at the fold: \(found)")
+		XCTAssertLessThanOrEqual(transcripts[1].maxX, rail, "the right pane stays clear of the rail: \(found)")
+		XCTAssertGreaterThan(composers[0].maxX, window.midX - 40, "the left composer reaches the fold: \(found)")
+		XCTAssertLessThanOrEqual(composers[1].maxX, rail, "the right composer stays clear of the rail: \(found)")
+	}
+
 	/// Both of the foldable's displays are short, so the session's title band
 	/// and the composer's second row give their height to the conversation:
 	/// one header line with the title, the browser and the menu, a finished PR
