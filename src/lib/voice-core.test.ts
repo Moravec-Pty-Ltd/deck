@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { answerAskFlow, askAnswerText, askPrompt, downsample, errorText, isUsableTake, nextSegment, parseVoiceSettings, PcmRing, serializeVoiceSettings, restingCaption, restingStatus, rms, startAskFlow, vadAction, BARGE_IN_HOLD_MS, missedStart, VoiceDetector, wavBytes } from './voice-core';
+import { answerAskFlow, askAnswerText, askPrompt, cueSamples, doneCuePlays, skipUtterance, turnEnd, downsample, errorText, isUsableTake, nextSegment, parseVoiceSettings, PcmRing, serializeVoiceSettings, restingCaption, restingStatus, rms, startAskFlow, vadAction, BARGE_IN_HOLD_MS, missedStart, VoiceDetector, wavBytes, workingCuePlays } from './voice-core';
 import { VAD_CLOSE_MS, VAD_OPEN_MS } from './speech-core';
 
 describe('voice settings', () => {
 	it('defaults and tolerates junk', () => {
-		expect(parseVoiceSettings(null)).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal' });
-		expect(parseVoiceSettings('not json')).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal' });
+		expect(parseVoiceSettings(null)).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true });
+		expect(parseVoiceSettings('not json')).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true });
 		expect(parseVoiceSettings('{"chattiness":"final-only","handsFree":true,"sensitivity":"high"}')).toEqual({
-			chattiness: 'final-only', handsFree: true, sensitivity: 'high', endOfSpeech: 'normal'
+			chattiness: 'final-only', handsFree: true, sensitivity: 'high', endOfSpeech: 'normal', workingCue: true
 		});
+		expect(parseVoiceSettings('{"workingCue":false}').workingCue).toBe(false);
 		expect(parseVoiceSettings('{"endOfSpeech":"long"}').endOfSpeech).toBe('long');
 		expect(parseVoiceSettings('{"endOfSpeech":"forever"}').endOfSpeech).toBe('normal');
 		expect(parseVoiceSettings('{"sensitivity":"loud"}').sensitivity).toBe('medium');
 		expect(parseVoiceSettings('{"sensitivity":"high"}').handsFree).toBe(true);
 		expect(parseVoiceSettings('{"handsFree":false}').handsFree).toBe(true);
 		expect(parseVoiceSettings('{"handsFree":false,"v":2}').handsFree).toBe(false);
-		const holdToTalk = { chattiness: 'final-only', handsFree: false, sensitivity: 'low', endOfSpeech: 'short' } as const;
+		const holdToTalk = { chattiness: 'final-only', handsFree: false, sensitivity: 'low', endOfSpeech: 'short', workingCue: false } as const;
 		expect(parseVoiceSettings(serializeVoiceSettings(holdToTalk))).toEqual(holdToTalk);
 	});
 });
@@ -201,5 +202,53 @@ describe('bar state helpers', () => {
 		expect(nextSegment([{ segments: [a, b] }, { segments: [c] }])).toBe(b);
 		expect(nextSegment([{ segments: [a] }, { segments: [c] }])).toBe(c);
 		expect(nextSegment([{ segments: [a] }])).toBeUndefined();
+	});
+});
+
+describe('cues', () => {
+	it('ticks only while the agent works and nothing else is heard', () => {
+		expect(workingCuePlays(true, true, false, false)).toBe(true);
+		expect(workingCuePlays(false, true, false, false)).toBe(false);
+		expect(workingCuePlays(true, false, false, false)).toBe(false);
+		expect(workingCuePlays(true, true, true, false)).toBe(false);
+		expect(workingCuePlays(true, true, false, true)).toBe(false);
+	});
+
+	it('reads the held final reply at the turn end, else marks it', () => {
+		expect(turnEnd('final-only', 'Done.', false)).toEqual({ read: 'Done.', done: false });
+		expect(turnEnd('final-only', '', false)).toEqual({ read: null, done: true });
+		expect(turnEnd('every-update', '', true)).toEqual({ read: null, done: false });
+		expect(turnEnd('every-update', '', false)).toEqual({ read: null, done: true });
+	});
+
+	it('marks the end only when no reply was or will be read', () => {
+		expect(doneCuePlays(false, false)).toBe(true);
+		expect(doneCuePlays(true, false)).toBe(false);
+		expect(doneCuePlays(false, true)).toBe(false);
+	});
+
+	it('keeps every cue too short and quiet to open a take', () => {
+		for (const cue of ['working', 'done'] as const) {
+			const samples = cueSamples(cue, 48_000);
+			expect(samples.length).toBeGreaterThan(0);
+			expect((samples.length / 48_000) * 1000).toBeLessThan(VAD_OPEN_MS);
+			expect(Math.max(...samples.map(Math.abs))).toBeLessThanOrEqual(0.25);
+			expect(Math.abs(samples[0])).toBeLessThan(0.01);
+		}
+	});
+});
+
+describe('skipUtterance', () => {
+	const a = { id: 'a', text: '' };
+	it('drops the head and a cue waiting behind it, not a real utterance', () => {
+		const q1 = [{ segments: [a] }, { segments: [], cue: 'done' as const }, { segments: [a] }];
+		skipUtterance(q1);
+		expect(q1).toEqual([{ segments: [a] }]);
+		const q2 = [{ segments: [a] }, { segments: [], cue: 'done' as const, pending: Promise.resolve([]) }];
+		skipUtterance(q2);
+		expect(q2).toHaveLength(1);
+		const q3 = [{ segments: [], cue: 'done' as const }];
+		skipUtterance(q3);
+		expect(q3).toEqual([]);
 	});
 });

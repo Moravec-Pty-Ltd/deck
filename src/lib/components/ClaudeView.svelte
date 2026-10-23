@@ -288,6 +288,9 @@
 		return () => voice.destroy();
 	});
 	const voiceAvailable = $derived(!!voice.capabilities?.tts);
+	$effect(() => {
+		voice.turnRunning = status === 'running';
+	});
 
 	function toggleVoice() {
 		if (voice.enabled) voice.disable();

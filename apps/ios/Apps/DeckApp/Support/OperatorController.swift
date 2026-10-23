@@ -88,6 +88,7 @@ final class OperatorController {
 			answer: { _, _ in },
 			interrupt: { }))
 		controller.persistsSettings = false
+		controller.acknowledges = false
 		controller.onPlaybackFinished = { [weak self] in self?.openFollowUp() }
 		voice = controller
 		#if os(iOS)

@@ -123,7 +123,11 @@ struct VoiceView: View {
 				do {
 					for try await event in client.sessionEventStream(sessionId: sessionId) {
 						if Task.isCancelled { return }
-						if case .transcript(let event) = event { controller.hear(event) }
+						switch event {
+						case .transcript(let event): controller.hear(event)
+						case .status(let status): controller.turnRunning = status == "running"
+						default: break
+						}
 					}
 				} catch is CancellationError {
 					return

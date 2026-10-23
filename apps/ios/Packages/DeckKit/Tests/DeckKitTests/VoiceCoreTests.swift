@@ -213,6 +213,46 @@ final class VoiceCoreTests: XCTestCase {
 		defaults.set(Data(#"{"version":2,"endOfSpeech":"forever","sensitivity":"high"}"#.utf8), forKey: "deck.voice.settings")
 		XCTAssertEqual(VoiceSettings.load(from: defaults).endOfSpeech, .normal)
 		XCTAssertEqual(VoiceSettings.load(from: defaults).sensitivity, .high)
+		XCTAssertTrue(VoiceSettings.load(from: defaults).workingCue, "the working cue is on unless turned off")
+		VoiceSettings(workingCue: false).save(to: defaults)
+		XCTAssertFalse(VoiceSettings.load(from: defaults).workingCue)
+	}
+
+	func testWorkingCueTicksOnlyWhileTheAgentWorksUnheard() {
+		XCTAssertTrue(VoiceCue.workingPlays(wanted: true, working: true, asking: false, busy: false))
+		XCTAssertFalse(VoiceCue.workingPlays(wanted: false, working: true, asking: false, busy: false), "turned off")
+		XCTAssertFalse(VoiceCue.workingPlays(wanted: true, working: false, asking: false, busy: false), "turn over")
+		XCTAssertFalse(VoiceCue.workingPlays(wanted: true, working: true, asking: true, busy: false), "a question waits")
+		XCTAssertFalse(VoiceCue.workingPlays(wanted: true, working: true, asking: false, busy: true), "reading or recording")
+		XCTAssertTrue(VoiceCue.donePlays(willRead: false, replied: false))
+		XCTAssertFalse(VoiceCue.donePlays(willRead: true, replied: false))
+		XCTAssertFalse(VoiceCue.donePlays(willRead: false, replied: true))
+	}
+
+	func testSkipDropsTheHeadAndAToneWaitingBehindIt() {
+		let a = SpeechSegment(id: "a", text: "")
+		var queue = [Utterance(segments: [a]), Utterance(cue: .done), Utterance(segments: [a])]
+		Utterance.skip(&queue)
+		XCTAssertEqual(queue.count, 1)
+		XCTAssertNil(queue[0].cue)
+		queue = [Utterance(segments: [a]), Utterance(cue: .done, pending: Task { [] })]
+		Utterance.skip(&queue)
+		XCTAssertEqual(queue.count, 1, "a question still being fetched keeps its place")
+		queue = [Utterance(cue: .done)]
+		Utterance.skip(&queue)
+		XCTAssertTrue(queue.isEmpty)
+	}
+
+	func testCuesAreTooShortToOpenATake() {
+		for cue in VoiceCue.allCases {
+			let samples = cue.samples()
+			XCTAssertFalse(samples.isEmpty)
+			XCTAssertLessThan(Double(samples.count) / 16_000, VoiceTiming.openSeconds)
+			XCTAssertLessThanOrEqual(samples.map(abs).max() ?? 0, 0.25)
+			XCTAssertLessThan(abs(samples[0]), 0.01, "fades in")
+			XCTAssertEqual(cue.wav.count, 44 + samples.count * 2)
+		}
+		XCTAssertTrue(VoiceCue.acknowledgements.allSatisfy { $0.count <= 20 }, "acknowledgements stay short")
 	}
 
 	func testSpeechRequestsUseDecksProxies() async throws {

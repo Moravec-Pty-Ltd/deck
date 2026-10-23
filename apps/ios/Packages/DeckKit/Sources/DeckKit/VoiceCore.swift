@@ -49,16 +49,19 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 	public var handsFree = true
 	public var sensitivity: VadSensitivity = .medium
 	public var endOfSpeech: EndOfSpeech = .normal
+	/// A soft tick while the agent works and nothing is being read.
+	public var workingCue = true
 	/// Bumped when a default changes for everyone. Both clients save the whole
 	/// object, so a stored false is not a choice until it carries this version.
 	public private(set) var version = VoiceSettings.currentVersion
 	static let currentVersion = 2
 
-	public init(chattiness: Chattiness = .everyUpdate, handsFree: Bool = true, sensitivity: VadSensitivity = .medium, endOfSpeech: EndOfSpeech = .normal) {
+	public init(chattiness: Chattiness = .everyUpdate, handsFree: Bool = true, sensitivity: VadSensitivity = .medium, endOfSpeech: EndOfSpeech = .normal, workingCue: Bool = true) {
 		self.chattiness = chattiness
 		self.handsFree = handsFree
 		self.sensitivity = sensitivity
 		self.endOfSpeech = endOfSpeech
+		self.workingCue = workingCue
 	}
 
 	// Each key is optional so settings saved before a key existed keep the rest
@@ -70,6 +73,7 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 		handsFree = stored < Self.currentVersion ? true : try container.decodeIfPresent(Bool.self, forKey: .handsFree) ?? true
 		sensitivity = try container.decodeIfPresent(VadSensitivity.self, forKey: .sensitivity) ?? .medium
 		endOfSpeech = (try? container.decodeIfPresent(EndOfSpeech.self, forKey: .endOfSpeech)) ?? .normal
+		workingCue = try container.decodeIfPresent(Bool.self, forKey: .workingCue) ?? true
 	}
 
 	static let defaultsKey = "deck.voice.settings"
@@ -95,6 +99,87 @@ public enum VoiceTiming {
 	public static let preRollSeconds: TimeInterval = 1
 	public static let maxTakeSeconds: TimeInterval = 120
 	public static let minTakeSeconds: TimeInterval = 0.5
+}
+
+// MARK: - Cues
+
+/// The short tones voice mode plays around a turn: the agent is still working,
+/// and the turn ended (or a question waits) with nothing read.
+public enum VoiceCue: CaseIterable, Sendable {
+	case working, done
+
+	/// What voice mode says once a take is sent, ChatGPT-style, so you know it
+	/// was heard; they rotate so it doesn't sound canned. Short, so the server
+	/// caches their audio once and they play at once after.
+	public static let acknowledgements = ["Got it.", "On it.", "Okay, checking.", "Sure, one moment."]
+
+	/// How often the working cue ticks.
+	public static let workingSeconds: TimeInterval = 3
+
+	// Notes as (Hz, seconds) and the peak level. Every cue is shorter than
+	// VoiceTiming.openSeconds, so on an open mic it can't start a take.
+	private var notes: [(hz: Double, seconds: Double)] {
+		switch self {
+		case .working: return [(440, 0.04)]
+		case .done: return [(990, 0.06), (660, 0.09)]
+		}
+	}
+
+	private var gain: Float { self == .working ? 0.06 : 0.25 }
+
+	/// Mono samples: sine notes with a 5 ms fade at each end so they don't click.
+	public func samples(sampleRate: Double = 16_000) -> [Float] {
+		let fade = (sampleRate * 0.005).rounded()
+		return notes.flatMap { note -> [Float] in
+			let n = Int((sampleRate * note.seconds).rounded())
+			return (0..<n).map { i in
+				let envelope = Float(min(1, Double(i) / fade, Double(n - 1 - i) / fade))
+				return gain * envelope * Float(sin(2 * .pi * note.hz * Double(i) / sampleRate))
+			}
+		}
+	}
+
+	/// The cue as a 16 kHz WAV file, for AVAudioPlayer.
+	public var wav: Data {
+		var pcm = Data()
+		for s in samples() { withUnsafeBytes(of: Int16(max(-1, min(1, s)) * 32_767).littleEndian) { pcm.append(contentsOf: $0) } }
+		return VoiceAudio.wav(pcm16: pcm, sampleRate: 16_000)
+	}
+
+	/// The working cue ticks while the agent works (a turn running, or a message
+	/// on its way) with the cue wanted, no question waiting, and nothing being
+	/// recorded, transcribed or read.
+	public static func workingPlays(wanted: Bool, working: Bool, asking: Bool, busy: Bool) -> Bool {
+		wanted && working && !asking && !busy
+	}
+
+	/// The done cue marks a turn's end only when no reply was read during it
+	/// and no final reply is about to be.
+	public static func donePlays(willRead: Bool, replied: Bool) -> Bool {
+		!willRead && !replied
+	}
+}
+
+/// One thing to read, in queue order. `cue` plays before the first segment,
+/// or alone when there are no segments (the done cue behind a reply).
+/// `pending` holds the place in the queue while the segments are fetched, so
+/// reads stay in order.
+public struct Utterance {
+	public var segments: [SpeechSegment]
+	public var cue: VoiceCue?
+	public var pending: Task<[SpeechSegment], Never>?
+
+	public init(segments: [SpeechSegment] = [], cue: VoiceCue? = nil, pending: Task<[SpeechSegment], Never>? = nil) {
+		self.segments = segments
+		self.cue = cue
+		self.pending = pending
+	}
+
+	/// Skip drops the head, and a cue waiting behind it with nothing to read.
+	public static func skip(_ queue: inout [Utterance]) {
+		queue.removeFirst()
+		while let head = queue.first, head.segments.isEmpty, head.pending == nil { queue.removeFirst() }
+	}
 }
 
 // MARK: - Questions

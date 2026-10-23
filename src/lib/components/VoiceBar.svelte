@@ -170,6 +170,15 @@
 				/>
 				<span>Hands-free</span>
 			</label>
+			<label class="flex items-center gap-2">
+				<input
+					type="checkbox"
+					class="toggle toggle-sm"
+					checked={voice.settings.workingCue}
+					onchange={(e) => voice.updateSettings({ ...voice.settings, workingCue: (e.currentTarget as HTMLInputElement).checked })}
+				/>
+				<span>Working sound</span>
+			</label>
 			{#if voice.settings.handsFree}
 				<label class="flex items-center gap-2">
 					<span class="opacity-70">Sensitivity</span>

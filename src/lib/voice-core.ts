@@ -8,6 +8,18 @@ import { matchSpokenAnswer, questionSpeech, type SpokenQuestion, type Chattiness
 export interface Utterance {
 	// Segments still to play, in order; the head is the one playing.
 	segments: { id: string; text: string }[];
+	// A cue to play before the first segment (the done cue ahead of a question),
+	// or on its own when there are no segments (the done cue behind a reply).
+	cue?: Cue;
+	// Segments still being fetched. The utterance holds its place in the queue
+	// meanwhile, so reads stay in order.
+	pending?: Promise<{ id: string; text: string }[]>;
+}
+
+// Skip drops the head, and a cue waiting behind it with nothing to read.
+export function skipUtterance(queue: Utterance[]): void {
+	queue.shift();
+	while (queue[0] && !queue[0].segments.length && !queue[0].pending) queue.shift();
 }
 
 export interface VoiceSettings {
@@ -15,13 +27,16 @@ export interface VoiceSettings {
 	handsFree: boolean;
 	sensitivity: VadSensitivity;
 	endOfSpeech: EndOfSpeech;
+	// A soft tick while the agent works and nothing is being read.
+	workingCue: boolean;
 }
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 	chattiness: 'every-update',
 	handsFree: true,
 	sensitivity: 'medium',
-	endOfSpeech: 'normal'
+	endOfSpeech: 'normal',
+	workingCue: true
 };
 
 const VOICE_SETTINGS_VERSION = 2;
@@ -40,7 +55,8 @@ export function parseVoiceSettings(raw: string | null): VoiceSettings {
 			// move to hands-free once; a later choice of hold-to-talk sticks.
 			handsFree: (o.v ?? 0) >= VOICE_SETTINGS_VERSION ? o.handsFree !== false : true,
 			sensitivity: o.sensitivity === 'low' || o.sensitivity === 'high' ? o.sensitivity : 'medium',
-			endOfSpeech: o.endOfSpeech === 'short' || o.endOfSpeech === 'long' ? o.endOfSpeech : 'normal'
+			endOfSpeech: o.endOfSpeech === 'short' || o.endOfSpeech === 'long' ? o.endOfSpeech : 'normal',
+			workingCue: o.workingCue !== false
 		};
 	} catch {
 		return DEFAULT_VOICE_SETTINGS;
@@ -311,6 +327,60 @@ export function missedStart(
 ): { edge: 'start' | 'stop' | null; missed: boolean } {
 	const pending = edge !== 'stop' && (missed || (edge === 'start' && speaking));
 	return { edge: pending && !speaking ? 'start' : edge, missed: pending };
+}
+
+// ---- Cues ----
+
+export type Cue = 'working' | 'done';
+
+// How often the working cue ticks.
+export const WORKING_CUE_MS = 3000;
+
+// Each cue's notes as [Hz, ms] and its peak level. Every cue is shorter than
+// VAD_OPEN_MS, so on an open mic it can't hold long enough to start a take.
+const CUES: Record<Cue, { notes: [number, number][]; gain: number }> = {
+	working: { notes: [[440, 40]], gain: 0.06 },
+	done: { notes: [[990, 60], [660, 90]], gain: 0.25 }
+};
+
+// A cue as mono samples at `rate` Hz: sine notes with a 5 ms fade at each end
+// so they don't click.
+export function cueSamples(cue: Cue, rate: number): Float32Array {
+	const { notes, gain } = CUES[cue];
+	const fade = Math.round(rate * 0.005);
+	const out = new Float32Array(notes.reduce((n, [, ms]) => n + Math.round((rate * ms) / 1000), 0));
+	let at = 0;
+	for (const [hz, ms] of notes) {
+		const n = Math.round((rate * ms) / 1000);
+		for (let i = 0; i < n; i++) out[at + i] = gain * Math.min(1, i / fade, (n - 1 - i) / fade) * Math.sin((2 * Math.PI * hz * i) / rate);
+		at += n;
+	}
+	return out;
+}
+
+// What voice mode says once a take is sent, ChatGPT-style, so you know it was
+// heard; they rotate so it doesn't sound canned. Short, so the server caches
+// their audio once and they play at once after.
+export const ACKNOWLEDGEMENTS = ['Got it.', 'On it.', 'Okay, checking.', 'Sure, one moment.'];
+
+// The working cue ticks while the agent works (a turn running, or a message on
+// its way) with the cue wanted, no question waiting, and nothing being
+// recorded, transcribed or read.
+export function workingCuePlays(wanted: boolean, working: boolean, asking: boolean, busy: boolean): boolean {
+	return wanted && working && !asking && !busy;
+}
+
+// The done cue marks a turn's end only when no reply was read during it and no
+// final reply is about to be.
+export function doneCuePlays(willRead: boolean, replied: boolean): boolean {
+	return !willRead && !replied;
+}
+
+// What a turn's end does in voice mode: read the final reply held back for
+// it, and play the done cue when no reply was or will be read.
+export function turnEnd(chattiness: Chattiness, held: string, replied: boolean): { read: string | null; done: boolean } {
+	const read = chattiness === 'final-only' && held ? held : null;
+	return { read, done: doneCuePlays(!!read, replied) };
 }
 
 // The segment to warm while the head plays: the rest of this utterance, else
