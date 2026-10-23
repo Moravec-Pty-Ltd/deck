@@ -14,7 +14,18 @@ final class HingeMonitor {
 
 	var posture: Posture = .unknown
 	/// The window's full size, so a layout can put its seam on the fold.
-	var windowSize: CGSize = .zero
+	var windowSize: CGSize = .zero {
+		// The keyboard takes height at the same width; that is not a shorter window.
+		didSet { fullHeight = windowSize.width == oldValue.width ? max(fullHeight, windowSize.height) : windowSize.height }
+	}
+	private var fullHeight: CGFloat = 0
+
+	/// A phone window under 720 pt tall: either display of a foldable (678 and
+	/// 669 pt), not a phone in portrait (850 pt or more). It gives the title
+	/// band and the composer's second row to the conversation.
+	var isShort: Bool {
+		UIDevice.current.userInterfaceIdiom == .phone && fullHeight > 0 && fullHeight < 720
+	}
 
 	/// Tests and demos can fake the fold with `DECK_HINGE`: a posture name, or
 	/// `tabletop` for half open with the fold across the window whatever the

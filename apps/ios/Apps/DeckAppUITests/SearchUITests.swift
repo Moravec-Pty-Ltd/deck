@@ -27,7 +27,7 @@ final class SearchUITests: XCTestCase {
 		let hit = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'You picked'")).firstMatch
 		XCTAssertTrue(hit.waitForExistence(timeout: 20), "no search hit rendered\n\(app.debugDescription.prefix(3000))")
 		hit.tap()
-		XCTAssertTrue(app.navigationBars["voice smoke"].waitForExistence(timeout: 20), "the hit should open its session")
+		XCTAssertTrue(app.buttons.matching(identifier: "renameSession").matching(NSPredicate(format: "label == %@", "voice smoke")).firstMatch.waitForExistence(timeout: 20), "the hit should open its session")
 		// In the transcript: on iPad the hit's own row stays in the list beside it.
 		XCTAssertTrue(app.scrollViews.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'You picked'")).firstMatch.waitForExistence(timeout: 20))
 	}
@@ -65,7 +65,7 @@ final class SearchUITests: XCTestCase {
 
 		app.staticTexts["file previews"].firstMatch.tap()
 		XCTAssertTrue(
-			app.navigationBars["file previews"].waitForExistence(timeout: 20),
+			app.buttons.matching(identifier: "renameSession").matching(NSPredicate(format: "label == %@", "file previews")).firstMatch.waitForExistence(timeout: 20),
 			"the name match should open its session")
 	}
 }
