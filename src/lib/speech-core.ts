@@ -143,8 +143,9 @@ export function readOutOf(body: Record<string, unknown>): ReadOut {
 	return body.brief === true ? 'brief' : 'full';
 }
 
-// What to segment: the summary, else the reply. Brief cuts the reply to its
-// opening when the summary never came, and caps a summary that ran long.
+// What to segment: the summary, else the reply. `brief` makes prepareSegments
+// read it through briefSpokenText, which cuts the reply to its opening when the
+// summary never came, and caps a summary that ran long at the same length.
 export function readOutText(reply: string, readOut: ReadOut, summary: string | null): { text: string; brief: boolean } {
 	return { text: summary ?? reply, brief: readOut !== 'full' };
 }

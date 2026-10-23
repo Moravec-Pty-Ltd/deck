@@ -475,6 +475,7 @@ const summaries = new Map<string, Promise<string | null>>();
 
 export function spokenSummary(reply: string): Promise<string | null> {
 	if (!operatorConfigured()) return Promise.resolve(null);
+	reply = reply.trim();
 	let summary = summaries.get(reply);
 	if (!summary) {
 		summary = callModel(spokenSummaryMessages(reply), false).then(
