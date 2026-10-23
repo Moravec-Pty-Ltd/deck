@@ -21,7 +21,9 @@ final class FoldableUITests: XCTestCase {
 		XCTAssertTrue(app.staticTexts["No session open"].exists, "the detail column starts empty beside the list")
 		row.tap()
 
-		XCTAssertTrue(app.navigationBars["Stream token diff renderer"].waitForExistence(timeout: 20))
+		let title = app.buttons["renameSession"]
+		XCTAssertTrue(title.waitForExistence(timeout: 20))
+		XCTAssertEqual(title.label, "Stream token diff renderer")
 		XCTAssertTrue(app.navigationBars["Sessions"].exists, "the list stays open beside the session")
 		XCTAssertTrue(app.staticTexts["dev server"].exists)
 		attach(app, "open-flat")
@@ -91,39 +93,116 @@ final class FoldableUITests: XCTestCase {
 	}
 
 	/// Two sessions side by side each fill their half of the fold, with their
-	/// own bar, close button and composer, all clear of the tab rail.
+	/// own header, close button and composer, all clear of the tab rail.
 	func testTwoSessionsSplitOnTheFold() throws {
 		guard Self.isFoldable else { throw XCTSkip("opened flat needs the iPhone Duo simulator") }
 		let app = try Self.launch(environment: [:])
 		app.buttons["Sessions"].firstMatch.tap()
-		let main = "Stream token diff renderer", beside = "Yolo badge in session header"
-		let row = Self.listItem(main, in: app)
+		let row = Self.listItem("Stream token diff renderer", in: app)
 		XCTAssertTrue(row.waitForExistence(timeout: 20))
 		row.tap()
-		XCTAssertTrue(app.navigationBars[main].waitForExistence(timeout: 20))
-		Self.listItem(beside, in: app).press(forDuration: 1)
+		XCTAssertTrue(app.buttons["renameSession"].waitForExistence(timeout: 20))
+		Self.listItem("Yolo badge in session header", in: app).press(forDuration: 1)
 		app.buttons["Open beside"].tap()
-		let leftBar = app.navigationBars[beside], rightBar = app.navigationBars[main]
-		XCTAssertTrue(leftBar.waitForExistence(timeout: 20), "no second session\n\(app.debugDescription.prefix(3000))")
+		let closes = app.buttons.matching(identifier: "closePane")
+		XCTAssertTrue(closes.element(boundBy: 1).waitForExistence(timeout: 20), "no second session\n\(app.debugDescription.prefix(3000))")
 		sleep(2)
 		attach(app, "two-up")
 
 		let window = app.windows.firstMatch.frame
 		let rail = app.buttons["Inbox"].firstMatch.frame.minX
-		let composers = app.textViews.matching(identifier: "sessionComposer").allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
-		let transcripts = app.scrollViews.matching(identifier: "transcript").allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
-		let frames = "window \(window) rail \(rail) bars \(leftBar.frame) \(rightBar.frame) composers \(composers) transcripts \(transcripts)"
-		XCTAssertEqual(composers.count, 2, frames)
-		XCTAssertEqual(transcripts.count, 2, frames)
-		for (name, left, right) in [("bar", leftBar.frame, rightBar.frame), ("transcript", transcripts[0], transcripts[1])] {
-			XCTAssertEqual(left.maxX, window.midX, accuracy: 2, "the left \(name) reaches the fold: \(frames)")
-			XCTAssertEqual(right.minX, window.midX, accuracy: 2, "the right \(name) starts at the fold: \(frames)")
-			XCTAssertLessThanOrEqual(right.maxX, rail, "the right \(name) stays clear of the rail: \(frames)")
+		let frames = { (id: String, type: XCUIElement.ElementType) in
+			app.descendants(matching: type).matching(identifier: id).allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
 		}
-		XCTAssertGreaterThan(composers[0].maxX, window.midX - 40, "the left composer reaches the fold: \(frames)")
-		XCTAssertLessThanOrEqual(composers[1].maxX, rail, "the right composer stays clear of the rail: \(frames)")
-		XCTAssertTrue(leftBar.buttons["closePane"].exists, "the left pane closes from its own bar")
-		XCTAssertTrue(rightBar.buttons["closePane"].exists, "the right pane closes from its own bar")
+		let close = frames("closePane", .button), composers = frames("sessionComposer", .textView), transcripts = frames("transcript", .scrollView)
+		let found = "window \(window) rail \(rail) close \(close) composers \(composers) transcripts \(transcripts)"
+		XCTAssertEqual(close.count, 2, found)
+		XCTAssertEqual(composers.count, 2, found)
+		XCTAssertEqual(transcripts.count, 2, found)
+		XCTAssertLessThan(close[0].maxX, window.midX, "the left pane closes from its own header: \(found)")
+		XCTAssertGreaterThan(close[1].minX, window.midX, "the right pane closes from its own header: \(found)")
+		XCTAssertEqual(transcripts[0].maxX, window.midX, accuracy: 2, "the left pane reaches the fold: \(found)")
+		XCTAssertEqual(transcripts[1].minX, window.midX, accuracy: 2, "the right pane starts at the fold: \(found)")
+		XCTAssertLessThanOrEqual(transcripts[1].maxX, rail, "the right pane stays clear of the rail: \(found)")
+		XCTAssertGreaterThan(composers[0].maxX, window.midX - 40, "the left composer reaches the fold: \(found)")
+		XCTAssertLessThanOrEqual(composers[1].maxX, rail, "the right composer stays clear of the rail: \(found)")
+	}
+
+	/// Both of the foldable's displays are short, so the session's title band
+	/// and the composer's second row give their height to the conversation:
+	/// one header line with the title, the browser and the menu, a finished PR
+	/// as a badge in it, and a composer whose controls stand in a column,
+	/// cut to Send and More while typing. The list's title is inline.
+	func testShortWindowUsesOneHeaderLineAndAOneRowComposer() throws {
+		guard Self.isFoldable else { throw XCTSkip("a short window needs the iPhone Duo simulator") }
+		let app = try Self.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
+		let window = app.windows.firstMatch.frame
+		let openFlat = window.width > window.height
+		let list = app.navigationBars["Sessions"]
+		XCTAssertTrue(list.waitForExistence(timeout: 20))
+		XCTAssertEqual(list.staticTexts["Sessions"].frame.midY, list.buttons["Select"].frame.midY, accuracy: 8,
+			"the list's title is inline, beside its toolbar")
+
+		Self.listItem("Stream token diff renderer", in: app).tap()
+		let title = app.buttons["renameSession"]
+		XCTAssertTrue(title.waitForExistence(timeout: 20), "no header line\n\(app.debugDescription.prefix(3000))")
+		XCTAssertFalse(app.navigationBars["Stream token diff renderer"].exists, "no title band")
+		for control in ["openBrowser", "sessionMenu"] + (openFlat ? [] : ["sessionBack"]) {
+			let button = app.buttons[control]
+			XCTAssertTrue(button.isHittable, "\(control) is reachable")
+			XCTAssertEqual(button.frame.midY, title.frame.midY, accuracy: 12, "\(control) shares the title's line")
+		}
+		let field = app.textViews["sessionComposer"]
+		XCTAssertTrue(field.waitForExistence(timeout: 20), "the session is still loading")
+		let row = app.buttons["prRow"]
+		XCTAssertTrue(row.waitForExistence(timeout: 10), "an open PR keeps its row")
+		let send = app.buttons["Send"]
+		let photos = app.buttons["Attach photos"]
+		XCTAssertTrue(photos.exists)
+		XCTAssertGreaterThan(send.frame.minY, photos.frame.maxY, "Send sits under the column of controls")
+		XCTAssertGreaterThan(send.frame.minX, field.frame.maxX, "the column stands right of the message")
+		attach(app, "short-session")
+
+		field.tap()
+		field.typeText("One line")
+		let more = app.buttons["composerMore"]
+		XCTAssertTrue(more.waitForExistence(timeout: 5), "typing cuts the column to Send and More")
+		XCTAssertFalse(photos.exists)
+		XCTAssertEqual(send.frame.midY, field.frame.midY, accuracy: 12, "a one-line message is one line tall")
+		XCTAssertEqual(more.frame.midY, send.frame.midY, accuracy: 6)
+		XCTAssertTrue(row.waitForNonExistence(timeout: 5), "the PR row steps aside while typing")
+		attach(app, "short-typing")
+		// Cleared, or the draft follows into the next session and the tests after.
+		field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (field.value as? String ?? "").count))
+		XCTAssertEqual(field.value as? String ?? "", "", "the draft is cleared")
+
+		more.tap()
+		XCTAssertTrue(app.buttons["Attach photos"].waitForExistence(timeout: 5), "More offers the photos")
+		XCTAssertTrue(app.buttons["Quick messages"].exists, "and the quick messages")
+		// The first tap may only close the menu; the transcript's top is clear of it.
+		let transcript = app.scrollViews["transcript"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
+		transcript.tap()
+		if !row.waitForExistence(timeout: 3) { transcript.tap() }
+		XCTAssertTrue(row.waitForExistence(timeout: 5), "the PR row comes back once typing stops")
+
+		title.tap()
+		let rename = app.navigationBars["Rename session"]
+		XCTAssertTrue(rename.waitForExistence(timeout: 5), "the title still renames")
+		app.buttons["Cancel"].tap()
+		XCTAssertTrue(rename.waitForNonExistence(timeout: 5))
+
+		if !openFlat {
+			app.buttons["sessionBack"].tap()
+			XCTAssertTrue(list.waitForExistence(timeout: 5), "back goes to the list")
+		}
+		Self.listItem("merged pr", in: app).tap()
+		let badge = app.staticTexts["prBadge"]
+		XCTAssertTrue(badge.waitForExistence(timeout: 20), "a merged PR is a badge in the header line\n\(app.debugDescription.prefix(3000))")
+		XCTAssertEqual(badge.label, "Merged")
+		XCTAssertEqual(badge.frame.midY, app.buttons["renameSession"].frame.midY, accuracy: 12)
+		XCTAssertFalse(app.buttons["prRow"].exists, "with no row of its own")
+		attach(app, "short-merged")
 	}
 
 	/// Half open with a PR and a question pending, everything to tap lies on

@@ -490,6 +490,8 @@ struct SessionsView: View {
 			}
 		}
 		.navigationTitle("Sessions")
+		// On a short window the toolbar and the title share one row.
+		.navigationBarTitleDisplayMode(hinge.isShort ? .inline : .automatic)
 		.searchable(text: $query, prompt: "Search sessions")
 		.searchFocused($searchFocused)
 		.onChange(of: query) { _, text in runSearch(text) }

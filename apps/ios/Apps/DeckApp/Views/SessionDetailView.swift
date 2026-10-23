@@ -30,6 +30,8 @@ struct SessionDetailView: View {
 	@Environment(HingeMonitor.self) private var hinge
 	@Environment(\.openURL) private var openURL
 	@Environment(\.dismiss) private var dismiss
+	/// Pushed over the list, so the header line needs its own back button.
+	@Environment(\.isPresented) private var isPushed
 
 	/// The view's own model when there is no shared one.
 	@State private var ownModel: SessionDetailViewModel?
@@ -42,6 +44,7 @@ struct SessionDetailView: View {
 	@State private var isSending = false
 	@AppStorage("condensedTranscript") private var condensedTranscript = true
 	@State private var photoItems: [PhotosPickerItem] = []
+	@State private var showPhotoPicker = false
 	@State private var composerFocused = false
 	@State private var pasteFailures = 0
 	@State private var leaving = false
@@ -126,6 +129,10 @@ struct SessionDetailView: View {
 
 	private var title: String { SessionDetailViewModel.title(of: session, id: sessionId) }
 
+	/// A short window outside the tabletop: one header line instead of the
+	/// navigation bar, and a one-row composer.
+	private var isShort: Bool { hinge.isShort && !hinge.isTabletop }
+
 
 	/// Send, stop and compact for ⌘Return, ⌘. and ⇧⌘K (see DeckCommands).
 	private var keyboardActions: DeckSessionActions {
@@ -141,9 +148,11 @@ struct SessionDetailView: View {
 	var body: some View {
 		content
 			.safeAreaInset(edge: .top, spacing: 0) { ServerTooOldBanner(needs: Self.needs) }
+			.safeAreaInset(edge: .top, spacing: 0) { if isShort { headerLine } }
 			.navigationTitle(title)
 			.navigationBarTitleDisplayMode(.inline)
-			.toolbar { toolbarContent }
+			.toolbar(isShort ? .hidden : .automatic, for: .navigationBar)
+			.toolbar { if !isShort { toolbarContent } }
 			.focusedSceneValue(\.deckSession, isActivePane == false ? nil : keyboardActions)
 			// Simultaneous, so the tap still reaches whatever it landed on.
 			.simultaneousGesture(TapGesture().onEnded { onActivate?() })
@@ -207,38 +216,10 @@ struct SessionDetailView: View {
 	@ToolbarContentBuilder
 	private var toolbarContent: some ToolbarContent {
 		if let onClose {
-			ToolbarItem(placement: .topBarLeading) {
-				Button(action: onClose) {
-					Image(systemName: "xmark")
-				}
-				.accessibilityLabel("Close session")
-				.accessibilityIdentifier("closePane")
-			}
+			ToolbarItem(placement: .topBarLeading) { closeButton(onClose) }
 		}
 		ToolbarItem(placement: .principal) {
-			Button {
-				onActivate?()
-				showRenameSheet = true
-			} label: {
-				Text(title)
-					.font(.headline)
-					.lineLimit(1)
-					.foregroundStyle(isActivePane == false ? .secondary : .primary)
-			}
-			.buttonStyle(.plain)
-			.accessibilityHint("Rename")
-			.accessibilityIdentifier("renameSession")
-			.offTheFold(isPresented: $showRenameSheet) {
-				RenameSessionSheet(current: title) { newTitle in
-					do {
-						let id = try await store.rename(sessionId: sessionId, title: newTitle)
-						if id != sessionId { onIdChanged?(id) }
-						return nil
-					} catch {
-						return error.localizedDescription
-					}
-				}
-			}
+			titleButton
 		}
 		// With two sessions showing, the browser sits in each pane's menu.
 		if onClose == nil {
@@ -249,19 +230,98 @@ struct SessionDetailView: View {
 		}
 	}
 
-	private var browserButton: some View {
+	/// The navigation bar's contents on one line for a short window: back or
+	/// close, the title, a finished PR's badge, then the browser and the menu.
+	private var headerLine: some View {
+		HStack(spacing: 14) {
+			if let onClose {
+				closeButton(onClose)
+			} else if isPushed {
+				Button {
+					dismiss()
+				} label: {
+					Image(systemName: "chevron.backward")
+				}
+				.accessibilityLabel("Back")
+				.accessibilityIdentifier("sessionBack")
+			}
+			titleButton
+			if let pr = finishedPR, let state = PRDisplay.readiness(for: pr) {
+				// The title gives way first.
+				Text(verbatim: pr.number.map { "#\($0)" } ?? "PR")
+					.font(.subheadline)
+					.foregroundStyle(.secondary)
+					.fixedSize()
+				Chip(text: state.label, color: state.color)
+					.fixedSize()
+					.accessibilityIdentifier("prBadge")
+			}
+			Spacer(minLength: 0)
+			if onClose == nil { browserButton }
+			sessionMenu
+		}
+		// The bar's buttons, without a bar to size their tap areas.
+		.buttonStyle(HeaderButtonStyle())
+		.padding(.horizontal)
+		.padding(.vertical, 6)
+		.background(.bar)
+	}
+
+	private func closeButton(_ onClose: @escaping () -> Void) -> some View {
+		Button(action: onClose) {
+			Image(systemName: "xmark")
+		}
+		.accessibilityLabel("Close session")
+		.accessibilityIdentifier("closePane")
+	}
+
+	private var titleButton: some View {
 		Button {
 			onActivate?()
+			showRenameSheet = true
+		} label: {
+			Text(title)
+				.font(.headline)
+				.lineLimit(1)
+				.foregroundStyle(isActivePane == false ? .secondary : .primary)
+		}
+		.buttonStyle(.plain)
+		.accessibilityHint("Rename")
+		.accessibilityIdentifier("renameSession")
+		.offTheFold(isPresented: $showRenameSheet) {
+			RenameSessionSheet(current: title) { newTitle in
+				do {
+					let id = try await store.rename(sessionId: sessionId, title: newTitle)
+					if id != sessionId { onIdChanged?(id) }
+					return nil
+				} catch {
+					return error.localizedDescription
+				}
+			}
+		}
+	}
+
+	private var browserButton: some View {
+		Button {
 			showBrowser = true
 		} label: {
-			Label("Browser", systemImage: "globe")
+			Image(systemName: "globe")
 		}
+		.accessibilityLabel("Browser")
 		.accessibilityIdentifier("openBrowser")
 	}
 
 	private var sessionMenu: some View {
 		Menu {
-			if onClose != nil { browserButton }
+			if onClose != nil {
+				Button {
+					onActivate?()
+					showBrowser = true
+				} label: {
+					Label("Browser", systemImage: "globe")
+				}
+				.accessibilityIdentifier("openBrowser")
+			}
 			Section {
 				Picker("Transcript", selection: $condensedTranscript) {
 					Label("Chat", systemImage: "bubble.left.and.bubble.right").tag(true)
@@ -464,7 +524,7 @@ struct SessionDetailView: View {
 	/// The phone layout: one column, the composer at the bottom.
 	private func stacked(_ viewModel: SessionDetailViewModel) -> some View {
 		VStack(spacing: 0) {
-			prHeader(viewModel)
+			if showsPRRow { prHeader(viewModel) }
 			transcript(viewModel)
 			if session?.status == .running {
 				workingIndicator
@@ -533,6 +593,15 @@ struct SessionDetailView: View {
 	}
 
 	private var hasOpenPR: Bool { session?.pr?.state?.lowercased() == "open" }
+
+	/// A merged or closed PR, which a short window shows in the header line.
+	private var finishedPR: SessionPR? {
+		session?.pr.flatMap { ["merged", "closed"].contains($0.state?.lowercased()) ? $0 : nil }
+	}
+
+	/// On a short window the open PR's row steps aside while typing, and a
+	/// finished one is only a badge in the header line.
+	private var showsPRRow: Bool { !isShort || (finishedPR == nil && !composerFocused) }
 
 	/// How much of this view stands above the fold: from its top down to the
 	/// window's midline, leaving the composer room below when the keyboard
@@ -727,7 +796,7 @@ struct SessionDetailView: View {
 						}
 						.id("streaming")
 					}
-					if embedsActivity {
+					if embedsActivity, !(isShort && composerFocused) {
 						ActivityList(entries: viewModel.activity, onCancel: viewModel.cancelWatch, onOpen: viewModel.open)
 					}
 					// A fixed-size end marker to scroll to: aiming at the last row
@@ -891,8 +960,58 @@ struct SessionDetailView: View {
 
 	/// One rounded piece: the attachments and the message on top, the controls
 	/// in a row underneath, send at the end. Return adds a line, so sending
-	/// is the button (or ⌘Return).
+	/// is the button (or ⌘Return). A short window puts the controls in a
+	/// column at the right edge instead, cut to Send and More while typing,
+	/// so a one-line message is one line tall.
 	private func composer(_ viewModel: SessionDetailViewModel) -> some View {
+		Group {
+			if isShort {
+				HStack(alignment: .bottom, spacing: 12) {
+					composerMessage(viewModel)
+					if composerFocused {
+						composerMore(viewModel)
+							.font(.title3)
+						sendButton(viewModel)
+					} else {
+						VStack(spacing: 12) {
+							composerTools(viewModel)
+							sendButton(viewModel)
+						}
+						.font(.title3)
+					}
+				}
+			} else {
+				VStack(alignment: .leading, spacing: 10) {
+					composerMessage(viewModel)
+					HStack(spacing: 18) {
+						composerTools(viewModel)
+						Spacer(minLength: 0)
+						sendButton(viewModel)
+					}
+					.font(.title3)
+				}
+			}
+		}
+		.padding(12)
+		.deckGlass(in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
+		.padding(.horizontal, 8)
+		.padding(.vertical, 6)
+		.disabled(isSending)
+		.onDrop(of: [.image, .plainText, .url, .fileURL], isTargeted: nil) { providers in
+			Task { await drop(providers, into: viewModel) }
+			return true
+		}
+		.onChange(of: photoItems) { _, items in
+			Task { await loadPhotos(items, to: viewModel) }
+		}
+		.photosPicker(isPresented: $showPhotoPicker, selection: $photoItems, maxSelectionCount: 8, matching: .images)
+		.offTheFold(isPresented: $showQuickManage) {
+			QuickMessagesSheet()
+		}
+	}
+
+	/// The cross-session label and the attachments above the message field.
+	private func composerMessage(_ viewModel: SessionDetailViewModel) -> some View {
 		VStack(alignment: .leading, spacing: 10) {
 			if ComposerDraft.isCrossSession(viewModel.draftOrigin, current: sessionId) {
 				Label("from: \(viewModel.draftOriginTitle)", systemImage: "arrow.left.arrow.right")
@@ -934,68 +1053,84 @@ struct SessionDetailView: View {
 			// Here, not in the view's onAppear: the field only exists once the
 			// body has left its loading state, and focus set earlier is lost.
 			.onAppear { if viewModel.composerFocused { composerFocused = true } }
-			HStack(spacing: 18) {
-				PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
-					Image(systemName: "photo.on.rectangle")
-				}
-				.accessibilityLabel("Attach photos")
-				if store.supports(.quickMessages) {
-					Menu {
-						let offered = store.quickMessages(for: session)
-						if offered.isEmpty {
-							Text("No quick messages")
-						}
-						ForEach(offered) { message in
-							Button(message.displayLabel) {
-								Task { await viewModel.sendQuickMessage(text: message.text) }
-							}
-						}
-						Divider()
-						Button {
-							showQuickManage = true
-						} label: {
-							Label("Manage…", systemImage: "slider.horizontal.3")
-						}
-					} label: {
-						Image(systemName: "text.append")
-					}
-					.accessibilityLabel("Quick messages")
-					.offTheFold(isPresented: $showQuickManage) {
-						QuickMessagesSheet()
-					}
-				}
-				if let voice, voice.canRead {
-					Button {
-						if voice.enabled { voice.disable() } else { voice.enable() }
-					} label: {
-						Image(systemName: voice.enabled ? "waveform.circle.fill" : "waveform.circle")
-					}
-					.accessibilityLabel(voice.enabled ? "Turn voice mode off" : "Turn voice mode on")
-				}
-				Spacer(minLength: 0)
-				Button {
-					sendComposer(viewModel)
-				} label: {
-					Image(systemName: "arrow.up.circle.fill")
-						.font(.title)
-				}
-				.disabled(!viewModel.hasDraft)
-				.accessibilityLabel("Send")
+		}
+	}
+
+	/// Photos, quick messages and voice mode.
+	@ViewBuilder
+	private func composerTools(_ viewModel: SessionDetailViewModel) -> some View {
+		PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
+			Image(systemName: "photo.on.rectangle")
+		}
+		.accessibilityLabel("Attach photos")
+		if store.supports(.quickMessages) {
+			Menu {
+				quickMessages(viewModel)
+			} label: {
+				Image(systemName: "text.append")
 			}
-			.font(.title3)
+			.accessibilityLabel("Quick messages")
 		}
-		.padding(12)
-		.deckGlass(in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
-		.padding(.horizontal, 8)
-		.padding(.vertical, 6)
-		.disabled(isSending)
-		.onDrop(of: [.image, .plainText, .url, .fileURL], isTargeted: nil) { providers in
-			Task { await drop(providers, into: viewModel) }
-			return true
+		if let voice, voice.canRead {
+			Button {
+				if voice.enabled { voice.disable() } else { voice.enable() }
+			} label: {
+				Image(systemName: voice.enabled ? "waveform.circle.fill" : "waveform.circle")
+			}
+			.accessibilityLabel(voice.enabled ? "Turn voice mode off" : "Turn voice mode on")
 		}
-		.onChange(of: photoItems) { _, items in
-			Task { await loadPhotos(items, to: viewModel) }
+	}
+
+	/// The same tools in a menu, for a short window while typing.
+	private func composerMore(_ viewModel: SessionDetailViewModel) -> some View {
+		Menu {
+			Button("Attach photos", systemImage: "photo.on.rectangle") { showPhotoPicker = true }
+			if store.supports(.quickMessages) {
+				Menu("Quick messages", systemImage: "text.append") { quickMessages(viewModel) }
+			}
+			if let voice, voice.canRead {
+				Button(
+					voice.enabled ? "Turn voice mode off" : "Turn voice mode on",
+					systemImage: voice.enabled ? "waveform.circle.fill" : "waveform.circle"
+				) {
+					if voice.enabled { voice.disable() } else { voice.enable() }
+				}
+			}
+		} label: {
+			Image(systemName: "plus.circle")
 		}
+		.accessibilityLabel("More")
+		.accessibilityIdentifier("composerMore")
+	}
+
+	@ViewBuilder
+	private func quickMessages(_ viewModel: SessionDetailViewModel) -> some View {
+		let offered = store.quickMessages(for: session)
+		if offered.isEmpty {
+			Text("No quick messages")
+		}
+		ForEach(offered) { message in
+			Button(message.displayLabel) {
+				Task { await viewModel.sendQuickMessage(text: message.text) }
+			}
+		}
+		Divider()
+		Button {
+			showQuickManage = true
+		} label: {
+			Label("Manage…", systemImage: "slider.horizontal.3")
+		}
+	}
+
+	private func sendButton(_ viewModel: SessionDetailViewModel) -> some View {
+		Button {
+			sendComposer(viewModel)
+		} label: {
+			Image(systemName: "arrow.up.circle.fill")
+				.font(.title)
+		}
+		.disabled(!viewModel.hasDraft)
+		.accessibilityLabel("Send")
 	}
 
 	private func attachmentThumbnail(_ image: DeckImage, viewModel: SessionDetailViewModel) -> some View {
@@ -1251,6 +1386,17 @@ struct QuestionCard: View {
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 		.overlay(RoundedRectangle(cornerRadius: DeckStyle.Radius.card).stroke(Color.accentColor.opacity(0.3), lineWidth: 0.5))
+	}
+}
+
+/// A header-line icon with a tap area as tall as a toolbar button's.
+private struct HeaderButtonStyle: ButtonStyle {
+	func makeBody(configuration: Configuration) -> some View {
+		configuration.label
+			.frame(minWidth: 32, minHeight: 32)
+			.contentShape(Rectangle())
+			.opacity(configuration.isPressed ? 0.5 : 1)
+			.foregroundStyle(.tint)
 	}
 }
 

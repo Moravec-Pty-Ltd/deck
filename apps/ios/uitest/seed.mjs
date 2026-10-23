@@ -123,7 +123,8 @@ const sessions = [
 	claude('c_long', 'long transcript', 4),
 	claude('c_files', 'file previews', 5),
 	claude('c_voice', 'voice smoke', 6),
-	claude('c_ask', 'ask smoke', 7, { pr: pr(42) })
+	claude('c_ask', 'ask smoke', 7, { pr: pr(42) }),
+	claude('c_merged', 'merged pr', 8, { pr: { ...pr(40), state: 'merged' } })
 ];
 
 const jsonl = (events) => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
