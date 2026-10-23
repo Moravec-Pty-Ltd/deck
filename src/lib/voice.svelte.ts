@@ -327,7 +327,7 @@ export class VoiceSession {
 		if (this.settings.chattiness === 'final-only') this.lastText = markdown;
 		else {
 			this.replied = true;
-			this.speak(markdown);
+			this.speak(markdown, undefined, true);
 		}
 	}
 
@@ -341,7 +341,7 @@ export class VoiceSession {
 		// Queued behind what is being read (an acknowledgement) so it waits for
 		// it; Skip, Stop and a new take drop it with the queue.
 		if (end.done) this.enqueue({ segments: [], cue: 'done' });
-		if (end.read) this.speak(end.read);
+		if (end.read) this.speak(end.read, undefined, true);
 	}
 
 	// A blocking question arrived: read it and route the next spoken reply to it.
@@ -357,10 +357,11 @@ export class VoiceSession {
 
 	// `cue` plays just before the first segment, once whatever is ahead of it
 	// has been read. The utterance takes its place in the queue now; its
-	// segments arrive while earlier ones play.
-	speak(text: string, cue?: Cue): void {
+	// segments arrive while earlier ones play. `brief` reads only the opening
+	// of a long reply.
+	speak(text: string, cue?: Cue, brief = false): void {
 		if (!this.enabled) return;
-		this.enqueue({ segments: [], cue, pending: this.fetchSegments(text) });
+		this.enqueue({ segments: [], cue, pending: this.fetchSegments(text, brief) });
 	}
 
 	private enqueue(utterance: Utterance, standalone = false): void {
@@ -379,9 +380,9 @@ export class VoiceSession {
 		this.enqueue({ segments: [], pending: this.fetchSegments(text) }, true);
 	}
 
-	private async fetchSegments(text: string): Promise<SpeechSegment[]> {
+	private async fetchSegments(text: string, brief = false): Promise<SpeechSegment[]> {
 		try {
-			return (await postJson<{ segments: SpeechSegment[] }>('/api/agent/speech/segments', { text })).segments;
+			return (await postJson<{ segments: SpeechSegment[] }>('/api/agent/speech/segments', { text, brief })).segments;
 		} catch (e) {
 			this.error = errorText(e, 'speech failed');
 			return [];

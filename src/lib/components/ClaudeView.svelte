@@ -278,7 +278,7 @@
 	const voice = new VoiceSession({
 		send: async (text) => {
 			atBottom = true;
-			await agentPost(sessionPath(session.id, 'message'), { text }).catch(() => {});
+			await agentPost(sessionPath(session.id, 'message'), { text, voice: true }).catch(() => {});
 		},
 		answer: answerQuestion,
 		interrupt: () => interrupt()

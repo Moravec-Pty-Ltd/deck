@@ -322,7 +322,7 @@ public final class VoiceController {
 			lastText = markdown
 		} else {
 			replied = true
-			speak(markdown)
+			speak(markdown, brief: true)
 		}
 	}
 
@@ -335,7 +335,7 @@ public final class VoiceController {
 		// Queued behind what is being read (an acknowledgement) so it waits for
 		// it; Skip, Stop and a new take drop it with the queue.
 		if done { enqueue(Utterance(cue: .done)) }
-		if willRead { speak(text) }
+		if willRead { speak(text, brief: true) }
 	}
 
 	private func startAsk(_ ask: DeckAsk) {
@@ -347,10 +347,11 @@ public final class VoiceController {
 
 	/// `cue` plays just before the first segment, once whatever is ahead of
 	/// it has been read. The utterance takes its place in the queue now; its
-	/// segments arrive while earlier ones play.
-	public func speak(_ text: String, cue: VoiceCue? = nil) {
+	/// segments arrive while earlier ones play. `brief` reads only the opening
+	/// of a long reply.
+	public func speak(_ text: String, cue: VoiceCue? = nil, brief: Bool = false) {
 		guard enabled else { return }
-		enqueue(Utterance(cue: cue, pending: fetchSegments(text)))
+		enqueue(Utterance(cue: cue, pending: fetchSegments(text, brief: brief)))
 	}
 
 	/// Read one message on request, with voice mode on or off. Off, only this
@@ -366,10 +367,10 @@ public final class VoiceController {
 		enqueue(Utterance(pending: fetchSegments(text)), standalone: true)
 	}
 
-	private func fetchSegments(_ text: String) -> Task<[SpeechSegment], Never> {
+	private func fetchSegments(_ text: String, brief: Bool = false) -> Task<[SpeechSegment], Never> {
 		let client = self.client
 		return Task {
-			do { return try await client.speechSegments(text: text) } catch {
+			do { return try await client.speechSegments(text: text, brief: brief) } catch {
 				self.error = error.localizedDescription
 				return []
 			}

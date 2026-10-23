@@ -54,6 +54,14 @@ for (const [name, route] of [['web', web], ['agent', agent]] as const) {
 		it('rejects invalid text types', async () => {
 			await expect(send({ text: {} })).rejects.toMatchObject({ status: 400 });
 		});
+		it('marks a message spoken in voice mode, keeping its words', async () => {
+			await send({ text: 'Why did the build fail?', voice: true });
+			expect(mocks.send).toHaveBeenLastCalledWith(expect.anything(), 'Why did the build fail?', undefined, { voice: true });
+			await send({ text: 'Why did the build fail?' });
+			expect(mocks.send).toHaveBeenLastCalledWith(expect.anything(), 'Why did the build fail?', undefined, undefined);
+			await send({ text: 'Two', answersFor: 'toolu_1', voice: true });
+			expect(mocks.send).toHaveBeenLastCalledWith(expect.anything(), 'Two', undefined, { answersFor: 'toolu_1', answers: undefined, voice: true });
+		});
 		it('records a failed background dispatch', async () => {
 			mocks.send.mockRejectedValue(new Error('agent unavailable'));
 			await send({ text: 'hello' });

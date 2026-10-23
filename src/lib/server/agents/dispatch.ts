@@ -35,7 +35,7 @@ export async function agentSend(
 			await claude.sendMessage(session.id, text, images, meta);
 			return;
 		}
-		await runner.runTurn(session, text);
+		await runner.runTurn(session, text, meta?.voice === true);
 	} finally {
 		sending.delete(session.id);
 	}

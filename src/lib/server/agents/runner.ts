@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { handoffPrompt } from '../session-agent-core';
+import { handoffPrompt, spokenPrompt } from '../session-agent-core';
 import type { DeckSession } from '$lib/types';
 import { appendEvent, setStatus, bus } from '../claude';
 import { getStoredSession, updateSession } from '../store';
@@ -61,7 +61,7 @@ function isCrash(sawResult: boolean, code: number | null, signal: string | null)
 	return code !== 0;
 }
 
-export async function runTurn(session: DeckSession, text: string) {
+export async function runTurn(session: DeckSession, text: string, voice = false) {
 	const driver = drivers[session.kind];
 	if (!driver) throw new Error(`no agent driver for ${session.kind}`);
 
@@ -76,7 +76,7 @@ export async function runTurn(session: DeckSession, text: string) {
 	setStatus(session.id, 'running');
 
 	const started = Date.now();
-	const turn = driver.buildTurn(session, handoffPrompt(session.pendingHandoff, text), session.agentSessionId);
+	const turn = driver.buildTurn(session, handoffPrompt(session.pendingHandoff, voice ? spokenPrompt(text) : text), session.agentSessionId);
 	const token: { stopped?: boolean } = {};
 	starting.set(session.id, token);
 	let child: ChildProcess | undefined;

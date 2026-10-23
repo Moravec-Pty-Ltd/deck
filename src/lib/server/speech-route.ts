@@ -30,7 +30,7 @@ export async function speechSegmentsRoute({ request }: { request: Request }): Pr
 	const body = await objectBody(request);
 	if (typeof body.text !== 'string') error(400, 'text must be a string');
 	pruneSpeechCache();
-	return json({ segments: prepareSegments(body.text) });
+	return json({ segments: prepareSegments(body.text, body.brief === true) });
 }
 
 // One segment's audio, synthesised on first request and cached. The id is a
