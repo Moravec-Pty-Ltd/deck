@@ -1071,11 +1071,14 @@ speech-to-text server is up, so takes can use the stream routes below.
 
 ### POST /api/agent/speech/segments
 
-\`{ "text": "<markdown reply>", "brief"?: true }\` → \`{ "segments": [{ "id", "text" }] }\`,
+\`{ "text": "<markdown reply>", "readOut"?: "brief" | "summary" }\` → \`{ "segments": [{ "id", "text" }] }\`,
 the sentences voice mode plays, with code blocks and tables replaced by a short
-spoken marker. \`brief: true\` reads only a long reply's opening (up to its
-first heading, list, table or code block, or about 300 characters) and ends with
-"The rest is on screen." Audio is made when a segment is fetched, so play the first while
+spoken marker. \`readOut: "brief"\` (or the older \`brief: true\`) reads only a
+long reply's opening (up to its first heading, list, table or code block, or
+about 300 characters) and ends with "The rest is on screen."
+\`readOut: "summary"\` reads a long reply as a two or three sentence summary from
+the operator's model, cached per reply; with no operator model, or when it fails
+or takes over 4 seconds, it reads the brief opening instead. Audio is made when a segment is fetched, so play the first while
 fetching the rest. 400 when no text-to-speech server is configured.
 
 ### GET /api/agent/speech/audio/{id}

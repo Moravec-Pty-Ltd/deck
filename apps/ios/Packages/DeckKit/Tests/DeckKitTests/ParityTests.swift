@@ -654,8 +654,8 @@ final class ParityTests: XCTestCase {
 	func testSpeechSegmentsUseTheAgentRoute() async {
 		let sent = await requests(reply: #"{"segments":[]}"#) { _ = try await $0.speechSegments(text: "Done.") }
 		assertShape(sent, "POST", "/api/agent/speech/segments", keys: ["text"])
-		let brief = await requests(reply: #"{"segments":[]}"#) { _ = try await $0.speechSegments(text: "Done.", brief: true) }
-		assertShape(brief, "POST", "/api/agent/speech/segments", keys: ["brief", "text"])
+		let summary = await requests(reply: #"{"segments":[]}"#) { _ = try await $0.speechSegments(text: "Done.", readOut: .summary) }
+		assertShape(summary, "POST", "/api/agent/speech/segments", keys: ["readOut", "text"])
 	}
 
 	func testVoiceMessagesAreMarkedSpoken() async {

@@ -1,4 +1,4 @@
-import { matchSpokenAnswer, questionSpeech, type SpokenQuestion, type Chattiness, type EndOfSpeech, type VadSensitivity } from './speech-core';
+import { matchSpokenAnswer, questionSpeech, type SpokenQuestion, type Chattiness, type EndOfSpeech, type ReadOut, type VadSensitivity } from './speech-core';
 
 // Node-free state for voice mode, shared by the web bar and unit-tested here:
 // the utterance queue (what is left to read), the question flow (which
@@ -24,6 +24,8 @@ export function skipUtterance(queue: Utterance[]): void {
 
 export interface VoiceSettings {
 	chattiness: Chattiness;
+	// A summary falls back to brief on the server when no operator model answers.
+	readOut: ReadOut;
 	handsFree: boolean;
 	sensitivity: VadSensitivity;
 	endOfSpeech: EndOfSpeech;
@@ -33,6 +35,7 @@ export interface VoiceSettings {
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 	chattiness: 'every-update',
+	readOut: 'summary',
 	handsFree: true,
 	sensitivity: 'medium',
 	endOfSpeech: 'normal',
@@ -51,6 +54,7 @@ export function parseVoiceSettings(raw: string | null): VoiceSettings {
 		const o = JSON.parse(raw) as Partial<VoiceSettings> & { v?: number };
 		return {
 			chattiness: o.chattiness === 'final-only' ? 'final-only' : 'every-update',
+			readOut: o.readOut === 'full' || o.readOut === 'brief' ? o.readOut : 'summary',
 			// Settings saved before v2 stored the old hold-to-talk default, so they
 			// move to hands-free once; a later choice of hold-to-talk sticks.
 			handsFree: (o.v ?? 0) >= VOICE_SETTINGS_VERSION ? o.handsFree !== false : true,
@@ -335,6 +339,9 @@ export type Cue = 'working' | 'done';
 
 // How often the working cue ticks.
 export const WORKING_CUE_MS = 3000;
+// A reply still being prepared this long (a spoken summary from the model)
+// gets a working cue at once rather than at the next tick.
+export const WAITING_CUE_MS = 500;
 
 // Each cue's notes as [Hz, ms] and its peak level. Every cue is shorter than
 // VAD_OPEN_MS, so on an open mic it can't hold long enough to start a take.

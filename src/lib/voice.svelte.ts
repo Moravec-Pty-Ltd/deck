@@ -1,4 +1,4 @@
-import type { SpeechCapabilities, SpeechSegment, SpokenQuestion } from './speech-core';
+import type { ReadOut, SpeechCapabilities, SpeechSegment, SpokenQuestion } from './speech-core';
 import { PRE_ROLL_MS, RECORDING_MAX_MS, RECORDING_MIN_MS, TAKE_SAMPLE_RATE, VAD_CLOSE_MS, VAD_OPEN_MS, VAD_THRESHOLD, settledTake } from './speech-core';
 import captureWorklet from './pcm-capture.worklet.js?url';
 import {
@@ -29,6 +29,7 @@ import {
 	VoiceDetector,
 	wavBytes,
 	workingCuePlays,
+	WAITING_CUE_MS,
 	WORKING_CUE_MS,
 	type AskFlow,
 	type Cue,
@@ -327,7 +328,7 @@ export class VoiceSession {
 		if (this.settings.chattiness === 'final-only') this.lastText = markdown;
 		else {
 			this.replied = true;
-			this.speak(markdown, undefined, true);
+			this.speak(markdown, undefined, this.settings.readOut);
 		}
 	}
 
@@ -341,7 +342,7 @@ export class VoiceSession {
 		// Queued behind what is being read (an acknowledgement) so it waits for
 		// it; Skip, Stop and a new take drop it with the queue.
 		if (end.done) this.enqueue({ segments: [], cue: 'done' });
-		if (end.read) this.speak(end.read, undefined, true);
+		if (end.read) this.speak(end.read, undefined, this.settings.readOut);
 	}
 
 	// A blocking question arrived: read it and route the next spoken reply to it.
@@ -357,11 +358,11 @@ export class VoiceSession {
 
 	// `cue` plays just before the first segment, once whatever is ahead of it
 	// has been read. The utterance takes its place in the queue now; its
-	// segments arrive while earlier ones play. `brief` reads only the opening
-	// of a long reply.
-	speak(text: string, cue?: Cue, brief = false): void {
+	// segments arrive while earlier ones play. `readOut` says how much of a
+	// long reply is read.
+	speak(text: string, cue?: Cue, readOut: ReadOut = 'full'): void {
 		if (!this.enabled) return;
-		this.enqueue({ segments: [], cue, pending: this.fetchSegments(text, brief) });
+		this.enqueue({ segments: [], cue, pending: this.fetchSegments(text, readOut) });
 	}
 
 	private enqueue(utterance: Utterance, standalone = false): void {
@@ -380,9 +381,9 @@ export class VoiceSession {
 		this.enqueue({ segments: [], pending: this.fetchSegments(text) }, true);
 	}
 
-	private async fetchSegments(text: string, brief = false): Promise<SpeechSegment[]> {
+	private async fetchSegments(text: string, readOut: ReadOut = 'full'): Promise<SpeechSegment[]> {
 		try {
-			return (await postJson<{ segments: SpeechSegment[] }>('/api/agent/speech/segments', { text, brief })).segments;
+			return (await postJson<{ segments: SpeechSegment[] }>('/api/agent/speech/segments', { text, readOut })).segments;
 		} catch (e) {
 			this.error = errorText(e, 'speech failed');
 			return [];
@@ -440,7 +441,8 @@ export class VoiceSession {
 	}
 
 	private async fillHead(head: Utterance, pending: Promise<SpeechSegment[]>): Promise<void> {
-		head.segments = await pending;
+		const slow = setTimeout(() => this.tickWorkingCue(), WAITING_CUE_MS);
+		head.segments = await pending.finally(() => clearTimeout(slow));
 		head.pending = undefined;
 	}
 
@@ -518,13 +520,23 @@ export class VoiceSession {
 
 	// ---- Cues ----
 
-	// Recording, transcribing, reading, or with something queued to read.
+	// The next thing to read is still being prepared, and nothing plays meanwhile.
+	private get waiting(): boolean {
+		return !!this.queue[0]?.pending;
+	}
+
+	// Reading, or with something ready to read.
+	private get reading(): boolean {
+		return !this.waiting && (this.playing || this.queue.length > 0);
+	}
+
+	// Recording, transcribing or reading.
 	private get busy(): boolean {
-		return this.recording || this.status === 'transcribing' || this.playing || this.queue.length > 0;
+		return this.recording || this.status === 'transcribing' || this.reading;
 	}
 
 	private tickWorkingCue(): void {
-		const working = this.turnRunning || this.sending;
+		const working = this.turnRunning || this.sending || this.waiting;
 		if (workingCuePlays(this.settings.workingCue, working, !!this.ask, this.busy)) void this.playCue('working');
 	}
 

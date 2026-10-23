@@ -50,7 +50,7 @@ vi.mock('./agents/dispatch', () => ({ agentInterrupt: (...a: unknown[]) => inter
 vi.mock('./create-session', () => ({ createSessionFromRequest: (body: Record<string, unknown>) => created(body) }));
 
 const { agentFeed } = await import('./agent-feed');
-const { operatorChat, operatorHistory, resetOperator, subscribeAnnouncements } = await import('./operator');
+const { operatorChat, operatorHistory, resetOperator, spokenSummary, subscribeAnnouncements } = await import('./operator');
 const { skillCatalogue } = await import('./skills-catalogue');
 
 // The fake model: each call pops the next scripted message; the requests are
@@ -255,5 +255,38 @@ describe('announcements', () => {
 		expect((requests.at(-1) as { chat_template_kwargs?: unknown }).chat_template_kwargs).toEqual({ enable_thinking: false });
 		// What it said is part of the conversation, so "yes, the first one" can follow.
 		expect(operatorHistory().map((t) => t.content)).toContain('Foldable layout is asking: Which sidebar width? Options: 1, Half. 2, Fixed.');
+	});
+});
+
+describe('spokenSummary', () => {
+	it('summarises a reply once and serves the cached summary to a replay', async () => {
+		script = [{ content: '<think>Short.</think>The key is rotated and all twelve tests pass. Nothing needs you.' }];
+		expect(await spokenSummary('A long reply about rotating the key.')).toBe('The key is rotated and all twelve tests pass. Nothing needs you.');
+		expect(await spokenSummary('A long reply about rotating the key.')).toBe('The key is rotated and all twelve tests pass. Nothing needs you.');
+		expect(requests).toHaveLength(1);
+		expect(requests[0].messages.at(-1).content).toBe('A long reply about rotating the key.');
+	});
+
+	it('is null with no model configured or when the model fails, and retries a failure', async () => {
+		settings = {};
+		expect(await spokenSummary('A reply nobody can summarise.')).toBeNull();
+		expect(requests).toHaveLength(0);
+		settings = { operator: { url: 'http://model.test/v1', model: 'test-model' } };
+		vi.stubGlobal('fetch', vi.fn(async () => new Response('down', { status: 500 })));
+		expect(await spokenSummary('A reply while the model is down.')).toBeNull();
+		vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'Back up.' } }] }), { status: 200 })));
+		expect(await spokenSummary('A reply while the model is down.')).toBe('Back up.');
+	});
+
+	it('gives up after four seconds', async () => {
+		vi.useFakeTimers();
+		try {
+			vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+			const summary = spokenSummary('A reply the model is slow on.');
+			await vi.advanceTimersByTimeAsync(4_000);
+			expect(await summary).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

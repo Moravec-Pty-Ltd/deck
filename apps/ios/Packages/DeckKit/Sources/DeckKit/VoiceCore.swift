@@ -17,6 +17,20 @@ public enum Chattiness: String, CaseIterable, Codable, Sendable {
 	}
 }
 
+/// How much of a long reply voice mode reads. A summary comes from the
+/// server's operator model and falls back to brief when none answers.
+public enum ReadOut: String, CaseIterable, Codable, Sendable {
+	case summary, brief, full
+
+	public var label: String {
+		switch self {
+		case .summary: return "Summary"
+		case .brief: return "Opening"
+		case .full: return "Whole reply"
+		}
+	}
+}
+
 public enum VadSensitivity: String, CaseIterable, Codable, Sendable {
 	case low, medium, high
 
@@ -46,6 +60,7 @@ public enum EndOfSpeech: String, CaseIterable, Codable, Sendable {
 
 public struct VoiceSettings: Codable, Equatable, Sendable {
 	public var chattiness: Chattiness = .everyUpdate
+	public var readOut: ReadOut = .summary
 	public var handsFree = true
 	public var sensitivity: VadSensitivity = .medium
 	public var endOfSpeech: EndOfSpeech = .normal
@@ -56,8 +71,9 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 	public private(set) var version = VoiceSettings.currentVersion
 	static let currentVersion = 2
 
-	public init(chattiness: Chattiness = .everyUpdate, handsFree: Bool = true, sensitivity: VadSensitivity = .medium, endOfSpeech: EndOfSpeech = .normal, workingCue: Bool = true) {
+	public init(chattiness: Chattiness = .everyUpdate, readOut: ReadOut = .summary, handsFree: Bool = true, sensitivity: VadSensitivity = .medium, endOfSpeech: EndOfSpeech = .normal, workingCue: Bool = true) {
 		self.chattiness = chattiness
+		self.readOut = readOut
 		self.handsFree = handsFree
 		self.sensitivity = sensitivity
 		self.endOfSpeech = endOfSpeech
@@ -69,6 +85,7 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 	public init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		chattiness = try container.decodeIfPresent(Chattiness.self, forKey: .chattiness) ?? .everyUpdate
+		readOut = (try? container.decodeIfPresent(ReadOut.self, forKey: .readOut)) ?? .summary
 		let stored = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
 		handsFree = stored < Self.currentVersion ? true : try container.decodeIfPresent(Bool.self, forKey: .handsFree) ?? true
 		sensitivity = try container.decodeIfPresent(VadSensitivity.self, forKey: .sensitivity) ?? .medium
@@ -115,6 +132,9 @@ public enum VoiceCue: CaseIterable, Sendable {
 
 	/// How often the working cue ticks.
 	public static let workingSeconds: TimeInterval = 3
+	/// A reply still being prepared this long (a spoken summary from the
+	/// model) gets a working cue at once rather than at the next tick.
+	public static let waitingSeconds: TimeInterval = 0.5
 
 	// Notes as (Hz, seconds) and the peak level. Every cue is shorter than
 	// VoiceTiming.openSeconds, so on an open mic it can't start a take.

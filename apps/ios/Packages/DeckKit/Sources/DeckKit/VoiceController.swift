@@ -322,7 +322,7 @@ public final class VoiceController {
 			lastText = markdown
 		} else {
 			replied = true
-			speak(markdown, brief: true)
+			speak(markdown, readOut: settings.readOut)
 		}
 	}
 
@@ -335,7 +335,7 @@ public final class VoiceController {
 		// Queued behind what is being read (an acknowledgement) so it waits for
 		// it; Skip, Stop and a new take drop it with the queue.
 		if done { enqueue(Utterance(cue: .done)) }
-		if willRead { speak(text, brief: true) }
+		if willRead { speak(text, readOut: settings.readOut) }
 	}
 
 	private func startAsk(_ ask: DeckAsk) {
@@ -347,11 +347,11 @@ public final class VoiceController {
 
 	/// `cue` plays just before the first segment, once whatever is ahead of
 	/// it has been read. The utterance takes its place in the queue now; its
-	/// segments arrive while earlier ones play. `brief` reads only the opening
-	/// of a long reply.
-	public func speak(_ text: String, cue: VoiceCue? = nil, brief: Bool = false) {
+	/// segments arrive while earlier ones play. `readOut` says how much of a
+	/// long reply is read.
+	public func speak(_ text: String, cue: VoiceCue? = nil, readOut: ReadOut = .full) {
 		guard enabled else { return }
-		enqueue(Utterance(cue: cue, pending: fetchSegments(text, brief: brief)))
+		enqueue(Utterance(cue: cue, pending: fetchSegments(text, readOut: readOut)))
 	}
 
 	/// Read one message on request, with voice mode on or off. Off, only this
@@ -367,10 +367,10 @@ public final class VoiceController {
 		enqueue(Utterance(pending: fetchSegments(text)), standalone: true)
 	}
 
-	private func fetchSegments(_ text: String, brief: Bool = false) -> Task<[SpeechSegment], Never> {
+	private func fetchSegments(_ text: String, readOut: ReadOut = .full) -> Task<[SpeechSegment], Never> {
 		let client = self.client
 		return Task {
-			do { return try await client.speechSegments(text: text, brief: brief) } catch {
+			do { return try await client.speechSegments(text: text, readOut: readOut) } catch {
 				self.error = error.localizedDescription
 				return []
 			}
@@ -424,7 +424,12 @@ public final class VoiceController {
 		}
 		while enabled || standalone, let head = queue.first {
 			if let pending = head.pending {
+				let slow = Task { [weak self] in
+					try await Task.sleep(for: .seconds(VoiceCue.waitingSeconds))
+					self?.tickWorkingCue()
+				}
 				let segments = await pending.value
+				slow.cancel()
 				// Skip/Stop may have dropped it meanwhile.
 				if queue.first?.pending == pending {
 					queue[0].segments = segments
@@ -489,11 +494,17 @@ public final class VoiceController {
 			while !Task.isCancelled {
 				try? await Task.sleep(for: .seconds(VoiceCue.workingSeconds))
 				guard let self, !Task.isCancelled else { return }
-				let busy = recording || status == .transcribing || playing || !queue.isEmpty
-				if VoiceCue.workingPlays(wanted: settings.workingCue, working: turnRunning || sending, asking: ask != nil, busy: busy) {
-					playCue(.working)
-				}
+				tickWorkingCue()
 			}
+		}
+	}
+
+	private func tickWorkingCue() {
+		// The next thing to read is still being prepared, and nothing plays meanwhile.
+		let waiting = queue.first?.pending != nil
+		let busy = recording || status == .transcribing || (!waiting && (playing || !queue.isEmpty))
+		if VoiceCue.workingPlays(wanted: settings.workingCue, working: turnRunning || sending || waiting, asking: ask != nil, busy: busy) {
+			playCue(.working)
 		}
 	}
 

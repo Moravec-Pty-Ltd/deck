@@ -29,6 +29,7 @@ import {
 	type ModelMessage,
 	type ModelReply
 } from '$lib/operator-providers';
+import { spokenSummaryMessages } from '$lib/speech-core';
 import { dataDir } from './config';
 import { listProjects, readSettings } from './store';
 import { getSession, listSessions } from './sessions';
@@ -462,6 +463,33 @@ async function announceTurn(session: DeckSession): Promise<void> {
 		text = `${op.title} finished a turn.`;
 	}
 	announce({ text, sessionId: session.id, kind: 'turn', at: Date.now() });
+}
+
+// Voice mode's summary read-out of a long reply, cached per reply so a replay
+// or a second client reuses it. Null when no model is configured, the call
+// fails, or it takes longer than SUMMARY_TIMEOUT_MS: the caller then reads the
+// brief opening, and a late summary still lands in the cache for next time.
+const SUMMARY_TIMEOUT_MS = 4_000;
+const SUMMARY_CACHE = 100;
+const summaries = new Map<string, Promise<string | null>>();
+
+export function spokenSummary(reply: string): Promise<string | null> {
+	if (!operatorConfigured()) return Promise.resolve(null);
+	let summary = summaries.get(reply);
+	if (!summary) {
+		summary = callModel(spokenSummaryMessages(reply), false).then(
+			(r) => spokenText(r.content) || null,
+			() => null
+		);
+		summaries.set(reply, summary);
+		void summary.then((s) => {
+			if (!s && summaries.get(reply) === summary) summaries.delete(reply);
+		});
+		if (summaries.size > SUMMARY_CACHE) summaries.delete(summaries.keys().next().value!);
+	}
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), SUMMARY_TIMEOUT_MS)));
+	return Promise.race([summary, late]).finally(() => clearTimeout(timer));
 }
 
 function onAwaitingInput(session: DeckSession, event: AgentFeedEvent): void {

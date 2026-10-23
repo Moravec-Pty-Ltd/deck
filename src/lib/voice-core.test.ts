@@ -4,19 +4,21 @@ import { VAD_CLOSE_MS, VAD_OPEN_MS } from './speech-core';
 
 describe('voice settings', () => {
 	it('defaults and tolerates junk', () => {
-		expect(parseVoiceSettings(null)).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true });
-		expect(parseVoiceSettings('not json')).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true });
+		expect(parseVoiceSettings(null)).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true, readOut: 'summary' });
+		expect(parseVoiceSettings('not json')).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true, readOut: 'summary' });
 		expect(parseVoiceSettings('{"chattiness":"final-only","handsFree":true,"sensitivity":"high"}')).toEqual({
-			chattiness: 'final-only', handsFree: true, sensitivity: 'high', endOfSpeech: 'normal', workingCue: true
+			chattiness: 'final-only', handsFree: true, sensitivity: 'high', endOfSpeech: 'normal', workingCue: true, readOut: 'summary'
 		});
 		expect(parseVoiceSettings('{"workingCue":false}').workingCue).toBe(false);
+		expect(parseVoiceSettings('{"readOut":"brief"}').readOut).toBe('brief');
+		expect(parseVoiceSettings('{"readOut":"aloud"}').readOut).toBe('summary');
 		expect(parseVoiceSettings('{"endOfSpeech":"long"}').endOfSpeech).toBe('long');
 		expect(parseVoiceSettings('{"endOfSpeech":"forever"}').endOfSpeech).toBe('normal');
 		expect(parseVoiceSettings('{"sensitivity":"loud"}').sensitivity).toBe('medium');
 		expect(parseVoiceSettings('{"sensitivity":"high"}').handsFree).toBe(true);
 		expect(parseVoiceSettings('{"handsFree":false}').handsFree).toBe(true);
 		expect(parseVoiceSettings('{"handsFree":false,"v":2}').handsFree).toBe(false);
-		const holdToTalk = { chattiness: 'final-only', handsFree: false, sensitivity: 'low', endOfSpeech: 'short', workingCue: false } as const;
+		const holdToTalk = { chattiness: 'final-only', handsFree: false, sensitivity: 'low', endOfSpeech: 'short', workingCue: false, readOut: 'full' } as const;
 		expect(parseVoiceSettings(serializeVoiceSettings(holdToTalk))).toEqual(holdToTalk);
 	});
 });

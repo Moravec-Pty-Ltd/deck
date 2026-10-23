@@ -5,7 +5,7 @@ import DeckUI
 
 /// The strip between the transcript and the composer while voice mode is on:
 /// what is being read (or heard), hold-to-talk, Skip, Stop, and the per-device
-/// settings (chattiness, hands-free, sensitivity, end of speech).
+/// settings (chattiness, read-out, hands-free, sensitivity, end of speech).
 public struct VoiceBar: View {
 	@Bindable var voice: VoiceController
 
@@ -230,6 +230,11 @@ struct VoiceSettingsMenu: View {
 				get: { voice.settings.chattiness },
 				set: { voice.settings.chattiness = $0 })) {
 				ForEach(Chattiness.allCases, id: \.self) { Text($0.label).tag($0) }
+			}
+			Picker("Long replies", selection: Binding(
+				get: { voice.settings.readOut },
+				set: { voice.settings.readOut = $0 })) {
+				ForEach(ReadOut.allCases, id: \.self) { Text($0.label).tag($0) }
 			}
 			Toggle("Working sound", isOn: Binding(
 				get: { voice.settings.workingCue },
