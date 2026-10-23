@@ -516,13 +516,15 @@ same key.
 
 ### POST /api/agent/sessions/{id}/message
 
-\`{ "text": "...", "expand"?: true, "skills"?: true, "images"?: [{ "media_type": "image/png", "data": "base64" }] }\` — send a prompt / steer. Mid-turn messages queue (claude)
+\`{ "text": "...", "expand"?: true, "skills"?: true, "voice"?: true, "images"?: [{ "media_type": "image/png", "data": "base64" }] }\` — send a prompt / steer. Mid-turn messages queue (claude)
 or restart the turn (other kinds). Returns \`{ "ok": true, "status": "running",
 "seq": <n> }\`. \`seq\` is the event-log cursor at send time: poll the event log
 from it and watch for this session's \`turn-finished\` to know the turn is done.
 Text is literal unless \`expand: true\` is supplied. Expansion can fetch rich
 issue context for attached issues. \`skills: true\` additionally rewrites spoken
-skill phrasing into its \`/name arguments\` command (see Discovery). Images currently require a Claude session;
+skill phrasing into its \`/name arguments\` command (see Discovery). \`voice: true\`
+marks a message spoken in voice mode: deck asks the agent to open its reply
+with a short plain answer that reads well aloud. Images currently require a Claude session;
 other runtimes return 400 rather than silently discarding attachments.
 
 ### POST /api/agent/sessions/{id}/stop
@@ -1069,9 +1071,11 @@ speech-to-text server is up, so takes can use the stream routes below.
 
 ### POST /api/agent/speech/segments
 
-\`{ "text": "<markdown reply>" }\` → \`{ "segments": [{ "id", "text" }] }\`, the
-sentences voice mode plays, with code blocks and tables replaced by a short
-spoken marker. Audio is made when a segment is fetched, so play the first while
+\`{ "text": "<markdown reply>", "brief"?: true }\` → \`{ "segments": [{ "id", "text" }] }\`,
+the sentences voice mode plays, with code blocks and tables replaced by a short
+spoken marker. \`brief: true\` reads only a long reply's opening (up to its
+first heading, list, table or code block, or about 300 characters) and ends with
+"The rest is on screen." Audio is made when a segment is fetched, so play the first while
 fetching the rest. 400 when no text-to-speech server is configured.
 
 ### GET /api/agent/speech/audio/{id}

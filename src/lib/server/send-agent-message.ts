@@ -35,9 +35,12 @@ export async function sendAgentMessage(session: DeckSession, body: Record<string
 	if (!prompt.trim() && images.length === 0) error(400, 'empty prompt');
 	const imageRefusal = imageKindError(session.kind, images);
 	if (imageRefusal) error(400, imageRefusal);
+	// `voice: true` marks a message spoken in voice mode; the agent is asked for
+	// a reply that reads well aloud (spokenPrompt), the transcript keeps the words.
+	const voice = body.voice === true ? true : undefined;
 	const meta = typeof body.answersFor === 'string'
-		? { answersFor: body.answersFor, answers: Array.isArray(body.answers) ? body.answers : undefined }
-		: undefined;
+		? { answersFor: body.answersFor, answers: Array.isArray(body.answers) ? body.answers : undefined, voice }
+		: voice && { voice };
 	try {
 		updateSession(session.id, { lastActiveAt: Date.now() });
 	} catch (err) {

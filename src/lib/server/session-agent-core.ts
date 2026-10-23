@@ -31,6 +31,15 @@ export function handoffContext(messages: TranscriptMessage[]): string {
 	].join('\n');
 }
 
+// A message spoken in voice mode asks for a reply that reads well aloud, since
+// only the opening of a long one is read. A slash command keeps its arguments.
+export const VOICE_INSTRUCTION =
+	'(Sent by voice; your reply is read aloud. Answer in two or three plain sentences first, with no tables, lists or code unless asked, then put any detail after.)';
+
+export function spokenPrompt(text: string): string {
+	return text.trim() && !text.trimStart().startsWith('/') ? `${text}\n\n${VOICE_INSTRUCTION}` : text;
+}
+
 export function handoffPrompt(context: string | undefined, text: string): string {
 	return context ? `${context}\n\nCurrent user request:\n${text}` : text;
 }
