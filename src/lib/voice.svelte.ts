@@ -126,12 +126,11 @@ class TakeStream {
 	// The final transcript, or null when the take must be uploaded instead.
 	async end(): Promise<string | null> {
 		clearInterval(this.timer);
-		const settled = this.settled;
-		if (settled === null) await this.sending;
+		await this.sending;
 		const id = await this.id;
-		if (!id) return settled;
+		if (!id) return this.settled;
 		const final = this.send(`/api/agent/speech/stream/${encodeURIComponent(id)}/end`);
-		return settled ?? final;
+		return this.settled ?? final;
 	}
 
 	private async send(url: string): Promise<string | null> {
