@@ -24,8 +24,14 @@ struct SessionsView: View {
 	/// A second session in the list's place, on a wide layout.
 	@State private var beside: SessionTarget?
 	@State private var focusedPane = Pane.main
+	/// The session pushed over the list, which is `open` once narrow. Set a
+	/// turn after folding: pushed in the same update that narrows the stack,
+	/// the session keeps the half width it was laid out at.
+	@State private var pushed: SessionTarget?
+	/// Bumped a moment after the window changes width, to build the fold's
+	/// session pane again (see below).
+	@State private var paneBuild = 0
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
-	@State private var path: [SessionTarget] = []
 	@State private var models = OpenSessionModel()
 	@State private var pendingDelete: DeleteRequest?
 	@State private var pendingRename: SessionDigest?
@@ -61,6 +67,13 @@ struct SessionsView: View {
 
 	private var twoUp: Bool { wide && beside != nil }
 
+	/// On a phone (or folded) the open session is pushed over the list.
+	private var phonePath: Binding<[SessionTarget]> {
+		Binding(
+			get: { wide ? [] : pushed.map { [$0] } ?? [] },
+			set: { if !wide { open = $0.last } })
+	}
+
 	/// The open session's model, on the fold with one session showing: the
 	/// one its pane uses, so the list pane can show that session's activity.
 	private var foldModel: SessionDetailViewModel? {
@@ -90,16 +103,7 @@ struct SessionsView: View {
 					NavigationStack { detail }
 						.frame(maxWidth: .infinity)
 				}
-			} else if wide, let foldWidth {
-				HStack(spacing: 0) {
-					NavigationStack {
-						if activityInListPane, let foldModel { activityPane(foldModel) } else { sidebar }
-					}
-					.frame(width: foldWidth)
-					Divider()
-					NavigationStack { detail }
-				}
-			} else if wide {
+			} else if wide, foldWidth == nil {
 				NavigationSplitView(columnVisibility: $columns) {
 					sidebar
 						.navigationSplitViewColumnWidth(min: 260, ideal: 360, max: 560)
@@ -110,12 +114,35 @@ struct SessionsView: View {
 				// rather than sliding it over the session.
 				.navigationSplitViewStyle(.balanced)
 			} else {
-				NavigationStack(path: $path) {
-					sidebar.navigationDestination(for: SessionTarget.self) { target in
-						session(target)
+				// The phone's list and the fold's left half are one stack, so
+				// folding and unfolding keep the list where it was.
+				HStack(spacing: 0) {
+					NavigationStack(path: phonePath) {
+						if activityInListPane, let foldModel {
+							activityPane(foldModel)
+						} else {
+							sidebar.navigationDestination(for: SessionTarget.self) { target in
+								session(target)
+							}
+						}
+					}
+					.frame(width: wide ? foldWidth : nil)
+					if wide {
+						Divider()
+						// Built again once unfolding has settled: until then the system
+						// reports most of the window as bottom safe area, the pane
+						// keeps it, and the session is squeezed to its composer.
+						NavigationStack { detail }
+							.id(paneBuild)
 					}
 				}
 			}
+		}
+		.task(id: hinge.windowSize.width) {
+			// shortcut: a fixed delay, found on a device; the insets come right
+			// with no event to wait on. Lengthen it if a squeezed pane returns.
+			try? await Task.sleep(for: .milliseconds(600))
+			if !Task.isCancelled { paneBuild += 1 }
 		}
 		.onChange(of: wide, initial: true) { _, wide in
 			// One session fits: the one with focus stays, the other leaves.
@@ -129,13 +156,14 @@ struct SessionsView: View {
 				self.beside = nil
 				focusedPane = .main
 			}
-			path = wide ? [] : (open.map { [$0] } ?? [])
-		}
-		.onChange(of: path) { _, path in
-			if !wide { open = path.last }
+			if wide {
+				pushed = nil
+			} else {
+				Task { pushed = open }
+			}
 		}
 		.onChange(of: open) { _, open in
-			if !wide, path.last != open { path = open.map { [$0] } ?? [] }
+			if !wide { pushed = open }
 			if open == nil { models.close(.main) }
 			if let open, open.sessionId == beside?.sessionId { close(.beside) }
 		}

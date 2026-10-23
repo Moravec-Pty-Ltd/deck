@@ -18,17 +18,59 @@ final class HingeMonitor {
 
 	/// Tests and demos can fake the fold with `DECK_HINGE`: a posture name, or
 	/// `tabletop` for half open with the fold across the window whatever the
-	/// window's shape (the simulator can neither bend nor turn the open display).
+	/// window's shape (the simulator can neither bend nor turn the open display),
+	/// or `switchable` to start closed and fold or unfold on a Darwin
+	/// notification (`deck.hinge.closed`, `deck.hinge.fullyOpen`), which a UI
+	/// test can post from its own process.
 	static let override: String? = ProcessInfo.processInfo.environment["DECK_HINGE"]
 	private static let forcedTabletop = override == "tabletop"
 
 	init() {
 		if Self.forcedTabletop {
 			posture = .partiallyOpen
+		} else if Self.override == "switchable" {
+			posture = .closed
 		} else if let override = Self.override.flatMap(Posture.init(rawValue:)) {
 			posture = override
 		}
 	}
+
+	/// Folds or unfolds a `switchable` fake: closed, the window turns compact
+	/// as the outer display is, through UIKit so every view sees the change
+	/// (a SwiftUI environment override leaves UIKit's views regular, and the
+	/// two then fight over layout without end).
+	func fake(_ posture: Posture) {
+		Self.faked = self
+		_ = Self.listening
+		self.posture = posture
+		for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+			for window in scene.windows {
+				if posture == .closed {
+					window.traitOverrides.horizontalSizeClass = .compact
+				} else {
+					window.traitOverrides.remove(UITraitHorizontalSizeClass.self)
+				}
+			}
+		}
+	}
+
+	/// The monitor on screen, which the notifications fold: SwiftUI builds and
+	/// throws away others, so it cannot be whichever one was made first.
+	private static weak var faked: HingeMonitor?
+
+	private static let listening: Void = {
+		for posture in [Posture.closed, .fullyOpen] {
+			CFNotificationCenterAddObserver(
+				CFNotificationCenterGetDarwinNotifyCenter(), nil,
+				{ _, _, name, _, _ in
+					guard let name = name?.rawValue as String?,
+						let posture = Posture(rawValue: String(name.dropFirst("deck.hinge.".count)))
+					else { return }
+					Task { @MainActor in HingeMonitor.faked?.fake(posture) }
+				},
+				"deck.hinge.\(posture.rawValue)" as CFString, nil, .deliverImmediately)
+		}
+	}()
 
 	/// Half open with the fold across the window, so the top half stands up and
 	/// the bottom half lies flat: the layout that puts the transcript above and

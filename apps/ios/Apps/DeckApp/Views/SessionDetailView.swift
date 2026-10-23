@@ -31,7 +31,11 @@ struct SessionDetailView: View {
 	@Environment(\.openURL) private var openURL
 	@Environment(\.dismiss) private var dismiss
 
-	@State private var viewModel: SessionDetailViewModel?
+	/// The view's own model when there is no shared one.
+	@State private var ownModel: SessionDetailViewModel?
+	/// The shared model from the first pass, so a fold or unfold lays the
+	/// transcript out with its conversation rather than a spinner first.
+	private var viewModel: SessionDetailViewModel? { shared ?? ownModel }
 	@State private var terminal: TerminalPoller?
 	/// The phone layout's height, which caps how tall a pending question grows.
 	@State private var stackedHeight: CGFloat = 0
@@ -67,6 +71,9 @@ struct SessionDetailView: View {
 	/// How far the PR header has been dragged sideways, towards dismissing it.
 	@State private var prDrag: CGFloat = 0
 	@State private var visibleRows = Set<String>()
+	/// The row to put back and hold at the top once a fold or unfold has laid
+	/// the transcript out at its new size.
+	@State private var restoreTop: String?
 	@State private var confirmCrossSend = false
 
 	/// What this screen reads from deck beyond the baseline routes.
@@ -170,7 +177,7 @@ struct SessionDetailView: View {
 			}
 			.onAppear {
 				if viewModel == nil {
-					viewModel = shared ?? SessionDetailViewModel(sessionId: sessionId, store: store)
+					ownModel = SessionDetailViewModel(sessionId: sessionId, store: store)
 				}
 				if viewModel?.isPolling != true, session?.kind != "shell" { viewModel?.startPolling() }
 				if terminal == nil, let client = store.client {
@@ -641,7 +648,13 @@ struct SessionDetailView: View {
 	@ViewBuilder
 	private func askCard(_ viewModel: SessionDetailViewModel, available: CGFloat) -> some View {
 		if let ask = viewModel.pendingAsk {
-			AskCard(ask: ask, maxQuestionsHeight: available > 0 ? available / 2 : nil) { draft in
+			AskCard(
+				ask: ask,
+				draft: Binding(
+					get: { viewModel.askDrafts[askKey(ask)] ?? AskAnswerDraft(questions: ask.questions) },
+					set: { viewModel.askDrafts[askKey(ask)] = $0 }),
+				maxQuestionsHeight: available > 0 ? available / 2 : nil
+			) { draft in
 				Task { await viewModel.answer(ask: ask, draft: draft) }
 			}
 			.id(ask.id)
@@ -651,6 +664,9 @@ struct SessionDetailView: View {
 			.padding(.vertical, 4)
 		}
 	}
+
+	/// An ask id can come back as a new question, which gets fresh picks.
+	private func askKey(_ ask: DeckAsk) -> String { "\(ask.id)-\(ask.askedAt ?? 0)" }
 
 	private var workingIndicator: some View {
 		HStack {
@@ -697,6 +713,8 @@ struct SessionDetailView: View {
 						.onScrollVisibilityChange(threshold: 0.1) { visible in
 							noteVisibility(group.id, visible, in: groups, viewModel)
 						}
+						// A row the lazy stack drops never reports going out of view.
+						.onDisappear { visibleRows.remove(group.id) }
 					}
 					if !viewModel.streamingText.isEmpty {
 						HStack {
@@ -718,12 +736,36 @@ struct SessionDetailView: View {
 				}
 				.padding()
 			}
+			.accessibilityIdentifier("transcript")
+			// Opens at the end; a reader elsewhere before a fold or unfold is put
+			// back below.
+			.defaultScrollAnchor(.bottom, for: .initialOffset)
 			.scrollDismissesKeyboard(.interactively)
 			// Simultaneous, so rows, links and disclosures still take the tap.
 			.simultaneousGesture(TapGesture().onEnded { composerFocused = false })
 			.onAppear {
-				// Back where the reader was when a fold or unfold laid this out again.
-				if !viewModel.isNearBottom, let top = viewModel.topRowId { proxy.scrollTo(top, anchor: .top) }
+				guard !viewModel.isNearBottom, let top = viewModel.topRowId else { return }
+				restoreTop = top
+				proxy.scrollTo(top, anchor: .top)
+			}
+			.task(id: restoreTop) {
+				guard restoreTop != nil else { return }
+				try? await Task.sleep(for: .seconds(1))
+				if !Task.isCancelled { restoreTop = nil }
+			}
+			// Back where the reader was, once the new layout has a size, then held
+			// there while the rows above take their real heights at the new
+			// width, which would otherwise push it up off the screen. A second,
+			// a touch or a scroll of the app's own ends the hold.
+			.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+				guard height > 0, let top = restoreTop else { return }
+				proxy.scrollTo(top, anchor: .top)
+			}
+			.onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
+				if let top = restoreTop { proxy.scrollTo(top, anchor: .top) }
+			}
+			.onScrollPhaseChange { _, phase in
+				if phase == .interacting { restoreTop = nil }
 			}
 			.onScrollGeometryChange(for: ScrollEdges.self) { geometry in
 				ScrollEdges(offset: geometry.contentOffset.y, top: geometry.contentOffset.y + geometry.contentInsets.top)
@@ -735,7 +777,7 @@ struct SessionDetailView: View {
 			}
 			// Older rows arriving above the reader hold their place rather than
 			// pulling the view to the end.
-			.followsTranscriptEnd(isNearBottom: Bindable(viewModel).isNearBottom, proxy: proxy, paused: anchorId != nil)
+			.followsTranscriptEnd(isNearBottom: Bindable(viewModel).isNearBottom, proxy: proxy, paused: anchorId != nil || restoreTop != nil)
 			.onChange(of: viewModel.didLoadOnce) { _, loaded in
 				guard loaded, let focusIndex, !focused else { return }
 				focused = true
@@ -753,6 +795,7 @@ struct SessionDetailView: View {
 			.onChange(of: viewModel.jumpTo) { _, id in
 				guard let id else { return }
 				viewModel.jumpTo = nil
+				restoreTop = nil
 				let groups = TranscriptGroup.make(viewModel.items, condensed: condensedTranscript)
 				guard let group = groups.first(where: { $0.items.contains { $0.id == id } }) else { return }
 				viewModel.isNearBottom = false
@@ -773,6 +816,7 @@ struct SessionDetailView: View {
 			.overlay(alignment: .bottom) {
 				if !viewModel.isNearBottom {
 					Button {
+						restoreTop = nil
 						viewModel.isNearBottom = true
 						withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
 					} label: {
@@ -810,6 +854,8 @@ struct SessionDetailView: View {
 	/// anchors the scroll view to a row and so stops it opening at the end.
 	private func noteVisibility(_ id: String, _ visible: Bool, in groups: [TranscriptGroup], _ viewModel: SessionDetailViewModel) {
 		if visible { visibleRows.insert(id) } else { visibleRows.remove(id) }
+		// The rows of a layout coming or going are not the reader's place.
+		guard restoreTop == nil, !leaving else { return }
 		if let top = groups.first(where: { visibleRows.contains($0.id) }) { viewModel.topRowId = top.id }
 	}
 
@@ -831,6 +877,7 @@ struct SessionDetailView: View {
 
 	private func loadOlderKeepingPlace(_ viewModel: SessionDetailViewModel) {
 		guard anchorId == nil else { return }
+		restoreTop = nil
 		anchorId = TranscriptGroup.make(viewModel.items, condensed: condensedTranscript).first?.id
 		let before = viewModel.items.count
 		Task {
