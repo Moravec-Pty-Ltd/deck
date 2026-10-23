@@ -71,6 +71,9 @@ public final class VoiceController {
 	/// settings; the operator forces hands-free on for itself without changing
 	/// what a session's voice mode does.
 	public var persistsSettings = true
+	/// Whether a sent take is acknowledged aloud ("Got it."); the operator's
+	/// own reply is its acknowledgement.
+	public var acknowledges = true
 	/// Called when the queue of speech has drained, for a follow-up window.
 	public var onPlaybackFinished: (() -> Void)?
 	private var transcript = ""
@@ -92,7 +95,7 @@ public final class VoiceController {
 	// minutes later and only a live stream can hear it.
 	private var keepAlive: AVAudioPlayer?
 	private let capture: TakeCapture
-	private var queue: [[SpeechSegment]] = []
+	private var queue: [Utterance] = []
 	private var playing = false
 	private var playToken = 0
 	private var prefetched: [String: Task<Data, Error>] = [:]
@@ -103,6 +106,15 @@ public final class VoiceController {
 	private var takeTimer: Task<Void, Never>?
 	private var cancelled = false
 	private var lastText = ""
+	/// The session's status is running, set by the screen following its
+	/// stream; with a message on its way, what the working cue ticks for.
+	public var turnRunning = false
+	private var sending = false
+	private var acknowledged = 0
+	// A reply was read during this turn, so its end needs no done cue.
+	private var replied = false
+	private var cueLoop: Task<Void, Never>?
+	private var cuePlayer: AVAudioPlayer?
 	private var awaitingPermission = false
 	// The open take's live transcription, while it is answering; nil falls
 	// back to uploading the whole take when it ends.
@@ -180,11 +192,15 @@ public final class VoiceController {
 		#endif
 		watchRoute()
 		startKeepAlive()
+		startWorkingCue()
+		warmAcknowledgements()
 		if settings.handsFree { startHandsFree() }
 	}
 
 	public func disable() {
 		enabled = false
+		cueLoop?.cancel()
+		cueLoop = nil
 		keepAlive?.stop()
 		keepAlive = nil
 		stopPlayback()
@@ -302,24 +318,39 @@ public final class VoiceController {
 
 	private func assistantText(_ markdown: String) {
 		guard canRead else { return }
-		if settings.chattiness == .finalOnly { lastText = markdown } else { speak(markdown) }
+		if settings.chattiness == .finalOnly {
+			lastText = markdown
+		} else {
+			replied = true
+			speak(markdown)
+		}
 	}
 
 	private func turnFinished() {
 		let text = lastText
 		lastText = ""
-		if settings.chattiness == .finalOnly, !text.isEmpty { speak(text) }
+		let willRead = settings.chattiness == .finalOnly && !text.isEmpty
+		let done = VoiceCue.donePlays(willRead: willRead, replied: replied)
+		replied = false
+		// Queued behind what is being read (an acknowledgement) so it waits for
+		// it; Skip, Stop and a new take drop it with the queue.
+		if done { enqueue(Utterance(cue: .done)) }
+		if willRead { speak(text) }
 	}
 
 	private func startAsk(_ ask: DeckAsk) {
 		guard !ask.questions.isEmpty else { return }
 		let flow = VoiceAskFlow(ask: ask)
 		self.ask = flow
-		speak(flow.prompt)
+		speak(flow.prompt, cue: .done)
 	}
 
-	public func speak(_ text: String) {
-		Task { await enqueue(text) }
+	/// `cue` plays just before the first segment, once whatever is ahead of
+	/// it has been read. The utterance takes its place in the queue now; its
+	/// segments arrive while earlier ones play.
+	public func speak(_ text: String, cue: VoiceCue? = nil) {
+		guard enabled else { return }
+		enqueue(Utterance(cue: cue, pending: fetchSegments(text)))
 	}
 
 	/// Read one message on request, with voice mode on or off. Off, only this
@@ -332,24 +363,31 @@ public final class VoiceController {
 			#endif
 			stopPlayback()
 		}
-		Task { await enqueue(text, standalone: true) }
+		enqueue(Utterance(pending: fetchSegments(text)), standalone: true)
 	}
 
-	private func enqueue(_ text: String, standalone: Bool = false) async {
-		do {
-			let segments = try await client.speechSegments(text: text)
-			guard enabled || standalone, !segments.isEmpty else { return }
-			queue.append(segments)
-			if !playing { await drain(standalone: standalone) }
-		} catch {
-			self.error = error.localizedDescription
+	private func fetchSegments(_ text: String) -> Task<[SpeechSegment], Never> {
+		let client = self.client
+		return Task {
+			do { return try await client.speechSegments(text: text) } catch {
+				self.error = error.localizedDescription
+				return []
+			}
 		}
+	}
+
+	private func enqueue(_ utterance: Utterance, standalone: Bool = false) {
+		queue.append(utterance)
+		guard !playing else { return }
+		// Set before the Task runs, so a second enqueue in this turn joins this drain.
+		playing = true
+		Task { await drain(standalone: standalone) }
 	}
 
 	/// Drop the rest of what is being read; the next utterance starts.
 	public func skip() {
 		guard !queue.isEmpty else { return }
-		queue.removeFirst()
+		Utterance.skip(&queue)
 		playToken += 1
 		player.stop()
 	}
@@ -377,21 +415,42 @@ public final class VoiceController {
 
 	// `standalone` keeps playing with voice mode off (a one-off read-aloud).
 	private func drain(standalone: Bool = false) async {
-		playing = true
 		defer {
 			playing = false
 			caption = ""
 			if status == .speaking { rest() }
 			onPlaybackFinished?()
 		}
-		while enabled || standalone, let segment = queue.first?.first {
+		while enabled || standalone, let head = queue.first {
+			if let pending = head.pending {
+				let segments = await pending.value
+				// Skip/Stop may have dropped it meanwhile.
+				if queue.first?.pending == pending {
+					queue[0].segments = segments
+					queue[0].pending = nil
+				}
+				continue
+			}
+			guard let segment = head.segments.first else {
+				// Nothing to read: a done cue on its own, or a fetch that came back empty.
+				let token = playToken
+				if let cue = head.cue { try? await Task.sleep(for: .seconds(playCue(cue))) }
+				if token == playToken { queue.removeFirst() }
+				continue
+			}
 			let token = playToken
 			guard let data = await audio(for: segment.id), token == playToken else {
 				finishHead(token)
 				continue
 			}
-			if let next = queue.first?.dropFirst().first ?? queue.dropFirst().first?.first { prefetch(next.id) }
+			if let next = queue.first?.segments.dropFirst().first ?? queue.dropFirst().first?.segments.first { prefetch(next.id) }
 			status = .speaking
+			if let cue = queue.first?.cue {
+				queue[0].cue = nil
+				try? await Task.sleep(for: .seconds(playCue(cue)))
+				// Skip/Stop landed during the cue.
+				guard token == playToken else { continue }
+			}
 			caption = segment.text
 			await player.play(data)
 			finishHead(token)
@@ -400,8 +459,9 @@ public final class VoiceController {
 
 	private func finishHead(_ token: Int) {
 		guard token == playToken, !queue.isEmpty else { return }
-		queue[0].removeFirst()
-		if queue[0].isEmpty { queue.removeFirst() }
+		queue[0].segments.removeFirst()
+		// An unplayed cue stays for drain to play on its own.
+		if queue[0].segments.isEmpty, queue[0].cue == nil { queue.removeFirst() }
 	}
 
 	private func prefetch(_ id: String) {
@@ -418,6 +478,50 @@ public final class VoiceController {
 		} catch {
 			self.error = error.localizedDescription
 			return nil
+		}
+	}
+
+	// MARK: - Cues
+
+	private func startWorkingCue() {
+		cueLoop = Task { [weak self] in
+			while !Task.isCancelled {
+				try? await Task.sleep(for: .seconds(VoiceCue.workingSeconds))
+				guard let self, !Task.isCancelled else { return }
+				let busy = recording || status == .transcribing || playing || !queue.isEmpty
+				if VoiceCue.workingPlays(wanted: settings.workingCue, working: turnRunning || sending, asking: ask != nil, busy: busy) {
+					playCue(.working)
+				}
+			}
+		}
+	}
+
+	// Its own player on the voice session, so a cue follows the reply's route
+	// and never stops a reply; hands-free's echo cancellation hears it as output.
+	// Returns how long it plays.
+	@discardableResult
+	private func playCue(_ cue: VoiceCue) -> TimeInterval {
+		guard let player = try? AVAudioPlayer(data: cue.wav) else { return 0 }
+		player.play()
+		cuePlayer = player
+		return player.duration
+	}
+
+	// Say a take was heard, in the reply's voice.
+	private func acknowledge() {
+		guard acknowledges, canRead else { return }
+		speak(VoiceCue.acknowledgements[acknowledged % VoiceCue.acknowledgements.count])
+		acknowledged += 1
+	}
+
+	// Synthesise the acknowledgements up front so the first one plays at once.
+	private func warmAcknowledgements() {
+		guard acknowledges, canRead else { return }
+		let client = self.client
+		Task {
+			for text in VoiceCue.acknowledgements {
+				for segment in (try? await client.speechSegments(text: text)) ?? [] { _ = try? await client.speechAudio(id: segment.id) }
+			}
 		}
 	}
 
@@ -548,6 +652,9 @@ public final class VoiceController {
 	private func deliver(_ text: String) async {
 		caption = text
 		guard !text.isEmpty else { return }
+		sending = true
+		defer { sending = false }
+		acknowledge()
 		do {
 			if var flow = ask {
 				flow.answer(text)

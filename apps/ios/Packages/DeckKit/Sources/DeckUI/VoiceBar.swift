@@ -231,6 +231,9 @@ struct VoiceSettingsMenu: View {
 				set: { voice.settings.chattiness = $0 })) {
 				ForEach(Chattiness.allCases, id: \.self) { Text($0.label).tag($0) }
 			}
+			Toggle("Working sound", isOn: Binding(
+				get: { voice.settings.workingCue },
+				set: { voice.settings.workingCue = $0 }))
 			if voice.supportsHandsFree {
 				Toggle("Hands-free", isOn: Binding(
 					get: { voice.settings.handsFree },

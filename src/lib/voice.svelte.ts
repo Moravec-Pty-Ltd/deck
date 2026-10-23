@@ -2,15 +2,18 @@ import type { SpeechCapabilities, SpeechSegment, SpokenQuestion } from './speech
 import { PRE_ROLL_MS, RECORDING_MAX_MS, RECORDING_MIN_MS, TAKE_SAMPLE_RATE, VAD_CLOSE_MS, VAD_OPEN_MS, VAD_THRESHOLD, settledTake } from './speech-core';
 import captureWorklet from './pcm-capture.worklet.js?url';
 import {
+	ACKNOWLEDGEMENTS,
 	answerAskFlow,
 	askAnswerText,
 	askPrompt,
+	cueSamples,
 	DEFAULT_VOICE_SETTINGS,
 	downsample,
 	errorText,
 	isUsableTake,
 	LISTENING_CAPTION,
 	nextSegment,
+	skipUtterance,
 	parseVoiceSettings,
 	PcmRing,
 	pcm16Bytes,
@@ -20,11 +23,15 @@ import {
 	rms,
 	startAskFlow,
 	TRANSCRIBING_CAPTION,
+	turnEnd,
 	vadAction,
 	missedStart,
 	VoiceDetector,
 	wavBytes,
+	workingCuePlays,
+	WORKING_CUE_MS,
 	type AskFlow,
+	type Cue,
 	type Utterance,
 	type VoiceSettings
 } from './voice-core';
@@ -198,6 +205,18 @@ export class VoiceSession {
 	private startMissed = false;
 	// The last assistant text of the turn, read when chattiness is final-only.
 	private lastText = '';
+	// The session's status is running (set by the view), or a message is on
+	// its way to it: what the working cue ticks for.
+	turnRunning = false;
+	private sending = false;
+	private acknowledged = 0;
+	// A reply was read during this turn, so its end needs no done cue.
+	private replied = false;
+	// Cues play on their own element: it never stops a reply, and unlike Web
+	// Audio the iPhone's silent switch doesn't mute it.
+	private cueAudio: HTMLAudioElement | null = null;
+	private cueUrls = new Map<Cue, string>();
+	private cueTimer: ReturnType<typeof setInterval> | undefined;
 
 	constructor(private handlers: VoiceHandlers) {}
 
@@ -222,6 +241,9 @@ export class VoiceSession {
 		this.error = '';
 		await this.unlockAudio();
 		this.enabled = true;
+		clearInterval(this.cueTimer);
+		this.cueTimer = setInterval(() => this.tickWorkingCue(), WORKING_CUE_MS);
+		this.warmAcknowledgements();
 		document.addEventListener('visibilitychange', this.holdScreen);
 		void this.holdScreen();
 		if (this.settings.handsFree) await this.startHandsFree();
@@ -269,12 +291,15 @@ export class VoiceSession {
 	// enabled voice mode usually satisfies the gesture rule anyway.
 	private async unlockAudio(): Promise<void> {
 		this.audio ??= new Audio();
+		this.cueAudio ??= new Audio();
 		this.audio.src = SILENT_WAV;
-		await this.audio.play().catch(() => {});
+		this.cueAudio.src = SILENT_WAV;
+		await Promise.all([this.audio.play().catch(() => {}), this.cueAudio.play().catch(() => {})]);
 	}
 
 	disable(): void {
 		this.enabled = false;
+		clearInterval(this.cueTimer);
 		this.releaseScreen();
 		this.stopPlayback();
 		this.cancelRecording();
@@ -300,31 +325,47 @@ export class VoiceSession {
 	onAssistantText(markdown: string): void {
 		if (!this.enabled) return;
 		if (this.settings.chattiness === 'final-only') this.lastText = markdown;
-		else void this.speak(markdown);
+		else {
+			this.replied = true;
+			this.speak(markdown);
+		}
 	}
 
 	onTurnFinished(): void {
 		const text = this.lastText;
+		const replied = this.replied;
 		this.lastText = '';
-		if (this.enabled && this.settings.chattiness === 'final-only' && text) void this.speak(text);
+		this.replied = false;
+		if (!this.enabled) return;
+		const end = turnEnd(this.settings.chattiness, text, replied);
+		// Queued behind what is being read (an acknowledgement) so it waits for
+		// it; Skip, Stop and a new take drop it with the queue.
+		if (end.done) this.enqueue({ segments: [], cue: 'done' });
+		if (end.read) this.speak(end.read);
 	}
 
 	// A blocking question arrived: read it and route the next spoken reply to it.
 	onAsk(toolUseId: string, questions: SpokenQuestion[]): void {
 		if (!this.enabled || !questions.length) return;
 		this.ask = startAskFlow(toolUseId, questions);
-		void this.speak(askPrompt(this.ask));
+		this.speak(askPrompt(this.ask), 'done');
 	}
 
 	onAskAnswered(toolUseId: string): void {
 		if (this.ask?.toolUseId === toolUseId) this.ask = null;
 	}
 
-	async speak(text: string): Promise<void> {
-		const segments = await this.fetchSegments(text);
-		if (!segments.length || !this.enabled) return;
-		this.queue.push({ segments });
-		if (!this.playing) void this.drain();
+	// `cue` plays just before the first segment, once whatever is ahead of it
+	// has been read. The utterance takes its place in the queue now; its
+	// segments arrive while earlier ones play.
+	speak(text: string, cue?: Cue): void {
+		if (!this.enabled) return;
+		this.enqueue({ segments: [], cue, pending: this.fetchSegments(text) });
+	}
+
+	private enqueue(utterance: Utterance, standalone = false): void {
+		this.queue.push(utterance);
+		if (!this.playing) void this.drain(standalone);
 	}
 
 	// Read one message on request, with voice mode on or off. Off, the audio is
@@ -335,10 +376,7 @@ export class VoiceSession {
 			this.playToken += 1;
 			this.queue = [];
 		}
-		const segments = await this.fetchSegments(text);
-		if (!segments.length) return;
-		this.queue.push({ segments });
-		if (!this.playing) void this.drain(true);
+		this.enqueue({ segments: [], pending: this.fetchSegments(text) }, true);
 	}
 
 	private async fetchSegments(text: string): Promise<SpeechSegment[]> {
@@ -353,7 +391,7 @@ export class VoiceSession {
 	// Drop the rest of what is being read; the next utterance starts.
 	skip(): void {
 		if (!this.queue.length) return;
-		this.queue.shift();
+		skipUtterance(this.queue);
 		this.playToken += 1;
 		this.audio?.pause();
 	}
@@ -390,29 +428,49 @@ export class VoiceSession {
 	}
 
 	// Play the queue's head segment; a segment that fails to load is skipped, one
-	// superseded by Skip/Stop (token moved on) is dropped unplayed.
+	// superseded by Skip/Stop (token moved on) is dropped unplayed. A head still
+	// fetching is waited for; one with nothing to read plays its cue, if any.
 	private async playHead(): Promise<void> {
-		const segment = this.headSegment();
-		if (!segment) return;
+		const head = this.queue[0];
+		if (head.pending) return this.fillHead(head, head.pending);
+		const segment = head.segments[0];
+		if (segment) await this.readSegment(head, segment);
+		else await this.playLoneCue(head);
+	}
+
+	private async fillHead(head: Utterance, pending: Promise<SpeechSegment[]>): Promise<void> {
+		head.segments = await pending;
+		head.pending = undefined;
+	}
+
+	// Nothing left to read: a done cue on its own, or an utterance read out.
+	private async playLoneCue(head: Utterance): Promise<void> {
+		if (head.cue) await this.playCue(head.cue);
+		if (this.queue[0] === head) this.queue.shift();
+	}
+
+	private async readSegment(head: Utterance, segment: SpeechSegment): Promise<void> {
 		const token = this.playToken;
 		const url = await this.loadSegment(segment.id, token);
-		if (!url) {
-			this.finishHead(token);
-			return;
-		}
+		if (!url) return this.finishHead(token);
 		this.prefetch(nextSegment(this.queue));
 		this.status = 'speaking';
-		this.caption = segment.text;
-		await this.play(url, token);
+		if (await this.cueBefore(head, token)) {
+			this.caption = segment.text;
+			await this.play(url, token);
+		}
 		URL.revokeObjectURL(url);
 		this.finishHead(token);
 	}
 
-	// The segment at the front of the queue, dropping an emptied utterance.
-	private headSegment(): SpeechSegment | undefined {
-		const segment = this.queue[0]?.segments[0];
-		if (!segment) this.queue.shift();
-		return segment;
+	// The head's cue, just before its first segment; false when Skip/Stop
+	// landed during it.
+	private async cueBefore(head: Utterance, token: number): Promise<boolean> {
+		const cue = head.cue;
+		if (!cue) return true;
+		head.cue = undefined;
+		await this.playCue(cue);
+		return token === this.playToken;
 	}
 
 	// Advance past the head segment, unless Skip/Stop already replaced the queue.
@@ -455,6 +513,50 @@ export class VoiceSession {
 			audio.src = url;
 			audio.play().catch(done);
 		});
+	}
+
+	// ---- Cues ----
+
+	// Recording, transcribing, reading, or with something queued to read.
+	private get busy(): boolean {
+		return this.recording || this.status === 'transcribing' || this.playing || this.queue.length > 0;
+	}
+
+	private tickWorkingCue(): void {
+		const working = this.turnRunning || this.sending;
+		if (workingCuePlays(this.settings.workingCue, working, !!this.ask, this.busy)) void this.playCue('working');
+	}
+
+	private playCue(cue: Cue): Promise<void> {
+		const audio = this.cueAudio;
+		if (!audio) return Promise.resolve();
+		let url = this.cueUrls.get(cue);
+		if (!url) {
+			url = URL.createObjectURL(new Blob([wavBytes(cueSamples(cue, TAKE_SAMPLE_RATE), TAKE_SAMPLE_RATE)], { type: 'audio/wav' }));
+			this.cueUrls.set(cue, url);
+		}
+		// The timer stands in for an `ended` that never comes (playback refused).
+		return new Promise((resolve) => {
+			const timer = setTimeout(resolve, 500);
+			audio.onended = audio.onerror = () => (clearTimeout(timer), resolve());
+			audio.src = url;
+			audio.play().catch(() => {});
+		});
+	}
+
+	// Say a take was heard, in the reply's voice.
+	private acknowledge(): void {
+		this.speak(ACKNOWLEDGEMENTS[this.acknowledged++ % ACKNOWLEDGEMENTS.length]);
+	}
+
+	// Synthesise the acknowledgements up front so the first one plays at once.
+	private warmAcknowledgements(): void {
+		for (const text of ACKNOWLEDGEMENTS) {
+			postJson<{ segments: SpeechSegment[] }>('/api/agent/speech/segments', { text }).then(
+				(r) => r.segments.forEach((s) => this.prefetch(s)),
+				() => {}
+			);
+		}
 	}
 
 	// ---- Talking ----
@@ -597,8 +699,14 @@ export class VoiceSession {
 	private async deliver(text: string): Promise<void> {
 		this.caption = text;
 		if (!text) return;
-		if (this.ask) await this.answerStep(this.ask, text);
-		else await this.handlers.send(text);
+		this.sending = true;
+		this.acknowledge();
+		try {
+			if (this.ask) await this.answerStep(this.ask, text);
+			else await this.handlers.send(text);
+		} finally {
+			this.sending = false;
+		}
 	}
 
 	// One question answered; read the next, or post the finished set.
@@ -606,7 +714,7 @@ export class VoiceSession {
 		const step = answerAskFlow(ask, text);
 		this.ask = step.done ? null : step.flow;
 		if (step.done) await this.handlers.answer(step.flow.toolUseId, askAnswerText(step.flow), step.flow.answers);
-		else void this.speak(askPrompt(step.flow));
+		else this.speak(askPrompt(step.flow));
 	}
 
 	// ---- Capture, level meter and hands-free detector ----

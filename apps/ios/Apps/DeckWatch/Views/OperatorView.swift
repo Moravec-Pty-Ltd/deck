@@ -106,6 +106,7 @@ struct OperatorView: View {
 			send: { text in await send(text, client: client) },
 			answer: { _, _ in },
 			interrupt: { }))
+		controller.acknowledges = false
 		voice = controller
 		await controller.loadCapabilities()
 		controller.enable()

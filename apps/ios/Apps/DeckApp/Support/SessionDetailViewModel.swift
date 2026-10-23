@@ -126,6 +126,7 @@ final class SessionDetailViewModel {
 			send: { text in try await store.send(sessionId: sessionId, text: text) },
 			answer: { ask, draft in try await store.answer(ask: ask, text: draft.text, answers: draft.answers) },
 			interrupt: { try await store.stop(sessionId: sessionId) }))
+		controller.turnRunning = session?.status == .running
 		voice = controller
 		return controller
 	}
@@ -190,8 +191,8 @@ final class SessionDetailViewModel {
 						streamingText += text
 					case .exit:
 						refreshAgents()
-					case .status:
-						break
+					case .status(let status):
+						voice?.turnRunning = status == "running"
 					}
 				}
 			} catch is CancellationError {
