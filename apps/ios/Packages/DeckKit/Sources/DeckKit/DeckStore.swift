@@ -762,9 +762,9 @@ public final class DeckStore {
 		await refreshSessions()
 	}
 
-	public func send(sessionId: String, text: String) async throws {
+	public func send(sessionId: String, text: String, voice: Bool = false) async throws {
 		guard let client else { throw DeckError.notConfigured }
-		try await client.send(sessionId: sessionId, text: text)
+		try await client.send(sessionId: sessionId, text: text, voice: voice)
 	}
 
 	public func stop(sessionId: String) async throws {

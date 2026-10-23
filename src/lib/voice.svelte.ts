@@ -300,13 +300,13 @@ export class VoiceSession {
 	onAssistantText(markdown: string): void {
 		if (!this.enabled) return;
 		if (this.settings.chattiness === 'final-only') this.lastText = markdown;
-		else void this.speak(markdown);
+		else void this.speak(markdown, true);
 	}
 
 	onTurnFinished(): void {
 		const text = this.lastText;
 		this.lastText = '';
-		if (this.enabled && this.settings.chattiness === 'final-only' && text) void this.speak(text);
+		if (this.enabled && this.settings.chattiness === 'final-only' && text) void this.speak(text, true);
 	}
 
 	// A blocking question arrived: read it and route the next spoken reply to it.
@@ -320,8 +320,9 @@ export class VoiceSession {
 		if (this.ask?.toolUseId === toolUseId) this.ask = null;
 	}
 
-	async speak(text: string): Promise<void> {
-		const segments = await this.fetchSegments(text);
+	// `brief` reads only the opening of a long reply.
+	async speak(text: string, brief = false): Promise<void> {
+		const segments = await this.fetchSegments(text, brief);
 		if (!segments.length || !this.enabled) return;
 		this.queue.push({ segments });
 		if (!this.playing) void this.drain();
@@ -341,9 +342,9 @@ export class VoiceSession {
 		if (!this.playing) void this.drain(true);
 	}
 
-	private async fetchSegments(text: string): Promise<SpeechSegment[]> {
+	private async fetchSegments(text: string, brief = false): Promise<SpeechSegment[]> {
 		try {
-			return (await postJson<{ segments: SpeechSegment[] }>('/api/agent/speech/segments', { text })).segments;
+			return (await postJson<{ segments: SpeechSegment[] }>('/api/agent/speech/segments', { text, brief })).segments;
 		} catch (e) {
 			this.error = errorText(e, 'speech failed');
 			return [];

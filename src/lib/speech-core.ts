@@ -76,6 +76,58 @@ export function spokenText(markdown: string): string {
 	return t.trim();
 }
 
+// ---- Brief replies ----
+
+// A long reply read aloud runs for minutes, so voice mode reads its opening:
+// the prose before the first heading, list, code block or table, capped at
+// BRIEF_CHARS (about 20 seconds of speech) and cut at a sentence end.
+const BRIEF_CHARS = 300;
+export const REST_ON_SCREEN = 'The rest is on screen.';
+const STRUCTURE = /^\s{0,3}(?:#{1,6}\s|[-*+•]\s|\d+[.)]\s|\|)/;
+const FENCE = /^\s{0,3}```/;
+
+function lineKind(line: string, fenced: boolean): 'fence' | 'structure' | 'prose' | 'other' {
+	if (FENCE.test(line)) return 'fence';
+	if (fenced || !line.trim()) return 'other';
+	return STRUCTURE.test(line) ? 'structure' : 'prose';
+}
+
+// The markdown before the first structure that follows some prose; a reply
+// that opens with structure is kept whole here and left to the length cap.
+// Prose never starts inside a fence, so once there is prose nothing is fenced.
+function openingProse(markdown: string): string {
+	const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+	let prose = false;
+	let fenced = false;
+	for (let i = 0; i < lines.length; i++) {
+		const kind = lineKind(lines[i], fenced);
+		if (prose && kind !== 'prose' && kind !== 'other') return lines.slice(0, i).join('\n');
+		if (kind === 'fence') fenced = !fenced;
+		prose ||= kind === 'prose';
+	}
+	return markdown;
+}
+
+// The last sentence end within BRIEF_CHARS, else the last word break (also
+// when the only sentence end is a short lead-in like "Sure.").
+function capAtSentence(text: string): string {
+	if (text.length <= BRIEF_CHARS) return text;
+	const head = text.slice(0, BRIEF_CHARS + 1);
+	const last = [...head.matchAll(/[.!?…]["')\]]?(?=\s)/g)].at(-1);
+	const end = last ? last.index + last[0].length : 0;
+	if (end >= BRIEF_CHARS / 3) return head.slice(0, end);
+	const space = head.lastIndexOf(' ');
+	return space > 0 ? head.slice(0, space) : head.slice(0, BRIEF_CHARS);
+}
+
+// The plain text to read for a reply in voice mode: the whole of a short one,
+// the opening of a long one followed by REST_ON_SCREEN.
+export function briefSpokenText(markdown: string): string {
+	const whole = spokenText(markdown);
+	if (whole.length <= BRIEF_CHARS) return whole;
+	return `${capAtSentence(spokenText(openingProse(markdown)))} ${REST_ON_SCREEN}`;
+}
+
 // ---- Sentence segments ----
 
 // A segment is what one synthesis request produces and what the client plays

@@ -123,7 +123,7 @@ final class SessionDetailViewModel {
 		let store = self.store
 		let sessionId = self.sessionId
 		let controller = VoiceController(client: client, sessionId: sessionId, handlers: VoiceHandlers(
-			send: { text in try await store.send(sessionId: sessionId, text: text) },
+			send: { text in try await store.send(sessionId: sessionId, text: text, voice: true) },
 			answer: { ask, draft in try await store.answer(ask: ask, text: draft.text, answers: draft.answers) },
 			interrupt: { try await store.stop(sessionId: sessionId) }))
 		voice = controller

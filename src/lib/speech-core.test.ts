@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { looksFinished, settledTake, matchSpokenAnswer, questionSpeech, segmentSpeech, spokenText } from './speech-core';
+import { briefSpokenText, REST_ON_SCREEN, looksFinished, settledTake, matchSpokenAnswer, questionSpeech, segmentSpeech, spokenText } from './speech-core';
 
 describe('spokenText', () => {
 	it('drops code blocks and tables to a marker and strips syntax', () => {
@@ -114,5 +114,48 @@ describe('endpointing', () => {
 		expect(settledTake('Open the pull request.', 1000)).toBe(true);
 		expect(settledTake('Open the pull request.', 600)).toBe(false);
 		expect(settledTake('Open the pull request and', 3000)).toBe(false);
+	});
+});
+
+describe('briefSpokenText', () => {
+	const detail = ' The detail runs on for a while so that the reply is long enough to need cutting short.'.repeat(4);
+
+	it('reads a short reply whole, structure and all', () => {
+		expect(briefSpokenText('All tests pass.')).toBe('All tests pass.');
+		expect(briefSpokenText('Two changes:\n- one\n- two')).toBe('Two changes:\none\ntwo');
+		expect(briefSpokenText('Result is 3.\r\n\r\nMore detail.')).toBe('Result is 3.\n\nMore detail.');
+	});
+
+	it('stops a long reply at the first heading, list, table or code block after the opening', () => {
+		const opening = 'The build failed on a type error.';
+		expect(briefSpokenText(`${opening}\n\n## Details\n\n${detail}`)).toBe(`${opening} ${REST_ON_SCREEN}`);
+		expect(briefSpokenText(`${opening}\n- one\n- two\n${detail}`)).toBe(`${opening} ${REST_ON_SCREEN}`);
+		expect(briefSpokenText(`${opening}\n\`\`\`ts\nconst a = 1;\n\`\`\`\n${detail}`)).toBe(`${opening} ${REST_ON_SCREEN}`);
+		expect(briefSpokenText(`${opening}\n| a | b |\n|---|---|\n${detail}`)).toBe(`${opening} ${REST_ON_SCREEN}`);
+	});
+
+	it('reads past a short lead-in paragraph to the answer', () => {
+		const spoken = briefSpokenText(`Sure.\n\nThe build failed because of a type error.${detail}`);
+		expect(spoken.startsWith('Sure.\n\nThe build failed')).toBe(true);
+		expect(spoken.endsWith(REST_ON_SCREEN)).toBe(true);
+	});
+
+	it('keeps a leading heading or code block and cuts at the next structure', () => {
+		expect(briefSpokenText(`## Summary\nIt works.\n- ${detail}`)).toBe(`Summary\nIt works. ${REST_ON_SCREEN}`);
+		expect(briefSpokenText(`\`\`\`\n- not a list\n\`\`\`\nDone.\n## More\n${detail}`)).toBe(`Code omitted.\n\nDone. ${REST_ON_SCREEN}`);
+	});
+
+	it('caps long prose at a sentence end within 300 characters, about 20 seconds aloud', () => {
+		const reply = 'It failed on a type error. The fix is one line. Tests pass now.\n\n' + detail + '\n\n' + detail;
+		const spoken = briefSpokenText(reply);
+		const opening = spoken.slice(0, -REST_ON_SCREEN.length - 1);
+		expect(spoken.endsWith(` ${REST_ON_SCREEN}`)).toBe(true);
+		expect(opening.length).toBeLessThanOrEqual(300);
+		expect(opening.endsWith('.')).toBe(true);
+		expect(briefSpokenText('word '.repeat(200)).length).toBeLessThanOrEqual(300 + REST_ON_SCREEN.length + 1);
+		const edge = 'x'.repeat(298) + '. more words follow here and keep going for a while longer than the cap';
+		expect(briefSpokenText(edge)).toBe(`${'x'.repeat(298)}. ${REST_ON_SCREEN}`);
+		const leadIn = briefSpokenText('Sure. ' + 'words without a stop '.repeat(30));
+		expect(leadIn.length).toBeGreaterThan(200);
 	});
 });

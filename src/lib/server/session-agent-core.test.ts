@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentSwitchPatch, handoffContext, handoffPrompt, parseAgent } from './session-agent-core';
+import { agentSwitchPatch, handoffContext, handoffPrompt, parseAgent, spokenPrompt, VOICE_INSTRUCTION } from './session-agent-core';
 
 describe('agent handoff', () => {
 	it('only accepts agent runtimes', () => {
@@ -18,5 +18,11 @@ describe('agent handoff', () => {
 		expect(context).toContain('assistant: latest answer');
 		expect(handoffPrompt(context, 'next task')).toContain('</previous_conversation>\n\nCurrent user request:\nnext task');
 		expect(handoffPrompt(undefined, 'unchanged')).toBe('unchanged');
+	});
+
+	it('asks a spoken message for a spoken answer, leaving commands alone', () => {
+		expect(spokenPrompt('Why did the build fail?')).toBe(`Why did the build fail?\n\n${VOICE_INSTRUCTION}`);
+		expect(spokenPrompt('/compact')).toBe('/compact');
+		expect(spokenPrompt('')).toBe('');
 	});
 });

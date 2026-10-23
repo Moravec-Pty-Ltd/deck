@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SpeechSettings } from '$lib/types';
-import { segmentSpeech, spokenText, type SpeechCapabilities, type SpeechSegment } from '$lib/speech-core';
+import { briefSpokenText, segmentSpeech, spokenText, type SpeechCapabilities, type SpeechSegment } from '$lib/speech-core';
 import { speechDir } from './config';
 import { readSettings } from './store';
 import { createTtlCache } from './ttl-cache';
@@ -113,11 +113,12 @@ function segmentFile(id: string, ext: 'txt' | 'wav'): string {
 	return path.join(speechDir, `${id}.${ext}`);
 }
 
-// Sentence segments for a reply, ids keyed to the current voice so a voice
-// change never serves the old voice's audio.
-export function prepareSegments(markdown: string): SpeechSegment[] {
+// Sentence segments for a reply (only its opening when `brief`), ids keyed
+// to the current voice so a voice change never serves the old voice's audio.
+export function prepareSegments(markdown: string, brief = false): SpeechSegment[] {
 	const { voice } = speechConfig();
-	const spoken = spokenText(markdown.slice(0, MAX_SPEECH_CHARS));
+	const text = markdown.slice(0, MAX_SPEECH_CHARS);
+	const spoken = brief ? briefSpokenText(text) : spokenText(text);
 	return segmentSpeech(spoken).map((text) => {
 		const id = segmentId(voice ?? '', text);
 		if (!texts.has(id)) {

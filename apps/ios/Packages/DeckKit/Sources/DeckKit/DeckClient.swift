@@ -309,9 +309,13 @@ public final class DeckClient: @unchecked Sendable {
 		try await post("/api/agent/sessions", json: request.json, idempotencyKey: idempotencyKey)
 	}
 
+	/// `voice` marks a message spoken in voice mode, so the agent answers in a
+	/// way that reads well aloud.
 	@discardableResult
-	public func send(sessionId: String, text: String) async throws -> MessageResponse {
-		try await post("/api/agent/sessions/\(sessionId)/message", json: ["text": text])
+	public func send(sessionId: String, text: String, voice: Bool = false) async throws -> MessageResponse {
+		var json: [String: Any] = ["text": text]
+		if voice { json["voice"] = true }
+		return try await post("/api/agent/sessions/\(sessionId)/message", json: json)
 	}
 
 	@discardableResult

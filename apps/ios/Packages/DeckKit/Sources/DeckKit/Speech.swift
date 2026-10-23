@@ -44,10 +44,13 @@ extension DeckClient {
 	}
 
 	/// The sentence segments a reply is read as; audio comes per segment so
-	/// the first plays while the rest is still being made.
-	public func speechSegments(text: String) async throws -> [SpeechSegment] {
+	/// the first plays while the rest is still being made. `brief` reads only
+	/// the opening of a long reply.
+	public func speechSegments(text: String, brief: Bool = false) async throws -> [SpeechSegment] {
 		struct Body: Decodable { let segments: [SpeechSegment] }
-		let response: Body = try await post("/api/agent/speech/segments", json: ["text": text])
+		var json: [String: Any] = ["text": text]
+		if brief { json["brief"] = true }
+		let response: Body = try await post("/api/agent/speech/segments", json: json)
 		return response.segments
 	}
 

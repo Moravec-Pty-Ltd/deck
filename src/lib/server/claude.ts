@@ -1,4 +1,4 @@
-import { handoffPrompt } from './session-agent-core';
+import { handoffPrompt, spokenPrompt } from './session-agent-core';
 import { backgroundTaskCount, IDLE_MS, teardownDecision } from './idle-teardown-core';
 import { type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -415,6 +415,8 @@ export interface SendMeta {
 	// Marks this message as the answer to an AskUserQuestion tool_use id.
 	answersFor?: string;
 	answers?: { header: string; labels: string[] }[];
+	// Spoken in voice mode: the agent gets the spoken-reply instruction.
+	voice?: boolean;
 }
 
 // Send a user message, optionally with image attachments. Starts the process if
@@ -443,7 +445,7 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 	setStatus(id, 'running');
 	// Re-read: a message that shared this start may already have sent the handoff.
 	const { pendingHandoff } = getStoredSession(id) ?? session;
-	const prompt = handoffPrompt(pendingHandoff, text);
+	const prompt = handoffPrompt(pendingHandoff, meta?.voice ? spokenPrompt(text) : text);
 	const content: unknown = hasImages
 		? [
 				...(prompt ? [{ type: 'text', text: prompt }] : []),

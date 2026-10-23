@@ -302,13 +302,13 @@ public final class VoiceController {
 
 	private func assistantText(_ markdown: String) {
 		guard canRead else { return }
-		if settings.chattiness == .finalOnly { lastText = markdown } else { speak(markdown) }
+		if settings.chattiness == .finalOnly { lastText = markdown } else { speak(markdown, brief: true) }
 	}
 
 	private func turnFinished() {
 		let text = lastText
 		lastText = ""
-		if settings.chattiness == .finalOnly, !text.isEmpty { speak(text) }
+		if settings.chattiness == .finalOnly, !text.isEmpty { speak(text, brief: true) }
 	}
 
 	private func startAsk(_ ask: DeckAsk) {
@@ -318,8 +318,9 @@ public final class VoiceController {
 		speak(flow.prompt)
 	}
 
-	public func speak(_ text: String) {
-		Task { await enqueue(text) }
+	/// `brief` reads only the opening of a long reply.
+	public func speak(_ text: String, brief: Bool = false) {
+		Task { await enqueue(text, brief: brief) }
 	}
 
 	/// Read one message on request, with voice mode on or off. Off, only this
@@ -335,9 +336,9 @@ public final class VoiceController {
 		Task { await enqueue(text, standalone: true) }
 	}
 
-	private func enqueue(_ text: String, standalone: Bool = false) async {
+	private func enqueue(_ text: String, standalone: Bool = false, brief: Bool = false) async {
 		do {
-			let segments = try await client.speechSegments(text: text)
+			let segments = try await client.speechSegments(text: text, brief: brief)
 			guard enabled || standalone, !segments.isEmpty else { return }
 			queue.append(segments)
 			if !playing { await drain(standalone: standalone) }
