@@ -7,14 +7,26 @@ public struct AskCard: View {
 	/// never pushes the send button and the composer off screen.
 	var maxQuestionsHeight: CGFloat?
 	var onAnswer: (AskAnswerDraft) -> Void
+	/// The picks kept by the caller, so they outlive this view (a fold lays
+	/// the session out afresh); without one the card keeps its own.
+	var kept: Binding<AskAnswerDraft>?
 
-	@State private var draft: AskAnswerDraft
+	@State private var own: AskAnswerDraft
 
-	public init(ask: DeckAsk, maxQuestionsHeight: CGFloat? = nil, onAnswer: @escaping (AskAnswerDraft) -> Void) {
+	private var draft: AskAnswerDraft {
+		get { kept?.wrappedValue ?? own }
+		nonmutating set { if let kept { kept.wrappedValue = newValue } else { own = newValue } }
+	}
+
+	public init(
+		ask: DeckAsk, draft: Binding<AskAnswerDraft>? = nil, maxQuestionsHeight: CGFloat? = nil,
+		onAnswer: @escaping (AskAnswerDraft) -> Void
+	) {
 		self.ask = ask
+		self.kept = draft
 		self.maxQuestionsHeight = maxQuestionsHeight
 		self.onAnswer = onAnswer
-		_draft = State(initialValue: AskAnswerDraft(questions: ask.questions))
+		_own = State(initialValue: AskAnswerDraft(questions: ask.questions))
 	}
 
 	public var body: some View {

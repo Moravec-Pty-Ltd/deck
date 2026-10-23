@@ -16,6 +16,8 @@ struct RootView: View {
 			}
 		}
 		.environment(hinge)
+		// Applies a faked fold's size class once there is a window to apply it to.
+		.onAppear { if HingeMonitor.override == "switchable" { hinge.fake(hinge.posture) } }
 		.background {
 			GeometryReader { geometry in
 				HingeObserver(monitor: hinge)

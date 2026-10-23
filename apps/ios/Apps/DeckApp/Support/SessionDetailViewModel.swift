@@ -47,6 +47,8 @@ final class SessionDetailViewModel {
 	@ObservationIgnored private var restoring = false
 	var composerFocused = false
 	var topRowId: String?
+	/// The picks made on a pending question, by ask and when it was asked.
+	var askDrafts: [String: AskAnswerDraft] = [:]
 
 	var hasDraft: Bool {
 		!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftImages.isEmpty

@@ -119,6 +119,103 @@ final class FoldableUITests: XCTestCase {
 		attach(app, "tabletop-pr-ask")
 	}
 
+	/// Unfolding moves the open session from over the list to beside it, and
+	/// folding moves it back; both keep the reader's place and a whole layout.
+	/// No simulator folds, so an iPad stands in, folded and unfolded by the
+	/// notifications DECK_HINGE=switchable listens for: closed, it lays out
+	/// compact like the outer display. The draft is left out: an iPad forced
+	/// compact with text in the composer never settles its layout, which says
+	/// nothing about a phone.
+	func testFoldAndUnfoldKeepTheSessionInPlace() throws {
+		guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("needs a window that is regular when unfolded: an iPad simulator") }
+		let app = try Self.launch(environment: ["DECK_HINGE": "switchable"])
+		let fold = { Self.post("deck.hinge.closed") }
+		let unfold = { Self.post("deck.hinge.fullyOpen") }
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = Self.listItem("long transcript", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the seeded session")
+		row.tap()
+		let latest = app.staticTexts["Reply 60, the latest message."]
+		XCTAssertTrue(latest.waitForExistence(timeout: 20))
+		XCTAssertFalse(app.navigationBars["Sessions"].exists, "starts folded, the session pushed over the list")
+		for _ in 0..<4 { app.scrollViews["transcript"].swipeDown() }
+		sleep(2)
+		XCTAssertTrue(app.buttons["Jump to latest"].exists, "scrolled away from the end")
+		let top = try XCTUnwrap(Self.topRow(in: app), "no message on screen\n\(app.debugDescription.prefix(3000))")
+		unfold()
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10), "unfolded, the list sits beside the session")
+		sleep(2)
+		assertWholeLayout(app, "unfolded")
+		assertAtTop(top, in: app, "unfolding")
+		attach(app, "unfolded-middle")
+
+		fold()
+		XCTAssertTrue(app.navigationBars["long transcript"].waitForExistence(timeout: 10), "folded, the session stays open\n\(app.debugDescription.prefix(3000))")
+		XCTAssertFalse(app.navigationBars["Sessions"].exists, "folded, the session is pushed over the list")
+		sleep(2)
+		assertWholeLayout(app, "folded")
+		assertAtTop(top, in: app, "folding")
+
+		// Swiped rather than the jump button, which misses on an iPad.
+		for _ in 0..<12 where !app.buttons["Jump to latest"].waitForNonExistence(timeout: 1) {
+			app.scrollViews["transcript"].swipeUp()
+		}
+		XCTAssertTrue(latest.isHittable, "back at the end")
+		unfold()
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
+		sleep(2)
+		XCTAssertTrue(latest.isHittable, "at the end, unfolding stays at the end")
+		assertWholeLayout(app, "unfolded at the end")
+
+		fold()
+		XCTAssertTrue(app.navigationBars["long transcript"].waitForExistence(timeout: 10))
+		sleep(2)
+		XCTAssertTrue(latest.isHittable, "at the end, folding stays at the end")
+		app.navigationBars["long transcript"].buttons["Sessions"].tap()
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 5), "Back goes to the list")
+	}
+
+	/// The composer at the foot of the window and the transcript filling the
+	/// space above it, rather than squeezed to nothing under the title.
+	private func assertWholeLayout(_ app: XCUIApplication, _ posture: String, file: StaticString = #filePath, line: UInt = #line) {
+		let window = app.windows.firstMatch.frame
+		let composer = app.textViews["sessionComposer"]
+		let transcript = app.scrollViews["transcript"].frame
+		XCTAssertTrue(composer.exists, "\(posture): no composer", file: file, line: line)
+		XCTAssertGreaterThan(composer.frame.minY, window.midY, "\(posture): the composer sits at the bottom", file: file, line: line)
+		XCTAssertGreaterThan(transcript.height, window.height / 3, "\(posture): the transcript fills the pane", file: file, line: line)
+		let pane = app.navigationBars["Sessions"].exists ? window.width / 2 : window.width
+		XCTAssertGreaterThan(transcript.width, pane - 40, "\(posture): the transcript spans its pane", file: file, line: line)
+		XCTAssertLessThanOrEqual(transcript.maxY, composer.frame.minY + 1, "\(posture): the transcript sits above the composer", file: file, line: line)
+	}
+
+	/// The transcript's visible band: under the title, above the composer.
+	private static func band(in app: XCUIApplication) -> ClosedRange<CGFloat> {
+		app.buttons["renameSession"].frame.maxY...app.textViews["sessionComposer"].frame.minY
+	}
+
+	private static func messages(in app: XCUIApplication) -> XCUIElementQuery {
+		app.scrollViews["transcript"].staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Step ' OR label BEGINSWITH 'Reply '"))
+	}
+
+	/// The first message showing in the transcript's band.
+	private static func topRow(in app: XCUIApplication) -> String? {
+		let band = band(in: app)
+		return messages(in: app).allElementsBoundByIndex
+			.filter { $0.frame.maxY > band.lowerBound + 30 && $0.frame.minY < band.upperBound }
+			.min { $0.frame.minY < $1.frame.minY }?.label
+	}
+
+	/// The message that led the band before the change still shows near its top.
+	private func assertAtTop(_ label: String, in app: XCUIApplication, _ change: String, file: StaticString = #filePath, line: UInt = #line) {
+		let band = Self.band(in: app)
+		let row = Self.messages(in: app).matching(NSPredicate(format: "label == %@", label)).firstMatch
+		XCTAssertTrue(row.exists, "\(change): the top message is gone", file: file, line: line)
+		XCTAssertGreaterThan(row.frame.minY, band.lowerBound - 40, "\(change): the top message is pushed up off the screen", file: file, line: line)
+		XCTAssertLessThan(row.frame.minY, band.lowerBound + (band.upperBound - band.lowerBound) / 3,
+			"\(change): the top message should lead the transcript, at \(row.frame) in \(band)", file: file, line: line)
+	}
+
 	/// Every screen, since the open display is not the main one.
 	private func attach(_ app: XCUIApplication, _ name: String) {
 		for (index, screen) in XCUIScreen.screens.enumerated() {
@@ -127,6 +224,11 @@ final class FoldableUITests: XCTestCase {
 			attachment.lifetime = .keepAlways
 			add(attachment)
 		}
+	}
+
+	/// A Darwin notification, which reaches the app across processes.
+	private static func post(_ name: String) {
+		CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(name as CFString), nil, nil, true)
 	}
 
 	/// Only the simulator says which device it is; the tests run on nothing else.
