@@ -33,7 +33,7 @@ type FieldType = 'string' | 'url' | 'boolean' | 'number' | readonly string[];
 // The blocks an agent may PATCH and the fields each holds. Everything else in
 // the file (model profiles, remembered picks) is the web's to manage.
 const BLOCKS = {
-	speech: { ttsUrl: 'string', sttUrl: 'string', voice: 'string' },
+	speech: { ttsUrl: 'string', sttUrl: 'string', streamUrl: 'string', voice: 'string' },
 	operator: {
 		url: 'url',
 		model: 'string',

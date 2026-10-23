@@ -6,6 +6,9 @@ export interface SpeechCapabilities {
 	// Whether a text-to-speech / speech-to-text server is configured and up.
 	tts: boolean;
 	stt: boolean;
+	// Whether a streaming speech-to-text server is configured and up: takes can
+	// then stream to POST /api/agent/speech/stream and end on the live words.
+	stream: boolean;
 	// The voice replies are read in, and the voices the server offers.
 	voice: string | null;
 	voices: string[];
@@ -211,6 +214,29 @@ export const VAD_CLOSE_MS: Record<EndOfSpeech, number> = {
 	normal: 2000,
 	long: 3000
 };
+// Silence the transcriber must have heard before a finished sentence ends a
+// take. A streaming model emits a word up to about 0.9 s after it is said
+// (Voxtral Realtime at a 480 ms delay; 0.65 s at 240 ms), so by then the live
+// text holds everything said before the pause and can be sent as is.
+const SETTLED_MS = 1000;
+// Words a sentence doesn't end on: a trailing one means more is coming.
+const TRAILING_WORDS = new Set(['and', 'but', 'or', 'so', 'because', 'then', 'um', 'uh', 'er', 'like', 'the', 'a', 'an', 'to', 'of', 'with', 'if', 'that']);
+
+// Whether a live transcript reads as a finished sentence: closing punctuation,
+// not a trailing ellipsis, and not stopping on a word that leads into more.
+export function looksFinished(text: string): boolean {
+	const t = text.trim();
+	if (!/[.!?]["')\]]*$/.test(t)) return false;
+	if (/(\.\.\.|…)["')\]]*$/.test(t)) return false;
+	const last = t.toLowerCase().match(/([a-z']+)[^a-z']*$/)?.[1];
+	return !last || !TRAILING_WORDS.has(last);
+}
+
+// Whether the live text can end the take now: a finished sentence, followed
+// by enough silence that no word can still be on its way.
+export function settledTake(text: string, heardSilenceMs: number): boolean {
+	return heardSilenceMs >= SETTLED_MS && looksFinished(text);
+}
 // How much audio from before the detector opened a take starts with.
 export const PRE_ROLL_MS = 1000;
 // Takes upload as 16 kHz WAV, like the apps', to stay small.

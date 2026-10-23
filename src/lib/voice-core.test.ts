@@ -75,6 +75,20 @@ describe('voice detector', () => {
 		expect(vad.update(0.01, 2000)).toBeNull();
 		expect(vad.update(0.01, 3300)).toBe('stop');
 	});
+	it('reports when the quiet began, and opens afresh after a reset mid-close', () => {
+		const vad = new VoiceDetector(0.05, 200, 2000);
+		vad.update(0.2, 0);
+		expect(vad.update(0.2, 250)).toBe('start');
+		expect(vad.update(0.01, 1000)).toBeNull();
+		expect(vad.silentSince).toBe(1000);
+		vad.update(0.01, 2000);
+		// A take ended early on settled words: without the reset, more speech
+		// would only reopen the old take and never start a new one.
+		vad.reset();
+		expect(vad.update(0.2, 2200)).toBeNull();
+		expect(vad.silentSince).toBeNull();
+		expect(vad.update(0.2, 2450)).toBe('start');
+	});
 	it('ignores a blip shorter than openMs', () => {
 		const vad = new VoiceDetector(0.05, 200, 1200);
 		expect(vad.update(0.2, 0)).toBeNull();

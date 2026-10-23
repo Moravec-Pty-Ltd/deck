@@ -1062,9 +1062,10 @@ Both are off until configured in deck's settings.
 
 ### GET /api/agent/speech
 
-\`{ "tts": bool, "stt": bool, "voice": "<name>"|null, "voices": [...], "config":
-{ "ttsUrl"?, "sttUrl"?, "voice"? } }\`: which halves are configured and
-answering. Hide voice features when both are false.
+\`{ "tts": bool, "stt": bool, "stream": bool, "voice": "<name>"|null, "voices": [...], "config":
+{ "ttsUrl"?, "sttUrl"?, "streamUrl"?, "voice"? } }\`: which halves are configured and
+answering. Hide voice features when both are false. \`stream\` says a streaming
+speech-to-text server is up, so takes can use the stream routes below.
 
 ### POST /api/agent/speech/segments
 
@@ -1085,6 +1086,24 @@ The recording as the raw body with its \`audio/*\` (or \`video/*\`,
 \`application/octet-stream\`) content-type, up to 25 MB →
 \`{ "text", "seconds" }\`. 400 when no speech-to-text server is configured or the
 body is empty, 413 when too large, 502 when transcription fails.
+
+### POST /api/agent/speech/stream
+
+Open a streaming transcription for one take → \`{ "id" }\`. 400 when no
+streaming server is configured, 502 when it can't be reached. A stream with no
+chunk for 15 s is closed.
+
+### POST /api/agent/speech/stream/{id}
+
+The next stretch of the take as the raw body: 16 kHz 16-bit little-endian mono
+PCM, \`content-type: audio/pcm\`. Send chunks in order, one request at a time →
+\`{ "text" }\`, the live transcript so far. 404 for an unknown or expired
+stream, 502 when the stream failed (upload the take to /transcribe instead).
+
+### POST /api/agent/speech/stream/{id}/end
+
+Any remaining PCM (may be empty), then the final transcript →
+\`{ "text", "seconds" }\`, as /transcribe returns. Ends the stream.
 
 ### GET /api/agent/operator
 
@@ -1135,7 +1154,7 @@ capability. Deck-spawned agents may read and change these too.
 ### GET /api/agent/settings
 
 \`\`\`json
-{ "speech": { "ttsUrl": "http://127.0.0.1:8000", "sttUrl": "...", "voice": "..." },
+{ "speech": { "ttsUrl": "http://127.0.0.1:8000", "sttUrl": "...", "streamUrl": "ws://...", "voice": "..." },
   "operator": { "url": "...", "model": "...", "provider": "openai", "apiKeyFile": "...", "hasApiKey": true },
   "modelProfiles": [{ "id": "local", "label": "Local", "model": "...", "envKeys": ["ANTHROPIC_BASE_URL"] }],
   "lastModels": { "claude": { "model": "opus" } }, "lastEffort": "high",
@@ -1152,7 +1171,7 @@ is absent when unset.
 you change; the server merges it into the file as it is now. Within a block an
 omitted field keeps its value (a PATCH without \`apiKey\` keeps the stored key),
 a field set to \`null\` or \`""\` clears it, and a whole block set to \`null\`
-clears the block. Fields: \`speech { ttsUrl, sttUrl, voice }\`,
+clears the block. Fields: \`speech { ttsUrl, sttUrl, streamUrl, voice }\`,
 \`operator { url, model, provider: "openai" | "anthropic", apiKey, apiKeyFile }\`
 (\`apiKey\` is write-only), \`autoCompact { enabled: boolean, percent: number }\`
 (\`percent\` is clamped to 50..95), \`zedSshTarget: "user@host[:port]" | null\`.

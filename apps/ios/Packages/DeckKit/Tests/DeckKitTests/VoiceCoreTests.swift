@@ -47,6 +47,19 @@ final class VoiceCoreTests: XCTestCase {
 		XCTAssertEqual(flow.draft.text, "Answering your questions:\n- Approach: Patch it\n- Anything else?: No, ship it.")
 	}
 
+	func testDetectorReportsQuietAndOpensAfreshAfterAResetMidClose() {
+		var vad = VoiceDetector(threshold: 0.05, openSeconds: 0.2, closeSeconds: 2)
+		_ = vad.update(level: 0.2, at: 0)
+		XCTAssertEqual(vad.update(level: 0.2, at: 0.25), .start)
+		XCTAssertNil(vad.update(level: 0.01, at: 1))
+		XCTAssertEqual(vad.silentSince, 1)
+		_ = vad.update(level: 0.01, at: 2)
+		vad.reset()
+		XCTAssertNil(vad.update(level: 0.2, at: 2.2))
+		XCTAssertNil(vad.silentSince)
+		XCTAssertEqual(vad.update(level: 0.2, at: 2.45), .start, "a take ended early on settled words leaves room for the next")
+	}
+
 	func testDetectorOpensAfterSpeechAndClosesAfterSilence() {
 		var vad = VoiceDetector(threshold: 0.05, openSeconds: 0.2, closeSeconds: 1.2)
 		XCTAssertNil(vad.update(level: 0.1, at: 0))
@@ -80,6 +93,21 @@ final class VoiceCoreTests: XCTestCase {
 		_ = vad.update(level: 0.01, at: 0.3)
 		XCTAssertNil(vad.update(level: 0.01, at: 2.5), "a long setting waits past the default")
 		XCTAssertEqual(vad.update(level: 0.01, at: 3.3), .stop)
+	}
+
+	func testAFinishedSentenceClosesSooner() {
+		XCTAssertTrue(VoiceEndpoint.looksFinished("Open the pull request."))
+		XCTAssertFalse(VoiceEndpoint.looksFinished("Open the pull request"))
+		XCTAssertFalse(VoiceEndpoint.looksFinished("Open the pull request and."), "a trailing conjunction")
+		XCTAssertFalse(VoiceEndpoint.looksFinished("and..."))
+		XCTAssertFalse(VoiceEndpoint.looksFinished("Run the tests…"))
+		XCTAssertTrue(VoiceEndpoint.looksFinished("Is it done?"))
+		XCTAssertTrue(VoiceEndpoint.looksFinished("Stop!"))
+		XCTAssertTrue(VoiceEndpoint.looksFinished("He said \"go.\""))
+		XCTAssertFalse(VoiceEndpoint.looksFinished(""))
+		XCTAssertTrue(VoiceEndpoint.settled(transcript: "Open it.", heardSilence: 1))
+		XCTAssertFalse(VoiceEndpoint.settled(transcript: "Open it.", heardSilence: 0.6), "a word may still be on its way")
+		XCTAssertFalse(VoiceEndpoint.settled(transcript: "Open it and", heardSilence: 3))
 	}
 
 	func testBargeInNeedsALongerHoldWithoutARecogniser() {

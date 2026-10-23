@@ -11,12 +11,15 @@ public struct SpeechCapabilities: Codable, Hashable, Sendable {
 	public let stt: Bool
 	public let voice: String?
 	public let voices: [String]?
+	/// Whether takes can stream to a live transcriber while they are open.
+	public let stream: Bool?
 
-	public init(tts: Bool, stt: Bool, voice: String? = nil, voices: [String]? = nil) {
+	public init(tts: Bool, stt: Bool, voice: String? = nil, voices: [String]? = nil, stream: Bool? = nil) {
 		self.tts = tts
 		self.stt = stt
 		self.voice = voice
 		self.voices = voices
+		self.stream = stream
 	}
 }
 
@@ -57,6 +60,26 @@ extension DeckClient {
 	/// text means silence.
 	public func transcribe(audio: Data, mimeType: String) async throws -> Transcription {
 		try await upload("/api/agent/speech/transcribe", body: audio, contentType: mimeType)
+	}
+
+	/// A live transcription for one take, fed 16 kHz 16-bit mono PCM in order,
+	/// one chunk at a time.
+	public func openTranscriptStream() async throws -> String {
+		struct Body: Decodable { let id: String }
+		let response: Body = try await post("/api/agent/speech/stream", json: [:])
+		return response.id
+	}
+
+	/// Appends a chunk and returns the transcript so far.
+	public func streamAudio(id: String, pcm: Data) async throws -> String {
+		struct Body: Decodable { let text: String }
+		let response: Body = try await upload("/api/agent/speech/stream/\(id)", body: pcm, contentType: "audio/pcm")
+		return response.text
+	}
+
+	/// Appends the last of the audio (may be empty) and ends the stream.
+	public func endTranscriptStream(id: String, pcm: Data) async throws -> Transcription {
+		try await upload("/api/agent/speech/stream/\(id)/end", body: pcm, contentType: "audio/pcm")
 	}
 }
 

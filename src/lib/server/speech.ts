@@ -27,7 +27,7 @@ function trimUrl(url: string | undefined): string | undefined {
 
 export function speechConfig(): SpeechSettings {
 	const s = readSettings().speech ?? {};
-	return { ttsUrl: trimUrl(s.ttsUrl), sttUrl: trimUrl(s.sttUrl), voice: s.voice?.trim() || undefined };
+	return { ttsUrl: trimUrl(s.ttsUrl), sttUrl: trimUrl(s.sttUrl), streamUrl: trimUrl(s.streamUrl), voice: s.voice?.trim() || undefined };
 }
 
 interface Health {
@@ -46,24 +46,39 @@ async function probe(url: string): Promise<Health | null> {
 	}
 }
 
+// A streaming server is a WebSocket; it counts as up when its HTTP side lists
+// models, which every OpenAI-shaped server does.
+async function probeStream(url: string): Promise<boolean> {
+	try {
+		const origin = new URL(url.replace(/^ws/, 'http')).origin;
+		const res = await fetch(`${origin}/v1/models`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+		return res.ok;
+	} catch {
+		return false;
+	}
+}
+
 // Probing on every capability read would add a round trip per session open;
 // a server that just went away is noticed within the window.
 const healthCache = createTtlCache<Health | null>(30_000);
 function cachedHealth(url: string): Promise<Health | null> {
 	return healthCache.getOrFetch(url, false, () => probe(url));
 }
+const streamCache = createTtlCache<boolean>(30_000);
 
 // What the clients can offer: only servers that are configured and answer.
 export async function speechCapabilities(): Promise<SpeechCapabilities> {
-	const { ttsUrl, sttUrl, voice } = speechConfig();
-	const [tts, stt] = await Promise.all([
+	const { ttsUrl, sttUrl, streamUrl, voice } = speechConfig();
+	const [tts, stt, stream] = await Promise.all([
 		ttsUrl ? cachedHealth(ttsUrl) : null,
-		sttUrl ? cachedHealth(sttUrl) : null
+		sttUrl ? cachedHealth(sttUrl) : null,
+		streamUrl ? streamCache.getOrFetch(streamUrl, false, () => probeStream(streamUrl)) : false
 	]);
 	const voices = tts?.voices ?? [];
 	return {
 		tts: !!tts,
 		stt: !!stt,
+		stream,
 		voice: tts ? (voice ?? tts.default_voice ?? voices[0] ?? null) : null,
 		voices
 	};

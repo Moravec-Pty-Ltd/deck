@@ -9,9 +9,10 @@
 
 	let ttsUrl = $state('');
 	let sttUrl = $state('');
+	let streamUrl = $state('');
 	let voice = $state('');
 	let voices = $state<string[]>([]);
-	let status = $state<{ tts: boolean; stt: boolean } | null>(null);
+	let status = $state<{ tts: boolean; stt: boolean; stream: boolean } | null>(null);
 	let loaded = $state(false);
 	let busy = $state(false);
 	let saved = $state(false);
@@ -24,9 +25,10 @@
 			const body = await res.json();
 			ttsUrl = body.config?.ttsUrl ?? '';
 			sttUrl = body.config?.sttUrl ?? '';
+			streamUrl = body.config?.streamUrl ?? '';
 			voice = body.config?.voice ?? body.voice ?? '';
 			voices = body.voices ?? [];
-			status = { tts: body.tts, stt: body.stt };
+			status = { tts: body.tts, stt: body.stt, stream: body.stream };
 		} catch (e) {
 			message = e instanceof Error ? e.message : "Couldn't load speech settings";
 		} finally {
@@ -65,7 +67,7 @@
 		message = '';
 		saved = false;
 		try {
-			await patchSettings({ speech: { ttsUrl: ttsUrl.trim(), sttUrl: sttUrl.trim(), voice: voice.trim() } });
+			await patchSettings({ speech: { ttsUrl: ttsUrl.trim(), sttUrl: sttUrl.trim(), streamUrl: streamUrl.trim(), voice: voice.trim() } });
 			saved = true;
 			await load();
 		} catch (e) {
@@ -82,11 +84,14 @@
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="badge badge-sm {status.tts ? 'badge-success' : 'badge-ghost'}">Read aloud {status.tts ? 'on' : 'off'}</span>
 				<span class="badge badge-sm {status.stt ? 'badge-success' : 'badge-ghost'}">Dictation {status.stt ? 'on' : 'off'}</span>
+				<span class="badge badge-sm {status.stream ? 'badge-success' : 'badge-ghost'}">Live transcription {status.stream ? 'on' : 'off'}</span>
 			</div>
 		{/if}
 		<p class="m-0 text-xs opacity-70">
 			Any OpenAI-shaped speech server (POST /v1/audio/speech and /v1/audio/transcriptions). deck
-			proxies both, so phones and browsers never reach the server directly.
+			proxies both, so phones and browsers never reach the server directly. A streaming URL (an
+			OpenAI Realtime transcription WebSocket) is optional: with it, a take ends soon after a
+			finished sentence instead of waiting out the full pause.
 		</p>
 		{#if loaded}
 			<div class="grid gap-2 sm:grid-cols-2">
@@ -97,6 +102,10 @@
 				<label class="form-control">
 					<span class="label-text text-xs opacity-70">Speech-to-text URL</span>
 					<input class="input input-sm w-full" placeholder="http://127.0.0.1:17496" bind:value={sttUrl} />
+				</label>
+				<label class="form-control">
+					<span class="label-text text-xs opacity-70">Streaming speech-to-text URL</span>
+					<input class="input input-sm w-full" placeholder="ws://127.0.0.1:8000/v1/realtime?model=..." bind:value={streamUrl} />
 				</label>
 				<label class="form-control">
 					<span class="label-text text-xs opacity-70">Voice</span>

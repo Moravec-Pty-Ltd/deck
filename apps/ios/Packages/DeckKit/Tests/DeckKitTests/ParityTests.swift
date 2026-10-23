@@ -667,6 +667,24 @@ final class ParityTests: XCTestCase {
 		assertShape(sent, "POST", "/api/agent/speech/transcribe")
 	}
 
+	func testTranscriptStreamOpensOnTheAgentRoute() async {
+		let sent = await requests(reply: #"{"id":"s1"}"#) { _ = try await $0.openTranscriptStream() }
+		XCTAssertEqual(sent.first?.contentType, "application/json")
+		assertShape(sent, "POST", "/api/agent/speech/stream", keys: [])
+	}
+
+	func testTranscriptStreamChunkUsesTheAgentRoute() async {
+		let sent = await requests(reply: #"{"text":"open the"}"#) { _ = try await $0.streamAudio(id: "s1", pcm: Data([1, 2])) }
+		XCTAssertEqual(sent.first?.contentType, "audio/pcm")
+		assertShape(sent, "POST", "/api/agent/speech/stream/s1")
+	}
+
+	func testTranscriptStreamEndUsesTheAgentRoute() async {
+		let sent = await requests(reply: #"{"text":"open the pr.","seconds":1}"#) { _ = try await $0.endTranscriptStream(id: "s1", pcm: Data()) }
+		XCTAssertEqual(sent.first?.contentType, "audio/pcm")
+		assertShape(sent, "POST", "/api/agent/speech/stream/s1/end")
+	}
+
 	func testSearchUsesTheAgentRoute() async {
 		let sent = await requests(reply: #"{"query":"deck","hits":[]}"#) { _ = try await $0.search(query: "deck", limit: 40) }
 		assertShape(sent, "GET", "/api/agent/search", query: "q=deck&limit=40")
@@ -835,7 +853,7 @@ final class ParityTests: XCTestCase {
 	// MARK: - Server settings
 
 	private static let redactedSettings = #"""
-	{"speech":{"ttsUrl":"http://127.0.0.1:3000","sttUrl":"http://127.0.0.1:3000","voice":"example"},
+	{"speech":{"ttsUrl":"http://127.0.0.1:3000","sttUrl":"http://127.0.0.1:3000","streamUrl":"ws://127.0.0.1:3000/v1/realtime","voice":"example"},
 	"operator":{"url":"http://127.0.0.1:3001/v1","model":"example-model","provider":"openai","apiKeyFile":"/path/to/key-file","hasApiKey":true},
 	"modelProfiles":[{"id":"local","label":"Local","model":"example","envKeys":["ANTHROPIC_BASE_URL"]}],
 	"lastModels":{"claude":{"model":"opus"}},"lastEffort":"high",
@@ -844,7 +862,7 @@ final class ParityTests: XCTestCase {
 
 	func testRedactedServerSettingsDecode() throws {
 		let s = try JSONDecoder().decode(ServerSettings.self, from: Data(Self.redactedSettings.utf8))
-		XCTAssertEqual(s.speech, SpeechServerSettings(ttsUrl: "http://127.0.0.1:3000", sttUrl: "http://127.0.0.1:3000", voice: "example"))
+		XCTAssertEqual(s.speech, SpeechServerSettings(ttsUrl: "http://127.0.0.1:3000", sttUrl: "http://127.0.0.1:3000", streamUrl: "ws://127.0.0.1:3000/v1/realtime", voice: "example"))
 		XCTAssertEqual(s.operator?.provider, .openai)
 		XCTAssertEqual(s.operator?.hasApiKey, true)
 		XCTAssertEqual(s.operator?.apiKeyFile, "/path/to/key-file")
@@ -879,6 +897,7 @@ final class ParityTests: XCTestCase {
 		let block = (speech.first?.json as? [String: Any])?["speech"] as? [String: Any]
 		XCTAssertEqual(block?["ttsUrl"] as? String, "http://127.0.0.1:3000")
 		XCTAssertEqual(block?["sttUrl"] as? String, "", "a blank field clears on the server")
+		XCTAssertEqual(block?["streamUrl"] as? String, "")
 	}
 
 	private func operatorBlock(_ key: OperatorKeyChange) async -> [String: Any]? {

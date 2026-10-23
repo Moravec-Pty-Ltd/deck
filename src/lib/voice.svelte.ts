@@ -1,5 +1,5 @@
 import type { SpeechCapabilities, SpeechSegment, SpokenQuestion } from './speech-core';
-import { PRE_ROLL_MS, RECORDING_MAX_MS, RECORDING_MIN_MS, TAKE_SAMPLE_RATE, VAD_CLOSE_MS, VAD_OPEN_MS, VAD_THRESHOLD } from './speech-core';
+import { PRE_ROLL_MS, RECORDING_MAX_MS, RECORDING_MIN_MS, TAKE_SAMPLE_RATE, VAD_CLOSE_MS, VAD_OPEN_MS, VAD_THRESHOLD, settledTake } from './speech-core';
 import captureWorklet from './pcm-capture.worklet.js?url';
 import {
 	answerAskFlow,
@@ -13,6 +13,7 @@ import {
 	nextSegment,
 	parseVoiceSettings,
 	PcmRing,
+	pcm16Bytes,
 	serializeVoiceSettings,
 	restingCaption,
 	restingStatus,
@@ -78,6 +79,81 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 	return (await res.json()) as T;
 }
 
+// How often a streamed take sends what it has recorded.
+const STREAM_CHUNK_MS = 250;
+
+// Streams one take to deck's transcription relay while it is recorded, so the
+// live words can end it; any failure leaves the take to the batch upload.
+// Chunks go one request at a time, in order.
+class TakeStream {
+	private id: Promise<string | null>;
+	private pending: Float32Array[];
+	private sending: Promise<void> = Promise.resolve();
+	private timer: ReturnType<typeof setInterval>;
+	private failed = false;
+	// Live text the session judged final; the server's final pass is skipped.
+	settled: string | null = null;
+
+	constructor(
+		lead: Float32Array[],
+		private sampleRate: number,
+		private onText: (text: string, heardUntil: number) => void
+	) {
+		this.pending = [...lead];
+		this.id = postJson<{ id: string }>('/api/agent/speech/stream', {}).then(
+			(r) => r.id,
+			() => this.fail()
+		);
+		this.timer = setInterval(() => this.flush(), STREAM_CHUNK_MS);
+	}
+
+	push(chunk: Float32Array): void {
+		if (!this.failed) this.pending.push(chunk);
+	}
+
+	private flush(): void {
+		this.sending = this.sending.then(() => this.sendPending());
+	}
+
+	private async sendPending(): Promise<void> {
+		const id = await this.id;
+		if (!id || !this.pending.length) return;
+		const cutAt = Date.now();
+		const text = await this.send(`/api/agent/speech/stream/${encodeURIComponent(id)}`);
+		if (text !== null) this.onText(text, cutAt);
+	}
+
+	// The final transcript, or null when the take must be uploaded instead.
+	async end(): Promise<string | null> {
+		clearInterval(this.timer);
+		await this.sending;
+		const id = await this.id;
+		if (!id) return this.settled;
+		const final = this.send(`/api/agent/speech/stream/${encodeURIComponent(id)}/end`);
+		return this.settled ?? final;
+	}
+
+	private async send(url: string): Promise<string | null> {
+		const pcm = pcm16Bytes(downsample(this.pending, this.sampleRate, TAKE_SAMPLE_RATE));
+		this.pending = [];
+		try {
+			const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'audio/pcm' }, body: pcm });
+			if (!res.ok) throw new Error(`stream ${res.status}`);
+			return ((await res.json()) as { text: string }).text.trim();
+		} catch {
+			return this.fail();
+		}
+	}
+
+	fail(): null {
+		this.failed = true;
+		this.id = Promise.resolve(null);
+		this.pending = [];
+		clearInterval(this.timer);
+		return null;
+	}
+}
+
 export class VoiceSession {
 	enabled = $state(false);
 	status = $state<VoiceStatus>('idle');
@@ -100,6 +176,11 @@ export class VoiceSession {
 	private stream: MediaStream | null = null;
 	// The take's PCM while one is open, starting with the pre-roll.
 	private take: Float32Array[] | null = null;
+	// The open take's live transcription, when deck has a streaming server.
+	private takeStream: TakeStream | null = null;
+	// Keeps the screen on while voice mode is on: a hidden tab loses the mic.
+	private wakeLock: WakeLockSentinel | 'pending' | null = null;
+	private wakeLockRequest = 0;
 	// True while a take waits on the mic; a release meanwhile clears it.
 	private starting = false;
 	private recordStart = 0;
@@ -141,7 +222,47 @@ export class VoiceSession {
 		this.error = '';
 		await this.unlockAudio();
 		this.enabled = true;
+		document.addEventListener('visibilitychange', this.holdScreen);
+		void this.holdScreen();
 		if (this.settings.handsFree) await this.startHandsFree();
+	}
+
+	// The browser drops the lock whenever the page is hidden, so it is taken
+	// again each time the page comes back.
+	private holdScreen = async (): Promise<void> => {
+		if (!this.wantsScreen) return;
+		this.wakeLock = 'pending';
+		const request = ++this.wakeLockRequest;
+		try {
+			this.adoptLock(await navigator.wakeLock.request('screen'));
+		} catch {
+			// refused (battery saver, no permission): the mic still works while visible
+			this.dropRequest(request);
+		}
+	};
+
+	// Only the newest request may clear the pending mark; a newer one may still land.
+	private dropRequest(request: number): void {
+		if (request === this.wakeLockRequest && this.wakeLock === 'pending') this.wakeLock = null;
+	}
+
+	private adoptLock(lock: WakeLockSentinel): void {
+		// Voice mode went off (or another request took over) meanwhile.
+		if (this.wakeLock !== 'pending') return void lock.release();
+		lock.addEventListener('release', () => {
+			if (this.wakeLock === lock) this.wakeLock = null;
+		});
+		this.wakeLock = lock;
+	}
+
+	private get wantsScreen(): boolean {
+		return this.enabled && !this.wakeLock && document.visibilityState === 'visible' && !!navigator.wakeLock;
+	}
+
+	private releaseScreen(): void {
+		document.removeEventListener('visibilitychange', this.holdScreen);
+		if (this.wakeLock !== 'pending') void this.wakeLock?.release().catch(() => {});
+		this.wakeLock = null;
 	}
 
 	// Autoplay refused is fine: real segments still try, and the tap that
@@ -154,6 +275,7 @@ export class VoiceSession {
 
 	disable(): void {
 		this.enabled = false;
+		this.releaseScreen();
 		this.stopPlayback();
 		this.cancelRecording();
 		this.stopHandsFree();
@@ -381,6 +503,10 @@ export class VoiceSession {
 
 	private beginTake(): void {
 		this.take = this.ring?.read() ?? [];
+		if (this.capabilities?.stream) {
+			const stream: TakeStream = new TakeStream(this.take, this.sampleRate, (text, heardUntil) => this.onLiveText(stream, text, heardUntil));
+			this.takeStream = stream;
+		}
 		this.cancelled = false;
 		this.recording = true;
 		this.recordStart = Date.now();
@@ -389,17 +515,37 @@ export class VoiceSession {
 		this.recordTimer = setTimeout(() => this.stopRecording(), RECORDING_MAX_MS);
 	}
 
+	// While the take is open, show the words so far. Hands-free, a finished
+	// sentence the transcriber heard enough silence after ends the take there,
+	// with its text, rather than waiting out the end-of-speech pause.
+	private onLiveText(stream: TakeStream, text: string, heardUntil: number): void {
+		if (stream !== this.takeStream) return;
+		this.caption = text || LISTENING_CAPTION;
+		if (!this.settles(text, heardUntil)) return;
+		stream.settled = text;
+		this.stopRecording();
+		// The detector is mid-close; reset it so the next words open a new take.
+		this.detector.reset();
+	}
+
+	private settles(text: string, heardUntil: number): boolean {
+		const quiet = this.detector.silentSince;
+		return this.settings.handsFree && quiet !== null && settledTake(text, heardUntil - quiet);
+	}
+
 	stopRecording(): void {
 		clearTimeout(this.recordTimer);
 		const take = this.take;
+		const stream = this.takeStream;
 		this.starting = false;
 		if (!take) return;
 		this.take = null;
+		this.takeStream = null;
 		this.recording = false;
 		// The clock starts with the take, so the pre-roll is not counted.
 		const ms = Date.now() - this.recordStart;
 		this.releaseMic();
-		void this.finishTake(take, this.sampleRate, ms);
+		void this.finishTake(take, this.sampleRate, ms, stream);
 	}
 
 	// Hold-to-talk closes the mic between takes; hands-free keeps it listening.
@@ -416,17 +562,18 @@ export class VoiceSession {
 		this.caption = '';
 	}
 
-	private async finishTake(take: Float32Array[], sampleRate: number, ms: number): Promise<void> {
+	private async finishTake(take: Float32Array[], sampleRate: number, ms: number, stream: TakeStream | null): Promise<void> {
 		const frames = take.reduce((n, c) => n + c.length, 0);
 		if (!isUsableTake(this.cancelled, ms, frames, RECORDING_MIN_MS)) {
+			stream?.fail();
 			this.restAfterTake();
 			return;
 		}
-		const blob = new Blob([wavBytes(downsample(take, sampleRate, TAKE_SAMPLE_RATE), TAKE_SAMPLE_RATE)], { type: 'audio/wav' });
 		this.status = 'transcribing';
 		this.caption = TRANSCRIBING_CAPTION;
 		try {
-			await this.deliver(await this.transcribe(blob));
+			const streamed = await stream?.end();
+			await this.deliver(streamed ?? (await this.transcribe(new Blob([wavBytes(downsample(take, sampleRate, TAKE_SAMPLE_RATE), TAKE_SAMPLE_RATE)], { type: 'audio/wav' }))));
 		} catch (e) {
 			this.error = errorText(e, 'transcription failed');
 		}
@@ -513,6 +660,7 @@ export class VoiceSession {
 
 	private onPcm(chunk: Float32Array): void {
 		this.take?.push(chunk);
+		this.takeStream?.push(chunk);
 		this.ring?.push(chunk);
 		const level = rms(chunk);
 		this.level = Math.min(1, level * 6);
