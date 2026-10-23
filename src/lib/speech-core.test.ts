@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { briefSpokenText, REST_ON_SCREEN, looksFinished, settledTake, matchSpokenAnswer, questionSpeech, segmentSpeech, spokenText } from './speech-core';
+import { briefSpokenText, REST_ON_SCREEN, readOutOf, readOutText, spokenSummaryMessages, wantsSummary, looksFinished, settledTake, matchSpokenAnswer, questionSpeech, segmentSpeech, spokenText } from './speech-core';
 
 describe('spokenText', () => {
 	it('drops code blocks and tables to a marker and strips syntax', () => {
@@ -157,5 +157,42 @@ describe('briefSpokenText', () => {
 		expect(briefSpokenText(edge)).toBe(`${'x'.repeat(298)}. ${REST_ON_SCREEN}`);
 		const leadIn = briefSpokenText('Sure. ' + 'words without a stop '.repeat(30));
 		expect(leadIn.length).toBeGreaterThan(200);
+	});
+});
+
+describe('spoken summaries', () => {
+	it('summarises only a reply too long to read whole', () => {
+		expect(wantsSummary('All tests pass.')).toBe(false);
+		expect(wantsSummary(`## Result\n\n${'The change is in. '.repeat(20)}`)).toBe(true);
+		// Code is not counted as words to read.
+		expect(wantsSummary(`Done.\n\n\`\`\`ts\n${'const x = 1;\n'.repeat(50)}\`\`\``)).toBe(false);
+	});
+
+	it('asks for the outcome in a few plain sentences and bounds the reply', () => {
+		const [system, user] = spokenSummaryMessages(`${'x'.repeat(10_000)}All tests pass.`);
+		expect(system.content).toMatch(/two or three short spoken sentences/);
+		expect(system.content).toMatch(/decide/);
+		expect(user.content.length).toBeLessThan(6100);
+		expect(user.content).toMatch(/All tests pass\.$/);
+		expect(spokenSummaryMessages('Short.')[1].content).toBe('Short.');
+	});
+});
+
+describe('read-out requests', () => {
+	it("takes readOut, keeps older apps' brief flag, and reads whole by default", () => {
+		expect(readOutOf({ readOut: 'summary' })).toBe('summary');
+		expect(readOutOf({ readOut: 'brief' })).toBe('brief');
+		expect(readOutOf({ brief: true })).toBe('brief');
+		expect(readOutOf({ brief: false })).toBe('full');
+		expect(readOutOf({ readOut: 'aloud' })).toBe('full');
+		expect(readOutOf({ readOut: 'full', brief: true })).toBe('full');
+		expect(readOutOf({})).toBe('full');
+	});
+
+	it('reads a summary as it is and falls back to the brief opening without one', () => {
+		expect(readOutText('Long reply.', 'summary', 'It worked.')).toEqual({ text: 'It worked.', brief: true });
+		expect(readOutText('Long reply.', 'summary', null)).toEqual({ text: 'Long reply.', brief: true });
+		expect(readOutText('Long reply.', 'brief', null)).toEqual({ text: 'Long reply.', brief: true });
+		expect(readOutText('Long reply.', 'full', null)).toEqual({ text: 'Long reply.', brief: false });
 	});
 });

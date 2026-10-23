@@ -9,6 +9,8 @@ import {
 	transcribeAudio
 } from './speech';
 import { dropStream, liveStream, openStream } from './speech-stream';
+import { spokenSummary } from './operator';
+import { readOutOf, readOutText, wantsSummary } from '$lib/speech-core';
 
 // Voice-mode handlers, each shared verbatim by a browser route under
 // /api/speech and its agent API twin under /api/agent/speech.
@@ -30,7 +32,10 @@ export async function speechSegmentsRoute({ request }: { request: Request }): Pr
 	const body = await objectBody(request);
 	if (typeof body.text !== 'string') error(400, 'text must be a string');
 	pruneSpeechCache();
-	return json({ segments: prepareSegments(body.text, body.brief === true) });
+	const readOut = readOutOf(body);
+	const summary = readOut === 'summary' && wantsSummary(body.text) ? await spokenSummary(body.text) : null;
+	const { text, brief } = readOutText(body.text, readOut, summary);
+	return json({ segments: prepareSegments(text, brief) });
 }
 
 // One segment's audio, synthesised on first request and cached. The id is a

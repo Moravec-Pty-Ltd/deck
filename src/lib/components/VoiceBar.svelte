@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Mic, SkipForward, Square, Settings2, X } from '@lucide/svelte';
 	import type { VoiceSession } from '$lib/voice.svelte';
-	import type { EndOfSpeech } from '$lib/speech-core';
+	import type { EndOfSpeech, ReadOut } from '$lib/speech-core';
 	import { haptic } from '$lib/haptics';
 
 	// The strip between the transcript and the composer while voice mode is on:
 	// what is being read (or heard), hold-to-talk, Skip, Stop, and the per-device
-	// settings (chattiness, hands-free, sensitivity, end of speech). Desktop can
+	// settings (chattiness, read-out, hands-free, sensitivity, end of speech). Desktop can
 	// hold the space bar instead of the button, or click the button once to
 	// toggle a long take.
 
@@ -158,6 +158,18 @@
 				>
 					<option value="every-update">Every update</option>
 					<option value="final-only">Final reply only</option>
+				</select>
+			</label>
+			<label class="flex items-center gap-2">
+				<span class="whitespace-nowrap opacity-70">Long replies</span>
+				<select
+					class="select select-sm"
+					value={voice.settings.readOut}
+					onchange={(e) => voice.updateSettings({ ...voice.settings, readOut: (e.currentTarget as HTMLSelectElement).value as ReadOut })}
+				>
+					<option value="summary">Summary</option>
+					<option value="brief">Opening</option>
+					<option value="full">Whole reply</option>
 				</select>
 			</label>
 			<label class="flex items-center gap-2">

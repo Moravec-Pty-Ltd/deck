@@ -128,6 +128,40 @@ export function briefSpokenText(markdown: string): string {
 	return `${capAtSentence(spokenText(openingProse(markdown)))} ${REST_ON_SCREEN}`;
 }
 
+// ---- Spoken summaries ----
+
+// A reply longer than the brief read-out is summarised by the operator's model
+// rather than cut at its opening; a short one is read word for word.
+export function wantsSummary(markdown: string): boolean {
+	return spokenText(markdown).length > BRIEF_CHARS;
+}
+
+// The read-out a segments request asks for; `brief: true` is the older form
+// of `readOut: 'brief'`, still sent by older apps.
+export function readOutOf(body: Record<string, unknown>): ReadOut {
+	if (body.readOut === 'summary' || body.readOut === 'brief' || body.readOut === 'full') return body.readOut;
+	return body.brief === true ? 'brief' : 'full';
+}
+
+// What to segment: the summary, else the reply. `brief` makes prepareSegments
+// read it through briefSpokenText, which cuts the reply to its opening when the
+// summary never came, and caps a summary that ran long at the same length.
+export function readOutText(reply: string, readOut: ReadOut, summary: string | null): { text: string; brief: boolean } {
+	return { text: summary ?? reply, brief: readOut !== 'full' };
+}
+
+export function spokenSummaryMessages(reply: string): { role: 'system' | 'user'; content: string }[] {
+	return [
+		{
+			role: 'system',
+			content:
+				"Summarise a coding agent's reply for someone listening hands-free, in two or three short spoken sentences: the outcome, then anything they need to decide or do. Plain text, no markdown, no lists, no file paths or code, no preamble."
+		},
+		// The outcome is usually at the end, so a long reply keeps its head and tail.
+		{ role: 'user', content: reply.length > 6000 ? `${reply.slice(0, 2000)}\n...\n${reply.slice(-4000)}` : reply }
+	];
+}
+
 // ---- Sentence segments ----
 
 // A segment is what one synthesis request produces and what the client plays
@@ -248,6 +282,8 @@ export function matchSpokenAnswer(transcript: string, options: SpokenOption[]): 
 // ---- Client-side settings ----
 
 export type Chattiness = 'every-update' | 'final-only';
+// How much of a reply voice mode reads: all of it, its opening, or a model's summary.
+export type ReadOut = 'full' | 'brief' | 'summary';
 export type VadSensitivity = 'low' | 'medium' | 'high';
 export type EndOfSpeech = 'short' | 'normal' | 'long';
 

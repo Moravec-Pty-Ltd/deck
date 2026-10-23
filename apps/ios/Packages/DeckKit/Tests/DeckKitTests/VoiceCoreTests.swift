@@ -218,6 +218,15 @@ final class VoiceCoreTests: XCTestCase {
 		XCTAssertFalse(VoiceSettings.load(from: defaults).workingCue)
 	}
 
+	func testReadOutDefaultsToSummaryAndSticks() throws {
+		let defaults = try XCTUnwrap(UserDefaults(suiteName: "readout-\(UUID().uuidString)"))
+		XCTAssertEqual(VoiceSettings().readOut, .summary)
+		defaults.set(Data(#"{"version":2,"readOut":"aloud"}"#.utf8), forKey: "deck.voice.settings")
+		XCTAssertEqual(VoiceSettings.load(from: defaults).readOut, .summary, "an unknown value takes the default")
+		VoiceSettings(readOut: .brief).save(to: defaults)
+		XCTAssertEqual(VoiceSettings.load(from: defaults).readOut, .brief)
+	}
+
 	func testWorkingCueTicksOnlyWhileTheAgentWorksUnheard() {
 		XCTAssertTrue(VoiceCue.workingPlays(wanted: true, working: true, asking: false, busy: false))
 		XCTAssertFalse(VoiceCue.workingPlays(wanted: false, working: true, asking: false, busy: false), "turned off")
