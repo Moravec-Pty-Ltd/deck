@@ -90,6 +90,42 @@ final class FoldableUITests: XCTestCase {
 		app.buttons["Cancel"].tap()
 	}
 
+	/// Two sessions side by side each fill their half of the fold, with their
+	/// own bar, close button and composer, all clear of the tab rail.
+	func testTwoSessionsSplitOnTheFold() throws {
+		guard Self.isFoldable else { throw XCTSkip("opened flat needs the iPhone Duo simulator") }
+		let app = try Self.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
+		let main = "Stream token diff renderer", beside = "Yolo badge in session header"
+		let row = Self.listItem(main, in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20))
+		row.tap()
+		XCTAssertTrue(app.navigationBars[main].waitForExistence(timeout: 20))
+		Self.listItem(beside, in: app).press(forDuration: 1)
+		app.buttons["Open beside"].tap()
+		let leftBar = app.navigationBars[beside], rightBar = app.navigationBars[main]
+		XCTAssertTrue(leftBar.waitForExistence(timeout: 20), "no second session\n\(app.debugDescription.prefix(3000))")
+		sleep(2)
+		attach(app, "two-up")
+
+		let window = app.windows.firstMatch.frame
+		let rail = app.buttons["Inbox"].firstMatch.frame.minX
+		let composers = app.textViews.matching(identifier: "sessionComposer").allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
+		let transcripts = app.scrollViews.matching(identifier: "transcript").allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
+		let frames = "window \(window) rail \(rail) bars \(leftBar.frame) \(rightBar.frame) composers \(composers) transcripts \(transcripts)"
+		XCTAssertEqual(composers.count, 2, frames)
+		XCTAssertEqual(transcripts.count, 2, frames)
+		for (name, left, right) in [("bar", leftBar.frame, rightBar.frame), ("transcript", transcripts[0], transcripts[1])] {
+			XCTAssertEqual(left.maxX, window.midX, accuracy: 2, "the left \(name) reaches the fold: \(frames)")
+			XCTAssertEqual(right.minX, window.midX, accuracy: 2, "the right \(name) starts at the fold: \(frames)")
+			XCTAssertLessThanOrEqual(right.maxX, rail, "the right \(name) stays clear of the rail: \(frames)")
+		}
+		XCTAssertGreaterThan(composers[0].maxX, window.midX - 40, "the left composer reaches the fold: \(frames)")
+		XCTAssertLessThanOrEqual(composers[1].maxX, rail, "the right composer stays clear of the rail: \(frames)")
+		XCTAssertTrue(leftBar.buttons["closePane"].exists, "the left pane closes from its own bar")
+		XCTAssertTrue(rightBar.buttons["closePane"].exists, "the right pane closes from its own bar")
+	}
+
 	/// Half open with a PR and a question pending, everything to tap lies on
 	/// the flat half; the standing half shows only the PR's status.
 	func testTabletopPutsPRActionsOnTheFlatHalf() throws {

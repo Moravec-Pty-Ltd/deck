@@ -14,7 +14,7 @@ public struct PRSummary: View {
 		HStack(spacing: 6) {
 			Image(systemName: "arrow.triangle.pull")
 				.foregroundStyle(PRDisplay.color(for: pr))
-			Text(pr.number.map { "#\($0)" } ?? "PR")
+			Text(verbatim: pr.number.map { "#\($0)" } ?? "PR")
 				.font(.subheadline.weight(.semibold))
 			if let title = pr.title {
 				Text(title)

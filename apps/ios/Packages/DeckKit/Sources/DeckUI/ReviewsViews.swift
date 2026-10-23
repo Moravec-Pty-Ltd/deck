@@ -25,7 +25,7 @@ public struct ReviewsPanel: View {
 			Section("Reviewing now") {
 				HStack(spacing: 8) {
 					ProgressView().controlSize(.small)
-					Text("\(review.repo)#\(review.pr)").fontWeight(.medium).lineLimit(1)
+					Text(verbatim: "\(review.repo)#\(review.pr)").fontWeight(.medium).lineLimit(1)
 					Spacer()
 					Label(review.phaseLabel, systemImage: "eye")
 						.font(.caption)
@@ -58,7 +58,7 @@ public struct ReviewsPanel: View {
 		HStack(spacing: 8) {
 			Image(systemName: Self.icon(review.decision))
 				.foregroundStyle(Self.color(review.decision))
-			Text("\(review.repo)#\(review.pr)").lineLimit(1)
+			Text(verbatim: "\(review.repo)#\(review.pr)").lineLimit(1)
 			Spacer()
 			Text(review.decisionLabel)
 				.font(.caption)
@@ -70,7 +70,7 @@ public struct ReviewsPanel: View {
 	private func errorRow(_ failure: ReviewError) -> some View {
 		VStack(alignment: .leading, spacing: 2) {
 			HStack {
-				Text("\(failure.repo)#\(failure.pr)").fontWeight(.medium).lineLimit(1)
+				Text(verbatim: "\(failure.repo)#\(failure.pr)").fontWeight(.medium).lineLimit(1)
 				Spacer()
 				Text(failure.phaseLabel).font(.caption).foregroundStyle(.secondary)
 			}

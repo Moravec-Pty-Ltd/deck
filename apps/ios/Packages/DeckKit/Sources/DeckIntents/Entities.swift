@@ -173,7 +173,7 @@ public struct PREntity: AppEntity, Sendable {
 	public let projectPath: String
 
 	public var displayRepresentation: DisplayRepresentation {
-		DisplayRepresentation(title: "\(repo) #\(number)", subtitle: "\(title)")
+		DisplayRepresentation(title: "\(repo) #\(String(number))", subtitle: "\(title)")
 	}
 
 	init(pr: DeckPR, project: DeckProject) {

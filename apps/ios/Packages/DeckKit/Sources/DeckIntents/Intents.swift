@@ -234,7 +234,7 @@ public struct StartReviewIntent: AppIntent {
 			effort: defaults.effort,
 			permissionMode: defaults.permissionMode,
 			idempotencyKey: UUID().uuidString)
-		return .result(dialog: "Started reviewing \(pullRequest.repo) #\(pullRequest.number).")
+		return .result(dialog: "Started reviewing \(pullRequest.repo) #\(String(pullRequest.number)).")
 	}
 }
 

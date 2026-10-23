@@ -192,7 +192,7 @@ struct PRRow: View {
 	var body: some View {
 		VStack(alignment: .leading, spacing: 2) {
 			HStack(spacing: 6) {
-				Text("#\(pr.number)")
+				Text(verbatim: "#\(pr.number)")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 				if pr.isDraft == true {

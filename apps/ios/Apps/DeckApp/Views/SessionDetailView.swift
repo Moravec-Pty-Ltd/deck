@@ -145,13 +145,6 @@ struct SessionDetailView: View {
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar { toolbarContent }
 			.focusedSceneValue(\.deckSession, isActivePane == false ? nil : keyboardActions)
-			.overlay {
-				if isActivePane == true {
-					Rectangle()
-						.stroke(Color.accentColor.opacity(0.35), lineWidth: 2)
-						.allowsHitTesting(false)
-				}
-			}
 			// Simultaneous, so the tap still reaches whatever it landed on.
 			.simultaneousGesture(TapGesture().onEnded { onActivate?() })
 			.onChange(of: isActivePane) { _, active in if active == false { composerFocused = false } }
@@ -224,11 +217,13 @@ struct SessionDetailView: View {
 		}
 		ToolbarItem(placement: .principal) {
 			Button {
+				onActivate?()
 				showRenameSheet = true
 			} label: {
 				Text(title)
 					.font(.headline)
 					.lineLimit(1)
+					.foregroundStyle(isActivePane == false ? .secondary : .primary)
 			}
 			.buttonStyle(.plain)
 			.accessibilityHint("Rename")
@@ -245,25 +240,28 @@ struct SessionDetailView: View {
 				}
 			}
 		}
-		ToolbarItem(placement: .topBarTrailing) {
-			Button {
-				showBrowser = true
-			} label: {
-				Image(systemName: "globe")
-			}
-			.accessibilityLabel("Browser")
-			.accessibilityIdentifier("openBrowser")
-			.offTheFold(isPresented: $showBrowser) {
-				NavigationStack { BrowserView(sessionId: sessionId, isModal: true) }
-			}
+		// With two sessions showing, the browser sits in each pane's menu.
+		if onClose == nil {
+			ToolbarItem(placement: .topBarTrailing) { browserButton }
 		}
 		ToolbarItem(placement: .topBarTrailing) {
 			sessionMenu
 		}
 	}
 
+	private var browserButton: some View {
+		Button {
+			onActivate?()
+			showBrowser = true
+		} label: {
+			Label("Browser", systemImage: "globe")
+		}
+		.accessibilityIdentifier("openBrowser")
+	}
+
 	private var sessionMenu: some View {
 		Menu {
+			if onClose != nil { browserButton }
 			Section {
 				Picker("Transcript", selection: $condensedTranscript) {
 					Label("Chat", systemImage: "bubble.left.and.bubble.right").tag(true)
@@ -358,7 +356,7 @@ struct SessionDetailView: View {
 					Button {
 						openURL(link)
 					} label: {
-						Label("PR #\(pr.number ?? 0)", systemImage: "arrow.triangle.pull")
+						Label(String("PR #\(pr.number ?? 0)"), systemImage: "arrow.triangle.pull")
 					}
 				}
 				// Swiping the PR header dismisses it too, but a swipe is easy to miss.
@@ -393,6 +391,9 @@ struct SessionDetailView: View {
 		}
 		.accessibilityLabel("Session actions")
 		.accessibilityIdentifier("sessionMenu")
+		.offTheFold(isPresented: $showBrowser) {
+			NavigationStack { BrowserView(sessionId: sessionId, isModal: true) }
+		}
 		.offTheFold(isPresented: $showModelSheet, onDismiss: applyModelPick) {
 			if let kind = session?.kind {
 				ModelPickerSheet(

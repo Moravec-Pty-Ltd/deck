@@ -103,7 +103,7 @@ struct MacSessionMenu: View {
 		}
 		if let pr = session?.pr {
 			if let urlString = pr.url, let link = URL(string: urlString) {
-				Button("PR #\(pr.number ?? 0)", systemImage: "arrow.triangle.pull") { openURL(link) }
+				Button(String("PR #\(pr.number ?? 0)"), systemImage: "arrow.triangle.pull") { openURL(link) }
 			}
 			if store.supports(.prDismiss) {
 				Button("Dismiss PR", systemImage: "xmark.circle") { Task { await viewModel.dismissPR() } }
