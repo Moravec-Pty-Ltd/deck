@@ -993,6 +993,9 @@ struct SessionDetailView: View {
 			}
 		}
 		.padding(12)
+		// The field is only as tall as its text; the rest of the box takes you to it. Buttons keep their own taps.
+		.contentShape(RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
+		.onTapGesture { composerFocused = true }
 		.deckGlass(in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 		.padding(.horizontal, 8)
 		.padding(.vertical, 6)
