@@ -17,6 +17,7 @@
 	import { badgeText, isContained, isSessionPage, showsNav } from '$lib/nav-core';
 	import { nextTheme, themeOption } from '$lib/theme-core';
 	import { THEME_ICONS, themeUi } from '$lib/theme.svelte';
+	import { appChrome } from '$lib/app-chrome.svelte';
 
 	let { children } = $props();
 
@@ -202,6 +203,15 @@
 	const nextThemeLabel = $derived(nextTheme(themeUi.current).label);
 	const ThemeIcon = $derived(THEME_ICONS[themeUi.current]);
 	const cycleTheme = () => themeUi.cycle();
+
+	appChrome.togglePush = togglePush;
+	$effect(() => {
+		appChrome.pushSupported = pushSupported;
+		appChrome.pushDenied = pushPermission === 'denied';
+		appChrome.subscribed = subscribed;
+		appChrome.pushBusy = pushBusy;
+		appChrome.inboxCount = inboxCount;
+	});
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -221,8 +231,11 @@
 {#if withNav}<InboxWatch bind:count={inboxCount} />{/if}
 
 <div class="flex h-[100dvh] flex-col overflow-hidden bg-base-200">
+	<!-- On a phone the session page drops this bar; its menu carries these controls. -->
 	<header
-		class="flex h-12 shrink-0 items-stretch gap-3 border-b border-base-300 bg-base-100 px-3 sm:px-4"
+		class="flex h-12 shrink-0 items-stretch gap-3 border-b border-base-300 bg-base-100 px-3 sm:px-4 {onSession
+			? 'max-sm:hidden'
+			: ''}"
 	>
 		<a href="/" class="deck-brand flex items-center gap-2.5" aria-label="deck home">
 			<span class="deck-mark" aria-hidden="true"></span>

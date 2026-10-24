@@ -32,9 +32,13 @@
 	import { goto } from '$app/navigation';
 	import { resolveBeside } from '$lib/beside-core';
 	import { markRead } from '$lib/mark-read';
-	import { Menu, X, Ticket, Check, ChevronDown, AppWindow } from '@lucide/svelte';
+	import { Menu, X, Ticket, Check, ChevronDown, AppWindow, Bell, BellRing, BellOff } from '@lucide/svelte';
 	import { inShell, openDevBrowser } from '$lib/shell';
 	import Popover from '$lib/components/Popover.svelte';
+	import NavLinks from '$lib/components/NavLinks.svelte';
+	import { THEMES } from '$lib/theme-core';
+	import { THEME_ICONS, themeUi } from '$lib/theme.svelte';
+	import { appChrome } from '$lib/app-chrome.svelte';
 	import { onMount } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { agentGet, sessionPath } from '$lib/agent-api';
@@ -455,7 +459,7 @@
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="flex h-full min-w-0 flex-1 flex-col px-2 pt-2 {beside && activePane === 'main' ? 'lg:ring-1 lg:ring-inset lg:ring-primary/30' : ''}"
+		class="flex h-full min-w-0 flex-1 flex-col px-2 pt-1 sm:pt-2 {beside && activePane === 'main' ? 'lg:ring-1 lg:ring-inset lg:ring-primary/30' : ''}"
 		onfocusin={() => (activePane = 'main')}
 	>
 		{#if del.error}
@@ -470,7 +474,7 @@
 				</button>
 			</div>
 		{/if}
-		<div class="mb-2 flex flex-wrap items-center gap-2">
+		<div class="mb-1 flex items-center gap-2 sm:mb-2 sm:flex-wrap">
 			<button
 				class="fold-hide btn btn-ghost btn-sm shrink-0 lg:hidden"
 				onclick={() => (sidebarOpen = true)}
@@ -530,12 +534,41 @@
 								</button></li>
 							{/each}
 						</ul>
+						<!-- The app bar is hidden here on a phone, so its controls live on in this menu. -->
+						<div class="divider my-1"></div>
+						<div class="join w-full" role="group" aria-label="Theme">
+							{#each THEMES as t (t.id)}
+								{@const Icon = THEME_ICONS[t.id]}
+								<button
+									class="btn join-item btn-sm flex-1 {themeUi.current === t.id ? 'btn-active' : 'btn-ghost'}"
+									onclick={() => themeUi.set(t.id)}
+									aria-pressed={themeUi.current === t.id}
+									aria-label="{t.label} theme"
+									title={t.label}
+								>
+									<Icon size={14} />
+								</button>
+							{/each}
+						</div>
+						{#if appChrome.pushSupported}
+							<ul class="menu menu-sm w-full p-0 pt-1">
+								<li><button onclick={appChrome.togglePush} disabled={appChrome.pushBusy || appChrome.pushDenied}>
+									{#if appChrome.pushDenied}<BellOff size={14} /> Notifications blocked
+									{:else if appChrome.subscribed}<BellRing size={14} /> Notifications on
+									{:else}<Bell size={14} /> Notifications off{/if}
+								</button></li>
+							</ul>
+						{/if}
+						<div class="divider my-1"></div>
+						<NavLinks variant="menu" inboxCount={appChrome.inboxCount} onnavigate={() => (viewMenuOpen = false)} />
 					</Popover>
 				</div>
 				{#if liveKind !== 'shell' && !session.remote}
-					{#each data.editors as editor (editor.scheme)}
-						<EditorButton {editor} />
-					{/each}
+					<span class="hidden sm:contents">
+						{#each data.editors as editor (editor.scheme)}
+							<EditorButton {editor} />
+						{/each}
+					</span>
 				{/if}
 				{#if inShell}
 					<button class="btn btn-outline btn-xs header-chip gap-1" onclick={() => openDevBrowser(session.id)} title="Open this session's dev servers in the dev browser" aria-label="Dev browser">
