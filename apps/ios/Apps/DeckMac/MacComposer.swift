@@ -130,8 +130,16 @@ struct MacComposer: View {
 	private func focusAtEnd() {
 		guard !fieldFocused else { return }
 		fieldFocused = true
+		collapseSelection(tries: 3)
+	}
+
+	/// The field editor usually takes over within one main-queue hop; up to three cover a slower focus change.
+	private func collapseSelection(tries: Int) {
 		DispatchQueue.main.async {
-			guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.string == draft else { return }
+			guard fieldFocused, let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.string == draft else {
+				if tries > 1 { collapseSelection(tries: tries - 1) }
+				return
+			}
 			editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
 		}
 	}
