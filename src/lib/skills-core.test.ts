@@ -16,6 +16,13 @@ const skills: SkillInfo[] = [
 ];
 
 describe('parseSkillFrontmatter', () => {
+	it('folds a block scalar description onto one line', () => {
+		expect(parseSkillFrontmatter('---\nname: audit\ndescription: >\n  Audit the site\n  and report.\nversion: 1\n---\n')).toEqual({
+			name: 'audit',
+			description: 'Audit the site and report.'
+		});
+	});
+
 	it('reads name and description out of the frontmatter', () => {
 		expect(parseSkillFrontmatter('---\nname: handoff\ndescription: Write a handoff\n---\n# Handoff')).toEqual({
 			name: 'handoff',

@@ -14,9 +14,19 @@ export function parseSkillFrontmatter(markdown: string): { name?: string; descri
 	const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown);
 	if (!match) return {};
 	const out: { name?: string; description?: string } = {};
-	for (const line of match[1].split(/\r?\n/)) {
-		const m = /^(name|description):\s*(.*)$/.exec(line);
-		if (m) out[m[1] as 'name' | 'description'] = m[2].trim().replace(/^["']|["']$/g, '');
+	const lines = match[1].split(/\r?\n/);
+	for (let i = 0; i < lines.length; i++) {
+		const m = /^(name|description):\s*(.*)$/.exec(lines[i]);
+		if (!m) continue;
+		let value = m[2].trim();
+		// A YAML block scalar (`>` or `|`, maybe with a chomping sign) carries
+		// the value on the indented lines below; fold them into one line.
+		if (/^[>|][+-]?$/.test(value)) {
+			const block: string[] = [];
+			while (i + 1 < lines.length && (/^\s/.test(lines[i + 1]) || !lines[i + 1].trim())) block.push(lines[++i].trim());
+			value = block.filter(Boolean).join(' ');
+		}
+		out[m[1] as 'name' | 'description'] = value.replace(/^["']|["']$/g, '');
 	}
 	return out;
 }
