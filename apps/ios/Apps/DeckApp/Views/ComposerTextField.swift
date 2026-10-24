@@ -86,6 +86,8 @@ final class PasteTextView: UITextView {
 			guard let self else { return }
 			if wantsFocus, !isFirstResponder, window != nil {
 				becomeFirstResponder()
+				// Focus asked for from SwiftUI (a tap beside the text, a restore) starts at the end; a tap on the text focuses the view first and keeps its caret.
+				selectedRange = NSRange(location: (text as NSString).length, length: 0)
 			} else if !wantsFocus, isFirstResponder {
 				resignFirstResponder()
 			}

@@ -64,6 +64,8 @@ struct MacComposer: View {
 			}
 		}
 		.padding()
+		// Behind everything, so the field and the buttons keep their own clicks.
+		.background { Color.clear.contentShape(Rectangle()).onTapGesture(perform: focusAtEnd) }
 		.fileImporter(isPresented: $importing, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
 			guard case .success(let urls) = result else { attachFailures += 1; return }
 			for url in urls { attach(fileAt: url) }
@@ -98,7 +100,11 @@ struct MacComposer: View {
 			.textFieldStyle(.plain)
 			.lineLimit(1...8)
 			.padding(8)
-			.background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.control))
+			.background {
+				RoundedRectangle(cornerRadius: DeckStyle.Radius.control)
+					.fill(Color(nsColor: .textBackgroundColor))
+					.onTapGesture(perform: focusAtEnd)
+			}
 			.overlay(
 				RoundedRectangle(cornerRadius: DeckStyle.Radius.control)
 					.stroke(Color(nsColor: .separatorColor), lineWidth: 0.5))
@@ -117,6 +123,25 @@ struct MacComposer: View {
 				if let pasteMonitor { NSEvent.removeMonitor(pasteMonitor) }
 				pasteMonitor = nil
 			}
+	}
+
+	/// A click beside the text. AppKit selects a field's whole text as it
+	/// takes focus, and the next key would replace the draft.
+	private func focusAtEnd() {
+		guard !fieldFocused else { return }
+		fieldFocused = true
+		collapseSelection(tries: 3)
+	}
+
+	/// The field editor usually takes over within one main-queue hop; up to three cover a slower focus change.
+	private func collapseSelection(tries: Int) {
+		DispatchQueue.main.async {
+			guard fieldFocused, let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.string == draft else {
+				if tries > 1 { collapseSelection(tries: tries - 1) }
+				return
+			}
+			editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+		}
 	}
 
 	private var quickMessages: some View {
