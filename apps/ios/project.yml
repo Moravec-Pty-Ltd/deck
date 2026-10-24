@@ -58,6 +58,13 @@ targets:
         NSMicrophoneUsageDescription: deck records what you say in voice mode and sends it to your deck server for transcription.
         NSSpeechRecognitionUsageDescription: deck listens for "hey deck" on the device so you can talk to the operator hands-free. Nothing is sent to Apple.
         UIBackgroundModes: [remote-notification, audio]
+        # The phone's window stays SwiftUI's own scene; only CarPlay's is named.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneConfigurationName: CarPlay
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
         ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

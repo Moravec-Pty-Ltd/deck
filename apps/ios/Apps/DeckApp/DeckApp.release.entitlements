@@ -8,6 +8,8 @@
 	     suggested one. iOS kills an app at a far lower default, and MLX maps
 	     the weights rather than copying them, which wants the larger address
 	     space. Both are available to any app and need nothing in the portal. -->
+	<key>com.apple.developer.carplay-voice-based-conversation</key>
+	<true/>
 	<key>com.apple.developer.kernel.increased-memory-limit</key>
 	<true/>
 	<key>com.apple.developer.kernel.extended-virtual-addressing</key>

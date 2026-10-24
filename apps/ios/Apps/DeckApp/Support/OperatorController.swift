@@ -112,13 +112,41 @@ final class OperatorController {
 		wakeHeard = ""
 		wakeError = ""
 		#if os(iOS)
-		listenForWakeWord(voice)
+		if inCar { listenOnTap(voice) } else { listenForWakeWord(voice) }
 		#else
+		listenOnTap(voice)
+		#endif
+		if let store { listen(store) }
+	}
+
+	private func listenOnTap(_ voice: VoiceController) {
 		voice.settings.handsFree = false
 		voice.listenGate = true
 		voice.enable()
-		#endif
-		if let store { listen(store) }
+	}
+
+	// MARK: - CarPlay
+
+	/// CarPlay allows no wake word: while the car is connected the operator
+	/// listens only on a tap from its CarPlay screen, and the phone's open mic
+	/// stays off until the car goes.
+	private(set) var inCar = false
+	private var onBeforeCar = false
+
+	func enterCar() {
+		guard !inCar else { return }
+		// Paused for a session's voice mode on the phone counts as on.
+		onBeforeCar = enabled || paused
+		paused = false
+		turnOff()
+		inCar = true
+	}
+
+	func leaveCar() {
+		guard inCar else { return }
+		turnOff()
+		inCar = false
+		if onBeforeCar { turnOn() }
 	}
 
 	#if os(iOS)
