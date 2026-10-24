@@ -338,7 +338,9 @@ public final class VoiceController {
 		if willRead { speak(text, readOut: settings.readOut) }
 	}
 
-	private func startAsk(_ ask: DeckAsk) {
+	/// Read a question and take the next takes as its answer; the stream calls
+	/// this for a new ask, and a screen opened on an open one calls it too.
+	public func startAsk(_ ask: DeckAsk) {
 		guard !ask.questions.isEmpty else { return }
 		let flow = VoiceAskFlow(ask: ask)
 		self.ask = flow

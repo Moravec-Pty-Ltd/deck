@@ -5,7 +5,10 @@ import DeckUI
 @main
 struct DeckAppMain: App {
 	@UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-	@State private var store = DeckStore()
+	/// One store for the phone's window and the CarPlay scene, either of which
+	/// can be running without the other.
+	@MainActor static let store = DeckStore()
+	@State private var store = DeckAppMain.store
 	private let watchSync = WatchSync()
 
 	var body: some Scene {
