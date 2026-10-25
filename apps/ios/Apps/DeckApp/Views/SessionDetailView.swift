@@ -157,6 +157,9 @@ struct SessionDetailView: View {
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar(isShort ? .hidden : .automatic, for: .navigationBar)
 			.background { EdgeSwipeBack(active: isShort) }
+			// The header line can sit at the window's very top (the outer display
+			// has no top inset), where the system's pull-down takes the first tap.
+			.defersSystemGestures(on: isShort ? .top : [])
 			.toolbar { if !isShort { toolbarContent } }
 			.focusedSceneValue(\.deckSession, isActivePane == false ? nil : keyboardActions)
 			// Simultaneous, so the tap still reaches whatever it landed on.
@@ -270,7 +273,6 @@ struct SessionDetailView: View {
 		// The bar's buttons, without a bar to size their tap areas.
 		.buttonStyle(HeaderButtonStyle())
 		.padding(.horizontal)
-		// Clear of the window's top edge, where the system takes some taps.
 		.padding(.top, 6)
 		.background(.bar)
 	}
