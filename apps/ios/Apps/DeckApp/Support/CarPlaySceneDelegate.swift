@@ -18,8 +18,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 }
 
 /// deck in the car: a list of Operator and the working sessions, each opening
-/// a voice screen. Talking is tap to talk and replies are spoken, never shown.
-/// The phone's operator stops listening while the car is connected.
+/// a voice screen. Voice screens are hands-free unless the "Hands-free in the
+/// car" setting is off, and replies are spoken, never shown. The phone's
+/// operator stops listening while the car is connected.
 @available(iOS 26.4, *)
 @MainActor
 private final class CarPlayScreens: NSObject, CPInterfaceControllerDelegate {
@@ -28,6 +29,7 @@ private final class CarPlayScreens: NSObject, CPInterfaceControllerDelegate {
 	private var voiceScreen: CPVoiceControlTemplate?
 	private var voice: VoiceController?
 	private var working: () -> Bool = { false }
+	private var handsFree = true
 	/// The open session's stream, which feeds its voice controller.
 	private var session: SessionDetailViewModel?
 	// Each voice screen gets a number, so an observation of a closed one stops.
@@ -106,8 +108,10 @@ private final class CarPlayScreens: NSObject, CPInterfaceControllerDelegate {
 		guard let voice = model.voiceController() else { return }
 		model.startPolling()
 		session = model
+		// Never written back, so the car leaves the phone's own setting alone.
 		voice.persistsSettings = false
-		voice.settings.handsFree = false
+		voice.settings.handsFree = VoiceSettings.load().handsFreeInCar
+		voice.bargeIn = false
 		if voice.capabilities == nil { Task { await voice.loadCapabilities() } }
 		voice.enable()
 		if let ask = store.asks.first(where: { $0.sessionId == id }) { voice.startAsk(ask) }
@@ -119,12 +123,15 @@ private final class CarPlayScreens: NSObject, CPInterfaceControllerDelegate {
 		let run = voiceRun
 		self.voice = voice
 		self.working = working
-		let states = CarPlayHome.VoiceState.allCases.map { state in
+		let handsFree = voice.settings.handsFree
+		self.handsFree = handsFree
+		let states = CarPlayHome.VoiceState.states(handsFree: handsFree).map { state in
 			let item = CPVoiceControlState(
 				identifier: state.rawValue, titleVariants: ["\(title): \(state.title)", state.title], image: nil, repeats: false)
-			let image = UIImage(systemName: state == .listening ? "arrow.up.circle.fill" : "mic.fill") ?? UIImage()
-			let button = CPButton(image: image) { [weak self] _ in self?.talk() }
-			button.title = state.buttonTitle
+			let tap = state.tap(handsFree: handsFree)
+			let image = UIImage(systemName: Self.symbol(tap)) ?? UIImage()
+			let button = CPButton(image: image) { [weak self] _ in self?.press(tap) }
+			button.title = state.buttonTitle(handsFree: handsFree)
 			item.actionButtons = [button]
 			return item
 		}
@@ -133,15 +140,40 @@ private final class CarPlayScreens: NSObject, CPInterfaceControllerDelegate {
 		interface.pushTemplate(screen, animated: true) { [weak self] _, _ in self?.followVoice(run) }
 	}
 
-	private func talk() {
+	private static func symbol(_ tap: CarPlayHome.VoiceState.Tap) -> String {
+		switch tap {
+		case .talk: "mic.fill"
+		case .send: "arrow.up.circle.fill"
+		case .pause: "pause.fill"
+		case .resume: "play.fill"
+		}
+	}
+
+	// The button acts on what the voice is doing now, not the state it was
+	// built for, in case the screen has yet to catch up.
+	private func press(_ tap: CarPlayHome.VoiceState.Tap) {
 		guard let voice else { return }
-		if voice.recording { voice.stopRecording() } else { voice.startRecording() }
+		if voice.recording { return voice.stopRecording() }
+		switch tap {
+		case .talk: voice.startRecording()
+		case .send: break
+		// Switching hands-free closes or reopens the mic; setting it on again
+		// also retries a mic that failed to open.
+		case .pause:
+			voice.settings.handsFree = false
+			voice.stopSpeaking()
+		case .resume:
+			voice.settings.handsFree = true
+			// Loading them starts listening once deck says it can transcribe.
+			if !voice.canListen { Task { await voice.loadCapabilities() } }
+		}
 	}
 
 	private func followVoice(_ run: Int) {
 		guard run == voiceRun, let voice, let voiceScreen else { return }
 		withObservationTracking {
-			let state = CarPlayHome.VoiceState.of(voice.status, working: working()).rawValue
+			let state = CarPlayHome.VoiceState.of(
+				voice.status, recording: voice.recording, working: working(), handsFree: handsFree).rawValue
 			if voiceScreen.activeStateIdentifier != state { voiceScreen.activateVoiceControlState(withIdentifier: state) }
 		} onChange: {
 			Task { @MainActor [weak self] in self?.followVoice(run) }

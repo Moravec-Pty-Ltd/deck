@@ -216,6 +216,12 @@ final class VoiceCoreTests: XCTestCase {
 		XCTAssertTrue(VoiceSettings.load(from: defaults).workingCue, "the working cue is on unless turned off")
 		VoiceSettings(workingCue: false).save(to: defaults)
 		XCTAssertFalse(VoiceSettings.load(from: defaults).workingCue)
+		XCTAssertTrue(VoiceSettings.load(from: defaults).handsFreeInCar, "the car is hands-free unless turned off")
+		var tapInCar = VoiceSettings()
+		tapInCar.handsFreeInCar = false
+		tapInCar.save(to: defaults)
+		XCTAssertFalse(VoiceSettings.load(from: defaults).handsFreeInCar)
+		XCTAssertTrue(VoiceSettings.load(from: defaults).handsFree, "the phone's hands-free is its own setting")
 		XCTAssertTrue(VoiceSettings.load(from: defaults).announceTools, "announcements are on unless turned off")
 		VoiceSettings(announceTools: false).save(to: defaults)
 		XCTAssertFalse(VoiceSettings.load(from: defaults).announceTools)

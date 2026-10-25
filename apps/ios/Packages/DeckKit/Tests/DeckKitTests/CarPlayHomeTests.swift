@@ -19,13 +19,33 @@ final class CarPlayHomeTests: XCTestCase {
 		XCTAssertEqual(CarPlayHome.sessions(list, asks: [], limit: -1).map(\.id), [])
 	}
 
-	func testVoiceStateFollowsTheController() {
-		XCTAssertEqual(CarPlayHome.VoiceState.of(.idle, working: false), .ready)
-		XCTAssertEqual(CarPlayHome.VoiceState.of(.idle, working: true), .thinking)
-		XCTAssertEqual(CarPlayHome.VoiceState.of(.transcribing, working: false), .thinking)
-		XCTAssertEqual(CarPlayHome.VoiceState.of(.listening, working: true), .listening)
-		XCTAssertEqual(CarPlayHome.VoiceState.of(.speaking, working: false), .speaking)
-		XCTAssertEqual(CarPlayHome.VoiceState.listening.buttonTitle, "Send")
-		XCTAssertEqual(CarPlayHome.VoiceState.speaking.buttonTitle, "Talk")
+	func testTapToTalkStates() {
+		let of = { CarPlayHome.VoiceState.of($0, recording: $1, working: $2, handsFree: false) }
+		XCTAssertEqual(of(.idle, false, false), .ready)
+		XCTAssertEqual(of(.idle, false, true), .thinking)
+		XCTAssertEqual(of(.listening, true, true), .hearing)
+		XCTAssertEqual(of(.transcribing, false, false), .thinking)
+		XCTAssertEqual(of(.speaking, false, false), .speaking)
+		XCTAssertEqual(CarPlayHome.VoiceState.states(handsFree: false), [.ready, .hearing, .thinking, .speaking])
+		XCTAssertEqual(CarPlayHome.VoiceState.hearing.buttonTitle(handsFree: false), "Send")
+		XCTAssertEqual(CarPlayHome.VoiceState.speaking.tap(handsFree: false), .talk)
+		XCTAssertEqual(CarPlayHome.VoiceState.ready.tap(handsFree: false), .talk)
+		XCTAssertEqual(CarPlayHome.VoiceState.hearing.tap(handsFree: false), .send)
+		XCTAssertEqual(CarPlayHome.VoiceState.ready.title, "Tap Talk to speak")
+	}
+
+	func testHandsFreeStates() {
+		let of = { CarPlayHome.VoiceState.of($0, recording: $1, working: $2, handsFree: true) }
+		XCTAssertEqual(of(.listening, false, false), .listening)
+		XCTAssertEqual(of(.listening, false, true), .thinking)
+		XCTAssertEqual(of(.listening, true, true), .hearing)
+		XCTAssertEqual(of(.speaking, false, true), .speaking)
+		XCTAssertEqual(of(.transcribing, false, false), .thinking)
+		XCTAssertEqual(of(.idle, false, true), .paused)
+		let states = CarPlayHome.VoiceState.states(handsFree: true)
+		XCTAssertLessThanOrEqual(states.count, 5)
+		XCTAssertEqual(states.map(\.title), ["Listening", "Listening", "Working on it", "Speaking", "Paused, tap to resume"])
+		XCTAssertEqual(states.map { $0.tap(handsFree: true) }, [.pause, .send, .pause, .pause, .resume])
+		XCTAssertFalse(states.contains { $0.title.contains("Send") })
 	}
 }
