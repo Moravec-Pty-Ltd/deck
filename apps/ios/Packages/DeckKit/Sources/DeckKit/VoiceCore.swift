@@ -68,18 +68,21 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 	public var workingCue = true
 	/// CarPlay's voice screens listen on their own, independent of `handsFree`.
 	public var handsFreeInCar = true
+	/// Say what the agent is doing ("Reading VoiceCore") in place of a tick.
+	public var announceTools = true
 	/// Bumped when a default changes for everyone. Both clients save the whole
 	/// object, so a stored false is not a choice until it carries this version.
 	public private(set) var version = VoiceSettings.currentVersion
 	static let currentVersion = 2
 
-	public init(chattiness: Chattiness = .everyUpdate, readOut: ReadOut = .summary, handsFree: Bool = true, sensitivity: VadSensitivity = .medium, endOfSpeech: EndOfSpeech = .normal, workingCue: Bool = true) {
+	public init(chattiness: Chattiness = .everyUpdate, readOut: ReadOut = .summary, handsFree: Bool = true, sensitivity: VadSensitivity = .medium, endOfSpeech: EndOfSpeech = .normal, workingCue: Bool = true, announceTools: Bool = true) {
 		self.chattiness = chattiness
 		self.readOut = readOut
 		self.handsFree = handsFree
 		self.sensitivity = sensitivity
 		self.endOfSpeech = endOfSpeech
 		self.workingCue = workingCue
+		self.announceTools = announceTools
 	}
 
 	// Each key is optional so settings saved before a key existed keep the rest
@@ -94,6 +97,7 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 		endOfSpeech = (try? container.decodeIfPresent(EndOfSpeech.self, forKey: .endOfSpeech)) ?? .normal
 		workingCue = try container.decodeIfPresent(Bool.self, forKey: .workingCue) ?? true
 		handsFreeInCar = try container.decodeIfPresent(Bool.self, forKey: .handsFreeInCar) ?? true
+		announceTools = try container.decodeIfPresent(Bool.self, forKey: .announceTools) ?? true
 	}
 
 	static let defaultsKey = "deck.voice.settings"
@@ -126,9 +130,10 @@ public enum VoiceTiming {
 // MARK: - Cues
 
 /// The short tones voice mode plays around a turn: the agent is still working,
-/// and the turn ended (or a question waits) with nothing read.
+/// the turn ended (or a question waits) with nothing read, and hands-free
+/// listening resumed.
 public enum VoiceCue: CaseIterable, Sendable {
-	case working, done
+	case working, done, listening
 
 	/// What voice mode says once a take is sent, ChatGPT-style, so you know it
 	/// was heard; they rotate so it doesn't sound canned. Short, so the server
@@ -147,10 +152,18 @@ public enum VoiceCue: CaseIterable, Sendable {
 		switch self {
 		case .working: return [(440, 0.04)]
 		case .done: return [(990, 0.06), (660, 0.09)]
+		// Rising, the done cue's mirror: the mic is open.
+		case .listening: return [(660, 0.05), (990, 0.07)]
 		}
 	}
 
-	private var gain: Float { self == .working ? 0.06 : 0.25 }
+	private var gain: Float {
+		switch self {
+		case .working: return 0.06
+		case .done: return 0.25
+		case .listening: return 0.2
+		}
+	}
 
 	/// Mono samples: sine notes with a 5 ms fade at each end so they don't click.
 	public func samples(sampleRate: Double = 16_000) -> [Float] {
@@ -183,6 +196,126 @@ public enum VoiceCue: CaseIterable, Sendable {
 	public static func donePlays(willRead: Bool, replied: Bool) -> Bool {
 		!willRead && !replied
 	}
+
+	/// The listening cue plays when hands-free listening resumes (voice mode
+	/// turned on, a reply or announcement finished), with nothing left to read
+	/// and no take open.
+	public static func listeningPlays(wasListening: Bool, listening: Bool, reading: Bool, recording: Bool) -> Bool {
+		listening && !wasListening && !reading && !recording
+	}
+}
+
+// MARK: - Tool-call announcements
+
+/// What a tool call is doing, for speech: `one` names this call, `many` the
+/// merged phrase for several of the same kind landing together, with `#` for
+/// the count.
+public struct ToolAction: Equatable, Sendable {
+	public var kind: String
+	public var one: String
+	public var many: String
+}
+
+public enum ToolAnnouncement {
+	/// At most one announcement this often.
+	public static let interval: TimeInterval = 4
+	/// Calls landing within this of each other are announced together.
+	public static let settle: TimeInterval = 0.3
+
+	/// A tool call as speech, after the headers the transcript shows. Questions
+	/// are read out whole instead.
+	public static func action(name: String, input: JSONValue) -> ToolAction {
+		func make(_ kind: String, _ one: String, _ many: String) -> ToolAction {
+			ToolAction(kind: kind, one: one.trimmingCharacters(in: .whitespaces), many: many)
+		}
+		switch name {
+		case "Read":
+			return make("read", "Reading \(fileName(input["file_path"].string))", "Reading # files")
+		case "Edit", "MultiEdit", "NotebookEdit":
+			return make("edit", "Editing \(fileName(input["file_path"].string ?? input["notebook_path"].string))", "Editing # files")
+		case "Write":
+			return make("write", "Writing \(fileName(input["file_path"].string))", "Writing # files")
+		case "Bash":
+			return make("run", "Running \(commandWords(input["command"].string))", "Running # commands")
+		case "Grep":
+			let what = words(input["pattern"].string)
+			return make("search", what.isEmpty ? "Searching the code" : "Searching for \(what)", "Running # searches")
+		case "Glob":
+			return make("search", "Finding files", "Running # searches")
+		case "WebSearch":
+			let what = words(input["query"].string)
+			return make("websearch", what.isEmpty ? "Searching the web" : "Searching the web for \(what)", "Running # web searches")
+		case "WebFetch":
+			let host = URL(string: input["url"].string ?? "")?.host().map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 }
+			return make("fetch", "Fetching \(host ?? "a page")", "Fetching # pages")
+		case "Agent", "Task":
+			let what = words(input["subagent_type"].string ?? input["description"].string)
+			return make("agent", what.isEmpty ? "Starting a subagent" : "Starting a subagent: \(what)", "Starting # subagents")
+		case "TodoWrite":
+			return make("todo", "Updating the to-do list", "Updating the to-do list")
+		default:
+			return make(name, "Using \(toolWords(name))", "Using \(toolWords(name)) # times")
+		}
+	}
+
+	/// The phrase for the calls since the last announcement: the newest call,
+	/// or "Reading three files" when the newest few are the same kind.
+	public static func phrase(_ actions: [ToolAction]) -> String? {
+		guard let last = actions.last else { return nil }
+		let n = actions.reversed().prefix { $0.kind == last.kind }.count
+		guard n > 1 else { return last.one }
+		let count = n < numberWords.count ? numberWords[n] : String(n)
+		return last.many.replacingOccurrences(of: "#", with: count)
+	}
+
+	/// An announcement plays with the setting on, the agent working, no
+	/// question waiting, nothing being recorded, transcribed, read or queued,
+	/// and the last one at least `interval` ago.
+	public static func plays(wanted: Bool, working: Bool, asking: Bool, busy: Bool, sinceLast: TimeInterval) -> Bool {
+		wanted && working && !asking && !busy && sinceLast >= interval
+	}
+
+	/// A queued announcement is dropped unplayed once a newer tool call has
+	/// started or anything else is queued behind it.
+	public static func stale(_ head: Utterance, latest: String?, queueCount: Int) -> Bool {
+		guard let id = head.toolUseId else { return false }
+		return id != latest || queueCount > 1
+	}
+
+	private static let numberWords = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+
+	/// The file name without its folder or extension: "SessionDetailView".
+	static func fileName(_ path: String?) -> String {
+		let base = (path ?? "").split(separator: "/").last.map(String.init) ?? ""
+		let stem = base.replacing(#/\.[^.]+$/#, with: "")
+		return stem.isEmpty ? base : stem
+	}
+
+	/// The first word or two of a shell command, past any `cd` and env vars,
+	/// and before the first flag or path: "pnpm test", "git status".
+	static func commandWords(_ command: String?) -> String {
+		let parts = (command ?? "").split(separator: #/&&|\|\||;|\||\n/#).map { $0.trimmingCharacters(in: .whitespaces) }
+		let part = parts.first { !$0.isEmpty && $0.firstMatch(of: #/^cd\b/#) == nil } ?? ""
+		var words = part.split(whereSeparator: \.isWhitespace).map(String.init).filter { $0.firstMatch(of: #/^\w+=/#) == nil }
+		guard !words.isEmpty else { return "a command" }
+		words[0] = fileName(words[0])
+		let end = words.indices.first { $0 >= 2 || words[$0].firstMatch(of: #/^-|[\/.]/#) != nil } ?? 2
+		return words.prefix(max(1, end)).joined(separator: " ")
+	}
+
+	/// Up to four words of free text, without regex or glob punctuation.
+	static func words(_ text: String?) -> String {
+		let clean = (text ?? "").replacing(#/[^\p{L}\p{N}' -]+/#, with: " ")
+		return clean.split(whereSeparator: \.isWhitespace).prefix(4).joined(separator: " ")
+	}
+
+	/// "mcp__deck__send_message" and "TodoWrite" as "send message" and "todo write".
+	static func toolWords(_ name: String) -> String {
+		name.replacing(#/^mcp__.+__/#, with: "")
+			.replacing(#/([a-z])([A-Z])/#) { "\($0.1) \($0.2)" }
+			.replacingOccurrences(of: "_", with: " ")
+			.lowercased()
+	}
 }
 
 /// One thing to read, in queue order. `cue` plays before the first segment,
@@ -193,11 +326,14 @@ public struct Utterance {
 	public var segments: [SpeechSegment]
 	public var cue: VoiceCue?
 	public var pending: Task<[SpeechSegment], Never>?
+	/// Set on a tool-call announcement: the call it announces.
+	public var toolUseId: String?
 
-	public init(segments: [SpeechSegment] = [], cue: VoiceCue? = nil, pending: Task<[SpeechSegment], Never>? = nil) {
+	public init(segments: [SpeechSegment] = [], cue: VoiceCue? = nil, pending: Task<[SpeechSegment], Never>? = nil, toolUseId: String? = nil) {
 		self.segments = segments
 		self.cue = cue
 		self.pending = pending
+		self.toolUseId = toolUseId
 	}
 
 	/// Skip drops the head, and a cue waiting behind it with nothing to read.

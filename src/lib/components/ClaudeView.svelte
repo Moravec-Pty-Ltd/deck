@@ -305,6 +305,7 @@
 			for (const block of ev.message?.content ?? []) {
 				if (block.type === 'text' && block.text?.trim()) voice.onAssistantText(block.text);
 				else if (block.type === 'tool_use' && isAskTool(block)) voice.onAsk(block.id, block.input?.questions ?? []);
+				else if (block.type === 'tool_use') voice.onToolCall(block.id, block.name, block.input ?? {});
 			}
 		} else if (ev.type === 'result') {
 			voice.onTurnFinished();

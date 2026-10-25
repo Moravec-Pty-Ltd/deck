@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { answerAskFlow, askAnswerText, askPrompt, cueSamples, doneCuePlays, skipUtterance, turnEnd, downsample, errorText, isUsableTake, nextSegment, parseVoiceSettings, PcmRing, serializeVoiceSettings, restingCaption, restingStatus, rms, startAskFlow, vadAction, BARGE_IN_HOLD_MS, missedStart, VoiceDetector, wavBytes, workingCuePlays } from './voice-core';
+import { announcement, announcementStale, announcePlays, ANNOUNCE_MS, listeningCuePlays, toolAction, answerAskFlow, askAnswerText, askPrompt, cueSamples, doneCuePlays, skipUtterance, turnEnd, downsample, errorText, isUsableTake, nextSegment, parseVoiceSettings, PcmRing, serializeVoiceSettings, restingCaption, restingStatus, rms, startAskFlow, vadAction, BARGE_IN_HOLD_MS, missedStart, VoiceDetector, wavBytes, workingCuePlays } from './voice-core';
 import { VAD_CLOSE_MS, VAD_OPEN_MS } from './speech-core';
 
 describe('voice settings', () => {
 	it('defaults and tolerates junk', () => {
-		expect(parseVoiceSettings(null)).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true, readOut: 'summary' });
-		expect(parseVoiceSettings('not json')).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true, readOut: 'summary' });
+		expect(parseVoiceSettings(null)).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true, announceTools: true, readOut: 'summary' });
+		expect(parseVoiceSettings('not json')).toEqual({ chattiness: 'every-update', handsFree: true, sensitivity: 'medium', endOfSpeech: 'normal', workingCue: true, announceTools: true, readOut: 'summary' });
 		expect(parseVoiceSettings('{"chattiness":"final-only","handsFree":true,"sensitivity":"high"}')).toEqual({
-			chattiness: 'final-only', handsFree: true, sensitivity: 'high', endOfSpeech: 'normal', workingCue: true, readOut: 'summary'
+			chattiness: 'final-only', handsFree: true, sensitivity: 'high', endOfSpeech: 'normal', workingCue: true, announceTools: true, readOut: 'summary'
 		});
 		expect(parseVoiceSettings('{"workingCue":false}').workingCue).toBe(false);
+		expect(parseVoiceSettings('{"announceTools":false}').announceTools).toBe(false);
 		expect(parseVoiceSettings('{"readOut":"brief"}').readOut).toBe('brief');
 		expect(parseVoiceSettings('{"readOut":"aloud"}').readOut).toBe('summary');
 		expect(parseVoiceSettings('{"endOfSpeech":"long"}').endOfSpeech).toBe('long');
@@ -18,7 +19,7 @@ describe('voice settings', () => {
 		expect(parseVoiceSettings('{"sensitivity":"high"}').handsFree).toBe(true);
 		expect(parseVoiceSettings('{"handsFree":false}').handsFree).toBe(true);
 		expect(parseVoiceSettings('{"handsFree":false,"v":2}').handsFree).toBe(false);
-		const holdToTalk = { chattiness: 'final-only', handsFree: false, sensitivity: 'low', endOfSpeech: 'short', workingCue: false, readOut: 'full' } as const;
+		const holdToTalk = { chattiness: 'final-only', handsFree: false, sensitivity: 'low', endOfSpeech: 'short', workingCue: false, announceTools: false, readOut: 'full' } as const;
 		expect(parseVoiceSettings(serializeVoiceSettings(holdToTalk))).toEqual(holdToTalk);
 	});
 });
@@ -230,13 +231,94 @@ describe('cues', () => {
 	});
 
 	it('keeps every cue too short and quiet to open a take', () => {
-		for (const cue of ['working', 'done'] as const) {
+		for (const cue of ['working', 'done', 'listening'] as const) {
 			const samples = cueSamples(cue, 48_000);
 			expect(samples.length).toBeGreaterThan(0);
 			expect((samples.length / 48_000) * 1000).toBeLessThan(VAD_OPEN_MS);
 			expect(Math.max(...samples.map(Math.abs))).toBeLessThanOrEqual(0.25);
 			expect(Math.abs(samples[0])).toBeLessThan(0.01);
 		}
+	});
+});
+
+describe('listening cue', () => {
+	it('plays when hands-free listening resumes with nothing left to read', () => {
+		expect(listeningCuePlays('idle', 'listening', false, false)).toBe(true);
+		expect(listeningCuePlays('speaking', 'listening', false, false)).toBe(true);
+		expect(listeningCuePlays('listening', 'listening', false, false)).toBe(false);
+		expect(listeningCuePlays('speaking', 'idle', false, false)).toBe(false);
+		expect(listeningCuePlays('transcribing', 'listening', true, false)).toBe(false);
+		expect(listeningCuePlays('speaking', 'listening', false, true)).toBe(false);
+	});
+
+	it('rises where the done cue falls', () => {
+		const pitch = (s: Float32Array, at: number) => {
+			let crossings = 0;
+			for (let i = at + 1; i < at + 400; i++) if (s[i - 1] < 0 !== s[i] < 0) crossings++;
+			return crossings;
+		};
+		const listening = cueSamples('listening', 16_000);
+		const done = cueSamples('done', 16_000);
+		expect(pitch(listening, listening.length - 500)).toBeGreaterThan(pitch(listening, 100));
+		expect(pitch(done, done.length - 500)).toBeLessThan(pitch(done, 100));
+	});
+});
+
+describe('tool-call announcements', () => {
+	const say = (name: string, input: Record<string, unknown>) => announcement([toolAction(name, input)]);
+
+	it('phrases each tool for speech', () => {
+		expect(say('Read', { file_path: '/path/to/project/apps/ios/SessionDetailView.swift' })).toBe('Reading SessionDetailView');
+		expect(say('Edit', { file_path: 'src/lib/voice-core.ts' })).toBe('Editing voice-core');
+		expect(say('Write', { file_path: 'Makefile' })).toBe('Writing Makefile');
+		expect(say('Bash', { command: 'pnpm test --run' })).toBe('Running pnpm test');
+		expect(say('Bash', { command: 'cd ~/code/deck && FOO=1 git status --short' })).toBe('Running git status');
+		expect(say('Bash', { command: 'sed -n 1,20p file.ts' })).toBe('Running sed');
+		expect(say('Bash', { command: 'ls src/lib' })).toBe('Running ls');
+		expect(say('Grep', { pattern: 'PasteButton' })).toBe('Searching for PasteButton');
+		expect(say('Grep', { pattern: 'paste|Paste.*Handler' })).toBe('Searching for paste Paste Handler');
+		expect(say('Grep', { pattern: '\\(' })).toBe('Searching the code');
+		expect(say('Glob', { pattern: '**/*.svelte' })).toBe('Finding files');
+		expect(say('WebFetch', { url: 'https://www.example.com/docs' })).toBe('Fetching example.com');
+		expect(say('WebSearch', { query: 'svelte 5 runes effect cleanup order' })).toBe('Searching the web for svelte 5 runes effect');
+		expect(say('Task', { subagent_type: 'review', description: 'Review the diff' })).toBe('Starting a subagent: review');
+		expect(say('Agent', { description: 'Find paste handling' })).toBe('Starting a subagent: Find paste handling');
+		expect(say('TodoWrite', { todos: [] })).toBe('Updating the to-do list');
+		expect(say('mcp__deck__send_message', {})).toBe('Using send message');
+		expect(say('ToolSearch', {})).toBe('Using tool search');
+		expect(say('mcp__plugin_docs_docs__query_docs', {})).toBe('Using query docs');
+		expect(say('Bash', { command: './run.sh --fast' })).toBe('Running run');
+		expect(say('Bash', { command: 'cd apps/web' })).toBe('Running a command');
+		expect(say('WebSearch', {})).toBe('Searching the web');
+	});
+
+	it('merges the newest calls of one kind', () => {
+		const read = (f: string) => toolAction('Read', { file_path: f });
+		expect(announcement([])).toBeNull();
+		expect(announcement([read('a.ts'), read('b.ts'), read('c.ts')])).toBe('Reading three files');
+		expect(announcement([toolAction('Bash', { command: 'ls' }), read('a.ts'), read('b.ts')])).toBe('Reading two files');
+		expect(announcement([read('a.ts'), read('b.ts'), toolAction('Bash', { command: 'pnpm test' })])).toBe('Running pnpm test');
+		expect(announcement([toolAction('Grep', { pattern: 'a' }), toolAction('Glob', { pattern: '*' })])).toBe('Running two searches');
+		expect(announcement([toolAction('WebSearch', { query: 'a' }), toolAction('WebFetch', { url: 'https://example.com' })])).toBe('Fetching example.com');
+		expect(announcement(Array.from({ length: 12 }, (_, i) => read(`${i}.ts`)))).toBe('Reading 12 files');
+	});
+
+	it('plays only into silence, at most once every ANNOUNCE_MS', () => {
+		expect(announcePlays(true, true, false, false, ANNOUNCE_MS)).toBe(true);
+		expect(announcePlays(true, true, false, false, ANNOUNCE_MS - 1)).toBe(false);
+		expect(announcePlays(false, true, false, false, ANNOUNCE_MS)).toBe(false);
+		expect(announcePlays(true, false, false, false, ANNOUNCE_MS)).toBe(false);
+		expect(announcePlays(true, true, true, false, ANNOUNCE_MS)).toBe(false);
+		expect(announcePlays(true, true, false, true, ANNOUNCE_MS)).toBe(false);
+	});
+
+	it('drops an announcement once a newer call starts or anything queues behind it', () => {
+		const head = { segments: [], toolUseId: 't1' };
+		expect(announcementStale(head, 't1', 1)).toBe(false);
+		expect(announcementStale(head, 't2', 1)).toBe(true);
+		expect(announcementStale(head, null, 1)).toBe(true);
+		expect(announcementStale(head, 't1', 2)).toBe(true);
+		expect(announcementStale({ segments: [] }, 't2', 2)).toBe(false);
 	});
 });
 

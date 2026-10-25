@@ -114,6 +114,7 @@ struct VoiceView: View {
 			send: { text in try await store.send(sessionId: sessionId, text: text, voice: true) },
 			answer: { ask, draft in try await store.answer(ask: ask, text: draft.text, answers: draft.answers) },
 			interrupt: { try await store.stop(sessionId: sessionId) }))
+		controller.announcesTools = false
 		voice = controller
 		await controller.loadCapabilities()
 		controller.enable()

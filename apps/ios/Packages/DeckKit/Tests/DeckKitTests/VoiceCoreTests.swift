@@ -222,6 +222,9 @@ final class VoiceCoreTests: XCTestCase {
 		tapInCar.save(to: defaults)
 		XCTAssertFalse(VoiceSettings.load(from: defaults).handsFreeInCar)
 		XCTAssertTrue(VoiceSettings.load(from: defaults).handsFree, "the phone's hands-free is its own setting")
+		XCTAssertTrue(VoiceSettings.load(from: defaults).announceTools, "announcements are on unless turned off")
+		VoiceSettings(announceTools: false).save(to: defaults)
+		XCTAssertFalse(VoiceSettings.load(from: defaults).announceTools)
 	}
 
 	func testReadOutDefaultsToSummaryAndSticks() throws {
@@ -242,6 +245,88 @@ final class VoiceCoreTests: XCTestCase {
 		XCTAssertTrue(VoiceCue.donePlays(willRead: false, replied: false))
 		XCTAssertFalse(VoiceCue.donePlays(willRead: true, replied: false))
 		XCTAssertFalse(VoiceCue.donePlays(willRead: false, replied: true))
+	}
+
+	func testListeningCuePlaysWhenHandsFreeListeningResumes() {
+		XCTAssertTrue(VoiceCue.listeningPlays(wasListening: false, listening: true, reading: false, recording: false))
+		XCTAssertFalse(VoiceCue.listeningPlays(wasListening: true, listening: true, reading: false, recording: false), "already listening")
+		XCTAssertFalse(VoiceCue.listeningPlays(wasListening: false, listening: false, reading: false, recording: false), "hold-to-talk rests idle")
+		XCTAssertFalse(VoiceCue.listeningPlays(wasListening: false, listening: true, reading: true, recording: false), "more to read")
+		XCTAssertFalse(VoiceCue.listeningPlays(wasListening: false, listening: true, reading: false, recording: true), "a take is open")
+	}
+
+	func testListeningCueRisesWhereTheDoneCueFalls() {
+		func crossings(_ s: [Float], from at: Int) -> Int {
+			(at + 1..<at + 400).filter { (s[$0 - 1] < 0) != (s[$0] < 0) }.count
+		}
+		let listening = VoiceCue.listening.samples()
+		let done = VoiceCue.done.samples()
+		XCTAssertGreaterThan(crossings(listening, from: listening.count - 500), crossings(listening, from: 100))
+		XCTAssertLessThan(crossings(done, from: done.count - 500), crossings(done, from: 100))
+	}
+
+	private func say(_ name: String, _ input: [String: JSONValue]) -> String? {
+		ToolAnnouncement.phrase([ToolAnnouncement.action(name: name, input: .object(input))])
+	}
+
+	func testToolCallsArePhrasedForSpeech() {
+		XCTAssertEqual(say("Read", ["file_path": .string("/path/to/project/apps/ios/SessionDetailView.swift")]), "Reading SessionDetailView")
+		XCTAssertEqual(say("Edit", ["file_path": .string("src/lib/voice-core.ts")]), "Editing voice-core")
+		XCTAssertEqual(say("Write", ["file_path": .string("Makefile")]), "Writing Makefile")
+		XCTAssertEqual(say("Bash", ["command": .string("pnpm test --run")]), "Running pnpm test")
+		XCTAssertEqual(say("Bash", ["command": .string("cd ~/code/deck && FOO=1 git status --short")]), "Running git status")
+		XCTAssertEqual(say("Bash", ["command": .string("sed -n 1,20p file.ts")]), "Running sed")
+		XCTAssertEqual(say("Bash", ["command": .string("ls src/lib")]), "Running ls")
+		XCTAssertEqual(say("Grep", ["pattern": .string("PasteButton")]), "Searching for PasteButton")
+		XCTAssertEqual(say("Grep", ["pattern": .string("paste|Paste.*Handler")]), "Searching for paste Paste Handler")
+		XCTAssertEqual(say("Grep", ["pattern": .string("\\(")]), "Searching the code")
+		XCTAssertEqual(say("Glob", ["pattern": .string("**/*.svelte")]), "Finding files")
+		XCTAssertEqual(say("WebFetch", ["url": .string("https://www.example.com/docs")]), "Fetching example.com")
+		XCTAssertEqual(say("WebSearch", ["query": .string("svelte 5 runes effect cleanup order")]), "Searching the web for svelte 5 runes effect")
+		XCTAssertEqual(say("Task", ["subagent_type": .string("review"), "description": .string("Review the diff")]), "Starting a subagent: review")
+		XCTAssertEqual(say("Agent", ["description": .string("Find paste handling")]), "Starting a subagent: Find paste handling")
+		XCTAssertEqual(say("TodoWrite", ["todos": .array([])]), "Updating the to-do list")
+		XCTAssertEqual(say("mcp__deck__send_message", [:]), "Using send message")
+		XCTAssertEqual(say("ToolSearch", [:]), "Using tool search")
+		XCTAssertEqual(say("mcp__plugin_docs_docs__query_docs", [:]), "Using query docs")
+		XCTAssertEqual(say("Bash", ["command": .string("./run.sh --fast")]), "Running run")
+		XCTAssertEqual(say("Bash", ["command": .string("cd apps/web")]), "Running a command")
+		XCTAssertEqual(say("WebSearch", [:]), "Searching the web")
+	}
+
+	func testToolCallsOfOneKindMerge() {
+		let read = { (f: String) in ToolAnnouncement.action(name: "Read", input: .object(["file_path": .string(f)])) }
+		let bash = ToolAnnouncement.action(name: "Bash", input: .object(["command": .string("pnpm test")]))
+		XCTAssertNil(ToolAnnouncement.phrase([]))
+		XCTAssertEqual(ToolAnnouncement.phrase([read("a.ts"), read("b.ts"), read("c.ts")]), "Reading three files")
+		XCTAssertEqual(ToolAnnouncement.phrase([bash, read("a.ts"), read("b.ts")]), "Reading two files")
+		XCTAssertEqual(ToolAnnouncement.phrase([read("a.ts"), read("b.ts"), bash]), "Running pnpm test")
+		let grep = ToolAnnouncement.action(name: "Grep", input: .object(["pattern": .string("a")]))
+		let glob = ToolAnnouncement.action(name: "Glob", input: .object(["pattern": .string("*")]))
+		XCTAssertEqual(ToolAnnouncement.phrase([grep, glob]), "Running two searches")
+		let search = ToolAnnouncement.action(name: "WebSearch", input: .object(["query": .string("a")]))
+		let fetch = ToolAnnouncement.action(name: "WebFetch", input: .object(["url": .string("https://example.com")]))
+		XCTAssertEqual(ToolAnnouncement.phrase([search, fetch]), "Fetching example.com")
+		XCTAssertEqual(ToolAnnouncement.phrase((0..<12).map { read("\($0).ts") }), "Reading 12 files")
+	}
+
+	func testAnnouncementsPlayOnlyIntoSilenceAndAtMostEveryInterval() {
+		let gap = ToolAnnouncement.interval
+		XCTAssertTrue(ToolAnnouncement.plays(wanted: true, working: true, asking: false, busy: false, sinceLast: gap))
+		XCTAssertFalse(ToolAnnouncement.plays(wanted: true, working: true, asking: false, busy: false, sinceLast: gap - 0.1), "too soon")
+		XCTAssertFalse(ToolAnnouncement.plays(wanted: false, working: true, asking: false, busy: false, sinceLast: gap), "turned off")
+		XCTAssertFalse(ToolAnnouncement.plays(wanted: true, working: false, asking: false, busy: false, sinceLast: gap), "turn over")
+		XCTAssertFalse(ToolAnnouncement.plays(wanted: true, working: true, asking: true, busy: false, sinceLast: gap), "a question waits")
+		XCTAssertFalse(ToolAnnouncement.plays(wanted: true, working: true, asking: false, busy: true, sinceLast: gap), "something else is heard")
+	}
+
+	func testAStaleAnnouncementIsDropped() {
+		let head = Utterance(toolUseId: "t1")
+		XCTAssertFalse(ToolAnnouncement.stale(head, latest: "t1", queueCount: 1))
+		XCTAssertTrue(ToolAnnouncement.stale(head, latest: "t2", queueCount: 1), "a newer call started")
+		XCTAssertTrue(ToolAnnouncement.stale(head, latest: nil, queueCount: 1), "the turn ended")
+		XCTAssertTrue(ToolAnnouncement.stale(head, latest: "t1", queueCount: 2), "a reply waits behind it")
+		XCTAssertFalse(ToolAnnouncement.stale(Utterance(), latest: "t2", queueCount: 2), "only announcements go stale")
 	}
 
 	func testSkipDropsTheHeadAndAToneWaitingBehindIt() {
