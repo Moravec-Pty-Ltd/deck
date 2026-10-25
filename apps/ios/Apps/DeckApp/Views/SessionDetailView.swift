@@ -133,6 +133,10 @@ struct SessionDetailView: View {
 	/// navigation bar, and a one-row composer.
 	private var isShort: Bool { hinge.isShort && !hinge.isTabletop }
 
+	/// About the Send glyph's height at .title. More shares it, so the two
+	/// centre on each other in the bottom-aligned short row.
+	@ScaledMetric(relativeTo: .title) private var controlHeight: CGFloat = 34
+
 
 	/// Send, stop and compact for ⌘Return, ⌘. and ⇧⌘K (see DeckCommands).
 	private var keyboardActions: DeckSessionActions {
@@ -1053,6 +1057,8 @@ struct SessionDetailView: View {
 						.accessibilityHidden(true)
 				}
 			}
+			// Beside the controls, one line as tall as Send centres on it, and the last line stays on it as the text grows.
+			.padding(.vertical, isShort ? max(0, (controlHeight - UIFont.preferredFont(forTextStyle: .body).lineHeight) / 2) : 0)
 			// Here, not in the view's onAppear: the field only exists once the
 			// body has left its loading state, and focus set earlier is lost.
 			.onAppear { if viewModel.composerFocused { composerFocused = true } }
@@ -1101,6 +1107,7 @@ struct SessionDetailView: View {
 			}
 		} label: {
 			Image(systemName: "plus.circle")
+				.frame(height: controlHeight)
 		}
 		.accessibilityLabel("More")
 		.accessibilityIdentifier("composerMore")
@@ -1131,6 +1138,7 @@ struct SessionDetailView: View {
 		} label: {
 			Image(systemName: "arrow.up.circle.fill")
 				.font(.title)
+				.frame(height: controlHeight)
 		}
 		.disabled(!viewModel.hasDraft)
 		.accessibilityLabel("Send")
