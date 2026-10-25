@@ -148,10 +148,12 @@ final class FoldableUITests: XCTestCase {
 		let title = app.buttons["renameSession"]
 		XCTAssertTrue(title.waitForExistence(timeout: 20), "no header line\n\(app.debugDescription.prefix(3000))")
 		XCTAssertFalse(app.navigationBars["Stream token diff renderer"].exists, "no title band")
-		for control in ["openBrowser", "sessionMenu"] + (openFlat ? [] : ["sessionBack"]) {
+		XCTAssertFalse(app.buttons["sessionBack"].exists, "the rail's Sessions tab goes back, not a chevron")
+		for control in ["renameSession", "openBrowser", "sessionMenu"] {
 			let button = app.buttons[control]
 			XCTAssertTrue(button.isHittable, "\(control) is reachable")
 			XCTAssertEqual(button.frame.midY, title.frame.midY, accuracy: 12, "\(control) shares the title's line")
+			XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(control) has a full tap target")
 		}
 		let field = app.textViews["sessionComposer"]
 		XCTAssertTrue(field.waitForExistence(timeout: 20), "the session is still loading")
@@ -201,8 +203,13 @@ final class FoldableUITests: XCTestCase {
 		XCTAssertTrue(rename.waitForNonExistence(timeout: 5))
 
 		if !openFlat {
-			app.buttons["sessionBack"].tap()
-			XCTAssertTrue(list.waitForExistence(timeout: 5), "back goes to the list")
+			let edge = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: 2, dy: 0))
+			edge.press(forDuration: 0.05, thenDragTo: edge.withOffset(CGVector(dx: window.width * 0.7, dy: 0)))
+			XCTAssertTrue(list.waitForExistence(timeout: 5), "the edge swipe goes back to the list")
+			Self.listItem("Stream token diff renderer", in: app).tap()
+			XCTAssertTrue(app.buttons["renameSession"].waitForExistence(timeout: 20))
+			app.buttons["Sessions"].firstMatch.tap()
+			XCTAssertTrue(list.waitForExistence(timeout: 5), "the rail's Sessions tab goes back to the list")
 		}
 		Self.listItem("merged pr", in: app).tap()
 		let badge = app.staticTexts["prBadge"]

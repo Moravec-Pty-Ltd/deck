@@ -30,7 +30,7 @@ struct SessionDetailView: View {
 	@Environment(HingeMonitor.self) private var hinge
 	@Environment(\.openURL) private var openURL
 	@Environment(\.dismiss) private var dismiss
-	/// Pushed over the list, so the header line needs its own back button.
+	/// Pushed over the list, so a header line without the tab rail needs its own back button.
 	@Environment(\.isPresented) private var isPushed
 
 	/// The view's own model when there is no shared one.
@@ -156,6 +156,10 @@ struct SessionDetailView: View {
 			.navigationTitle(title)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar(isShort ? .hidden : .automatic, for: .navigationBar)
+			.background { EdgeSwipeBack(active: isShort) }
+			// The header line can sit at the window's very top (the outer display
+			// has no top inset), where the system's pull-down takes the first tap.
+			.defersSystemGestures(on: isShort ? .top : [])
 			.toolbar { if !isShort { toolbarContent } }
 			.focusedSceneValue(\.deckSession, isActivePane == false ? nil : keyboardActions)
 			// Simultaneous, so the tap still reaches whatever it landed on.
@@ -236,11 +240,13 @@ struct SessionDetailView: View {
 
 	/// The navigation bar's contents on one line for a short window: back or
 	/// close, the title, a finished PR's badge, then the browser and the menu.
+	/// A foldable shows the tab rail on both displays, and its Sessions tab goes
+	/// back, so back is only for a short phone with a bottom tab bar (an SE).
 	private var headerLine: some View {
-		HStack(spacing: 14) {
+		HStack(spacing: 8) {
 			if let onClose {
 				closeButton(onClose)
-			} else if isPushed {
+			} else if isPushed, hinge.posture == .unknown {
 				Button {
 					dismiss()
 				} label: {
@@ -267,7 +273,7 @@ struct SessionDetailView: View {
 		// The bar's buttons, without a bar to size their tap areas.
 		.buttonStyle(HeaderButtonStyle())
 		.padding(.horizontal)
-		.padding(.vertical, 6)
+		.padding(.top, 6)
 		.background(.bar)
 	}
 
@@ -288,6 +294,8 @@ struct SessionDetailView: View {
 				.font(.headline)
 				.lineLimit(1)
 				.foregroundStyle(isActivePane == false ? .secondary : .primary)
+				.frame(minHeight: 44)
+				.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
 		.accessibilityHint("Rename")
@@ -1400,11 +1408,11 @@ struct QuestionCard: View {
 	}
 }
 
-/// A header-line icon with a tap area as tall as a toolbar button's.
+/// A header-line icon with the 44 pt tap area the guidelines ask for.
 private struct HeaderButtonStyle: ButtonStyle {
 	func makeBody(configuration: Configuration) -> some View {
 		configuration.label
-			.frame(minWidth: 32, minHeight: 32)
+			.frame(minWidth: 44, minHeight: 44)
 			.contentShape(Rectangle())
 			.opacity(configuration.isPressed ? 0.5 : 1)
 			.foregroundStyle(.tint)
@@ -1449,5 +1457,54 @@ private extension View {
 		isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil, @ViewBuilder sheet: @escaping () -> Sheet
 	) -> some View {
 		modifier(OffTheFold(isPresented: isPresented, onDismiss: onDismiss, sheet: sheet))
+	}
+}
+
+/// Hiding the navigation bar for the short header line also turns off the
+/// edge swipe back. This lends the stack's pop gesture a delegate while the
+/// session shows and hands the old one back when it goes. Mounted whatever
+/// the window, so a fold never adds or removes it mid-screen; tall, it leaves
+/// every answer to the old delegate.
+private struct EdgeSwipeBack: UIViewControllerRepresentable {
+	var active: Bool
+
+	func makeUIViewController(context: Context) -> Controller { Controller() }
+	func updateUIViewController(_ controller: Controller, context: Context) { controller.active = active }
+	static func dismantleUIViewController(_ controller: Controller, coordinator: ()) { controller.giveBack() }
+
+	final class Controller: UIViewController, UIGestureRecognizerDelegate {
+		var active = false
+		private weak var stack: UINavigationController?
+		private weak var original: UIGestureRecognizerDelegate?
+
+		override func viewDidAppear(_ animated: Bool) {
+			super.viewDidAppear(animated)
+			guard let stack = navigationController, let pop = stack.interactivePopGestureRecognizer,
+				pop.delegate !== self else { return }
+			self.stack = stack
+			original = pop.delegate
+			pop.delegate = self
+		}
+
+		override func viewWillDisappear(_ animated: Bool) {
+			super.viewWillDisappear(animated)
+			giveBack()
+		}
+
+		func giveBack() {
+			if let pop = stack?.interactivePopGestureRecognizer, pop.delegate === self { pop.delegate = original }
+		}
+
+		// Not mid-push: a pop starting then wedges the stack.
+		func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+			guard let stack else { return false }
+			guard active else { return original?.gestureRecognizerShouldBegin?(gestureRecognizer) ?? (stack.viewControllers.count > 1) }
+			return stack.viewControllers.count > 1 && stack.transitionCoordinator == nil
+		}
+
+		// Not asked while active: with the bar hidden its answers turn the swipe off.
+		func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+			active || original?.gestureRecognizer?(gestureRecognizer, shouldReceive: touch) ?? true
+		}
 	}
 }
