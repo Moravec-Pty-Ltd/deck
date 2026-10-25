@@ -234,7 +234,7 @@
 	<!-- On a phone the session page drops this bar; its menu carries these controls. -->
 	<header
 		class="flex h-12 shrink-0 items-stretch gap-3 border-b border-base-300 bg-base-100 px-3 sm:px-4 {onSession
-			? 'max-sm:hidden'
+			? 'compact:hidden'
 			: ''}"
 	>
 		<a href="/" class="deck-brand flex items-center gap-2.5" aria-label="deck home">

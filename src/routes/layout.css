@@ -15,6 +15,18 @@
 /* daisyUI is scaffolding here; the three themes below are fully custom so the
    brand palette (orange primary, teal secondary, teal-tinted neutrals) and a
    flat, border-led, small-radius shape language own the look. No built-ins. */
+/* Phones held either way. A phone on its side is wider than the sm breakpoint
+   but only about 400px tall, so it gets the phone layout too; `roomy` is the rest. */
+@custom-variant compact {
+	@media (max-width: 39.99rem) {
+		@slot;
+	}
+	@media (max-height: 29.99rem) {
+		@slot;
+	}
+}
+@custom-variant roomy (@media (min-width: 40rem) and (min-height: 30rem));
+
 @plugin 'daisyui' {
 	themes: false;
 }
@@ -343,7 +355,7 @@ h3,
 
 /* A fold also gets the drawer: a fixed sheet can be held to one segment (see the
    foldables section below), an anchored dropdown can cross the hinge. */
-@media (max-width: 39.99rem), (horizontal-viewport-segments: 2), (vertical-viewport-segments: 2) {
+@media (max-width: 39.99rem), (max-height: 29.99rem), (horizontal-viewport-segments: 2), (vertical-viewport-segments: 2) {
 	.popover-host[open] > .popover-backdrop {
 		display: block;
 		position: fixed;

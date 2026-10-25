@@ -459,7 +459,7 @@
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="flex h-full min-w-0 flex-1 flex-col px-2 pt-1 sm:pt-2 {beside && activePane === 'main' ? 'lg:ring-1 lg:ring-inset lg:ring-primary/30' : ''}"
+		class="flex h-full min-w-0 flex-1 flex-col px-2 pt-1 roomy:pt-2 {beside && activePane === 'main' ? 'lg:ring-1 lg:ring-inset lg:ring-primary/30' : ''}"
 		onfocusin={() => (activePane = 'main')}
 	>
 		{#if del.error}
@@ -474,7 +474,7 @@
 				</button>
 			</div>
 		{/if}
-		<div class="mb-1 flex items-center gap-2 sm:mb-2 sm:flex-wrap">
+		<div class="mb-1 flex items-center gap-2 roomy:mb-2 roomy:flex-wrap">
 			<button
 				class="fold-hide btn btn-ghost btn-sm shrink-0 lg:hidden"
 				onclick={() => (sidebarOpen = true)}
@@ -518,11 +518,11 @@
 				{/if}
 				{#if !prOnFlatHalf}{@render prMenu()}{/if}
 				<AccountChip {session} class="header-chip max-w-40" />
-				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
+				<span class="hidden truncate text-xs opacity-60 roomy:inline">{shortPath(session.cwd)}</span>
 			</div>
 			<div class="flex items-center gap-2">
 				<!-- Phone width: the views live in this menu instead of the tab row. -->
-				<div class="sm:hidden">
+				<div class="roomy:hidden">
 					<Popover bind:open={viewMenuOpen} summaryClass="btn btn-ghost btn-sm gap-1" summaryLabel="View: {views.find((v) => v.id === tab)?.label ?? ''}" summaryTitle="View" panelClass="p-2">
 						{#snippet trigger()}{views.find((v) => v.id === tab)?.label ?? 'View'}<ChevronDown size={14} />{/snippet}
 						<ul class="menu menu-sm w-full p-0">
@@ -564,7 +564,7 @@
 					</Popover>
 				</div>
 				{#if liveKind !== 'shell' && !session.remote}
-					<span class="hidden sm:contents">
+					<span class="hidden roomy:contents">
 						{#each data.editors as editor (editor.scheme)}
 							<EditorButton {editor} />
 						{/each}
@@ -579,11 +579,11 @@
 					<RunButton {session} serverState={serverChip} onRefresh={refresh} />
 					<!-- Status lives in RunButton's collapsed dropdown on mobile (issue #123),
 					     so the standalone chip is sm+ only. -->
-					<span class="hidden sm:contents"><ServerChip state={serverChip} count={myServers.length} /></span>
+					<span class="hidden roomy:contents"><ServerChip state={serverChip} count={myServers.length} /></span>
 				{/if}
 				{#if liveKind === 'claude' && session.permissionMode === 'bypassPermissions'}
 					<span
-						class="badge badge-outline badge-sm header-chip hidden shrink-0 sm:inline-flex"
+						class="badge badge-outline badge-sm header-chip hidden shrink-0 roomy:inline-flex"
 						title="yolo (bypassPermissions)"
 					>
 						yolo
@@ -594,7 +594,7 @@
 
 		<RemoteBanner {session} canSetup={liveKind === 'claude'} />
 
-		<div class="join mb-2 shrink-0 self-start max-sm:hidden">
+		<div class="join mb-2 shrink-0 self-start compact:hidden">
 			{#each views as view (view.id)}
 				<button
 					class="btn join-item btn-sm gap-1 {tab === view.id ? 'btn-active' : 'btn-ghost'}"
