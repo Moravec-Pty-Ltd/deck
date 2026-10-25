@@ -3,6 +3,10 @@ import { PRE_ROLL_MS, RECORDING_MAX_MS, RECORDING_MIN_MS, TAKE_SAMPLE_RATE, VAD_
 import captureWorklet from './pcm-capture.worklet.js?url';
 import {
 	ACKNOWLEDGEMENTS,
+	ANNOUNCE_SETTLE_MS,
+	announcement,
+	announcementStale,
+	announcePlays,
 	answerAskFlow,
 	askAnswerText,
 	askPrompt,
@@ -12,6 +16,7 @@ import {
 	errorText,
 	isUsableTake,
 	LISTENING_CAPTION,
+	listeningCuePlays,
 	nextSegment,
 	skipUtterance,
 	parseVoiceSettings,
@@ -22,6 +27,7 @@ import {
 	restingStatus,
 	rms,
 	startAskFlow,
+	toolAction,
 	TRANSCRIBING_CAPTION,
 	turnEnd,
 	vadAction,
@@ -33,6 +39,7 @@ import {
 	WORKING_CUE_MS,
 	type AskFlow,
 	type Cue,
+	type ToolAction,
 	type Utterance,
 	type VoiceSettings
 } from './voice-core';
@@ -218,6 +225,12 @@ export class VoiceSession {
 	private cueAudio: HTMLAudioElement | null = null;
 	private cueUrls = new Map<Cue, string>();
 	private cueTimer: ReturnType<typeof setInterval> | undefined;
+	// Tool calls since the last announcement, the newest call, and when the
+	// last announcement started playing.
+	private toolActions: ToolAction[] = [];
+	private latestToolUseId: string | null = null;
+	private announcedAt = 0;
+	private announceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(private handlers: VoiceHandlers) {}
 
@@ -305,6 +318,7 @@ export class VoiceSession {
 		this.stopPlayback();
 		this.cancelRecording();
 		this.stopHandsFree();
+		this.forgetToolCalls();
 		this.ask = null;
 		this.caption = '';
 		this.status = 'idle';
@@ -328,6 +342,8 @@ export class VoiceSession {
 		if (this.settings.chattiness === 'final-only') this.lastText = markdown;
 		else {
 			this.replied = true;
+			// Calls made before this reply are old news once it has been read.
+			this.toolActions = [];
 			this.speak(markdown, undefined, this.settings.readOut);
 		}
 	}
@@ -337,6 +353,7 @@ export class VoiceSession {
 		const replied = this.replied;
 		this.lastText = '';
 		this.replied = false;
+		this.forgetToolCalls();
 		if (!this.enabled) return;
 		const end = turnEnd(this.settings.chattiness, text, replied);
 		// Queued behind what is being read (an acknowledgement) so it waits for
@@ -345,9 +362,27 @@ export class VoiceSession {
 		if (end.read) this.speak(end.read, undefined, this.settings.readOut);
 	}
 
+	// The agent started a tool call: announce it when nothing else is being
+	// read, or fold it into the next announcement.
+	onToolCall(toolUseId: string, name: string, input: Record<string, unknown>): void {
+		if (!this.enabled) return;
+		this.latestToolUseId = toolUseId;
+		this.toolActions.push(toolAction(name, input));
+		// A burst of calls in one message is announced once, as a whole.
+		clearTimeout(this.announceTimer);
+		this.announceTimer = setTimeout(() => this.announce(), ANNOUNCE_SETTLE_MS);
+	}
+
+	private forgetToolCalls(): void {
+		clearTimeout(this.announceTimer);
+		this.toolActions = [];
+		this.latestToolUseId = null;
+	}
+
 	// A blocking question arrived: read it and route the next spoken reply to it.
 	onAsk(toolUseId: string, questions: SpokenQuestion[]): void {
 		if (!this.enabled || !questions.length) return;
+		this.toolActions = [];
 		this.ask = startAskFlow(toolUseId, questions);
 		this.speak(askPrompt(this.ask), 'done');
 	}
@@ -366,8 +401,17 @@ export class VoiceSession {
 	}
 
 	private enqueue(utterance: Utterance, standalone = false): void {
+		if (!utterance.toolUseId) this.cutAnnouncement();
 		this.queue.push(utterance);
 		if (!this.playing) void this.drain(standalone);
+	}
+
+	// Anything real cuts off an announcement, even one already playing.
+	private cutAnnouncement(): void {
+		if (!this.queue[0]?.toolUseId) return;
+		this.queue.shift();
+		this.playToken += 1;
+		this.audio?.pause();
 	}
 
 	// Read one message on request, with voice mode on or off. Off, the audio is
@@ -392,6 +436,7 @@ export class VoiceSession {
 
 	// Drop the rest of what is being read; the next utterance starts.
 	skip(): void {
+		this.forgetToolCalls();
 		if (!this.queue.length) return;
 		skipUtterance(this.queue);
 		this.playToken += 1;
@@ -400,6 +445,7 @@ export class VoiceSession {
 
 	// Stop reading and interrupt the turn.
 	async stop(): Promise<void> {
+		this.forgetToolCalls();
 		this.stopPlayback();
 		await this.handlers.interrupt();
 	}
@@ -425,6 +471,9 @@ export class VoiceSession {
 	}
 
 	private settleAfterPlayback(): void {
+		// Calls that came in while something was read; queued now, it holds back
+		// the listening cue until it has played.
+		this.announce();
 		this.caption = '';
 		if (this.status === 'speaking') this.restAfterTake();
 	}
@@ -434,6 +483,7 @@ export class VoiceSession {
 	// fetching is waited for; one with nothing to read plays its cue, if any.
 	private async playHead(): Promise<void> {
 		const head = this.queue[0];
+		if (this.stale(head)) return void this.queue.shift();
 		if (head.pending) return this.fillHead(head, head.pending);
 		const segment = head.segments[0];
 		if (segment) await this.readSegment(head, segment);
@@ -455,15 +505,28 @@ export class VoiceSession {
 	private async readSegment(head: Utterance, segment: SpeechSegment): Promise<void> {
 		const token = this.playToken;
 		const url = await this.loadSegment(segment.id, token);
-		if (!url) return this.finishHead(token);
+		// Audio took a while: a newer call or a reply may have come in meanwhile.
+		if (!url || this.stale(head)) return this.dropSegment(url, token);
 		this.prefetch(nextSegment(this.queue));
 		this.status = 'speaking';
-		if (await this.cueBefore(head, token)) {
-			this.caption = segment.text;
-			await this.play(url, token);
-		}
+		if (await this.cueBefore(head, token)) await this.playSegment(head, segment, url, token);
 		URL.revokeObjectURL(url);
 		this.finishHead(token);
+	}
+
+	private dropSegment(url: string | null, token: number): void {
+		if (url) URL.revokeObjectURL(url);
+		this.finishHead(token);
+	}
+
+	private async playSegment(head: Utterance, segment: SpeechSegment, url: string, token: number): Promise<void> {
+		this.caption = segment.text;
+		if (head.toolUseId) this.announcedAt = Date.now();
+		await this.play(url, token);
+	}
+
+	private stale(head: Utterance): boolean {
+		return announcementStale(head, this.latestToolUseId, this.queue.length);
 	}
 
 	// The head's cue, just before its first segment; false when Skip/Stop
@@ -535,7 +598,12 @@ export class VoiceSession {
 		return this.recording || this.status === 'transcribing' || this.reading;
 	}
 
+	// An announcement stands in for the tick when one is due.
 	private tickWorkingCue(): void {
+		if (!this.announce()) this.tickOnly();
+	}
+
+	private tickOnly(): void {
 		const working = this.turnRunning || this.sending || this.waiting;
 		if (workingCuePlays(this.settings.workingCue, working, !!this.ask, this.busy)) void this.playCue('working');
 	}
@@ -555,6 +623,27 @@ export class VoiceSession {
 			audio.src = url;
 			audio.play().catch(() => {});
 		});
+	}
+
+	// Speak the tool calls since the last announcement, in place of a tick;
+	// false when it isn't the moment.
+	private announce(): boolean {
+		const text = announcement(this.toolActions);
+		const id = this.latestToolUseId;
+		if (!text || !id || !this.announceDue) return false;
+		this.toolActions = [];
+		this.enqueue({ segments: [], pending: this.fetchSegments(text), toolUseId: id });
+		return true;
+	}
+
+	private get announceDue(): boolean {
+		const working = this.turnRunning || this.sending;
+		return !!this.capabilities?.tts && announcePlays(this.settings.announceTools, working, !!this.ask, this.heard, Date.now() - this.announcedAt);
+	}
+
+	// Anything in the way of an announcement: a take, or something read or queued.
+	private get heard(): boolean {
+		return this.busy || this.waiting || this.micBusy;
 	}
 
 	// Say a take was heard, in the reply's voice.
@@ -696,8 +785,10 @@ export class VoiceSession {
 	}
 
 	private restAfterTake(): void {
+		const was = this.status;
 		this.status = restingStatus(this.settings.handsFree, this.enabled);
 		this.caption = restingCaption(this.status, this.caption);
+		if (listeningCuePlays(was, this.status, this.playing || this.queue.length > 0, this.micBusy || this.startMissed)) void this.playCue('listening');
 	}
 
 	private async transcribe(blob: Blob): Promise<string> {

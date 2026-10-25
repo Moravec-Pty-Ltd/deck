@@ -239,6 +239,9 @@ struct VoiceSettingsMenu: View {
 			Toggle("Working sound", isOn: Binding(
 				get: { voice.settings.workingCue },
 				set: { voice.settings.workingCue = $0 }))
+			Toggle("Announce tool calls", isOn: Binding(
+				get: { voice.settings.announceTools },
+				set: { voice.settings.announceTools = $0 }))
 			if voice.supportsHandsFree {
 				Toggle("Hands-free", isOn: Binding(
 					get: { voice.settings.handsFree },

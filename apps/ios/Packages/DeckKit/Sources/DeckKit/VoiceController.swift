@@ -74,6 +74,8 @@ public final class VoiceController {
 	/// Whether a sent take is acknowledged aloud ("Got it."); the operator's
 	/// own reply is its acknowledgement.
 	public var acknowledges = true
+	/// Speak the agent's tool calls while it works, when the setting is on too.
+	public var announcesTools = true
 	/// Called when the queue of speech has drained, for a follow-up window.
 	public var onPlaybackFinished: (() -> Void)?
 	private var transcript = ""
@@ -115,6 +117,12 @@ public final class VoiceController {
 	private var replied = false
 	private var cueLoop: Task<Void, Never>?
 	private var cuePlayer: AVAudioPlayer?
+	// Tool calls since the last announcement, the newest call, and when the
+	// last announcement started playing.
+	private var toolActions: [ToolAction] = []
+	private var latestToolUseId: String?
+	private var announcedAt: TimeInterval = 0
+	private var announceDelay: Task<Void, Never>?
 	private var awaitingPermission = false
 	// The open take's live transcription, while it is answering; nil falls
 	// back to uploading the whole take when it ends.
@@ -206,6 +214,7 @@ public final class VoiceController {
 		stopPlayback()
 		cancelRecording()
 		stopHandsFree()
+		forgetToolCalls()
 		ask = nil
 		caption = ""
 		status = .idle
@@ -313,7 +322,29 @@ public final class VoiceController {
 			ToolCall.askTools.contains(block["name"].string ?? "") {
 			let call = ToolCall(id: id, name: block["name"].string ?? "", input: block["input"])
 			startAsk(DeckAsk(sessionId: sessionId, source: "mcp", askId: id, questions: call.questions))
+		} else if block["type"].string == "tool_use", let id = block["id"].string {
+			toolCall(id, ToolAnnouncement.action(name: block["name"].string ?? "", input: block["input"]))
 		}
+	}
+
+	// The agent started a tool call: announce it when nothing else is being
+	// read, or fold it into the next announcement.
+	private func toolCall(_ id: String, _ action: ToolAction) {
+		latestToolUseId = id
+		toolActions.append(action)
+		// A burst of calls in one message is announced once, as a whole.
+		announceDelay?.cancel()
+		announceDelay = Task { [weak self] in
+			try? await Task.sleep(for: .seconds(ToolAnnouncement.settle))
+			guard !Task.isCancelled else { return }
+			self?.announce()
+		}
+	}
+
+	private func forgetToolCalls() {
+		announceDelay?.cancel()
+		toolActions = []
+		latestToolUseId = nil
 	}
 
 	private func assistantText(_ markdown: String) {
@@ -322,6 +353,8 @@ public final class VoiceController {
 			lastText = markdown
 		} else {
 			replied = true
+			// Calls made before this reply are old news once it has been read.
+			toolActions = []
 			speak(markdown, readOut: settings.readOut)
 		}
 	}
@@ -329,6 +362,7 @@ public final class VoiceController {
 	private func turnFinished() {
 		let text = lastText
 		lastText = ""
+		forgetToolCalls()
 		let willRead = settings.chattiness == .finalOnly && !text.isEmpty
 		let done = VoiceCue.donePlays(willRead: willRead, replied: replied)
 		replied = false
@@ -343,6 +377,7 @@ public final class VoiceController {
 	public func startAsk(_ ask: DeckAsk) {
 		guard !ask.questions.isEmpty else { return }
 		let flow = VoiceAskFlow(ask: ask)
+		toolActions = []
 		self.ask = flow
 		speak(flow.prompt, cue: .done)
 	}
@@ -380,6 +415,12 @@ public final class VoiceController {
 	}
 
 	private func enqueue(_ utterance: Utterance, standalone: Bool = false) {
+		// Anything real cuts off an announcement, even one already playing.
+		if utterance.toolUseId == nil, queue.first?.toolUseId != nil {
+			queue.removeFirst()
+			playToken += 1
+			player.stop()
+		}
 		queue.append(utterance)
 		guard !playing else { return }
 		// Set before the Task runs, so a second enqueue in this turn joins this drain.
@@ -389,6 +430,7 @@ public final class VoiceController {
 
 	/// Drop the rest of what is being read; the next utterance starts.
 	public func skip() {
+		forgetToolCalls()
 		guard !queue.isEmpty else { return }
 		Utterance.skip(&queue)
 		playToken += 1
@@ -397,6 +439,7 @@ public final class VoiceController {
 
 	/// Stop reading and interrupt the turn.
 	public func stop() {
+		forgetToolCalls()
 		stopPlayback()
 		Task {
 			do { try await handlers.interrupt() } catch { self.error = error.localizedDescription }
@@ -420,11 +463,18 @@ public final class VoiceController {
 	private func drain(standalone: Bool = false) async {
 		defer {
 			playing = false
+			// Calls that came in while something was read; queued now, it holds
+			// back the listening cue until it has played.
+			announce()
 			caption = ""
 			if status == .speaking { rest() }
 			onPlaybackFinished?()
 		}
 		while enabled || standalone, let head = queue.first {
+			if ToolAnnouncement.stale(head, latest: latestToolUseId, queueCount: queue.count) {
+				queue.removeFirst()
+				continue
+			}
 			if let pending = head.pending {
 				let slow = Task { [weak self] in
 					try await Task.sleep(for: .seconds(VoiceCue.waitingSeconds))
@@ -447,7 +497,9 @@ public final class VoiceController {
 				continue
 			}
 			let token = playToken
-			guard let data = await audio(for: segment.id), token == playToken else {
+			// Audio takes a while: a newer call or a reply may come in meanwhile.
+			guard let data = await audio(for: segment.id), token == playToken,
+				!ToolAnnouncement.stale(head, latest: latestToolUseId, queueCount: queue.count) else {
 				finishHead(token)
 				continue
 			}
@@ -460,6 +512,7 @@ public final class VoiceController {
 				guard token == playToken else { continue }
 			}
 			caption = segment.text
+			if head.toolUseId != nil { announcedAt = Date().timeIntervalSinceReferenceDate }
 			await player.play(data)
 			finishHead(token)
 		}
@@ -502,6 +555,7 @@ public final class VoiceController {
 	}
 
 	private func tickWorkingCue() {
+		if announce() { return }
 		// The next thing to read is still being prepared, and nothing plays meanwhile.
 		let waiting = queue.first?.pending != nil
 		let busy = recording || status == .transcribing || (!waiting && (playing || !queue.isEmpty))
@@ -519,6 +573,20 @@ public final class VoiceController {
 		player.play()
 		cuePlayer = player
 		return player.duration
+	}
+
+	// Speak the tool calls since the last announcement, in place of a tick;
+	// false when it isn't the moment.
+	@discardableResult
+	private func announce() -> Bool {
+		let now = Date().timeIntervalSinceReferenceDate
+		let busy = recording || status == .transcribing || playing || !queue.isEmpty
+		guard announcesTools, canRead, let id = latestToolUseId, let text = ToolAnnouncement.phrase(toolActions),
+			ToolAnnouncement.plays(wanted: settings.announceTools, working: turnRunning || sending, asking: ask != nil, busy: busy, sinceLast: now - announcedAt)
+		else { return false }
+		toolActions = []
+		enqueue(Utterance(pending: fetchSegments(text), toolUseId: id))
+		return true
 	}
 
 	// Say a take was heard, in the reply's voice.
@@ -688,9 +756,14 @@ public final class VoiceController {
 	}
 
 	private func rest() {
+		let was = status
 		status = settings.handsFree && enabled && supportsHandsFree ? .listening : .idle
 		if caption == "Transcribing…" { caption = "" }
 		if status == .listening, caption.isEmpty { caption = "Listening…" }
+		// The operator's shut gate is waiting for its wake word, not listening.
+		if listenGate, VoiceCue.listeningPlays(wasListening: was == .listening, listening: status == .listening, reading: playing || !queue.isEmpty, recording: recording || startMissed) {
+			playCue(.listening)
+		}
 	}
 
 	// MARK: - Hands-free

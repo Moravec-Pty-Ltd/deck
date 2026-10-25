@@ -14,6 +14,8 @@ export interface Utterance {
 	// Segments still being fetched. The utterance holds its place in the queue
 	// meanwhile, so reads stay in order.
 	pending?: Promise<{ id: string; text: string }[]>;
+	// Set on a tool-call announcement: the call it announces.
+	toolUseId?: string;
 }
 
 // Skip drops the head, and a cue waiting behind it with nothing to read.
@@ -31,6 +33,8 @@ export interface VoiceSettings {
 	endOfSpeech: EndOfSpeech;
 	// A soft tick while the agent works and nothing is being read.
 	workingCue: boolean;
+	// Say what the agent is doing ("Reading voice-core") in place of a tick.
+	announceTools: boolean;
 }
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
@@ -39,7 +43,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 	handsFree: true,
 	sensitivity: 'medium',
 	endOfSpeech: 'normal',
-	workingCue: true
+	workingCue: true,
+	announceTools: true
 };
 
 const VOICE_SETTINGS_VERSION = 2;
@@ -60,7 +65,8 @@ export function parseVoiceSettings(raw: string | null): VoiceSettings {
 			handsFree: (o.v ?? 0) >= VOICE_SETTINGS_VERSION ? o.handsFree !== false : true,
 			sensitivity: o.sensitivity === 'low' || o.sensitivity === 'high' ? o.sensitivity : 'medium',
 			endOfSpeech: o.endOfSpeech === 'short' || o.endOfSpeech === 'long' ? o.endOfSpeech : 'normal',
-			workingCue: o.workingCue !== false
+			workingCue: o.workingCue !== false,
+			announceTools: o.announceTools !== false
 		};
 	} catch {
 		return DEFAULT_VOICE_SETTINGS;
@@ -335,7 +341,7 @@ export function missedStart(
 
 // ---- Cues ----
 
-export type Cue = 'working' | 'done';
+export type Cue = 'working' | 'done' | 'listening';
 
 // How often the working cue ticks.
 export const WORKING_CUE_MS = 3000;
@@ -347,7 +353,9 @@ export const WAITING_CUE_MS = 500;
 // VAD_OPEN_MS, so on an open mic it can't hold long enough to start a take.
 const CUES: Record<Cue, { notes: [number, number][]; gain: number }> = {
 	working: { notes: [[440, 40]], gain: 0.06 },
-	done: { notes: [[990, 60], [660, 90]], gain: 0.25 }
+	done: { notes: [[990, 60], [660, 90]], gain: 0.25 },
+	// Rising, the done cue's mirror: the mic is open.
+	listening: { notes: [[660, 50], [990, 70]], gain: 0.2 }
 };
 
 // A cue as mono samples at `rate` Hz: sine notes with a 5 ms fade at each end
@@ -394,4 +402,130 @@ export function turnEnd(chattiness: Chattiness, held: string, replied: boolean):
 // the start of the next.
 export function nextSegment(queue: Utterance[]): { id: string } | undefined {
 	return queue[0]?.segments[1] ?? queue[1]?.segments[0];
+}
+
+// The listening cue plays when hands-free listening resumes (voice mode
+// turned on, a reply or announcement finished), with nothing left to read and
+// no take opening.
+export function listeningCuePlays(was: string, now: string, reading: boolean, micBusy: boolean): boolean {
+	return now === 'listening' && was !== 'listening' && !reading && !micBusy;
+}
+
+// ---- Tool-call announcements ----
+
+// At most one announcement this often.
+export const ANNOUNCE_MS = 4000;
+// Calls landing within this of each other are announced together.
+export const ANNOUNCE_SETTLE_MS = 300;
+
+// What a tool call is doing, for speech: `one` names this call, `many` the
+// merged phrase for several of the same kind landing together, with `#` for
+// the count.
+export interface ToolAction {
+	kind: string;
+	one: string;
+	many: string;
+}
+
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+
+// The file name without its folder or extension: "SessionDetailView".
+function fileName(path: unknown): string {
+	const base = String(path ?? '').split('/').filter(Boolean).pop() ?? '';
+	return base.replace(/\.[^.]+$/, '') || base;
+}
+
+// The first word or two of a shell command, past any `cd` and env vars, and
+// before the first flag or path: "pnpm test", "git status".
+function commandWords(command: unknown): string {
+	const parts = String(command ?? '').split(/&&|\|\||;|\||\n/).map((p) => p.trim());
+	const words = (parts.find((p) => p && !/^cd\b/.test(p)) ?? '').split(/\s+/).filter((w) => w && !/^\w+=/.test(w));
+	if (!words.length) return 'a command';
+	words[0] = fileName(words[0]);
+	const end = words.findIndex((w, i) => i >= 2 || /^-|[/.]/.test(w));
+	return words.slice(0, end < 0 ? 2 : Math.max(1, end)).join(' ');
+}
+
+function host(url: unknown): string {
+	try {
+		return new URL(String(url)).hostname.replace(/^www\./, '') || 'a page';
+	} catch {
+		return 'a page';
+	}
+}
+
+// Up to four words of free text, without regex or glob punctuation.
+function words(text: unknown): string {
+	return String(text ?? '').replace(/[^\p{L}\p{N}' -]+/gu, ' ').trim().split(/\s+/).slice(0, 4).join(' ');
+}
+
+// "mcp__deck__send_message" and "TodoWrite" as "send message" and "todo write".
+function toolWords(name: string): string {
+	return name.replace(/^mcp__.+__/, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
+}
+
+function action(kind: string, one: string, many: string): ToolAction {
+	return { kind, one: one.trim(), many };
+}
+
+// A tool call as speech, after the headers ToolCall.svelte shows. Questions
+// are read out whole instead.
+export function toolAction(name: string, input: Record<string, unknown> = {}): ToolAction {
+	switch (name) {
+		case 'Read':
+			return action('read', `Reading ${fileName(input.file_path)}`, 'Reading # files');
+		case 'Edit':
+		case 'MultiEdit':
+		case 'NotebookEdit':
+			return action('edit', `Editing ${fileName(input.file_path ?? input.notebook_path)}`, 'Editing # files');
+		case 'Write':
+			return action('write', `Writing ${fileName(input.file_path)}`, 'Writing # files');
+		case 'Bash':
+			return action('run', `Running ${commandWords(input.command)}`, 'Running # commands');
+		case 'Grep': {
+			const what = words(input.pattern);
+			return action('search', what ? `Searching for ${what}` : 'Searching the code', 'Running # searches');
+		}
+		case 'Glob':
+			return action('search', 'Finding files', 'Running # searches');
+		case 'WebSearch': {
+			const what = words(input.query);
+			return action('websearch', what ? `Searching the web for ${what}` : 'Searching the web', 'Running # web searches');
+		}
+		case 'WebFetch': {
+			return action('fetch', `Fetching ${host(input.url)}`, 'Fetching # pages');
+		}
+		case 'Agent':
+		case 'Task': {
+			const what = words(input.subagent_type ?? input.description);
+			return action('agent', what ? `Starting a subagent: ${what}` : 'Starting a subagent', 'Starting # subagents');
+		}
+		case 'TodoWrite':
+			return action('todo', 'Updating the to-do list', 'Updating the to-do list');
+		default:
+			return action(name, `Using ${toolWords(name)}`, `Using ${toolWords(name)} # times`);
+	}
+}
+
+// The phrase for the calls since the last announcement: the newest call, or
+// "Reading three files" when the newest few are the same kind.
+export function announcement(actions: ToolAction[]): string | null {
+	const last = actions.at(-1);
+	if (!last) return null;
+	let n = 0;
+	for (let i = actions.length - 1; i >= 0 && actions[i].kind === last.kind; i--) n++;
+	return n > 1 ? last.many.replace('#', NUMBER_WORDS[n] ?? String(n)) : last.one;
+}
+
+// An announcement plays with the setting on, the agent working, no question
+// waiting, nothing being recorded, transcribed, read or queued, and the last
+// one at least ANNOUNCE_MS ago.
+export function announcePlays(wanted: boolean, working: boolean, asking: boolean, busy: boolean, sinceLastMs: number): boolean {
+	return wanted && working && !asking && !busy && sinceLastMs >= ANNOUNCE_MS;
+}
+
+// A queued announcement is dropped unplayed once a newer tool call has
+// started or anything else is queued behind it.
+export function announcementStale(head: Utterance, latestToolUseId: string | null, queueLength: number): boolean {
+	return !!head.toolUseId && (head.toolUseId !== latestToolUseId || queueLength > 1);
 }
