@@ -201,8 +201,12 @@ struct ImageGallery: View {
 					Image(systemName: "square.and.arrow.up").hidden()
 				}
 			}
-			.padding(.horizontal)
+			#if os(iOS)
+			.buttonStyle(ChromeButtonStyle())
+			#else
 			.padding(.vertical, 8)
+			#endif
+			.padding(.horizontal)
 			.background(.ultraThinMaterial)
 		}
 		// Dark for the gallery alone; preferredColorScheme would flip the whole
@@ -210,6 +214,9 @@ struct ImageGallery: View {
 		.environment(\.colorScheme, .dark)
 		#if os(iOS)
 		.statusBarHidden()
+		// With no status bar the chrome can sit at the window's very top, where
+		// the system's pull-down would otherwise take the first tap.
+		.defersSystemGestures(on: .top)
 		#endif
 	}
 
@@ -237,6 +244,20 @@ struct ImageGallery: View {
 		loaded[file.path] = PlatformImage(data: data)
 	}
 }
+
+#if os(iOS)
+/// The gallery's chrome buttons, with the 44 pt tap area the guidelines ask for.
+private struct ChromeButtonStyle: ButtonStyle {
+	func makeBody(configuration: Configuration) -> some View {
+		configuration.label
+			.frame(minWidth: 44, minHeight: 44)
+			.contentShape(Rectangle())
+			.hoverEffect()
+			.opacity(configuration.isPressed ? 0.5 : 1)
+			.foregroundStyle(.tint)
+	}
+}
+#endif
 
 /// A thumbnail of an attachment the message carried, fetched through the
 /// authenticated client (a plain AsyncImage can't send the token).

@@ -27,6 +27,12 @@ final class FileAttachmentsUITests: XCTestCase {
 
 		XCTAssertTrue(app.staticTexts["2 of 3"].waitForExistence(timeout: 10), "gallery should open at the tapped image\n\(app.debugDescription.prefix(3000))")
 		attach(app, "gallery")
+		for control in ["Close", "Copy tabletop.png", "Share tabletop.png"] {
+			let button = app.buttons[control]
+			XCTAssertTrue(button.waitForExistence(timeout: 10), "\(control) is in the chrome")
+			XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(control) has a full tap target")
+			XCTAssertGreaterThanOrEqual(button.frame.width, 44, "\(control) has a full tap target")
+		}
 		app.swipeLeft()
 		XCTAssertTrue(app.staticTexts["3 of 3"].waitForExistence(timeout: 5))
 		XCTAssertTrue(app.staticTexts["tabletop-off.jpg"].exists)
