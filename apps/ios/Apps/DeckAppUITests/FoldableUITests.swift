@@ -162,6 +162,8 @@ final class FoldableUITests: XCTestCase {
 		XCTAssertTrue(photos.exists)
 		XCTAssertGreaterThan(send.frame.minY, photos.frame.maxY, "Send sits under the column of controls")
 		XCTAssertGreaterThan(send.frame.minX, field.frame.maxX, "the column stands right of the message")
+		XCTAssertEqual(photos.frame.midX, send.frame.midX, accuracy: 1.5, "the column's controls centre on Send")
+		XCTAssertEqual(field.frame.midY, send.frame.midY, accuracy: 1.5, "the message line centres on Send")
 		attach(app, "short-session")
 
 		field.tap()
@@ -169,10 +171,16 @@ final class FoldableUITests: XCTestCase {
 		let more = app.buttons["composerMore"]
 		XCTAssertTrue(more.waitForExistence(timeout: 5), "typing cuts the column to Send and More")
 		XCTAssertFalse(photos.exists)
-		XCTAssertEqual(send.frame.midY, field.frame.midY, accuracy: 12, "a one-line message is one line tall")
-		XCTAssertEqual(more.frame.midY, send.frame.midY, accuracy: 6)
+		XCTAssertEqual(send.frame.midY, field.frame.midY, accuracy: 1.5, "a one-line message centres on Send")
+		XCTAssertEqual(more.frame.midY, send.frame.midY, accuracy: 1.5)
 		XCTAssertTrue(row.waitForNonExistence(timeout: 5), "the PR row steps aside while typing")
 		attach(app, "short-typing")
+		let line = field.frame.height
+		field.typeText("\nTwo\nThree")
+		XCTAssertGreaterThan(field.frame.height, line * 2.5, "the field grows to three lines")
+		XCTAssertEqual(more.frame.midY, send.frame.midY, accuracy: 1.5, "More and Send stay centred on each other")
+		XCTAssertEqual(send.frame.midY, field.frame.maxY - line / 2, accuracy: 1.5, "Send stays on the last line")
+		attach(app, "short-typing-three-lines")
 		// Cleared, or the draft follows into the next session and the tests after.
 		field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (field.value as? String ?? "").count))
 		XCTAssertEqual(field.value as? String ?? "", "", "the draft is cleared")
