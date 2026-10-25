@@ -66,6 +66,8 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 	public var endOfSpeech: EndOfSpeech = .normal
 	/// A soft tick while the agent works and nothing is being read.
 	public var workingCue = true
+	/// CarPlay's voice screens listen on their own, independent of `handsFree`.
+	public var handsFreeInCar = true
 	/// Bumped when a default changes for everyone. Both clients save the whole
 	/// object, so a stored false is not a choice until it carries this version.
 	public private(set) var version = VoiceSettings.currentVersion
@@ -91,6 +93,7 @@ public struct VoiceSettings: Codable, Equatable, Sendable {
 		sensitivity = try container.decodeIfPresent(VadSensitivity.self, forKey: .sensitivity) ?? .medium
 		endOfSpeech = (try? container.decodeIfPresent(EndOfSpeech.self, forKey: .endOfSpeech)) ?? .normal
 		workingCue = try container.decodeIfPresent(Bool.self, forKey: .workingCue) ?? true
+		handsFreeInCar = try container.decodeIfPresent(Bool.self, forKey: .handsFreeInCar) ?? true
 	}
 
 	static let defaultsKey = "deck.voice.settings"
@@ -116,6 +119,8 @@ public enum VoiceTiming {
 	public static let preRollSeconds: TimeInterval = 1
 	public static let maxTakeSeconds: TimeInterval = 120
 	public static let minTakeSeconds: TimeInterval = 0.5
+	/// Car audio lags the reply; its echo can outlast playback by this much.
+	public static let echoSettleSeconds: TimeInterval = 0.4
 }
 
 // MARK: - Cues

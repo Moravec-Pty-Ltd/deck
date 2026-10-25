@@ -12,29 +12,63 @@ public enum CarPlayHome {
 		return Array((agents.filter(isAsking) + agents.filter { !isAsking($0) }).prefix(max(0, limit)))
 	}
 
-	/// The voice screen's states, at most the five CarPlay allows.
-	public enum VoiceState: String, CaseIterable, Sendable {
-		case ready, listening, thinking, speaking
+	/// The voice screen's states. Hands-free and tap to talk each use five
+	/// or fewer, the most CarPlay allows.
+	public enum VoiceState: String, Sendable {
+		/// Tap to talk, waiting for a tap.
+		case ready
+		/// Hands-free, waiting for speech.
+		case listening
+		/// A take is being captured.
+		case hearing
+		case thinking, speaking
+		/// Hands-free, with the mic closed.
+		case paused
 
-		public static func of(_ status: VoiceController.Status, working: Bool) -> VoiceState {
+		/// What the one button does in a state.
+		public enum Tap: Sendable { case talk, send, pause, resume }
+
+		public static func states(handsFree: Bool) -> [VoiceState] {
+			handsFree ? [.listening, .hearing, .thinking, .speaking, .paused] : [.ready, .hearing, .thinking, .speaking]
+		}
+
+		public static func of(_ status: VoiceController.Status, recording: Bool, working: Bool, handsFree: Bool) -> VoiceState {
+			if recording { return .hearing }
 			switch status {
-			case .listening: .listening
-			case .transcribing: .thinking
-			case .speaking: .speaking
-			case .idle: working ? .thinking : .ready
+			case .listening: return working ? .thinking : .listening
+			case .transcribing: return .thinking
+			case .speaking: return .speaking
+			// Hands-free and not listening: paused, or the mic hasn't opened yet.
+			case .idle: return handsFree ? .paused : working ? .thinking : .ready
 			}
 		}
 
 		public var title: String {
 			switch self {
 			case .ready: "Tap Talk to speak"
-			case .listening: "Listening, tap Send when done"
+			case .listening, .hearing: "Listening"
 			case .thinking: "Working on it"
 			case .speaking: "Speaking"
+			case .paused: "Paused, tap to resume"
 			}
 		}
 
-		/// The one action button's label: a take in progress is ended by it.
-		public var buttonTitle: String { self == .listening ? "Send" : "Talk" }
+		public func tap(handsFree: Bool) -> Tap {
+			switch self {
+			case .hearing: .send
+			case .paused: .resume
+			case .ready: .talk
+			case .listening, .thinking, .speaking: handsFree ? .pause : .talk
+			}
+		}
+
+		public func buttonTitle(handsFree: Bool) -> String {
+			switch tap(handsFree: handsFree) {
+			case .talk: "Talk"
+			case .send: "Send"
+			case .pause: "Pause"
+			case .resume: "Resume"
+			}
+		}
 	}
 }

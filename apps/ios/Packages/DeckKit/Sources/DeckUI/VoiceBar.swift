@@ -257,6 +257,18 @@ struct VoiceSettingsMenu: View {
 					}
 				}
 			}
+			#if os(iOS)
+			Toggle("Hands-free in the car", isOn: Binding(
+				get: { voice.settings.handsFreeInCar },
+				set: { on in
+					voice.settings.handsFreeInCar = on
+					// The operator's own settings are never saved; this one is.
+					guard !voice.persistsSettings else { return }
+					var saved = VoiceSettings.load()
+					saved.handsFreeInCar = on
+					saved.save()
+				}))
+			#endif
 		} label: {
 			Image(systemName: "slider.horizontal.3")
 		}

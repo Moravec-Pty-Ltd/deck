@@ -74,6 +74,13 @@ public final class VoiceController {
 	/// Whether a sent take is acknowledged aloud ("Got it."); the operator's
 	/// own reply is its acknowledgement.
 	public var acknowledges = true
+	/// Whether speech over a reply cuts it and opens a take. Off in the car,
+	/// where the reply plays through speakers the mic can hear.
+	public var bargeIn = true
+	// With barge-in off, when a reply or cue last played (or will stop): its
+	// echo is ignored until a moment after, leaving the detector closed for
+	// the next words. A take already open still ends on its pause.
+	private var spokeAt: TimeInterval = 0
 	/// Called when the queue of speech has drained, for a follow-up window.
 	public var onPlaybackFinished: (() -> Void)?
 	private var transcript = ""
@@ -167,7 +174,10 @@ public final class VoiceController {
 	public func loadCapabilities() async {
 		for attempt in 0..<3 {
 			if let found = try? await client.speechCapabilities() {
+				let couldListen = canListen
 				capabilities = found
+				// Enabled before deck said it can transcribe, so hands-free waited.
+				if !couldListen, enabled, settings.handsFree { startHandsFree() }
 				return
 			}
 			try? await Task.sleep(for: .seconds(1 << attempt))
@@ -518,6 +528,7 @@ public final class VoiceController {
 		guard let player = try? AVAudioPlayer(data: cue.wav) else { return 0 }
 		player.play()
 		cuePlayer = player
+		spokeAt = max(spokeAt, Date().timeIntervalSinceReferenceDate + player.duration)
 		return player.duration
 	}
 
@@ -645,7 +656,7 @@ public final class VoiceController {
 		if let stream, let settled {
 			Task { [client] in _ = try? await client.endTranscriptStream(id: stream.id, pcm: stream.tail) }
 			await deliver(settled.trimmingCharacters(in: .whitespacesAndNewlines))
-			rest()
+			finishTranscribing()
 			return
 		}
 		do {
@@ -658,7 +669,12 @@ public final class VoiceController {
 		} catch {
 			self.error = error.localizedDescription
 		}
-		rest()
+		finishTranscribing()
+	}
+
+	// The acknowledgement may already be playing; its end rests instead.
+	private func finishTranscribing() {
+		if status == .transcribing { rest() }
 	}
 
 	// A transcript answers the open question when there is one, else it is a
@@ -734,6 +750,13 @@ public final class VoiceController {
 		self.level = min(1, level * 6)
 		guard settings.handsFree, supportsHandsFree else { return }
 		let now = Date().timeIntervalSinceReferenceDate
+		if !bargeIn, !recording {
+			if status == .speaking { spokeAt = max(spokeAt, now) }
+			if now - spokeAt < VoiceTiming.echoSettleSeconds {
+				detector.reset()
+				return
+			}
+		}
 		let edge = detector.update(level: level, at: now)
 		if edge == .stop { startMissed = false }
 		if edge == .start, status == .speaking { startMissed = true }
