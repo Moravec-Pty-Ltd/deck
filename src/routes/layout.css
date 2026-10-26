@@ -344,6 +344,24 @@ h3,
 	height: env(safe-area-inset-bottom);
 }
 
+/* An installed app on a phone runs to the screen's edges, and rounded corners
+   clip whatever sits right against them. Many phones report no safe area for
+   the corners, so keep a small margin at the top and bottom regardless, and
+   clear a side notch when the phone is on its side. */
+@media (display-mode: standalone) and (max-width: 39.99rem), (display-mode: standalone) and (max-height: 29.99rem) {
+	.deck-shell {
+		padding-top: max(env(safe-area-inset-top), 0.75rem);
+		padding-left: env(safe-area-inset-left);
+		padding-right: env(safe-area-inset-right);
+	}
+	.session-home-inset {
+		height: max(env(safe-area-inset-bottom), 0.75rem);
+	}
+	.deck-nav-bar {
+		padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+	}
+}
+
 /* ── popovers (Popover.svelte): dropdown on desktop, bottom drawer on phones.
    Below sm the panel is repositioned as a fixed sheet; keepInView detects the
    fixed position and steps aside. Unlayered rules, so they win over daisyUI's
