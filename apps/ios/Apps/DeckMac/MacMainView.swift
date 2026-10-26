@@ -20,6 +20,8 @@ struct MacMainView: View {
 	@Environment(\.openWindow) private var openWindow
 	@Environment(\.openSettings) private var openSettings
 	@State private var selection: MacPane? = .inbox
+	/// The session this window showed before Start, which Start defaults to.
+	@State private var lastSessionId: String?
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
 	@State private var query = ""
 	@State private var deepLinkRunId: String?
@@ -57,6 +59,9 @@ struct MacMainView: View {
 			CommandPaletteView(index: paletteIndex) { picked = $0 }
 				.frame(minWidth: 520, minHeight: 420)
 		}
+		.onChange(of: selection) { _, pane in
+			if pane != .start { lastSessionId = pane?.sessionId }
+		}
 		.onReceive(NotificationCenter.default.publisher(for: .deckOpenSession)) { note in
 			if let id = note.object as? String { selection = .session(id) }
 		}
@@ -81,7 +86,7 @@ struct MacMainView: View {
 		case .schedules:
 			NavigationStack { SchedulesView() }
 		case .start:
-			StartView { selection = .session($0) }
+			StartView(openSessionId: lastSessionId ?? MacFrontSession.id) { selection = .session($0) }
 		case .session(let id):
 			NavigationStack {
 				MacSessionDetail(sessionId: id, onIdChanged: { selection = .session($0) }, onDeleted: { selection = nil })
