@@ -191,6 +191,7 @@ struct MacSessionDetail: View {
 	}
 
 	private func begin() {
+		AskNotification.clearDelivered(session: sessionId)
 		Task { await store.refreshKinds() }
 		if viewModel == nil { viewModel = SessionDetailViewModel(sessionId: sessionId, store: store) }
 		if session?.kind == "shell" {

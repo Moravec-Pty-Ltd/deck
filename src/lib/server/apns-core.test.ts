@@ -13,6 +13,7 @@ import {
 	JWT_REUSE_MS,
 	deriveTopic,
 	toApnsPayload,
+	collapseId,
 	registerDeviceSchema,
 	type ApnsDevice
 } from './apns-core';
@@ -241,5 +242,24 @@ describe('live activity pushes', () => {
 		expect(shouldPushText(0, ACTIVITY_TEXT_INTERVAL_MS - 1)).toBe(false);
 		expect(shouldPushText(0, ACTIVITY_TEXT_INTERVAL_MS)).toBe(true);
 		expect(activityTopic('tech.example.app')).toBe('tech.example.app.push-type.liveactivity');
+	});
+});
+
+describe('collapseId', () => {
+	const hash = (value: string) => `h(${value.length})`;
+
+	it('uses a tag of up to 64 bytes as is', () => {
+		const tag = 'a'.repeat(64);
+		expect(collapseId('session-1', hash)).toBe('session-1');
+		expect(collapseId(tag, hash)).toBe(tag);
+	});
+
+	it('hashes a tag over 64 bytes', () => {
+		expect(collapseId('a'.repeat(65), hash)).toBe('h(65)');
+	});
+
+	it('counts bytes, not characters', () => {
+		// 22 three-byte characters: 22 characters but 66 bytes.
+		expect(collapseId('€'.repeat(22), hash)).toBe('h(22)');
 	});
 });

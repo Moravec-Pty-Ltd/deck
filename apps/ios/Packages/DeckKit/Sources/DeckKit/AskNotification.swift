@@ -70,6 +70,22 @@ extension AskNotification {
 			typed: (response as? UNTextInputNotificationResponse)?.userText)
 	}
 
+	/// Remove a session's delivered notifications once it is opened, so a read
+	/// session leaves nothing behind. Most carry the session id as their thread;
+	/// a dev server's thread adds its name, so its `/s/<id>` url matches instead.
+	public static func clearDelivered(session id: String) {
+		Task {
+			let center = UNUserNotificationCenter.current()
+			let ids = await center.deliveredNotifications()
+				.filter {
+					$0.request.content.threadIdentifier == id
+						|| target(userInfo: $0.request.content.userInfo) == .session(id)
+				}
+				.map(\.request.identifier)
+			center.removeDeliveredNotifications(withIdentifiers: ids)
+		}
+	}
+
 	/// Post an answer picked on a notification. The signed-in client serves
 	/// when the app is alive; the keychain covers a launch just for this. A
 	/// failure raises an "Answer not sent" notification, since the user never
