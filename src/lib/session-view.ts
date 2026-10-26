@@ -37,6 +37,8 @@ export interface AgentSessionDigest {
 	// True when the session is in the "Hidden" section, either because it was
 	// hidden itself or because its project was. Omitted when it isn't.
 	hidden?: boolean;
+	// True while the session has an unread notification. Omitted when it hasn't.
+	unread?: boolean;
 	// Active watches (issue #277), newest first. Omitted when there are none.
 	watches?: Watch[];
 	// The session's most recent assistant reply, attached only when requested (the

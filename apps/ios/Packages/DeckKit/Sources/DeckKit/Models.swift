@@ -212,6 +212,9 @@ public struct SessionDigest: Codable, Hashable, Identifiable, Sendable {
 	/// Set only on a hidden session, whether it was hidden itself or its project
 	/// was. deck answers that once so no client re-derives it.
 	public var hidden: Bool?
+	/// Set only while deck has notified about the session and nobody has opened
+	/// it since.
+	public var unread: Bool?
 	/// Its active watches, newest first; absent when none.
 	public var watches: [Watch]?
 
@@ -401,6 +404,8 @@ public struct DeckEvent: Codable, Sendable {
 	public let hidden: Bool?
 	public let project: String?
 	public let projectHidden: Bool?
+	/// `session-unread`: whether the session is now unread.
+	public let unread: Bool?
 	/// `run-updated`: which run changed, where it is now, and when. The digest
 	/// itself is fetched separately.
 	public let runId: String?

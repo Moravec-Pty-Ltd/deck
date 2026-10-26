@@ -462,7 +462,7 @@ struct SessionsView: View {
 							Section {
 								ForEach(section.sessions) { row($0) }
 							} header: {
-								StatusBucketHeader(bucket: section.bucket)
+								StatusBucketHeader(bucket: section.bucket, unreadIds: section.sessions.map(\.id))
 							}
 						}
 					} else {

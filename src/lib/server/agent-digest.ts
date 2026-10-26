@@ -54,6 +54,7 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		issues: s.issues ?? (s.issue ? [s.issue] : undefined),
 		pr: s.pr,
 		hidden: s.hidden || undefined,
+		unread: s.unread || undefined,
 		// Cheap: transcriptCostSummary is LRU-cached and extended incrementally.
 		cost: isAgentKind(s.kind) ? publicCost(transcriptCostSummary(s.id)) : undefined,
 		// Same: one bounded tail read, cached against the file's size and mtime.

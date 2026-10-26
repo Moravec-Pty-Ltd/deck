@@ -1,18 +1,24 @@
 <script lang="ts">
 	// Keeps the nav's inbox badge current: how many asks and blocked runs wait,
 	// recounted when the event feed reports a change that can touch the inbox.
-	// Renders nothing; mounted only where the nav shows, so the sign-in pages
-	// hold no feed open.
+	// Also keeps the installed app's icon badge at the unread session count, where
+	// the browser has the Badging API. Renders nothing; mounted only where the nav
+	// shows, so the sign-in pages hold no feed open.
 	import { sessionFeed } from '$lib/session-feed.svelte';
 	import { touchesInbox, type InboxAsk } from '$lib/inbox-core';
+	import { unreadCount } from '$lib/unread-core';
 	import { api } from '$lib/workflow-view';
 
 	let { count = $bindable(0) }: { count?: number } = $props();
 
 	let generation = 0;
 
-	sessionFeed((res) => {
+	const feed = sessionFeed((res) => {
 		if (touchesInbox(res)) void load();
+	});
+
+	$effect(() => {
+		if (feed.loaded && 'setAppBadge' in navigator) navigator.setAppBadge(unreadCount(feed.sessions)).catch(() => {});
 	});
 
 	async function load() {

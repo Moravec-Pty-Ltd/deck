@@ -59,6 +59,7 @@ struct MacMainView: View {
 			CommandPaletteView(index: paletteIndex) { picked = $0 }
 				.frame(minWidth: 520, minHeight: 420)
 		}
+		.onChange(of: store.badgeCount, initial: true) { _, count in if let count { AskNotification.setBadge(count) } }
 		.onChange(of: selection) { _, pane in
 			if pane != .start { lastSessionId = pane?.sessionId }
 		}
@@ -196,7 +197,7 @@ private struct MacSidebar: View {
 					Section {
 						ForEach(section.sessions) { row($0) }
 					} header: {
-						StatusBucketHeader(bucket: section.bucket)
+						StatusBucketHeader(bucket: section.bucket, unreadIds: section.sessions.map(\.id))
 					}
 				}
 			} else {

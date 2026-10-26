@@ -22,6 +22,8 @@ export interface AgentFeedEvent {
 		| 'session-created'
 		| 'session-renamed'
 		| 'session-hidden'
+		// A session's notification was read, or it notified (issue #336).
+		| 'session-unread'
 		| 'session-deleted'
 		// A session's active watches changed (issue #277); the payload carries them.
 		| 'watches'

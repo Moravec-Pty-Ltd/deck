@@ -419,6 +419,11 @@ public final class DeckClient: @unchecked Sendable {
 		_ = try await postRaw("/api/agent/sessions/\(sessionId)/hidden", json: ["hidden": hidden])
 	}
 
+	/// Mark sessions read; unknown ids are ignored.
+	public func markRead(sessionIds: [String]) async throws {
+		_ = try await postRaw("/api/agent/sessions/read", json: ["ids": sessionIds])
+	}
+
 	/// Hide or unhide a project, which takes every session working in it, or in
 	/// one of its worktrees, along with it.
 	public func setHidden(projectPath: String, hidden: Bool) async throws {

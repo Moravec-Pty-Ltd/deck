@@ -39,6 +39,7 @@ function onShellTransition(s: { id: string; status: string; title: string; cwd: 
 			body: s.cwd,
 			tag: s.id,
 			sessionId: s.id,
+			unread: true,
 			url: `/s/${s.id}`
 		});
 	}

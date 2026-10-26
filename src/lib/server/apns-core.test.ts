@@ -13,6 +13,8 @@ import {
 	JWT_REUSE_MS,
 	deriveTopic,
 	toApnsPayload,
+	badgePayload,
+	showsBadge,
 	collapseId,
 	registerDeviceSchema,
 	type ApnsDevice
@@ -161,6 +163,25 @@ describe('toApnsPayload', () => {
 		expect('body' in result.aps.alert).toBe(false);
 		expect('thread-id' in result.aps).toBe(false);
 		expect('url' in result).toBe(false);
+		expect('badge' in result.aps).toBe(false);
+	});
+
+	it('carries the unread count as the badge, zero included', () => {
+		expect(toApnsPayload({ title: 'Hi', badge: 2 }).aps.badge).toBe(2);
+		expect(toApnsPayload({ title: 'Hi', badge: 0 }).aps.badge).toBe(0);
+	});
+});
+
+describe('badgePayload', () => {
+	it('sets only the badge, so nothing is shown or played', () => {
+		expect(badgePayload(1)).toEqual({ aps: { badge: 1 } });
+	});
+
+	it('goes to the phone and the Mac only', () => {
+		expect(['ios', 'macos', 'watchos', 'widgets'].filter((p) => showsBadge(p as ApnsDevice['platform']))).toEqual([
+			'ios',
+			'macos'
+		]);
 	});
 });
 

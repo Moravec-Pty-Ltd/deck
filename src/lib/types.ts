@@ -110,6 +110,9 @@ export interface DeckSession {
 	// ids and the hidden projects (see server/hidden.ts), so every client reads
 	// one flag rather than re-deriving the rule.
 	hidden?: boolean;
+	// Set from the notification deck sends about this session until you open it
+	// or answer its question (see server/unread.ts). Omitted when read.
+	unread?: boolean;
 }
 
 // Live GitHub state of a captured PR, mapped from a PR's state + isDraft (see

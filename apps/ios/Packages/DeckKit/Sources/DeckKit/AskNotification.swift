@@ -70,6 +70,11 @@ extension AskNotification {
 			typed: (response as? UNTextInputNotificationResponse)?.userText)
 	}
 
+	/// The app icon badge, kept at the number of unread sessions.
+	public static func setBadge(_ count: Int) {
+		Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
+	}
+
 	/// Remove a session's delivered notifications once it is opened, so a read
 	/// session leaves nothing behind. Most carry the session id as their thread;
 	/// a dev server's thread adds its name, so its `/s/<id>` url matches instead.

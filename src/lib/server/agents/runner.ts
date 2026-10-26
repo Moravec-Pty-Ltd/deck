@@ -192,6 +192,7 @@ function reportCrash(id: string, kind: string, text: string) {
 		body: text.split('\n').pop() || `${kind} exited unexpectedly`,
 		tag: id,
 		sessionId: id,
+		unread: true,
 		url: `/s/${id}`
 	});
 }
@@ -205,6 +206,7 @@ function notifyTurnEnd(id: string, durationMs: number, interrupted: boolean) {
 		body: 'Tap to open the session',
 		tag: id,
 		sessionId: id,
+		unread: true,
 		url: `/s/${id}`
 	});
 }

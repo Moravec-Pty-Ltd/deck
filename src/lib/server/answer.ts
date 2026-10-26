@@ -2,6 +2,7 @@ import type { DeckSession } from '$lib/types';
 import { answerText } from './http';
 import { pendingAskId, resolveAsk, wasSettled } from './ask';
 import { recordAnswer } from './claude';
+import { markRead } from './unread';
 
 // One structured pick per question, as the ask card posts it and the transcript
 // marker stores it (see recordAnswer / transcript-index answerIn).
@@ -48,5 +49,7 @@ export function answerAsk(session: DeckSession, body: Record<string, unknown>): 
 	if (named && wasSettled(session.id, named)) return false;
 	const askId = named ?? pendingAskId(session.id);
 	if (askId && answers) recordAnswer(session.id, askId, answers);
-	return resolveAsk(session.id, text);
+	const resolved = resolveAsk(session.id, text);
+	if (resolved) markRead([session.id]);
+	return resolved;
 }
