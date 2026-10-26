@@ -2,6 +2,7 @@ import webpush, { type PushSubscription } from 'web-push';
 import { readJson, writeJson } from './config';
 import { apnsNotify } from './apns';
 import { isSessionHidden } from './hidden';
+import { currentUnreadCount, markUnread } from './unread';
 import type { DeckPushPayload, PushAsk } from './apns-core';
 
 // Web Push so the installed PWA gets notified (question asked, turn ended,
@@ -92,6 +93,9 @@ export interface NotifyPayload {
 	sessionId?: string;
 	// A blocking question the notification can answer directly (see apns-core).
 	ask?: PushAsk;
+	// Marks the session unread: set on its own turn, question, crash or shell
+	// exit, not on news about it like a dev server or a review (issue #336).
+	unread?: boolean;
 }
 
 // A push endpoint's trailing path segment is a secret that can act like a
@@ -111,7 +115,10 @@ function redactEndpoint(endpoint: string): string {
 // iOS/watchOS), independent of whether any web push subscription exists.
 export function notify(payload: NotifyPayload): void {
 	if (payload.sessionId && isSessionHidden(payload.sessionId)) return;
-	void apnsNotify(payload);
+	if (payload.unread && payload.sessionId) markUnread(payload.sessionId);
+	// Every alert carries the unread count, so the app icon follows it.
+	const badge = currentUnreadCount();
+	void apnsNotify({ ...payload, badge });
 	const subs = listSubs();
 	if (!subs.length) return;
 	// Only the documented wire shape goes out: `reason` and `sessionId` are for
@@ -121,7 +128,8 @@ export function notify(payload: NotifyPayload): void {
 		body: payload.body,
 		url: payload.url,
 		tag: payload.tag,
-		ask: payload.ask
+		ask: payload.ask,
+		badge
 	};
 	const data = JSON.stringify(wire);
 	for (const sub of subs) {

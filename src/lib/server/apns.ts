@@ -212,7 +212,7 @@ function send(target: Target, headers: SendHeaders, payload: unknown): Promise<b
 // notification was.
 async function sendToDevice(
 	device: core.ApnsDevice,
-	payload: core.ApnsPayload | typeof core.WIDGET_PAYLOAD,
+	payload: core.ApnsPayload | ReturnType<typeof core.badgePayload> | typeof core.WIDGET_PAYLOAD,
 	collapseId?: string
 ): Promise<void> {
 	const widgets = device.platform === 'widgets';
@@ -238,6 +238,17 @@ export async function apnsWidgetsChanged(): Promise<void> {
 		await Promise.all(widgets.map((d) => sendToDevice(d, core.WIDGET_PAYLOAD)));
 	} catch (err) {
 		console.error('[deck] apnsWidgetsChanged failed:', err);
+	}
+}
+
+// Update the icon badge on every phone and Mac, without an alert. Never throws.
+export async function apnsBadge(count: number): Promise<void> {
+	if (!apnsEnabled) return;
+	try {
+		const devices = loadDevices().filter((d) => core.showsBadge(d.platform));
+		await Promise.all(devices.map((d) => sendToDevice(d, core.badgePayload(count))));
+	} catch (err) {
+		console.error('[deck] apnsBadge failed:', err);
 	}
 }
 

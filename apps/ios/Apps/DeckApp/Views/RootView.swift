@@ -40,6 +40,7 @@ struct RootView: View {
 			default: break
 			}
 		}
+		.onChange(of: store.badgeCount, initial: true) { _, count in if let count { AskNotification.setBadge(count) } }
 		// A Live Activity tap opens its session (deck://s/<id>).
 		.onOpenURL { url in
 			guard url.scheme == "deck", let id = DeckLink.sessionId(from: url) else { return }

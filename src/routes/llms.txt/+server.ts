@@ -320,7 +320,8 @@ Digest of every session:
 		"reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "approvals": 1, "changesRequested": 0 },
 	"cost": { "costUsd": 0.42, "turns": 12, "durationMs": 258000, "results": 12 },
 	"context": { "used": 702516, "window": 1000000 },
-	"hidden": true
+	"hidden": true,
+	"unread": true
 }]
 \`\`\`
 
@@ -332,6 +333,11 @@ plan), and on shell sessions \`managed\` (deck owns the tmux session) and
 \`hidden\` is present only on a hidden session, whether it was hidden itself or
 its project was. A client that lists sessions should keep those out of its main
 list and offer them in a "Hidden" section instead.
+
+\`unread\` is present only while the session has a notification you have not
+read: deck sets it when it notifies about the session, and clears it when the
+session is opened in any client or its question is answered. The app icon
+badge is the number of unread sessions that are not hidden.
 
 ### GET /api/agent/sessions/{id}
 
@@ -603,6 +609,12 @@ A session is also hidden when its project is (see
 \`POST /api/agent/projects/hidden\`), and unhiding it on its own will not bring
 it back while that holds. Either way the session list reports the answer as
 \`hidden\` on the digest.
+
+### POST /api/agent/sessions/read
+
+\`{ "ids": ["c_abc123"] }\` — mark sessions read, clearing \`unread\`. Unknown
+or already-read ids are ignored. Returns \`{ "ok": true, "unreadCount" }\`, the
+new badge count. Opening a session in a client should call this.
 
 ### POST /api/agent/sessions/{id}/restart
 
@@ -1279,6 +1291,7 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 	project comes back. A project's hide sends one event per session it owns,
 	naming the \`project\` and its own \`projectHidden\`, which cannot be read back
 	off the sessions for that same reason)
+- \`session-unread\` — { unread } (the session notified, or was read)
 - \`session-deleted\` — {}
 - \`watches\`: { watches } (the session's active watches changed; the full new
 	list, empty when none are left)

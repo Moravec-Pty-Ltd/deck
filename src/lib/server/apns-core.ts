@@ -123,6 +123,16 @@ export function deriveTopic(baseTopic: string, platform: ApnsPlatform): string {
 	return baseTopic;
 }
 
+// Sets the app icon's badge and nothing else, for when sessions are read.
+export function badgePayload(count: number) {
+	return { aps: { badge: count } };
+}
+
+// Only the phone and the Mac show an icon badge.
+export function showsBadge(platform: ApnsPlatform): boolean {
+	return platform === 'ios' || platform === 'macos';
+}
+
 // WidgetKit reloads the widget's timeline on this; it carries no content.
 export const WIDGET_PAYLOAD = { aps: { 'content-changed': true } } as const;
 
@@ -150,6 +160,8 @@ export interface DeckPushPayload {
 	url?: string;
 	tag?: string;
 	ask?: PushAsk;
+	// How many sessions are unread, for the app icon badge.
+	badge?: number;
 }
 
 export interface ApnsAlert {
@@ -162,6 +174,7 @@ export interface ApnsAps {
 	sound: typeof DECK_SOUND;
 	'thread-id'?: string;
 	category?: string;
+	badge?: number;
 }
 
 export interface ApnsPayload {
@@ -188,6 +201,7 @@ export function toApnsPayload(payload: DeckPushPayload): ApnsPayload {
 	const aps: ApnsAps = { alert, sound: DECK_SOUND };
 	if (payload.tag !== undefined) aps['thread-id'] = payload.tag;
 	if (payload.ask) aps.category = ASK_CATEGORY;
+	if (payload.badge !== undefined) aps.badge = payload.badge;
 	const result: ApnsPayload = { aps };
 	if (payload.url !== undefined) result.url = payload.url;
 	if (payload.ask) result.ask = payload.ask;

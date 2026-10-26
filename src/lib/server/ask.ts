@@ -75,6 +75,7 @@ function askNotification(sessionId: string, questions: AskQuestion[], askId: str
 		body: first ? askNotificationBody(first.question, options) : 'Claude is asking a question',
 		tag: sessionId,
 		sessionId,
+		unread: true,
 		url: `/s/${sessionId}`,
 		ask
 	};

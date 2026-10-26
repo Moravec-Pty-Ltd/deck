@@ -30,6 +30,7 @@ struct SessionDetailView: View {
 	@Environment(HingeMonitor.self) private var hinge
 	@Environment(\.openURL) private var openURL
 	@Environment(\.dismiss) private var dismiss
+	@Environment(\.scenePhase) private var scenePhase
 	/// Pushed over the list, so a header line without the tab rail needs its own back button.
 	@Environment(\.isPresented) private var isPushed
 
@@ -84,6 +85,11 @@ struct SessionDetailView: View {
 
 	private var session: SessionDigest? {
 		store.sessions.first { $0.id == sessionId }
+	}
+
+	private func markViewed() {
+		AskNotification.clearDelivered(session: sessionId)
+		Task { try? await store.markRead([sessionId]) }
 	}
 
 	private var isAgentSession: Bool {
@@ -186,7 +192,7 @@ struct SessionDetailView: View {
 				Text("\(pendingExpensiveModel ?? "") is an expensive model. Switch this session to it anyway?")
 			}
 			.onAppear {
-				AskNotification.clearDelivered(session: sessionId)
+				markViewed()
 				if viewModel == nil {
 					ownModel = SessionDetailViewModel(sessionId: sessionId, store: store)
 				}
@@ -206,6 +212,14 @@ struct SessionDetailView: View {
 			.onChange(of: composerFocused) { _, focused in
 				if !leaving { viewModel?.composerFocused = focused }
 				if focused { onActivate?() }
+			}
+			// A turn finishing while you watch it is read already.
+			.onChange(of: session?.unread == true) { _, unread in
+				if unread, UIApplication.shared.applicationState == .active { markViewed() }
+			}
+			// One that notified while you were away is read when you come back to it.
+			.onChange(of: scenePhase) { _, phase in
+				if phase == .active, session?.unread == true { markViewed() }
 			}
 			.onChange(of: session?.status) { _, status in
 				if status == .running, let session { ActivityManager.shared.start(session) }

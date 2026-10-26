@@ -17,6 +17,28 @@ const JUST_FINISHED_MS = 15 * 60 * 1000;
 const NOW = 100 * 60 * 1000;
 
 describe('bucketSessions', () => {
+	it('puts unread sessions in an Unread bucket at the top', () => {
+		const sessions = [
+			session('err', 'error', NOW),
+			{ ...session('old', 'idle', 1), unread: true },
+			{ ...session('new', 'dead', 5), unread: true },
+			session('run', 'running', NOW)
+		];
+		const buckets = bucketSessions(sessions, NOW);
+		expect(buckets.map((x) => x.key)).toEqual(['unread', 'needs-attention', 'active']);
+		expect(buckets[0].sessions.map((s) => s.id)).toEqual(['new', 'old']);
+	});
+
+	it('keeps an unread session that needs you in Needs attention', () => {
+		const sessions = [
+			{ ...session('ask', 'idle', NOW, true), unread: true },
+			{ ...session('err', 'error', NOW), unread: true }
+		];
+		expect(bucketSessions(sessions, NOW).map((x) => [x.key, x.sessions.map((s) => s.id)])).toEqual([
+			['needs-attention', ['ask', 'err']]
+		]);
+	});
+
 	it('orders buckets needs-attention -> active -> just-finished -> idle -> dead', () => {
 		const sessions = [
 			session('dead', 'dead', 1),

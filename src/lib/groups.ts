@@ -48,7 +48,8 @@ function pathGroups(projects: Project[]): Map<string, string> {
 	return map;
 }
 
-// Cluster sessions into per-project subgroups, most-recently-active first.
+// Cluster sessions into per-project subgroups, most-recently-active first, with
+// a subgroup's unread sessions ahead of the rest (issue #336).
 // Shared by the ordinary grouping and by the Hidden section, so a hidden session
 // still sits under the project it belongs to.
 function projectSubgroups(sessions: SessionView[], projects: Project[]): ProjectSubgroup[] {
@@ -63,6 +64,7 @@ function projectSubgroups(sessions: SessionView[], projects: Project[]): Project
 		sub.sessions.push(s);
 		sub.lastActiveAt = Math.max(sub.lastActiveAt, s.lastActiveAt);
 	}
+	for (const sub of subMap.values()) sub.sessions.sort((a, b) => Number(!!b.unread) - Number(!!a.unread));
 	return [...subMap.values()].sort((a, b) => b.lastActiveAt - a.lastActiveAt);
 }
 

@@ -107,7 +107,36 @@ describe('notify', () => {
 		notify({ reason: 'needs-you', title: 'hi', sessionId: 'c_loud', tag: 'c_loud' });
 
 		const body = JSON.parse(String(send.mock.calls[0][1]));
-		expect(body).toEqual({ title: 'hi', tag: 'c_loud' });
+		expect(body).toEqual({ title: 'hi', tag: 'c_loud', badge: 0 });
+	});
+
+	it('marks the session unread and badges the count; reading it clears both', async () => {
+		const session = (id: string) => ({ id, kind: 'claude', title: id, cwd: '/tmp', createdAt: 1, lastActiveAt: 1, status: 'idle' });
+		fs.writeFileSync(path.join(tmpDir, 'sessions.json'), JSON.stringify([session('c_a'), session('c_b'), session('c_c')]));
+		addSub(sub('https://push.example/ok'));
+		const send = vi.spyOn(webpush, 'sendNotification').mockResolvedValue({} as never);
+		const badges = () => send.mock.calls.map((c) => JSON.parse(String(c[1])).badge);
+
+		notify({ reason: 'stopped', title: 'a', sessionId: 'c_a', unread: true });
+		notify({ reason: 'stopped', title: 'b', sessionId: 'c_b', unread: true });
+		notify({ reason: 'stopped', title: 'a again', sessionId: 'c_a', unread: true });
+		// A run's notification, or news about a session (a dev server, a review),
+		// badges but doesn't count.
+		notify({ reason: 'stopped', title: 'run' });
+		notify({ reason: 'needs-you', title: 'server', sessionId: 'c_c' });
+		expect(badges()).toEqual([1, 2, 2, 2, 2]);
+
+		// A hidden session is quiet, so it neither notifies nor turns unread.
+		fs.writeFileSync(path.join(tmpDir, 'hidden-sessions.json'), JSON.stringify(['c_c']));
+		notify({ reason: 'stopped', title: 'quiet', sessionId: 'c_c', unread: true });
+		fs.rmSync(path.join(tmpDir, 'hidden-sessions.json'), { force: true });
+		expect(badges()).toEqual([1, 2, 2, 2, 2]);
+
+		const { markRead } = await import('./unread');
+		expect(markRead(['c_a', 'c_missing'])).toBe(1);
+		expect(markRead(['c_a'])).toBe(1);
+		expect(markRead(['c_b'])).toBe(0);
+		fs.rmSync(path.join(tmpDir, 'sessions.json'), { force: true });
 	});
 
 	it('logs other non-2xx failures once, with a redacted endpoint, without pruning', async () => {

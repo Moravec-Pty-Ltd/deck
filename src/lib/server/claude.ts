@@ -166,6 +166,7 @@ function notifyTurnEnd(id: string, event: Record<string, unknown>) {
 		body: 'Tap to open the session',
 		tag: id,
 		sessionId: id,
+		unread: true,
 		url: `/s/${id}`
 	});
 }
@@ -181,6 +182,7 @@ function reportCrash(id: string, text: string) {
 		body: text.split('\n').pop() || 'claude exited unexpectedly',
 		tag: id,
 		sessionId: id,
+		unread: true,
 		url: `/s/${id}`
 	});
 }

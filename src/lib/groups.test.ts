@@ -42,6 +42,19 @@ describe('compareGroupNames', () => {
 	});
 });
 
+describe('groupSessions', () => {
+	it('lists unread sessions first within their project, recency otherwise', () => {
+		const sessions = [
+			session('new', '/p/web', 9),
+			{ ...session('read-later', '/p/web', 5), unread: true },
+			session('mid', '/p/web', 4),
+			{ ...session('oldest', '/p/web', 1), unread: true }
+		];
+		const [group] = groupSessions(sessions, [project('web', '/p/web')]);
+		expect(group.subgroups[0].sessions.map((s) => s.id)).toEqual(['read-later', 'oldest', 'new', 'mid']);
+	});
+});
+
 describe('hiddenGroup', () => {
 	const projects = [project('acme', '/p/acme', 'Work'), project('web', '/p/web')];
 

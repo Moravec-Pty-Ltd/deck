@@ -3,6 +3,7 @@ import { objectBody } from './http';
 import { listProjects, updateProject } from './store';
 import { invalidateSessionList, listSessions } from './sessions';
 import { publishAgentEvent } from './agent-feed';
+import { syncBadge } from './unread';
 import { deriveGroup } from '$lib/time';
 
 // Hide or unhide a project, which takes its sessions with it (see
@@ -46,6 +47,7 @@ export async function setProjectHidden(event: { request: Request }): Promise<Res
 	// The sessions under it just changed their hidden flag, and the list memo
 	// would otherwise keep serving the old one.
 	invalidateSessionList();
+	syncBadge();
 	await announce(path, hidden);
 	return json({ ok: true, path, hidden });
 }

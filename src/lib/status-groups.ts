@@ -2,7 +2,7 @@ import type { SessionView } from '$lib/session-view';
 
 // The attention-first grouping for the sidebar's "By status" view (issue #48):
 // cuts across projects so whatever needs you is up top.
-export type StatusBucketKey = 'needs-attention' | 'active' | 'just-finished' | 'idle' | 'dead';
+export type StatusBucketKey = 'unread' | 'needs-attention' | 'active' | 'just-finished' | 'idle' | 'dead';
 
 export interface StatusBucket {
 	key: StatusBucketKey;
@@ -10,10 +10,15 @@ export interface StatusBucket {
 	sessions: SessionView[];
 }
 
+// The marker an unread session's row carries before its title (issue #336),
+// teal so it never reads as one of the status dots.
+export const UNREAD_DOT = 'bg-accent';
+
 // The dot colour per bucket, shared by the sidebar and homepage headers. Needs
 // attention takes the error colour so it stands out (issue #48), and Just
 // finished takes success green to read as "done its turn" next to Idle grey.
 export const BUCKET_DOT: Record<StatusBucketKey, string> = {
+	unread: UNREAD_DOT,
 	'needs-attention': 'bg-error',
 	active: 'bg-primary',
 	'just-finished': 'bg-success',
@@ -26,6 +31,7 @@ const JUST_FINISHED_MS = 15 * 60 * 1000;
 
 // Fixed render order; the label doubles as the header text and collapse key.
 const BUCKETS: { key: StatusBucketKey; label: string }[] = [
+	{ key: 'unread', label: 'Unread' },
 	{ key: 'needs-attention', label: 'Needs attention' },
 	{ key: 'active', label: 'Active' },
 	{ key: 'just-finished', label: 'Just finished' },
@@ -45,9 +51,11 @@ function idleBucket(s: SessionView, now: number): StatusBucketKey {
 }
 
 // The bucket a session sorts into. Needs-attention wins over the raw status, so an
-// erroring or asking session is pulled out of Active/Idle.
+// erroring or asking session is pulled out of Active/Idle, and over unread, so a
+// question you haven't read stays with the other things waiting on you.
 function bucketOf(s: SessionView, now: number): StatusBucketKey {
 	if (needsAttention(s)) return 'needs-attention';
+	if (s.unread) return 'unread';
 	if (s.status === 'running') return 'active';
 	if (s.status === 'dead') return 'dead';
 	return idleBucket(s, now);

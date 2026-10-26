@@ -575,6 +575,18 @@ final class ParityTests: XCTestCase {
 		assertShape(sent, "POST", "/api/agent/sessions/example/hidden", keys: ["hidden"])
 	}
 
+	func testMarkingSessionsReadPostsTheIds() async {
+		let sent = await requests { try await $0.markRead(sessionIds: ["example"]) }
+		assertShape(sent, "POST", "/api/agent/sessions/read", keys: ["ids"])
+	}
+
+	func testUnreadDecodesOnTheDigestAndTheEvent() throws {
+		let digest = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle","unread":true}"#.utf8))
+		XCTAssertEqual(digest.unread, true)
+		let event = try JSONDecoder().decode(DeckEvent.self, from: Data(#"{"seq":1,"type":"session-unread","sessionId":"example","unread":false}"#.utf8))
+		XCTAssertEqual(event.unread, false)
+	}
+
 	func testHidingAProjectHasNoBrowserFallback() async {
 		let sent = await requests(status: 404) { try await $0.setHidden(projectPath: "/path/to/project", hidden: true) }
 		assertShape(sent, "POST", "/api/agent/projects/hidden", keys: ["hidden", "path"])
@@ -1089,6 +1101,25 @@ final class ParityTests: XCTestCase {
 		_ = await requests(reply: #"{"message":"not found"}"#, status: 404) { info = try await $0.serverInfo() }
 		XCTAssertEqual(info, .legacy)
 		XCTAssertEqual(info?.missing(), DeckCapability.allCases)
+	}
+
+	@MainActor
+	func testUnreadCountSkipsHiddenSessionsAndReadClearsLocally() async throws {
+		RequestStub.status = 200
+		RequestStub.handler = { request in
+			if request.url?.path == "/api/agent/sessions" {
+				return Data(#"""
+				[{"id":"a","status":"idle","unread":true},{"id":"b","status":"idle","unread":true,"hidden":true},
+				{"id":"c","status":"idle"}]
+				"""#.utf8)
+			}
+			return Data("{}".utf8)
+		}
+		let store = DeckStore(client: Self.stubbedClient())
+		await store.refreshSessions()
+		XCTAssertEqual(store.unreadCount, 1)
+		try await store.markRead(["a", "c"])
+		XCTAssertEqual(store.unreadCount, 0)
 	}
 
 	@MainActor

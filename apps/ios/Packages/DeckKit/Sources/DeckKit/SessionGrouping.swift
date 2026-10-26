@@ -19,10 +19,11 @@ public enum SessionGrouping {
 	// MARK: - By status
 
 	public enum Bucket: String, CaseIterable, Sendable {
-		case needsAttention = "needs-attention", active, justFinished = "just-finished", idle, dead
+		case unread, needsAttention = "needs-attention", active, justFinished = "just-finished", idle, dead
 
 		public var label: String {
 			switch self {
+			case .unread: "Unread"
 			case .needsAttention: "Needs attention"
 			case .active: "Active"
 			case .justFinished: "Just finished"
@@ -52,6 +53,7 @@ public enum SessionGrouping {
 
 	private static func bucket(of s: SessionDigest, nowMs: Double) -> Bucket {
 		if s.status == .error || s.awaitingInput == true { return .needsAttention }
+		if s.unread == true { return .unread }
 		switch s.status {
 		case .running: return .active
 		case .dead: return .dead
@@ -110,7 +112,7 @@ public enum SessionGrouping {
 				ProjectSection(
 					name: name,
 					subgroups: group.sorted { $0.lastActiveAt != $1.lastActiveAt ? $0.lastActiveAt > $1.lastActiveAt : $0.key < $1.key }
-						.map { ProjectSubgroup(key: $0.key, label: $0.label, sessions: $0.sessions) })
+						.map { ProjectSubgroup(key: $0.key, label: $0.label, sessions: $0.sessions.filter { $0.unread == true } + $0.sessions.filter { $0.unread != true }) })
 			}
 			.sorted { a, b in
 				let rank = { (n: String) in n == ungrouped ? 1 : 0 }

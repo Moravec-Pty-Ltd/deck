@@ -54,6 +54,12 @@ const PATCHES: Record<string, (s: SessionView, e: FeedEvent) => SessionView> = {
 		if (e.hidden) next.hidden = true;
 		else delete next.hidden;
 		return next;
+	},
+	'session-unread': (s, e) => {
+		const next = { ...s };
+		if (e.unread) next.unread = true;
+		else delete next.unread;
+		return next;
 	}
 };
 

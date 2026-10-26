@@ -7,7 +7,8 @@
 	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
-	import { bucketSessions, BUCKET_DOT } from '$lib/status-groups';
+	import { bucketSessions, BUCKET_DOT, UNREAD_DOT } from '$lib/status-groups';
+	import { markRead } from '$lib/mark-read';
 	import { viewMode } from '$lib/view-mode.svelte';
 	import { viewModeLabel } from '$lib/view-mode';
 	import { createCollapseState } from '$lib/collapse.svelte';
@@ -18,7 +19,7 @@
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
 	import PairApprovals from '$lib/components/PairApprovals.svelte';
-	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff } from '@lucide/svelte';
+	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff, CheckCheck } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -263,7 +264,10 @@
 				<Bot size={18} class="shrink-0 opacity-70" />
 			{/if}
 			<div class="min-w-0 flex-1">
-				<div class="truncate font-medium">{s.title}</div>
+				<div class="flex min-w-0 items-center gap-2 {s.unread ? 'font-bold' : 'font-medium'}">
+					{#if s.unread}<span class="size-2 shrink-0 rounded-full {UNREAD_DOT}" role="img" aria-label="Unread" title="Unread"></span>{/if}
+					<span class="truncate">{s.title}</span>
+				</div>
 				<div class="truncate text-xs opacity-60">{shortPath(s.cwd)}</div>
 			</div>
 			{#if s.kind === 'pi' || s.kind === 'codex' || s.kind === 'opencode'}
@@ -406,8 +410,9 @@
 		{#each buckets as bucket (bucket.key)}
 			{@const isOpen = !statusCollapse.has(bucket.key)}
 			<section>
+				<div class="flex items-center gap-2">
 				<button
-					class="flex w-full items-center gap-2 rounded-btn px-1 py-1 text-left hover:bg-base-200"
+					class="flex min-w-0 flex-1 items-center gap-2 rounded-btn px-1 py-1 text-left hover:bg-base-200"
 					onclick={() => statusCollapse.toggle(bucket.key)}
 					aria-expanded={isOpen}
 				>
@@ -422,6 +427,12 @@
 					</span>
 					<span class="text-xs opacity-50">{bucket.sessions.length}</span>
 				</button>
+				{#if bucket.key === 'unread'}
+					<button class="btn btn-ghost btn-sm" onclick={() => markRead(bucket.sessions.map((s) => s.id))}>
+						<CheckCheck size={16} /> Mark all read
+					</button>
+				{/if}
+				</div>
 				{#if isOpen}
 					<ul class="mt-2 space-y-2 pl-4">
 						{#each bucket.sessions as s (s.id)}

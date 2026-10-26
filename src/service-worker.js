@@ -91,7 +91,14 @@ function notificationOptions(data) {
 // Web Push: show the notification deck sent (question asked, turn ended, crash).
 self.addEventListener('push', (event) => {
 	const data = pushData(event);
-	event.waitUntil(self.registration.showNotification(data.title || 'deck', notificationOptions(data)));
+	// The unread session count, for the app icon where the Badging API exists.
+	const badge =
+		typeof data.badge === 'number' && self.navigator.setAppBadge
+			? self.navigator.setAppBadge(data.badge).catch(() => {})
+			: undefined;
+	event.waitUntil(
+		Promise.all([self.registration.showNotification(data.title || 'deck', notificationOptions(data)), badge])
+	);
 });
 
 // Post the picked option as the ask's answer: the same text and structured

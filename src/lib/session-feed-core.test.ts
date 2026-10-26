@@ -122,6 +122,14 @@ describe('applyEvents', () => {
 		expect('hidden' in s.sessions.find((x) => x.id === 'a')!).toBe(false);
 	});
 
+	it('sets and clears unread without moving the session', () => {
+		const before = base().sessions.find((x) => x.id === 'a')!.lastActiveAt;
+		let s = applyEvents(base(), [ev(11, 'session-unread', 'a', { unread: true })]);
+		expect(s.sessions.find((x) => x.id === 'a')).toMatchObject({ unread: true, lastActiveAt: before });
+		s = applyEvents(s, [ev(12, 'session-unread', 'a', { unread: false })]);
+		expect(s.sessions.find((x) => x.id === 'a')).not.toHaveProperty('unread');
+	});
+
 	it('sets and clears the active watches', () => {
 		const watch = { id: 'wat_1', sessionId: 'a', title: 'CI', prompt: 'p', createdAt: 1, dueAt: 2, state: 'active' as const };
 		let s = applyEvents(base(), [ev(11, 'watches', 'a', { watches: [watch] })]);

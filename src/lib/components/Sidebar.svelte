@@ -5,7 +5,8 @@
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
 	import { deriveGroup, relativeTime } from '$lib/time';
-	import { bucketSessions, BUCKET_DOT } from '$lib/status-groups';
+	import { bucketSessions, BUCKET_DOT, UNREAD_DOT } from '$lib/status-groups';
+	import { markRead } from '$lib/mark-read';
 	import { viewMode } from '$lib/view-mode.svelte';
 	import { viewModeLabel } from '$lib/view-mode';
 	import { flattenVisibleGroups, flattenVisibleBuckets, pickNeighbor } from '$lib/sidebar-neighbor';
@@ -23,7 +24,7 @@
 		type RecentError,
 		type ReviewDecision
 	} from '$lib/morabot-core';
-	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Columns2, Timer } from '@lucide/svelte';
+	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Columns2, Timer, CheckCheck } from '@lucide/svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
@@ -172,7 +173,10 @@
 			{/if}
 			<span class="size-1.5 shrink-0 rounded-full {dotClass(s)}" title={s.status}></span>
 			<div class="flex min-w-0 flex-1 flex-col">
-				<span class="truncate text-sm">{s.title}</span>
+				<span class="flex min-w-0 items-center gap-1.5 text-sm {s.unread ? 'font-semibold' : ''}">
+					{#if s.unread}<span class="size-1.5 shrink-0 rounded-full {UNREAD_DOT}" role="img" aria-label="Unread" title="Unread"></span>{/if}
+					<span class="truncate">{s.title}</span>
+				</span>
 				{#if proj}
 					<span class="truncate text-xs leading-tight opacity-60">{proj.label}</span>
 				{/if}
@@ -424,8 +428,9 @@
 		{#each buckets as bucket (bucket.key)}
 			{@const isOpen = !statusCollapse.has(bucket.key)}
 			<div>
+				<div class="flex items-center">
 				<button
-					class="flex w-full items-center gap-1 rounded-btn pl-1 pr-0 py-0.5 text-left hover:bg-base-200"
+					class="flex min-w-0 flex-1 items-center gap-1 rounded-btn pl-1 pr-0 py-0.5 text-left hover:bg-base-200"
 					onclick={() => statusCollapse.toggle(bucket.key)}
 					aria-expanded={isOpen}
 				>
@@ -442,6 +447,17 @@
 					<span class="badge badge-ghost badge-sm shrink-0">{bucket.sessions.length}</span>
 					<div class="flex-1"></div>
 				</button>
+				{#if bucket.key === 'unread'}
+					<button
+						class="btn btn-ghost btn-xs"
+						onclick={() => markRead(bucket.sessions.map((s) => s.id))}
+						aria-label="Mark all read"
+						title="Mark all read"
+					>
+						<CheckCheck size={13} />
+					</button>
+				{/if}
+				</div>
 				{#if isOpen}
 					<ul class="mt-1 space-y-0.5 pl-3">
 						{#each bucket.sessions as s (s.id)}

@@ -3,6 +3,7 @@ import { objectBody } from './http';
 import { setSessionHidden } from './hidden';
 import { invalidateSessionList } from './sessions';
 import { publishAgentEvent } from './agent-feed';
+import { syncBadge } from './unread';
 
 // Hide or unhide one session. Shared verbatim by /api/sessions/[id]/hidden
 // (browser) and /api/agent/sessions/[id]/hidden (agent API), the way
@@ -20,6 +21,7 @@ export async function setHidden(event: {
 	const body = await objectBody(event.request);
 	if (typeof body.hidden !== 'boolean') error(400, 'hidden must be a boolean');
 	setSessionHidden(id, body.hidden);
+	syncBadge();
 	// Nothing was written to the store, so the list memo would keep serving the
 	// old flag for its whole window.
 	invalidateSessionList();

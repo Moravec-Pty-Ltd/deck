@@ -121,6 +121,13 @@ struct MacSessionDetail: View {
 			}
 		}
 		.onAppear(perform: begin)
+		.onChange(of: session?.unread == true) { _, unread in
+			if unread, NSApp.isActive { markViewed() }
+		}
+		// One that notified while you were away is read when you come back to it.
+		.onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+			if session?.unread == true { markViewed() }
+		}
 		// The mic serves one thing at a time: a session's voice mode pauses the
 		// operator, which comes back when this ends.
 		.onChange(of: voice?.enabled ?? false) { _, on in
@@ -190,8 +197,13 @@ struct MacSessionDetail: View {
 		}
 	}
 
-	private func begin() {
+	private func markViewed() {
 		AskNotification.clearDelivered(session: sessionId)
+		Task { try? await store.markRead([sessionId]) }
+	}
+
+	private func begin() {
+		markViewed()
 		Task { await store.refreshKinds() }
 		if viewModel == nil { viewModel = SessionDetailViewModel(sessionId: sessionId, store: store) }
 		if session?.kind == "shell" {

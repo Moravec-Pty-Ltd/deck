@@ -33,6 +33,7 @@ import { publishAgentEvent } from './agent-feed';
 import { adhocId, adhocTmuxName, isAdhocId } from './session-title-core';
 import { sessionDigest } from './agent-digest';
 import { cancelSessionWatches } from './watch-store';
+import { syncBadge } from './unread';
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
@@ -294,4 +295,5 @@ export async function deleteSession(
 	}
 	removeSession(id);
 	publishAgentEvent(id, 'session-deleted');
+	syncBadge();
 }

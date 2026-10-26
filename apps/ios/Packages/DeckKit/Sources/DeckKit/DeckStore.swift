@@ -91,6 +91,17 @@ public final class DeckStore {
 		byRecency(sessions.filter { $0.hidden != true })
 	}
 
+	/// The app icon badge: unread sessions that are not hidden.
+	public var unreadCount: Int {
+		sessions.filter { $0.unread == true && $0.hidden != true }.count
+	}
+
+	/// What the icon badge should show, once deck has answered: nil before the
+	/// first load and while offline, so an empty list never clears a good badge.
+	public var badgeCount: Int? {
+		connection == .live ? unreadCount : nil
+	}
+
 	/// What the "Hidden" section at the bottom of the list holds. Empty until
 	/// something is hidden, so the section only appears when it has contents.
 	public var hiddenSessions: [SessionDigest] {
@@ -373,6 +384,15 @@ public final class DeckStore {
 		await refreshSessions()
 	}
 
+	/// Mark sessions read. Clears them locally first so the marker and badge go
+	/// at once. Always posts, since the list may not have loaded yet (a launch
+	/// from a notification); deck ignores ids that are already read.
+	public func markRead(_ ids: [String]) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		for index in sessions.indices where ids.contains(sessions[index].id) { sessions[index].unread = nil }
+		try await client.markRead(sessionIds: ids)
+	}
+
 	/// Hide or unhide a project, which moves every session working in it too, so
 	/// the projects list is refreshed alongside the sessions.
 	public func setHidden(projectPath: String, hidden: Bool) async throws {
@@ -473,6 +493,12 @@ public final class DeckStore {
 			if let sessionId = event.sessionId,
 				let index = sessions.firstIndex(where: { $0.id == sessionId }) {
 				sessions[index].hidden = event.hidden == true ? true : nil
+			}
+		case "session-unread":
+			// Not activity, so lastActiveAt stays put.
+			if let sessionId = event.sessionId,
+				let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+				sessions[index].unread = event.unread == true ? true : nil
 			}
 		case "session-deleted":
 			sessions.removeAll { $0.id == event.sessionId }

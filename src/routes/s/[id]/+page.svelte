@@ -29,6 +29,7 @@
 	import { DeleteFlow, requestDelete } from '$lib/delete-flow.svelte';
 	import { goto } from '$app/navigation';
 	import { resolveBeside } from '$lib/beside-core';
+	import { markRead } from '$lib/mark-read';
 	import { Menu, X, Ticket, Check, ChevronDown } from '@lucide/svelte';
 	import Popover from '$lib/components/Popover.svelte';
 	import { onMount } from 'svelte';
@@ -104,6 +105,13 @@
 	const beside = $derived(
 		resolveBeside(page.url.searchParams.get('beside'), session.id, sessions)
 	);
+	// A session on screen is read: on open, and when it notifies while you watch.
+	// The feed re-snapshots when the tab comes back, which re-runs this.
+	$effect(() => {
+		if (document.hidden) return;
+		const shown = new Set([session.id, beside?.id]);
+		markRead(sessions.filter((s) => s.unread && shown.has(s.id)).map((s) => s.id));
+	});
 	let activePane = $state<'main' | 'beside'>('main');
 	function openBeside(s: SessionView) {
 		const u = new URL(page.url);

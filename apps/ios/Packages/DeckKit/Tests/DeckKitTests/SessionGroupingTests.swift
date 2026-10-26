@@ -7,11 +7,11 @@ final class SessionGroupingTests: XCTestCase {
 
 	private func session(
 		_ id: String, status: String = "idle", asking: Bool = false, cwd: String? = nil,
-		agoSeconds: Double = 3600, repo: String? = nil
+		agoSeconds: Double = 3600, repo: String? = nil, unread: Bool = false
 	) -> SessionDigest {
 		let worktree = repo.map { #","worktree":{"repo":"\#($0)","branch":"b"}"# } ?? ""
 		let dir = cwd.map { #","cwd":"\#($0)""# } ?? ""
-		let json = #"{"id":"\#(id)","status":"\#(status)","awaitingInput":\#(asking),"lastActiveAt":\#(nowMs - agoSeconds * 1000)\#(dir)\#(worktree)}"#
+		let json = #"{"id":"\#(id)","status":"\#(status)","awaitingInput":\#(asking),"lastActiveAt":\#(nowMs - agoSeconds * 1000)\#(dir)\#(worktree)\#(unread ? #","unread":true"# : "")}"#
 		return try! JSONDecoder().decode(SessionDigest.self, from: Data(json.utf8))
 	}
 
@@ -30,6 +30,33 @@ final class SessionGroupingTests: XCTestCase {
 		], now: now)
 		XCTAssertEqual(sections.map(\.bucket), [.active, .justFinished, .idle, .dead])
 		XCTAssertEqual(sections.map(\.bucket.label), ["Active", "Just finished", "Idle", "Dead"])
+	}
+
+	func testUnreadBucketComesFirst() {
+		let sections = SessionGrouping.byStatus([
+			session("run", status: "running"),
+			session("ask", status: "running", asking: true),
+			session("read", unread: true)
+		], now: now)
+		XCTAssertEqual(sections.map(\.bucket), [.unread, .needsAttention, .active])
+		XCTAssertEqual(sections[0].bucket.label, "Unread")
+		XCTAssertEqual(sections[0].sessions.map(\.id), ["read"])
+	}
+
+	func testUnreadThatNeedsAttentionStaysThere() {
+		let sections = SessionGrouping.byStatus([
+			session("ask", status: "running", asking: true, unread: true),
+			session("err", status: "error", unread: true)
+		], now: now)
+		XCTAssertEqual(sections.map(\.bucket), [.needsAttention])
+	}
+
+	func testUnreadSessionsSortFirstWithinAProjectSubgroup() {
+		let sections = SessionGrouping.byProject([
+			session("new", cwd: "/p/acme", agoSeconds: 10),
+			session("old", cwd: "/p/acme", agoSeconds: 900, unread: true)
+		], projects: [project("acme")])
+		XCTAssertEqual(sections[0].subgroups[0].sessions.map(\.id), ["old", "new"])
 	}
 
 	func testAskingAndErroredSessionsNeedAttention() {
