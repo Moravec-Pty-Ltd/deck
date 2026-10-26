@@ -158,6 +158,7 @@ interface SendHeaders {
 	topic: string;
 	pushType: 'alert' | 'liveactivity' | 'widgets';
 	priority: '10' | '5';
+	collapseId?: string;
 }
 
 // One push to one token. Resolves with whether the token is dead (so the
@@ -181,7 +182,8 @@ function send(target: Target, headers: SendHeaders, payload: unknown): Promise<b
 				'apns-topic': headers.topic,
 				'apns-push-type': headers.pushType,
 				'apns-priority': headers.priority,
-				'apns-expiration': '0'
+				'apns-expiration': '0',
+				...(headers.collapseId && { 'apns-collapse-id': headers.collapseId })
 			});
 			let status = 0;
 			let body = '';
@@ -208,14 +210,19 @@ function send(target: Target, headers: SendHeaders, payload: unknown): Promise<b
 
 // A widget token only takes WidgetKit's "content changed" push, whatever the
 // notification was.
-async function sendToDevice(device: core.ApnsDevice, payload: core.ApnsPayload | typeof core.WIDGET_PAYLOAD): Promise<void> {
+async function sendToDevice(
+	device: core.ApnsDevice,
+	payload: core.ApnsPayload | typeof core.WIDGET_PAYLOAD,
+	collapseId?: string
+): Promise<void> {
 	const widgets = device.platform === 'widgets';
 	const dead = await send(
 		{ token: device.token, env: device.env, label: `a ${device.platform}/${device.env} device` },
 		{
 			topic: core.deriveTopic(config.topic, device.platform),
 			pushType: widgets ? 'widgets' : 'alert',
-			priority: widgets ? '5' : '10'
+			priority: widgets ? '5' : '10',
+			collapseId: widgets ? undefined : collapseId
 		},
 		widgets ? core.WIDGET_PAYLOAD : payload
 	);
@@ -234,6 +241,8 @@ export async function apnsWidgetsChanged(): Promise<void> {
 	}
 }
 
+const sha256Hex = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
+
 // Fire-and-forget push to every registered device; never throws, mirroring
 // push.ts's notify(). A no-op when APNs isn't configured or no devices are
 // registered.
@@ -243,7 +252,8 @@ export async function apnsNotify(payload: core.DeckPushPayload): Promise<void> {
 		const devices = loadDevices();
 		if (!devices.length) return;
 		const apnsPayload = core.toApnsPayload(payload);
-		await Promise.all(devices.map((d) => sendToDevice(d, apnsPayload)));
+		const collapseId = payload.tag === undefined ? undefined : core.collapseId(payload.tag, sha256Hex);
+		await Promise.all(devices.map((d) => sendToDevice(d, apnsPayload, collapseId)));
 	} catch (err) {
 		console.error('[deck] apnsNotify failed:', err);
 	}

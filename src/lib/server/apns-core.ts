@@ -194,6 +194,13 @@ export function toApnsPayload(payload: DeckPushPayload): ApnsPayload {
 	return result;
 }
 
+// APNs replaces a delivered notification that has the same apns-collapse-id,
+// so a session keeps one notification. The header takes at most 64 bytes; a
+// longer tag goes through the injected hash (sha256 hex is exactly 64).
+export function collapseId(tag: string, hash: (value: string) => string): string {
+	return new TextEncoder().encode(tag).length <= 64 ? tag : hash(tag);
+}
+
 // The notification body for a question: the question, then its options
 // numbered the way the actions are, so "Option 2" on the phone reads as the
 // second label here.

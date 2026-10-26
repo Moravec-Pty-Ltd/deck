@@ -186,6 +186,7 @@ struct SessionDetailView: View {
 				Text("\(pendingExpensiveModel ?? "") is an expensive model. Switch this session to it anyway?")
 			}
 			.onAppear {
+				AskNotification.clearDelivered(session: sessionId)
 				if viewModel == nil {
 					ownModel = SessionDetailViewModel(sessionId: sessionId, store: store)
 				}
