@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// What you type stays visible above the keyboard, in a session's composer
 /// and on the Operator tab, including a draft long enough to wrap. Needs the
@@ -22,6 +23,52 @@ final class ComposerKeyboardUITests: XCTestCase {
 		field.tap()
 		field.typeText(draft)
 		assertVisibleAboveKeyboard(app, id: "sessionComposer", what: "the session composer")
+	}
+
+	/// The field grows to five lines, then holds that height and scrolls;
+	/// back under five it shrinks and stops scrolling, so a long press
+	/// still offers Paste.
+	func testSessionComposerStopsGrowingAtFiveLines() throws {
+		let app = try FoldableUITests.launch(environment: [:])
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = FoldableUITests.listItem("long transcript", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20))
+		row.tap()
+
+		let field = app.textViews["sessionComposer"]
+		XCTAssertTrue(field.waitForExistence(timeout: 20))
+		// Another test in this session may have left a draft.
+		clear(field, app)
+		let one = field.frame.height
+		field.typeText("one\ntwo\nthree\nfour")
+		let four = field.frame.height
+		field.typeText("\nfive\nsix")
+		let capped = field.frame.height
+		XCTAssertGreaterThan(capped, four, "the field did not grow past four lines")
+		XCTAssertEqual(capped, one * 5, accuracy: 3, "the cap is not five lines")
+		field.typeText("\nseven\neight\nnine")
+		XCTAssertTrue(waitFor { abs(field.frame.height - capped) <= 1 }, "the field kept growing past five lines")
+
+		field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "\nthree\nfour\nfive\nsix\nseven\neight\nnine".count))
+		XCTAssertEqual(field.value as? String, "one\ntwo")
+		XCTAssertTrue(waitFor { field.frame.height < four }, "the field did not shrink")
+		// Paste only shows with something on the clipboard.
+		UIPasteboard.general.string = "pasted"
+		field.press(forDuration: 1.2)
+		XCTAssertTrue(app.menuItems["Paste"].waitForExistence(timeout: 5), "no Paste in the edit menu once the field fits again")
+		app.menuItems["Paste"].tap()
+		XCTAssertTrue(waitFor { (field.value as? String ?? "").hasSuffix("pasted") }, "the paste did not land")
+
+		// A long paste lands at the cap, not past it.
+		clear(field, app)
+		UIPasteboard.general.string = (1...12).map { "paragraph \($0) of a long pasted message" }.joined(separator: "\n\n")
+		field.press(forDuration: 1.2)
+		XCTAssertTrue(app.menuItems["Paste"].waitForExistence(timeout: 5))
+		app.menuItems["Paste"].tap()
+		XCTAssertTrue(waitFor { (field.value as? String ?? "").hasSuffix("paragraph 12 of a long pasted message") })
+		XCTAssertTrue(waitFor { abs(field.frame.height - capped) <= 1 }, "a long paste did not land at the cap")
+		// The draft outlives the test.
+		clear(field, app)
 	}
 
 	/// The field is one line tall; a tap anywhere else in the composer's box
@@ -69,6 +116,20 @@ final class ComposerKeyboardUITests: XCTestCase {
 		field.tap()
 		field.typeText(draft)
 		assertVisibleAboveKeyboard(app, id: "operatorComposer", what: "the operator composer")
+	}
+
+	/// Empties the field: focused from the composer's padding, so the caret is at the end.
+	private func clear(_ field: XCUIElement, _ app: XCUIApplication) {
+		// The first tap may only close an open edit menu.
+		app.scrollViews["transcript"].tap()
+		if !waitFor({ !hasFocus(field) }) { app.scrollViews["transcript"].tap() }
+		XCTAssertTrue(waitFor { !hasFocus(field) }, "the transcript tap did not leave the field")
+		tap(app, at: CGPoint(x: field.frame.minX - 6, y: field.frame.minY - 6))
+		XCTAssertTrue(waitFor { hasFocus(field) })
+		for _ in 0..<20 where !(field.value as? String ?? "").isEmpty {
+			field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 50))
+		}
+		XCTAssertEqual(field.value as? String ?? "", "", "the draft did not clear")
 	}
 
 	private func hasFocus(_ element: XCUIElement) -> Bool {
