@@ -259,7 +259,11 @@ function globalCommands(ctx: CommandContext): Command[] {
 			id: 'new-session',
 			title: 'New session',
 			keywords: ['create', 'add', 'start'],
-			run: () => ctx.goto('/?new=1')
+			// From a session page, start in that session's project.
+			run: () => {
+				const from = ctx.session && (ctx.session.worktree?.repo ?? ctx.session.cwd);
+				ctx.goto(from ? `/?new=1&project=${encodeURIComponent(from)}` : '/?new=1');
+			}
 		},
 		{
 			id: 'switch-theme',

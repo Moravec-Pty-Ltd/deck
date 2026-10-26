@@ -10,6 +10,10 @@ struct StartView: View {
 		var id: String { rawValue }
 	}
 
+	/// The session on screen when Start opened; its project is the default.
+	var openSessionId: String?
+	/// Bumped each time Start is opened, which re-applies that default.
+	var opening = 0
 	var onSessionCreated: (String) -> Void
 
 	@Environment(DeckStore.self) private var store
@@ -67,6 +71,9 @@ struct StartView: View {
 				}
 			}
 			.task { await ensureDefaultProject() }
+			// Once per opening rather than per appearance, so a project picked by
+			// hand survives a trip to Schedules.
+			.onChange(of: opening) { _, _ in pickDefaultProject() }
 			.onChange(of: selectedProject) { _, _ in Task { await refresh() } }
 			.onChange(of: mode) { _, _ in Task { await refresh() } }
 			.sheet(item: $selectedIssue) { issue in
@@ -153,12 +160,13 @@ struct StartView: View {
 	}
 
 	private func ensureDefaultProject() async {
-		// A hidden project is still startable, but it should never be what the
-		// picker lands on by itself.
-		if selectedProject == nil {
-			selectedProject = store.projects.first { $0.hidden != true } ?? store.projects.first
-		}
+		if selectedProject == nil { pickDefaultProject() }
 		await refresh()
+	}
+
+	private func pickDefaultProject() {
+		let open = store.sessions.first { $0.id == openSessionId }
+		selectedProject = SessionProject.startDefault(openSession: open, current: selectedProject, in: store.projects)
 	}
 
 	private func refresh(force: Bool = false) async {

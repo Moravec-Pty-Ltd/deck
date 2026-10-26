@@ -70,6 +70,7 @@ struct MainTabView: View {
 	@State private var deepLinkRunId: String?
 	@State private var sessionsCommand: SessionsCommand?
 	@State private var openSessionId: String?
+	@State private var startOpenings = 0
 	@State private var showPalette = false
 	/// What the palette picked, run once it has gone so a search field or a
 	/// sheet has somewhere to appear.
@@ -102,7 +103,7 @@ struct MainTabView: View {
 			}
 
 			Tab("Start", systemImage: "plus.circle", value: .start) {
-				StartView { sessionId in
+				StartView(openSessionId: openSessionId, opening: startOpenings) { sessionId in
 					deepLinkSessionId = sessionId
 					selectedTab = .sessions
 				}
@@ -127,6 +128,9 @@ struct MainTabView: View {
 			nextSession: { sendToSessions(.step(1)) }))
 		.sheet(isPresented: $showPalette, onDismiss: runPicked) {
 			CommandPaletteView(index: paletteIndex) { picked = $0 }
+		}
+		.onChange(of: selectedTab) { _, tab in
+			if tab == .start { startOpenings += 1 }
 		}
 		// Narrowing to compact while on Settings would leave no tab selected.
 		.onChange(of: sizeClass) { _, size in

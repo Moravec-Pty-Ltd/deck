@@ -34,6 +34,18 @@ final class SessionProjectTests: XCTestCase {
 		XCTAssertEqual(SessionProject.owning(elsewhere, in: projects)?.name, "web")
 	}
 
+	func testStartDefaultsToTheOpenSessionsProjectEvenWhenHidden() {
+		let open = session("s1", cwd: "/p/acme-worktrees/feature")
+		XCTAssertEqual(SessionProject.startDefault(openSession: open, current: projects[1], in: projects)?.name, "acme")
+	}
+
+	func testStartKeepsThePickOrFallsBackWithoutAnOwnedSession() {
+		let adhoc = session("s1", cwd: "/tmp")
+		XCTAssertEqual(SessionProject.startDefault(openSession: adhoc, current: nil, in: projects)?.name, "web")
+		XCTAssertEqual(SessionProject.startDefault(openSession: nil, current: projects[0], in: projects)?.name, "acme")
+		XCTAssertEqual(SessionProject.startDefault(openSession: nil, current: nil, in: [projects[0]])?.name, "acme")
+	}
+
 	func testADirectorySharingAPrefixIsNotTheProject() {
 		XCTAssertNil(SessionProject.owning(session("s1", cwd: "/p/acme-other"), in: projects))
 		XCTAssertFalse(SessionProject.hides(session("s1", cwd: "/p/acme-other"), in: projects))

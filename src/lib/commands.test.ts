@@ -69,6 +69,19 @@ describe('buildCommands', () => {
 		expect(c.goto).toHaveBeenCalledWith('/settings');
 	});
 
+	it('new session from a session page carries its project, its repo for a worktree', () => {
+		const run = (c: CommandContext) => buildCommands(c).find((cmd) => cmd.id === 'new-session')!.run();
+		const off = ctx();
+		run(off);
+		expect(off.goto).toHaveBeenCalledWith('/?new=1');
+		const on = ctx({ session: session({ cwd: '/path/to/web/sub' }) });
+		run(on);
+		expect(on.goto).toHaveBeenCalledWith('/?new=1&project=%2Fpath%2Fto%2Fweb%2Fsub');
+		const wt = ctx({ session: session({ cwd: '/elsewhere/feature', ...reviewing }) });
+		run(wt);
+		expect(wt.goto).toHaveBeenCalledWith('/?new=1&project=%2Fpath%2Fto%2Fweb');
+	});
+
 	it('includes toggle-notifications only when supported', () => {
 		expect(ids(ctx({ notificationsSupported: true }))).toContain('toggle-notifications');
 	});

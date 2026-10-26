@@ -44,13 +44,17 @@
 		modalOpen = true;
 	}
 
-	// The palette's "New session" navigates here with ?new=1; open the modal and
-	// drop the flag so a reload or back-nav doesn't reopen it.
+	// The palette's "New session" navigates here with ?new=1 (plus ?project= from
+	// a session page); open the modal and drop the flags so a reload or back-nav
+	// doesn't reopen it. A project path waits for the list to resolve it.
 	$effect(() => {
-		if (page.url.searchParams.has('new')) {
-			openNew();
-			goto('/', { replaceState: true, keepFocus: true, noScroll: true });
-		}
+		if (!page.url.searchParams.has('new')) return;
+		const from = page.url.searchParams.get('project');
+		if (from && !projectsLoaded) return;
+		const key = from ? deriveGroup(from, projects).key : null;
+		preset = key && projects.some((p) => p.path === key) ? { projectPath: key } : null;
+		modalOpen = true;
+		goto('/', { replaceState: true, keepFocus: true, noScroll: true });
 	});
 
 	function quickAdd(path: string) {

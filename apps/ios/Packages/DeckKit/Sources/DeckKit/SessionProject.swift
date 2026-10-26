@@ -29,6 +29,16 @@ public enum SessionProject {
 			.max { $0.path.count < $1.path.count }
 	}
 
+	/// The project Start preselects: the open session's own project, hidden or
+	/// not, else what is already picked, else the first project not hidden.
+	public static func startDefault(
+		openSession: SessionDigest?, current: DeckProject?, in projects: [DeckProject]
+	) -> DeckProject? {
+		openSession.flatMap { owning($0, in: projects) }
+			?? current
+			?? projects.first { $0.hidden != true } ?? projects.first
+	}
+
 	/// Whether the session is hidden *because of* its project, in which case
 	/// unhiding the session on its own would leave it hidden.
 	public static func hides(_ session: SessionDigest, in projects: [DeckProject]) -> Bool {
