@@ -58,20 +58,59 @@ function pluginDirs(): { plugin: string; dir: string }[] {
 	});
 }
 
-// A plugin's skills (skills/<name>/SKILL.md) and commands (commands/<name>.md),
-// named `plugin:name` the way the harness runs them.
+// The manifest's own skills or commands entry: a path or a list of them,
+// relative to the plugin. A path that climbs out of the plugin is ignored.
+function manifestPaths(dir: string, field: 'skills' | 'commands'): string[] {
+	const value = readJson(path.join(dir, '.claude-plugin', 'plugin.json'))?.[field];
+	const list = Array.isArray(value) ? value : [value];
+	return list
+		.filter((v): v is string => typeof v === 'string')
+		.map((v) => path.resolve(dir, v))
+		.filter((p) => p === dir || p.startsWith(dir + path.sep));
+}
+
+const isFile = (file: string) => {
+	try {
+		return fs.statSync(file).isFile();
+	} catch {
+		return false;
+	}
+};
+
+// A skills path is one skill (it holds a SKILL.md) or a folder of them.
+function skillFiles(entry: string): [string, string][] {
+	const own = path.join(entry, 'SKILL.md');
+	if (isFile(own)) return [[path.basename(entry), own]];
+	return safeReaddir(entry)
+		.map((name): [string, string] => [name, path.join(entry, name, 'SKILL.md')])
+		.filter(([, file]) => isFile(file));
+}
+
+// A commands path is one .md file or a folder of them.
+function commandFiles(entry: string): [string, string][] {
+	const files = entry.endsWith('.md') ? [entry] : safeReaddir(entry).map((f) => path.join(entry, f));
+	return files.filter((f) => f.endsWith('.md') && isFile(f)).map((f) => [path.basename(f, '.md'), f]);
+}
+
+// A plugin's skills then commands as [name, file]: the default skills/ and
+// commands/ folders plus any paths its manifest lists (some plugins keep skills
+// in category folders such as skills/engineering/<name>).
+function pluginEntries(dir: string): [string, string][] {
+	return [
+		...[path.join(dir, 'skills'), ...manifestPaths(dir, 'skills')].flatMap(skillFiles),
+		...[path.join(dir, 'commands'), ...manifestPaths(dir, 'commands')].flatMap(commandFiles)
+	];
+}
+
+// Every plugin skill and command, named `plugin:name` the way the harness runs
+// them. The first of a name wins, so a skill beats a command of the same name.
 function pluginSkills(): SkillInfo[] {
 	const skills: SkillInfo[] = [];
 	for (const { plugin, dir } of pluginDirs()) {
-		const found = new Map<string, string>();
-		for (const name of safeReaddir(path.join(dir, 'skills'))) {
-			found.set(name, path.join(dir, 'skills', name, 'SKILL.md'));
-		}
-		for (const file of safeReaddir(path.join(dir, 'commands'))) {
-			const name = file.replace(/\.md$/, '');
-			if (file.endsWith('.md') && !found.has(name)) found.set(name, path.join(dir, 'commands', file));
-		}
-		for (const [name, file] of found) {
+		const seen = new Set<string>();
+		for (const [name, file] of pluginEntries(dir)) {
+			if (seen.has(name)) continue;
+			seen.add(name);
 			const skill = readSkill(file, 'global', name);
 			if (skill) skills.push({ ...skill, name: `${plugin}:${name}` });
 		}
@@ -113,14 +152,8 @@ export function skillBody(name: string): string | null {
 	if (inPlugin) {
 		const dir = pluginDirs().find((p) => p.plugin === plugin)?.dir;
 		if (!dir) return null;
-		for (const file of [path.join(dir, 'skills', inPlugin, 'SKILL.md'), path.join(dir, 'commands', `${inPlugin}.md`)]) {
-			try {
-				return fs.readFileSync(file, 'utf8').slice(0, SKILL_BODY_CHARS);
-			} catch {
-				// Not this kind.
-			}
-		}
-		return null;
+		const file = pluginEntries(dir).find(([n]) => n === inPlugin)?.[1];
+		return file ? fs.readFileSync(file, 'utf8').slice(0, SKILL_BODY_CHARS) : null;
 	}
 	for (const { dir } of skillDirs()) {
 		try {

@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// A home of our own holding one global skill and three plugins: one enabled
-// with a skill and a command, one switched off in settings, and one installed
-// only for a project's checkout.
+// A home of our own holding one global skill and four plugins: one enabled
+// with a skill and a command, one whose manifest lists its skill and command
+// paths, one switched off in settings, and one installed only for a project's
+// checkout.
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-skills-home-')));
 vi.spyOn(os, 'homedir').mockReturnValue(home);
 vi.mock('./store', () => ({ listProjects: () => [] }));
@@ -19,6 +20,13 @@ const plugin = (name: string) => path.join(claude, 'plugins', 'cache', 'market',
 write(path.join(claude, 'skills', 'notes', 'SKILL.md'), '---\nname: notes\ndescription: Take notes\n---\n');
 write(path.join(plugin('powers'), 'skills', 'brainstorming', 'SKILL.md'), '---\nname: brainstorming\ndescription: Shape an idea\n---\n# Brainstorm');
 write(path.join(plugin('powers'), 'commands', 'review.md'), '---\ndescription: Review the diff\n---\nReview it.');
+write(path.join(plugin('nested'), 'skills', 'engineering', 'tdd', 'SKILL.md'), '---\nname: tdd\ndescription: Test first\n---\n# TDD');
+write(path.join(plugin('nested'), 'extra', 'grill', 'SKILL.md'), '---\nname: grill\ndescription: Ask hard questions\n---\n');
+write(path.join(plugin('nested'), 'cmds', 'hello.md'), '---\ndescription: Say hello\n---\nHello.');
+write(
+	path.join(plugin('nested'), '.claude-plugin', 'plugin.json'),
+	JSON.stringify({ skills: ['./skills/engineering/tdd', './extra/', '../off/skills'], commands: './cmds/hello.md' })
+);
 write(path.join(plugin('off'), 'skills', 'hidden', 'SKILL.md'), '---\nname: hidden\ndescription: Switched off\n---\n');
 write(path.join(plugin('local'), 'skills', 'scoped', 'SKILL.md'), '---\nname: scoped\ndescription: One checkout only\n---\n');
 write(
@@ -27,6 +35,7 @@ write(
 		version: 2,
 		plugins: {
 			'powers@market': [{ scope: 'user', installPath: plugin('powers') }],
+			'nested@market': [{ scope: 'user', installPath: plugin('nested') }],
 			'off@market': [{ scope: 'user', installPath: plugin('off') }],
 			'local@market': [{ scope: 'project', projectPath: '/somewhere', installPath: plugin('local') }]
 		}
@@ -46,7 +55,10 @@ describe('skillCatalogue', () => {
 		expect(skillCatalogue()).toEqual([
 			{ name: 'notes', description: 'Take notes', scope: 'global' },
 			{ name: 'powers:brainstorming', description: 'Shape an idea', scope: 'global' },
-			{ name: 'powers:review', description: 'Review the diff', scope: 'global' }
+			{ name: 'powers:review', description: 'Review the diff', scope: 'global' },
+			{ name: 'nested:tdd', description: 'Test first', scope: 'global' },
+			{ name: 'nested:grill', description: 'Ask hard questions', scope: 'global' },
+			{ name: 'nested:hello', description: 'Say hello', scope: 'global' }
 		]);
 	});
 
@@ -68,5 +80,7 @@ describe('skillBody', () => {
 		expect(skillBody('powers:review')).toContain('Review it.');
 		expect(skillBody('off:hidden')).toBeNull();
 		expect(skillBody('powers:missing')).toBeNull();
+		expect(skillBody('nested:tdd')).toContain('# TDD');
+		expect(skillBody('nested:hidden')).toBeNull();
 	});
 });
