@@ -128,8 +128,9 @@ Open PRs awaiting your review for a project. Each row carries \`review\`'s
 
 ### GET /api/agent/skills
 
-The skills installed on this machine (\`~/.claude/skills\` and each project's
-\`.claude/skills\`), so you can tell a session to run one and can say what one
+The skills installed on this machine (\`~/.claude/skills\`, each project's
+\`.claude/skills\`, and the skills and commands of enabled Claude Code plugins,
+named \`plugin:name\`), so you can tell a session to run one and can say what one
 does:
 
 \`\`\`json
