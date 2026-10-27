@@ -1440,31 +1440,51 @@ private struct ModelPick {
 }
 
 /// A sheet, except with the window split on the fold, where a sheet would
-/// straddle it: there it is a popover from the control that opened it, which
-/// stays on the session's half.
+/// straddle it: there it is a popover from the control that opened it, inside
+/// the session's pane.
 private struct OffTheFold<Sheet: View>: ViewModifier {
 	@Environment(HingeMonitor.self) private var hinge
 	@Environment(\.horizontalSizeClass) private var sizeClass
+	@Environment(\.foldPane) private var foldPane
+	/// The control's frame in the window.
+	@State private var frame = CGRect.zero
 	@Binding var isPresented: Bool
 	var onDismiss: (() -> Void)?
 	@ViewBuilder var sheet: () -> Sheet
 
 	func body(content: Content) -> some View {
-		let half = hinge.splitWidth(sizeClass)
+		let pane = hinge.splitWidth(sizeClass).map { half in foldPane.map { $0.upperBound - $0.lowerBound } ?? half }
+		let width = min((pane ?? 0) - 32, 480)
 		content
-			.sheet(isPresented: shown(half == nil), onDismiss: onDismiss, content: sheet)
-			.popover(isPresented: shown(half != nil)) {
+			.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+			.sheet(isPresented: shown(pane == nil), onDismiss: onDismiss, content: sheet)
+			.popover(isPresented: shown(pane != nil), attachmentAnchor: anchor(width: width)) {
 				sheet()
-					.frame(width: min((half ?? 0) - 32, 480), height: hinge.windowSize.height * 0.7)
+					.frame(width: width, height: hinge.windowSize.height * 0.7)
 			}
 			.onChange(of: isPresented) { _, presented in
-				if !presented, half != nil { onDismiss?() }
+				if !presented, pane != nil { onDismiss?() }
 			}
+	}
+
+	/// A popover centres on its anchor, so one from a control near the pane's
+	/// edge would cross the divider: the anchor moves along the control just
+	/// far enough that the popover's middle keeps it inside the pane.
+	private func anchor(width: CGFloat) -> PopoverAttachmentAnchor {
+		guard let pane = foldPane, frame.width > 0 else { return .rect(.bounds) }
+		let middle = min(max(frame.midX, pane.lowerBound + width / 2 + 16), pane.upperBound - width / 2 - 16)
+		return .point(UnitPoint(x: (middle - frame.minX) / frame.width, y: 1))
 	}
 
 	private func shown(_ here: Bool) -> Binding<Bool> {
 		Binding(get: { here && isPresented }, set: { isPresented = $0 })
 	}
+}
+
+extension EnvironmentValues {
+	/// Where across the window the fold's pane a session shows in runs, set by
+	/// SessionsView; elsewhere a split window's popovers take half of it.
+	@Entry var foldPane: ClosedRange<CGFloat>?
 }
 
 private extension View {
