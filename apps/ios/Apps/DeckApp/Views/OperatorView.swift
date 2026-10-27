@@ -185,7 +185,10 @@ struct OperatorView: View {
 				.textFieldStyle(.roundedBorder)
 				.lineLimit(1...5)
 				.focused($composing)
-				.onSubmit(submit)
+				// Return adds a line, as in the session composer; ⌘Return or the button sends.
+				#if os(macOS)
+				.returnInsertsNewline($composing)
+				#endif
 				.accessibilityIdentifier("operatorComposer")
 			#if os(iOS)
 			// The keyboard covers the tab bar and this is a root screen with no
@@ -204,8 +207,10 @@ struct OperatorView: View {
 			Button(action: submit) {
 				Image(systemName: "arrow.up.circle.fill").font(.title2)
 			}
-			.disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || operatorController.busy)
+			.keyboardShortcut(.return, modifiers: .command)
+			.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || operatorController.busy)
 			.accessibilityLabel("Send to the operator")
+			.help("Send (⌘Return)")
 		}
 		.padding()
 	}

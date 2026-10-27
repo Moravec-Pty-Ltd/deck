@@ -109,16 +109,6 @@ struct MacSessionDetail: View {
 						onCompact: compact, onModel: openModelSheet)
 				}
 			}
-			if !isTerminal, let voice, voice.canRead {
-				ToolbarItem {
-					Button {
-						if voice.enabled { voice.disable() } else { voice.enable() }
-					} label: {
-						Label(voice.enabled ? "Voice Off" : "Voice On", systemImage: voice.enabled ? "waveform.circle.fill" : "waveform.circle")
-					}
-					.help(voice.enabled ? "Turn voice mode off" : "Turn voice mode on")
-				}
-			}
 		}
 		.onAppear(perform: begin)
 		.onChange(of: session?.unread == true) { _, unread in
@@ -302,7 +292,8 @@ struct MacSessionDetail: View {
 				onSend: { sendComposer(viewModel) },
 				onQuickMessage: { text in Task { await viewModel.sendQuickMessage(text: text) } },
 				onManageQuickMessages: { sheet = .quickMessages },
-				session: session)
+				session: session,
+				voice: voice)
 		}
 	}
 
