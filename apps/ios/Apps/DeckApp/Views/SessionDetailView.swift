@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
@@ -46,6 +47,8 @@ struct SessionDetailView: View {
 	@AppStorage("condensedTranscript") private var condensedTranscript = true
 	@State private var photoItems: [PhotosPickerItem] = []
 	@State private var showPhotoPicker = false
+	@State private var showCamera = false
+	@State private var cameraDenied = false
 	@State private var composerFocused = false
 	@State private var pasteFailures = 0
 	@State private var leaving = false
@@ -1035,6 +1038,22 @@ struct SessionDetailView: View {
 			Task { await loadPhotos(items, to: viewModel) }
 		}
 		.photosPicker(isPresented: $showPhotoPicker, selection: $photoItems, maxSelectionCount: 8, matching: .images)
+		// Full screen everywhere, the foldable too: the camera wants the whole display.
+		.fullScreenCover(isPresented: $showCamera) {
+			CameraPicker { photo in
+				showCamera = false
+				if let photo { Task { await attachPhoto(photo, to: viewModel) } }
+			}
+			.ignoresSafeArea()
+		}
+		.alert("Camera access is off", isPresented: $cameraDenied) {
+			Button("Open Settings") {
+				if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+			}
+			Button("Cancel", role: .cancel) {}
+		} message: {
+			Text("Allow deck to use the camera in Settings to take photos for a message.")
+		}
 		.offTheFold(isPresented: $showQuickManage) {
 			QuickMessagesSheet()
 		}
@@ -1091,10 +1110,20 @@ struct SessionDetailView: View {
 	/// Photos, quick messages and voice mode.
 	@ViewBuilder
 	private func composerTools(_ viewModel: SessionDetailViewModel) -> some View {
-		PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
-			Image(systemName: "photo.on.rectangle")
+		if CameraPicker.isAvailable {
+			Menu {
+				Button("Photo Library", systemImage: "photo.on.rectangle") { showPhotoPicker = true }
+				Button("Take Photo", systemImage: "camera") { takePhoto() }
+			} label: {
+				Image(systemName: "photo.on.rectangle")
+			}
+			.accessibilityLabel("Attach photos")
+		} else {
+			PhotosPicker(selection: $photoItems, maxSelectionCount: 8, matching: .images) {
+				Image(systemName: "photo.on.rectangle")
+			}
+			.accessibilityLabel("Attach photos")
 		}
-		.accessibilityLabel("Attach photos")
 		if store.supports(.quickMessages) {
 			Menu {
 				quickMessages(viewModel)
@@ -1117,6 +1146,9 @@ struct SessionDetailView: View {
 	private func composerMore(_ viewModel: SessionDetailViewModel) -> some View {
 		Menu {
 			Button("Attach photos", systemImage: "photo.on.rectangle") { showPhotoPicker = true }
+			if CameraPicker.isAvailable {
+				Button("Take Photo", systemImage: "camera") { takePhoto() }
+			}
 			if store.supports(.quickMessages) {
 				Menu("Quick messages", systemImage: "text.append") { quickMessages(viewModel) }
 			}
@@ -1220,6 +1252,26 @@ struct SessionDetailView: View {
 			}
 		}
 		photoItems = []
+	}
+
+	private func takePhoto() {
+		switch AVCaptureDevice.authorizationStatus(for: .video) {
+		case .authorized:
+			showCamera = true
+		case .notDetermined:
+			Task {
+				if await AVCaptureDevice.requestAccess(for: .video) { showCamera = true } else { cameraDenied = true }
+			}
+		default:
+			cameraDenied = true
+		}
+	}
+
+	/// Through JPEG so ImagePaste scales it down like any other photo; the
+	/// JPEG keeps the photo's orientation, which ImagePaste then applies.
+	private func attachPhoto(_ photo: UIImage, to viewModel: SessionDetailViewModel) async {
+		let image = await Task.detached { photo.jpegData(compressionQuality: 0.9).flatMap(ImagePaste.image(from:)) }.value
+		if let image, viewModel.draftImages.count < 8 { viewModel.draftImages.append(image) }
 	}
 
 	/// Attach images pasted into the field or dropped, up to the composer's limit.

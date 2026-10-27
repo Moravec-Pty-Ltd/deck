@@ -54,7 +54,7 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: tech.moravec.deck
             CFBundleURLSchemes: [deck]
-        NSCameraUsageDescription: deck scans the QR code shown by your deck server to sign in.
+        NSCameraUsageDescription: deck uses the camera to scan its sign-in QR code and to take photos you attach to a message.
         NSMicrophoneUsageDescription: deck records what you say in voice mode and sends it to your deck server for transcription.
         NSSpeechRecognitionUsageDescription: deck listens for "hey deck" on the device so you can talk to the operator hands-free. Nothing is sent to Apple.
         UIBackgroundModes: [remote-notification, audio]
