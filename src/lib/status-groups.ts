@@ -10,9 +10,20 @@ export interface StatusBucket {
 	sessions: SessionView[];
 }
 
-// The marker an unread session's row carries before its title (issue #336),
-// teal so it never reads as one of the status dots.
+// The unread colour (issue #336), teal so it never reads as one of the status
+// colours.
 export const UNREAD_DOT = 'bg-accent';
+
+// A session row's status dot: primary = running, red = error, a hollow ring for
+// dead (so it survives e-ink without colour), neutral for idle. An unread idle
+// session takes the unread colour in place of neutral, so marking it read or
+// unread never shifts the row (issue #342).
+export function statusDotClass(s: Pick<SessionView, 'status' | 'unread'>): string {
+	if (s.status === 'running') return 'bg-primary';
+	if (s.status === 'error') return 'bg-error';
+	if (s.status === 'dead') return 'border border-base-content/40';
+	return s.unread ? UNREAD_DOT : 'bg-base-content/35';
+}
 
 // The dot colour per bucket, shared by the sidebar and homepage headers. Needs
 // attention takes the error colour so it stands out (issue #48), and Just

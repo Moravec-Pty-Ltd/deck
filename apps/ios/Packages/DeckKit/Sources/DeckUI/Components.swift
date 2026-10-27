@@ -10,13 +10,16 @@ public struct StatusDot: View {
 		self.session = session
 	}
 
+	private var unread: Bool { session.unread == true }
+
+	// Unread recolours the grey dot rather than adding a second one, so marking
+	// a session read never shifts its row.
 	private var color: Color {
 		if session.awaitingInput == true { return .orange }
 		switch session.status {
 		case .running: return .green
-		case .idle: return .gray
+		case .idle, .unknown: return unread ? .teal : .gray
 		case .error, .dead: return .red
-		case .unknown: return .gray
 		}
 	}
 
@@ -24,6 +27,8 @@ public struct StatusDot: View {
 		Circle()
 			.fill(color)
 			.frame(width: 8, height: 8)
+			.accessibilityHidden(!unread)
+			.accessibilityLabel("Unread")
 	}
 }
 

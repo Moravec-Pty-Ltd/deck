@@ -7,7 +7,7 @@
 	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
-	import { bucketSessions, BUCKET_DOT, UNREAD_DOT } from '$lib/status-groups';
+	import { bucketSessions, BUCKET_DOT, statusDotClass } from '$lib/status-groups';
 	import { markRead } from '$lib/mark-read';
 	import { viewMode } from '$lib/view-mode.svelte';
 	import { viewModeLabel } from '$lib/view-mode';
@@ -172,12 +172,6 @@
 	// that want attention (running = brand orange, error = red); idle and dead stay
 	// neutral so a list at rest reads calm. Solid vs hollow keeps idle and dead
 	// apart under e-ink, where colour collapses to monochrome.
-	function statusDot(s: SessionView) {
-		if (s.status === 'running') return 'bg-primary';
-		if (s.status === 'error') return 'bg-error';
-		if (s.status === 'dead') return 'border border-base-content/40';
-		return 'bg-base-content/35';
-	}
 	function statusText(s: SessionView) {
 		if (s.status === 'running') return 'font-medium text-primary';
 		if (s.status === 'error') return 'font-medium text-error';
@@ -269,7 +263,6 @@
 			{/if}
 			<div class="min-w-0 flex-1">
 				<div class="flex min-w-0 items-center gap-2 {s.unread ? 'font-bold' : 'font-medium'}">
-					{#if s.unread}<span class="size-2 shrink-0 rounded-full {UNREAD_DOT}" role="img" aria-label="Unread" title="Unread"></span>{/if}
 					<span class="truncate">{s.title}</span>
 				</div>
 				<div class="truncate text-xs opacity-60">{shortPath(s.cwd)}</div>
@@ -284,7 +277,7 @@
 				<span class="badge badge-ghost badge-sm">adhoc</span>
 			{/if}
 			<span class="flex shrink-0 items-center gap-1.5">
-				<span class="size-2 shrink-0 rounded-full {statusDot(s)}"></span>
+				<span class="size-2 shrink-0 rounded-full {statusDotClass(s)}" role={s.unread ? 'img' : undefined} aria-label={s.unread ? 'Unread' : undefined} title={s.unread ? `Unread, ${s.status}` : undefined}></span>
 				<span class="text-xs {statusText(s)}">{s.status}</span>
 			</span>
 			<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>

@@ -17,12 +17,6 @@ public struct SessionRow: View {
 
 			VStack(alignment: .leading, spacing: 4) {
 				HStack(spacing: 4) {
-					if session.unread == true {
-						Circle()
-							.fill(.teal)
-							.frame(width: 7, height: 7)
-							.accessibilityLabel("Unread")
-					}
 					Text(title)
 						.font(.body.weight(session.unread == true ? .semibold : .medium))
 						.lineLimit(1)
