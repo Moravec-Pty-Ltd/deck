@@ -277,7 +277,7 @@
 				<span class="badge badge-ghost badge-sm">adhoc</span>
 			{/if}
 			<span class="flex shrink-0 items-center gap-1.5">
-				<span class="size-2 shrink-0 rounded-full {statusDotClass(s)}" role={s.unread ? 'img' : undefined} aria-label={s.unread ? 'Unread' : undefined} title={s.unread ? 'Unread' : undefined}></span>
+				<span class="size-2 shrink-0 rounded-full {statusDotClass(s)}" role={s.unread ? 'img' : undefined} aria-label={s.unread ? 'Unread' : undefined} title={s.unread ? `Unread, ${s.status}` : undefined}></span>
 				<span class="text-xs {statusText(s)}">{s.status}</span>
 			</span>
 			<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>
