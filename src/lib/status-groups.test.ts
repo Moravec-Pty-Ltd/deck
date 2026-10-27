@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionStatus } from '$lib/types';
 import type { SessionView } from '$lib/session-view';
-import { bucketSessions } from './status-groups';
+import { bucketSessions, statusDotClass, UNREAD_DOT } from './status-groups';
 
 function session(
 	id: string,
@@ -129,5 +129,15 @@ describe('bucketSessions', () => {
 			status: 'idle'
 		} as SessionView;
 		expect(bucketSessions([s]).map((b) => b.key)).toEqual(['idle']);
+	});
+});
+
+describe('statusDotClass', () => {
+	it('takes the unread colour in place of idle grey only', () => {
+		expect(statusDotClass({ status: 'idle', unread: true })).toBe(UNREAD_DOT);
+		expect(statusDotClass({ status: 'idle' })).toBe('bg-base-content/35');
+		expect(statusDotClass({ status: 'running', unread: true })).toBe('bg-primary');
+		expect(statusDotClass({ status: 'error', unread: true })).toBe('bg-error');
+		expect(statusDotClass({ status: 'dead', unread: true })).toBe('border border-base-content/40');
 	});
 });

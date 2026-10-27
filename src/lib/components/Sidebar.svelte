@@ -5,7 +5,7 @@
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
 	import { deriveGroup, relativeTime } from '$lib/time';
-	import { bucketSessions, BUCKET_DOT, UNREAD_DOT } from '$lib/status-groups';
+	import { bucketSessions, BUCKET_DOT, statusDotClass } from '$lib/status-groups';
 	import { markRead } from '$lib/mark-read';
 	import { viewMode } from '$lib/view-mode.svelte';
 	import { viewModeLabel } from '$lib/view-mode';
@@ -95,15 +95,6 @@
 
 	const projectPaths = $derived(new Set(projects.map((p) => p.path)));
 
-	// Status dot, mirroring the home list: orange = running, red = error, neutral
-	// for idle, a hollow ring for dead (so it survives e-ink without colour).
-	function dotClass(s: SessionView) {
-		if (s.status === 'running') return 'bg-primary';
-		if (s.status === 'error') return 'bg-error';
-		if (s.status === 'dead') return 'border border-base-content/40';
-		return 'bg-base-content/35';
-	}
-
 	// Everything above the Hidden section. Hiding cuts across both views, so it is
 	// applied once here rather than inside each grouping.
 	const shown = $derived(visibleSessions(sessions));
@@ -171,10 +162,9 @@
 			{:else}
 				<Bot size={13} class="shrink-0 opacity-60" />
 			{/if}
-			<span class="size-1.5 shrink-0 rounded-full {dotClass(s)}" title={s.status}></span>
+			<span class="size-1.5 shrink-0 rounded-full {statusDotClass(s)}" role={s.unread ? 'img' : undefined} aria-label={s.unread ? 'Unread' : undefined} title={s.unread ? `Unread, ${s.status}` : s.status}></span>
 			<div class="flex min-w-0 flex-1 flex-col">
 				<span class="flex min-w-0 items-center gap-1.5 text-sm {s.unread ? 'font-semibold' : ''}">
-					{#if s.unread}<span class="size-1.5 shrink-0 rounded-full {UNREAD_DOT}" role="img" aria-label="Unread" title="Unread"></span>{/if}
 					<span class="truncate">{s.title}</span>
 				</span>
 				{#if proj}
