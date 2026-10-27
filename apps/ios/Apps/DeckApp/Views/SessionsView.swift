@@ -32,6 +32,11 @@ struct SessionsView: View {
 	/// session pane again (see below).
 	@State private var paneBuild = 0
 	@State private var railWidth: CGFloat = 0
+	/// Where the divider was let go on the fold, 0 for the fold itself.
+	@AppStorage(FoldSplit.storageKey) private var listWidth = 0.0
+	/// The list pane's width while the divider is being dragged; a cancelled
+	/// drag (folding mid-drag) clears it too.
+	@GestureState private var dragWidth: CGFloat?
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
 	@State private var models = OpenSessionModel()
 	@State private var pendingDelete: DeleteRequest?
@@ -63,8 +68,11 @@ struct SessionsView: View {
 
 	private var wide: Bool { sizeClass == .regular && !hinge.isTabletop }
 
-	/// The fold owns the split: half the window each side of the hinge.
-	private var foldWidth: CGFloat? { hinge.splitWidth(sizeClass) }
+	/// The list pane's width on the fold: half the window, or where the
+	/// divider was dragged.
+	private var foldWidth: CGFloat? {
+		hinge.splitWidth(sizeClass).map { _ in dragWidth ?? FoldSplit.width(listWidth, window: hinge.windowSize.width) }
+	}
 
 	private var twoUp: Bool { wide && beside != nil }
 
@@ -101,7 +109,7 @@ struct SessionsView: View {
 					.frame(width: foldWidth)
 					.frame(maxWidth: foldWidth ?? .infinity)
 					.overlay(alignment: .top) { focusBar(.beside) }
-					Divider()
+					foldDivider
 					NavigationStack { detail }
 						.frame(maxWidth: .infinity)
 						.overlay(alignment: .top) { focusBar(.main) }
@@ -131,7 +139,7 @@ struct SessionsView: View {
 					}
 					.frame(width: wide ? foldWidth : nil)
 					if wide {
-						Divider()
+						foldDivider
 						// Built again once unfolding has settled: until then the system
 						// reports most of the window as bottom safe area, the pane
 						// keeps it, and the session is squeezed to its composer.
@@ -192,6 +200,42 @@ struct SessionsView: View {
 		.onDisappear { models.close() }
 	}
 
+	/// The line between the fold's panes, which a drag moves within
+	/// FoldSplit's limits; let go near the fold, it snaps back to it.
+	@ViewBuilder private var foldDivider: some View {
+		if let foldWidth {
+			let window = hinge.windowSize.width
+			let settled = FoldSplit.width(listWidth, window: window)
+			Divider()
+				.overlay {
+					Capsule().fill(.secondary).frame(width: 5, height: 36)
+						.opacity(dragWidth == nil ? 0 : 1)
+				}
+				.overlay {
+					Color.clear.frame(width: 20).contentShape(Rectangle())
+						// Global, since the divider moves under the finger.
+						.gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
+							.updating($dragWidth) { drag, width, _ in
+								width = FoldSplit.clamp(settled + drag.translation.width, window: window)
+							}
+							.onEnded { drag in listWidth = FoldSplit.settle(settled + drag.translation.width, window: window) })
+						.accessibilityElement()
+						.accessibilityIdentifier("foldDivider")
+						.accessibilityLabel("Session list width")
+						.accessibilityValue("\(Int(foldWidth)) points")
+						.accessibilityAdjustableAction { direction in
+							listWidth = FoldSplit.settle(settled + (direction == .increment ? 40 : -40), window: window)
+						}
+				}
+				// Over the session pane, which would otherwise take the handle's right half.
+				.zIndex(1)
+				// A tick on grabbing, on letting go, and crossing into or out of the fold.
+				.sensoryFeedback(.selection, trigger: dragWidth.map { abs($0 - window / 2) <= FoldSplit.snapDistance })
+		} else {
+			Divider()
+		}
+	}
+
 	/// Keeps the fold's panes off the tab rail, which the open display puts
 	/// along the trailing edge as a safe area inset. Reaching under it, the
 	/// session's bar handed its buttons to the rail's column and its working
@@ -240,6 +284,7 @@ struct SessionsView: View {
 			onActivate: twoUp ? { focusedPane = pane } : nil,
 			embedsActivity: !(pane == .main && activityInListPane)
 		)
+		.environment(\.foldPane, foldWidth.map { pane == .beside ? 0...$0 : min($0 + 1, hinge.windowSize.width - railWidth)...(hinge.windowSize.width - railWidth) })
 		.id(target)
 	}
 

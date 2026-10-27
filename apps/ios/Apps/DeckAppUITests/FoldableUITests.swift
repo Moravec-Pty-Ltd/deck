@@ -92,6 +92,64 @@ final class FoldableUITests: XCTestCase {
 		app.buttons["Cancel"].tap()
 	}
 
+	/// Opened flat, dragging the divider resizes the list within its limits,
+	/// a popover stays in the session's pane, and letting go near the fold
+	/// snaps back to it. An iPad told it is open flat stands in for the Duo,
+	/// whose simulator may boot folded.
+	func testDraggingTheDividerResizesTheList() throws {
+		guard Self.isFoldable || UIDevice.current.userInterfaceIdiom == .pad else {
+			throw XCTSkip("opened flat needs the iPhone Duo or an iPad simulator")
+		}
+		let app = try Self.launch(environment: ["DECK_HINGE": "fullyOpen"])
+		let window = app.windows.firstMatch.frame
+		guard window.width > 700 else { throw XCTSkip("the simulator booted folded") }
+		let listEdge = { Self.listEdge(in: app) }
+		let drag = { (x: CGFloat) in Self.dragDivider(to: x, in: app) }
+		// The width is kept, so a run that failed part way must not shift the other tests.
+		addTeardownBlock {
+			if app.navigationBars["Sessions"].exists, abs(Self.listEdge(in: app) - window.midX) > 2 { Self.dragDivider(to: window.midX, in: app) }
+		}
+
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = Self.listItem("Stream token diff renderer", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20))
+		if abs(listEdge() - window.midX) > 2 { drag(window.midX) }
+		XCTAssertEqual(listEdge(), window.midX, accuracy: 2, "the list starts on the fold")
+		row.tap()
+		XCTAssertTrue(app.buttons["renameSession"].waitForExistence(timeout: 20))
+
+		drag(window.midX - 120)
+		XCTAssertEqual(listEdge(), window.midX - 120, accuracy: 4, "the list narrows with the drag")
+		drag(window.minX + 40)
+		XCTAssertEqual(listEdge() - window.minX, 260, accuracy: 2, "the list stops at its minimum")
+		drag(window.maxX - 120)
+		XCTAssertEqual(listEdge() - window.minX, window.width * 0.6, accuracy: 2, "the list stops at its maximum")
+
+		app.buttons["renameSession"].tap()
+		let rename = app.navigationBars["Rename session"]
+		XCTAssertTrue(rename.waitForExistence(timeout: 5), "rename did not open\n\(app.debugDescription.prefix(3000))")
+		XCTAssertGreaterThanOrEqual(rename.frame.minX, listEdge(), "rename sits in the session's pane")
+		attach(app, "divider-widest-rename")
+		app.buttons["Cancel"].tap()
+		XCTAssertTrue(rename.waitForNonExistence(timeout: 5))
+
+		drag(window.midX - 15)
+		XCTAssertEqual(listEdge(), window.midX, accuracy: 2, "let go near the fold, the divider snaps to it")
+	}
+
+	private static func listEdge(in app: XCUIApplication) -> CGFloat {
+		app.navigationBars["Sessions"].firstMatch.frame.maxX
+	}
+
+	/// To a point inside the window: past either limit, but never off screen.
+	private static func dragDivider(to x: CGFloat, in app: XCUIApplication) {
+		let divider = app.descendants(matching: .any).matching(identifier: "foldDivider").firstMatch
+		XCTAssertTrue(divider.waitForExistence(timeout: 5), "no divider\n\(app.debugDescription.prefix(3000))")
+		let start = divider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+		start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: x - divider.frame.midX, dy: 0)))
+		sleep(1)
+	}
+
 	/// Two sessions side by side each fill their half of the fold, with their
 	/// own header, close button and composer, all clear of the tab rail.
 	func testTwoSessionsSplitOnTheFold() throws {
