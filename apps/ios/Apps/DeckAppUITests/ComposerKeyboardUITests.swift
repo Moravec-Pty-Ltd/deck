@@ -118,6 +118,20 @@ final class ComposerKeyboardUITests: XCTestCase {
 		assertVisibleAboveKeyboard(app, id: "operatorComposer", what: "the operator composer")
 	}
 
+	func testOperatorReturnAddsALine() throws {
+		let app = try FoldableUITests.launch(environment: [:])
+		app.buttons["Operator"].firstMatch.tap()
+		// By id: the label goes once the field holds text.
+		let field = app.textFields["operatorComposer"]
+		XCTAssertTrue(field.waitForExistence(timeout: 20))
+		field.tap()
+		field.typeText("one\ntwo")
+		XCTAssertEqual(field.value as? String, "one\ntwo", "Return sent the message instead of adding a line")
+		app.buttons["Send to the operator"].tap()
+		// An empty field reports its placeholder as its value.
+		XCTAssertFalse((field.value as? String ?? "").contains("two"), "the button did not send")
+	}
+
 	/// Empties the field: focused from the composer's padding, so the caret is at the end.
 	private func clear(_ field: XCUIElement, _ app: XCUIApplication) {
 		// The first tap may only close an open edit menu.

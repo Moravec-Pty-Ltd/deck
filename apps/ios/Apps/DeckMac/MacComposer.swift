@@ -3,9 +3,10 @@ import UniformTypeIdentifiers
 import DeckKit
 import DeckUI
 
-/// The session's message field: quick messages, images (picked, pasted with
-/// the paste control, or dropped on it), the text, and Send, under a working
-/// status with Stop while a turn runs.
+/// The session's message box, laid out as on the phone: attachments, the
+/// text, then images, quick messages and voice mode with Send at the end,
+/// under a working status with Stop while a turn runs. Return adds a line;
+/// ⌘Return is the Session menu's Send (DeckCommands).
 struct MacComposer: View {
 	@Binding var draft: String
 	@Binding var images: [DeckImage]
@@ -17,6 +18,7 @@ struct MacComposer: View {
 	var onManageQuickMessages: () -> Void
 	/// Picks which project's quick messages are offered beside the global ones.
 	var session: SessionDigest?
+	var voice: VoiceController?
 
 	@Environment(DeckStore.self) private var store
 	@State private var importing = false
@@ -35,7 +37,14 @@ struct MacComposer: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 6) {
-			if working { status }
+			if working { status.padding(.horizontal, 4) }
+			box
+		}
+		.padding(8)
+	}
+
+	private var box: some View {
+		VStack(alignment: .leading, spacing: 10) {
 			if !images.isEmpty {
 				ScrollView(.horizontal, showsIndicators: false) {
 					HStack(spacing: 8) {
@@ -54,18 +63,21 @@ struct MacComposer: View {
 						attachFailures = 0
 					}
 			}
-			HStack(alignment: .bottom, spacing: 8) {
+			field
+			HStack(spacing: 14) {
+				if store.supports(.images) { attachButton }
 				if store.supports(.quickMessages) { quickMessages }
-				if store.supports(.images) { imageControls }
-				field
-				// ⌘Return is the Session menu's Send (DeckCommands).
-				Button("Send", action: onSend)
-					.disabled(!canSend)
+				if let voice, voice.canRead { voiceButton(voice) }
+				Spacer(minLength: 0)
+				sendButton
 			}
+			.font(.title3)
+			.buttonStyle(.borderless)
 		}
-		.padding()
+		.padding(12)
 		// Behind everything, so the field and the buttons keep their own clicks.
 		.background { Color.clear.contentShape(Rectangle()).onTapGesture(perform: focusAtEnd) }
+		.deckGlass(in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
 		.fileImporter(isPresented: $importing, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
 			guard case .success(let urls) = result else { attachFailures += 1; return }
 			for url in urls { attach(fileAt: url) }
@@ -79,7 +91,6 @@ struct MacComposer: View {
 			if dropTargeted {
 				RoundedRectangle(cornerRadius: DeckStyle.Radius.card)
 					.stroke(Color.accentColor, lineWidth: 2)
-					.padding(4)
 			}
 		}
 	}
@@ -96,20 +107,11 @@ struct MacComposer: View {
 	}
 
 	private var field: some View {
-		TextField("Message", text: $draft, axis: .vertical)
+		TextField("Message (⌘Return to send)", text: $draft, axis: .vertical)
 			.textFieldStyle(.plain)
 			.lineLimit(1...8)
-			.padding(8)
-			.background {
-				RoundedRectangle(cornerRadius: DeckStyle.Radius.control)
-					.fill(Color(nsColor: .textBackgroundColor))
-					.onTapGesture(perform: focusAtEnd)
-			}
-			.overlay(
-				RoundedRectangle(cornerRadius: DeckStyle.Radius.control)
-					.stroke(Color(nsColor: .separatorColor), lineWidth: 0.5))
-			.onSubmit { if canSend { onSend() } }
 			.focused($fieldFocused)
+			.returnInsertsNewline($fieldFocused)
 			.accessibilityIdentifier("sessionComposer")
 			// The monitor sees every window's keys; only the key window's composer answers.
 			.onChange(of: activeState, initial: true) { windowIsKey = activeState == .key }
@@ -158,25 +160,42 @@ struct MacComposer: View {
 		} label: {
 			Image(systemName: "text.append")
 		}
+		.menuStyle(.borderlessButton)
 		.menuIndicator(.hidden)
 		.fixedSize()
 		.help("Quick messages")
+		.accessibilityLabel("Quick messages")
 	}
 
-	@ViewBuilder
-	private var imageControls: some View {
+	private var attachButton: some View {
 		Button {
 			importing = true
 		} label: {
 			Image(systemName: "photo.on.rectangle")
 		}
 		.help("Attach images")
+		.accessibilityLabel("Attach images")
 		.disabled(images.count >= Self.maxImages)
-		PasteButton(supportedContentTypes: [.image]) { providers in
-			Task { await attach(providers) }
+	}
+
+	private func voiceButton(_ voice: VoiceController) -> some View {
+		Button {
+			if voice.enabled { voice.disable() } else { voice.enable() }
+		} label: {
+			Image(systemName: voice.enabled ? "waveform.circle.fill" : "waveform.circle")
 		}
-		.labelStyle(.iconOnly)
-		.help("Paste an image")
+		.help(voice.enabled ? "Turn voice mode off" : "Turn voice mode on")
+		.accessibilityLabel(voice.enabled ? "Turn voice mode off" : "Turn voice mode on")
+	}
+
+	private var sendButton: some View {
+		Button(action: onSend) {
+			Image(systemName: "arrow.up.circle.fill")
+				.font(.title)
+		}
+		.disabled(!canSend)
+		.help("Send (⌘Return)")
+		.accessibilityLabel("Send")
 	}
 
 	private func thumbnail(_ image: DeckImage) -> some View {
@@ -205,12 +224,6 @@ struct MacComposer: View {
 		defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 		guard let data = try? Data(contentsOf: url) else { attachFailures += 1; return }
 		attach(data)
-	}
-
-	private func attach(_ providers: [NSItemProvider]) async {
-		for provider in providers where images.count < Self.maxImages {
-			if let image = await ImagePaste.image(from: provider) { images.append(image) } else { attachFailures += 1 }
-		}
 	}
 
 	/// ⌘V in the field with an image and no rich text on the clipboard
