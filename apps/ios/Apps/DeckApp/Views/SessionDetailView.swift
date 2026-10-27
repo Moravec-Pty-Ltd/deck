@@ -1268,9 +1268,10 @@ struct SessionDetailView: View {
 	}
 
 	/// Through JPEG so ImagePaste scales it down like any other photo; the
-	/// JPEG keeps the photo's orientation, which ImagePaste then applies.
+	/// JPEG keeps the photo's orientation, which ImagePaste then applies. Full
+	/// quality, so the 0.8 encode in ImagePaste is the only lossy step.
 	private func attachPhoto(_ photo: UIImage, to viewModel: SessionDetailViewModel) async {
-		let image = await Task.detached { photo.jpegData(compressionQuality: 0.9).flatMap(ImagePaste.image(from:)) }.value
+		let image = await Task.detached { photo.jpegData(compressionQuality: 1).flatMap(ImagePaste.image(from:)) }.value
 		if let image, viewModel.draftImages.count < 8 { viewModel.draftImages.append(image) }
 	}
 
