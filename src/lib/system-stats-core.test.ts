@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { HISTORY, cpuPercent, cpuTimes, level, memFromMeminfo, percent, pushHistory, sparkArea, sparkPoints } from './system-stats-core';
+import {
+	HISTORY,
+	cpuPercent,
+	cpuTimes,
+	formatRate,
+	level,
+	memFromMeminfo,
+	netRate,
+	parseNetDev,
+	percent,
+	pushHistory,
+	scaleRates,
+	sparkArea,
+	sparkPoints
+} from './system-stats-core';
 
 describe('cpu', () => {
 	it('sums busy and total time over the cores', () => {
@@ -47,5 +61,39 @@ describe('history and sparkline', () => {
 
 	it('grades a reading', () => {
 		expect([level(10), level(75), level(95)]).toEqual(['ok', 'warn', 'high']);
+	});
+});
+
+describe('network', () => {
+	const dev = `Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo: 500 5 0 0 0 0 0 0 500 5 0 0 0 0 0 0
+  eth0: 1000000 10 0 0 0 0 0 0 250000 7 0 0 0 0 0 0
+`;
+
+	it('reads received and sent bytes per interface', () => {
+		const m = parseNetDev(dev);
+		expect(m.get('eth0')).toEqual({ rx: 1000000, tx: 250000 });
+		expect(m.get('lo')).toEqual({ rx: 500, tx: 500 });
+	});
+
+	it('turns two readings into bytes a second, ignoring a counter reset', () => {
+		expect(netRate({ rx: 0, tx: 0 }, { rx: 3000, tx: 600 }, 3)).toEqual({ down: 1000, up: 200 });
+		expect(netRate({ rx: 5000, tx: 5000 }, { rx: 10, tx: 10 }, 3)).toEqual({ down: 0, up: 0 });
+	});
+
+	it('prints a speed in a few characters', () => {
+		expect([formatRate(0), formatRate(820), formatRate(340_000), formatRate(1_234_000), formatRate(45_000_000)]).toEqual([
+			'0',
+			'820B',
+			'340K',
+			'1.2M',
+			'45M'
+		]);
+	});
+
+	it('scales speeds against the peak, with a floor for an idle link', () => {
+		expect(scaleRates([0, 500_000, 1_000_000], 1_000_000)).toEqual([0, 50, 100]);
+		expect(scaleRates([1000], 1000)).toEqual([1]);
 	});
 });

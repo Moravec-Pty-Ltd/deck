@@ -4,6 +4,8 @@ import {
 	cpuPercent,
 	cpuTimes,
 	memFromMeminfo,
+	netRate,
+	parseNetDev,
 	percent,
 	pushHistory,
 	type CpuTimes,
@@ -17,7 +19,8 @@ const SAMPLE_MS = 3000;
 
 let prevTimes: CpuTimes | null = null;
 let latest: SystemStats | null = null;
-let history: SystemHistory = { cpu: [], mem: [], disk: [] };
+let history: SystemHistory = { cpu: [], mem: [], disk: [], down: [], up: [] };
+let prevNet: { at: number; rx: number; tx: number } | null = null;
 let timer: ReturnType<typeof setInterval> | undefined;
 
 function memory(): SystemStats['mem'] {
@@ -40,16 +43,58 @@ function disk(): SystemStats['disk'] {
 	}
 }
 
-function sample(): SystemStats {
+// Physical interfaces only: Docker's bridges and veth pairs (and loopback) live
+// under /sys/devices/virtual and would count container traffic twice.
+function isPhysical(name: string): boolean {
+	try {
+		return !fs.realpathSync(`/sys/class/net/${name}`).includes('/virtual/');
+	} catch {
+		return false;
+	}
+}
+
+// Received and sent bytes summed over the physical interfaces.
+function netCounters(): { rx: number; tx: number } | null {
+	try {
+		const physical = [...parseNetDev(fs.readFileSync('/proc/net/dev', 'utf8'))].filter(([name]) => isPhysical(name));
+		return physical.reduce((a, [, c]) => ({ rx: a.rx + c.rx, tx: a.tx + c.tx }), { rx: 0, tx: 0 });
+	} catch {
+		return null;
+	}
+}
+
+// Speed since the previous sample; the first sample has nothing to compare with.
+function network(): SystemStats['net'] {
+	const counters = netCounters();
+	if (!counters) return null;
+	const at = Date.now();
+	const rate = prevNet ? netRate(prevNet, counters, (at - prevNet.at) / 1000) : { down: 0, up: 0 };
+	prevNet = { at, ...counters };
+	return rate;
+}
+
+function cpu(): number {
 	const times = cpuTimes(os.cpus());
-	const stats = { cpu: cpuPercent(prevTimes ?? { busy: 0, total: 0 }, times), mem: memory(), disk: disk() };
+	const value = cpuPercent(prevTimes ?? { busy: 0, total: 0 }, times);
 	prevTimes = times;
-	latest = stats;
+	return value;
+}
+
+function record(stats: SystemStats) {
+	const net = stats.net ?? { down: 0, up: 0 };
 	history = {
 		cpu: pushHistory(history.cpu, stats.cpu),
 		mem: pushHistory(history.mem, percent(stats.mem)),
-		disk: pushHistory(history.disk, percent(stats.disk))
+		disk: pushHistory(history.disk, percent(stats.disk)),
+		down: pushHistory(history.down, net.down),
+		up: pushHistory(history.up, net.up)
 	};
+}
+
+function sample(): SystemStats {
+	const stats = { cpu: cpu(), mem: memory(), disk: disk(), net: network() };
+	latest = stats;
+	record(stats);
 	return stats;
 }
 

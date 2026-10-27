@@ -11,6 +11,8 @@ class SystemMonitor {
 	cpu = $state<number[]>([]);
 	mem = $state<number[]>([]);
 	disk = $state<number[]>([]);
+	down = $state<number[]>([]);
+	up = $state<number[]>([]);
 	#users = 0;
 	#timer: ReturnType<typeof setInterval> | undefined;
 
@@ -22,6 +24,8 @@ class SystemMonitor {
 			this.cpu = s.history.cpu;
 			this.mem = s.history.mem;
 			this.disk = s.history.disk;
+			this.down = s.history.down;
+			this.up = s.history.up;
 		} catch {
 			// A missed reading leaves a gap of one; the next poll catches up.
 		}
