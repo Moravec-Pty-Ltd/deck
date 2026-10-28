@@ -33,7 +33,7 @@ vi.mock('./store', () => ({
 	getStoredSession: (sid: string) => fake.sessions.find(({ id }) => id === sid)
 }));
 
-const { pollWatches } = await import('./watcher');
+const { pollWatches, runWatchNow } = await import('./watcher');
 const store = await import('./watch-store');
 const { createWatch, getWatch, listWatches, saveWatch } = store;
 
@@ -175,6 +175,59 @@ describe('pollWatches', () => {
 		await pollWatches();
 		expect(fake.sent).toHaveLength(0);
 		expect(getWatch(id)?.state).toBe('cancelled');
+	});
+});
+
+describe('runWatchNow', () => {
+	const later = (command?: string): string => createWatch('c_live', { title: 'CI', prompt: 'Merge if green.', in: '1h', command }).id;
+
+	it('runs the check and wakes the session as the timer would', async () => {
+		const id = later('echo green');
+		expect(runWatchNow(id)?.dueAt).toBeLessThanOrEqual(Date.now());
+		await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+		expect(fake.sent[0].text).toBe('## Watch: CI\n\nMerge if green.\n\nCheck: `echo green` exited 0\n\n```\ngreen\n```');
+		expect(getWatch(id)?.state).toBe('fired');
+	});
+
+	it('fires a watch without a check straight away', async () => {
+		runWatchNow(later());
+		await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+		expect(fake.sent[0].text).toBe('## Watch: CI\n\nMerge if green.');
+	});
+
+	it('waits for a running turn, then wakes the session once', async () => {
+		fake.running.add('c_live');
+		const first = later();
+		const second = later();
+		runWatchNow(first);
+		runWatchNow(second);
+		await pollWatches();
+		expect(fake.sent).toHaveLength(0);
+		expect(getWatch(first)?.state).toBe('active');
+		fake.running.clear();
+		await pollWatches();
+		expect(fake.sent).toHaveLength(1);
+		expect(store.activeWatches('c_live')).toHaveLength(1);
+	});
+
+	it('goes again after a pass that was busy when it was asked', async () => {
+		fake.sessions.push(session({ id: 'c_other' }));
+		const slow = due({ command: 'sleep 0.2', sessionId: 'c_other' });
+		const busy = pollWatches();
+		const id = later();
+		runWatchNow(id);
+		await busy;
+		expect(getWatch(slow)?.state).toBe('fired');
+		expect(getWatch(id)?.state).toBe('fired');
+	});
+
+	it('leaves an ended watch alone and knows nothing of an unknown one', async () => {
+		const id = later();
+		const cancelled = store.cancelWatch(id);
+		expect(runWatchNow(id)).toEqual(cancelled);
+		await pollWatches();
+		expect(fake.sent).toHaveLength(0);
+		expect(runWatchNow('wat_nope')).toBeUndefined();
 	});
 });
 

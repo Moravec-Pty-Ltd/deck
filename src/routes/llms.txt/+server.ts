@@ -979,6 +979,14 @@ watch with a command has fired; \`exitCode\` is null when the check timed out
 Cancel it; the agent is not woken. Returns the watch, unchanged if it had
 already ended. 404 when unknown. Deleting a session cancels its watches.
 
+### POST /api/agent/watches/{id}/run
+
+Fire it now rather than at its due time: its due time becomes now and the next
+check of due watches runs straight away, so it runs its check and wakes the
+agent exactly as the timer would. While the session's turn is running it fires
+when the turn ends. Returns the watch, unchanged if it had already ended. 404
+when unknown.
+
 ## Issue sources
 
 Where a project's issues come from (\`GET /api/agent/issues\`): a GitHub repo,

@@ -290,7 +290,10 @@ struct SessionsView: View {
 
 	private func activityPane(_ model: SessionDetailViewModel) -> some View {
 		ScrollView {
-			ActivityList(entries: model.activity, onCancel: model.cancelWatch, onOpen: model.open)
+			ActivityList(
+				entries: model.activity, turnRunning: model.turnRunning, onCancel: model.cancelWatch,
+				onRunNow: model.runWatchNow, onOpen: model.open
+			)
 				.padding()
 		}
 		.navigationTitle("Activity")

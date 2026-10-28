@@ -788,6 +788,13 @@ public final class DeckStore {
 		await refreshSessions()
 	}
 
+	/// Fire a watch now, then re-read the sessions that carry it.
+	public func runWatchNow(id: String) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await client.runWatchNow(id: id)
+		await refreshSessions()
+	}
+
 	public func send(sessionId: String, text: String, voice: Bool = false) async throws {
 		guard let client else { throw DeckError.notConfigured }
 		try await client.send(sessionId: sessionId, text: text, voice: voice)

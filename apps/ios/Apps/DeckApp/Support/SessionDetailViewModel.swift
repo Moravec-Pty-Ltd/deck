@@ -220,6 +220,12 @@ final class SessionDetailViewModel {
 		try await store.cancelWatch(id: watch.id)
 	}
 
+	func runWatchNow(_ watch: Watch) async throws {
+		try await store.runWatchNow(id: watch.id)
+	}
+
+	var turnRunning: Bool { session?.status == .running }
+
 	func open(_ agent: SubagentState) {
 		jumpTo = "tool-\(agent.toolUseId)"
 	}

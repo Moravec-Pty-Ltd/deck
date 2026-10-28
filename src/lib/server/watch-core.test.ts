@@ -7,6 +7,7 @@ import {
 	OUTPUT_CAP,
 	WatchError,
 	activeFor,
+	bringForward,
 	capReached,
 	isDue,
 	parseDelay,
@@ -120,6 +121,18 @@ describe('isDue', () => {
 		expect(isDue(watch({ dueAt: NOW - 86_400_000 }), NOW)).toBe(true);
 		expect(isDue(watch({ dueAt: NOW, state: 'fired' }), NOW)).toBe(false);
 		expect(isDue(watch({ dueAt: NOW, state: 'cancelled' }), NOW)).toBe(false);
+	});
+});
+
+describe('bringForward', () => {
+	it('makes an active watch due now and leaves the rest as they are', () => {
+		const w = watch();
+		expect(bringForward(w, NOW)).toEqual({ ...w, dueAt: NOW });
+		expect(isDue(bringForward(w, NOW), NOW)).toBe(true);
+		const overdue = watch({ dueAt: NOW - 5 });
+		expect(bringForward(overdue, NOW)).toBe(overdue);
+		const fired = watch({ state: 'fired', endedAt: NOW });
+		expect(bringForward(fired, NOW)).toBe(fired);
 	});
 });
 

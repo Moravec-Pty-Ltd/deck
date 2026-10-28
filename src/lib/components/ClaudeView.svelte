@@ -1072,6 +1072,7 @@
 				agents={barAgents}
 				elapsed={agentElapsed}
 				onjump={(a) => void jumpToAgent(a)}
+				turnRunning={status === 'running'}
 			/>
 		{/if}
 	</div>

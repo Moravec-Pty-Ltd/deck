@@ -195,18 +195,22 @@ public struct SubagentSteps<Row: View>: View {
 /// watch's check command. Shows nothing when there is nothing to wait on.
 public struct ActivityList: View {
 	let entries: [ActivityEntry]
+	let turnRunning: Bool
 	let onCancel: (Watch) async throws -> Void
+	let onRunNow: (Watch) async throws -> Void
 	let onOpen: (SubagentState) -> Void
 	@State private var expanded = false
 	/// Cancelled here, hidden before the sessions list catches up.
 	@State private var cancelled = Set<String>()
 
 	public init(
-		entries: [ActivityEntry], onCancel: @escaping (Watch) async throws -> Void,
-		onOpen: @escaping (SubagentState) -> Void
+		entries: [ActivityEntry], turnRunning: Bool, onCancel: @escaping (Watch) async throws -> Void,
+		onRunNow: @escaping (Watch) async throws -> Void, onOpen: @escaping (SubagentState) -> Void
 	) {
 		self.entries = entries
+		self.turnRunning = turnRunning
 		self.onCancel = onCancel
+		self.onRunNow = onRunNow
 		self.onOpen = onOpen
 	}
 
@@ -254,9 +258,22 @@ public struct ActivityList: View {
 			}
 			Spacer(minLength: 4)
 			TimelineView(.periodic(from: .now, by: 1)) { context in
-				Text(ActivityFeed.countdown(watch.dueAt - context.date.timeIntervalSince1970 * 1000))
-					.monospacedDigit()
-					.foregroundStyle(.secondary)
+				let left = watch.dueAt - context.date.timeIntervalSince1970 * 1000
+				HStack(spacing: 8) {
+					Text(left <= 0 && turnRunning ? "runs after this turn" : ActivityFeed.countdown(left))
+						.monospacedDigit()
+						.foregroundStyle(.secondary)
+					if left > 0 {
+						// The sessions list brings the new due time; a watch already gone has nothing to undo.
+						Button {
+							Task { try? await onRunNow(watch) }
+						} label: {
+							Image(systemName: "play.fill")
+						}
+						.buttonStyle(.borderless)
+						.accessibilityLabel("Run watch now")
+					}
+				}
 			}
 			Button {
 				cancelled.insert(watch.id)
