@@ -128,7 +128,8 @@
 					source: pickedIssue.source,
 					sourceId: pickedIssue.sourceId,
 					id: pickedIssue.id,
-					url: pickedIssue.url
+					url: pickedIssue.url,
+					title: pickedIssue.title
 				}
 			};
 		}

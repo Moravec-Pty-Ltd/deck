@@ -130,7 +130,7 @@ public struct StartWorkIntent: AppIntent {
 			cwd: issue.projectPath,
 			prompt: instructions ?? defaults.firstPrompt ?? FallbackPrompt.work,
 			kind: intentKind,
-			title: issue.issueId,
+			title: DeckIssue.singleTitle([issue.deckIssue]),
 			model: defaults.modelId,
 			provider: defaults.model.provider,
 			effort: defaults.effort,

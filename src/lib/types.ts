@@ -180,6 +180,9 @@ export interface SessionIssue {
 	source: IssueSourceType;
 	id: string;
 	url: string;
+	// The issue's title when the session started (sent by the picker), refreshed
+	// when the first prompt fetches the issue. Absent on older sessions.
+	title?: string;
 }
 
 // A user-configured canned message shown in the agent composer's quick-message

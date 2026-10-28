@@ -67,4 +67,71 @@ final class SessionSearchTests: XCTestCase {
 		// A title match still outranks one that leans on extra.
 		XCTAssertEqual(SessionSearch.rank("New session", against: query, extra: "anything"), 0)
 	}
+
+	// MARK: - Issue and PR references
+
+	private func linked(_ id: String, _ title: String, issues: String = "[]", pr: String = "null") -> SessionDigest {
+		let json = #"{"id":"\#(id)","title":"\#(title)","status":"idle","issues":\#(issues),"pr":\#(pr)}"#
+		return try! JSONDecoder().decode(SessionDigest.self, from: Data(json.utf8))
+	}
+
+	private var linkedSessions: [SessionDigest] {
+		[
+			linked("byIssue", "Fix login", issues: #"[{"source":"github","id":"owner/repo#315","title":"Login redirect loops"}]"#),
+			linked("byPR", "Other work", pr: #"{"repo":"owner/repo","number":315}"#),
+			linked("byTitle", "Ticket 315 cleanup"),
+			linked("linear", "Billing", issues: #"[{"source":"linear","id":"ENG-123"}]"#),
+		]
+	}
+
+	func testRefsFindSessionsByIssueAndPRNumber() {
+		for q in ["315", "#315", "owner/repo#315", "repo#315"] {
+			XCTAssertEqual(Set(SessionSearch.byName(q, in: linkedSessions).map(\.id)), q == "315" ? ["byIssue", "byPR", "byTitle"] : ["byIssue", "byPR"], q)
+		}
+		XCTAssertEqual(SessionSearch.byName("31", in: linkedSessions).map(\.id), ["byTitle"])
+	}
+
+	func testLinearIdMatchesAnyCase() {
+		XCTAssertEqual(SessionSearch.byName("eng-123", in: linkedSessions).map(\.id), ["linear"])
+		XCTAssertEqual(SessionSearch.byName("ENG-123", in: linkedSessions).map(\.id), ["linear"])
+	}
+
+	func testTitleMatchRanksAboveRefOnlyMatch() {
+		XCTAssertEqual(SessionSearch.byName("315", in: linkedSessions).map(\.id).first, "byTitle")
+	}
+
+	func testIssueTitleWordsMatch() {
+		XCTAssertEqual(SessionSearch.byName("redirect loops", in: linkedSessions).map(\.id), ["byIssue"])
+	}
+
+	// MARK: - Issue titles
+
+	func testTrimTitle() {
+		XCTAssertEqual(DeckIssue.trimTitle("  Fix   the\n bug "), "Fix the bug")
+		let sentence = "Name sessions started on an issue after the issue title and show the number separately "
+		XCTAssertEqual(DeckIssue.trimTitle(sentence + sentence), "Name sessions started on an issue after the issue title and\u{2026}")
+		XCTAssertEqual(DeckIssue.trimTitle("Fix " + String(repeating: "x", count: 80)), "Fix " + String(repeating: "x", count: 55) + "\u{2026}")
+		// Same cut as the web: code points, so the second emoji is the one dropped.
+		XCTAssertEqual(DeckIssue.trimTitle("Fix " + String(repeating: "x", count: 54) + "🔥🔥 more words"), "Fix " + String(repeating: "x", count: 54) + "🔥\u{2026}")
+		let hard = DeckIssue.trimTitle(String(repeating: "x", count: 150))
+		XCTAssertEqual(hard.count, 60)
+		XCTAssertTrue(hard.hasSuffix("\u{2026}"))
+	}
+
+	func testSingleTitle() {
+		let titled = DeckIssue(source: "github", issueId: "owner/repo#315", title: " Fix it ")
+		XCTAssertEqual(DeckIssue.singleTitle([titled]), "Fix it")
+		XCTAssertEqual(DeckIssue.singleTitle([DeckIssue(source: "github", issueId: "owner/repo#315")]), "#315")
+		XCTAssertEqual(DeckIssue.singleTitle([DeckIssue(source: "linear", issueId: "ENG-1", title: "  ")]), "ENG-1")
+		XCTAssertEqual(DeckIssue.singleTitle([]), "")
+		XCTAssertEqual(DeckIssue.singleTitle([titled, titled]), "")
+	}
+
+	func testChipLabel() {
+		let one = DeckIssue(source: "github", issueId: "owner/repo#315")
+		XCTAssertNil(DeckIssue.chipLabel(nil))
+		XCTAssertNil(DeckIssue.chipLabel([]))
+		XCTAssertEqual(DeckIssue.chipLabel([one]), "#315")
+		XCTAssertEqual(DeckIssue.chipLabel([one, DeckIssue(source: "linear", issueId: "ENG-1"), one]), "#315 +2")
+	}
 }

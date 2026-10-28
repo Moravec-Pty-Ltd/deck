@@ -14,6 +14,7 @@
 	import { aggregateState, SERVER_DOT, SERVER_LABEL } from '$lib/servers';
 	import { pickSessionIcon, type SessionIconKind } from '$lib/session-icon';
 	import ReviewMarks from './ReviewMarks.svelte';
+	import IssueChip from './IssueChip.svelte';
 	import {
 		decisionLabel,
 		phaseLabel,
@@ -196,6 +197,8 @@
 				/>
 			{/if}
 		</a>
+		<!-- Only once the sidebar is widened: at its default width the chip would squeeze the title away. -->
+		<IssueChip issues={s.issues ?? []} class="hidden @[18rem]:inline-flex" />
 		{#if s.kind !== 'shell' && s.worktree}
 			<button
 				class="btn btn-ghost btn-xs"
@@ -413,7 +416,7 @@
 	</button>
 </div>
 
-<nav class="space-y-2">
+<nav class="@container space-y-2">
 	{#if viewMode.current === 'status'}
 		{#each buckets as bucket (bucket.key)}
 			{@const isOpen = !statusCollapse.has(bucket.key)}

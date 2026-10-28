@@ -24,7 +24,7 @@ import { projectForPath, resolveWithinProjects } from './confine';
 import { issuePromptContext } from './issues/prompt';
 import { slugifyBranch } from './branch-core';
 import { lastPrLink } from '$lib/pr';
-import { shortIssueId } from '$lib/issues';
+import { singleIssueTitle } from '$lib/issues';
 import { EFFORT_LEVELS } from '$lib/effort';
 import { AGENT_KINDS, type DeckSession, type Project, type SessionIssue } from '$lib/types';
 import * as core from './workflow-core';
@@ -548,7 +548,7 @@ async function prPlacement(root: string, pr: RunPr, base: string | undefined): P
 
 function startTitle(req: StartRunRequest, branch: string): string {
 	if (req.title) return req.title;
-	if (req.issue) return shortIssueId(req.issue.source, req.issue.id);
+	if (req.issue) return singleIssueTitle([req.issue]);
 	return req.pr ? `PR #${req.pr.number}` : branch;
 }
 

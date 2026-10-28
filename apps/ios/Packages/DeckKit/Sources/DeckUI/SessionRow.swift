@@ -20,6 +20,7 @@ public struct SessionRow: View {
 					Text(title)
 						.font(.body.weight(session.unread == true ? .semibold : .medium))
 						.lineLimit(1)
+						.truncationMode(.tail)
 					if session.watches?.isEmpty == false {
 						Image(systemName: "timer")
 							.font(.caption)
@@ -51,6 +52,10 @@ public struct SessionRow: View {
 							if let pr = session.pr, pr.number != nil {
 								PRStatusBadge(pr: pr)
 							}
+							// Display only: a button in a list row fights the row's tap and swipe.
+							if let label = DeckIssue.chipLabel(session.issues) {
+								Chip(text: label)
+							}
 							if let costText = CostFormat.string(session.cost?.costUsd) {
 								Chip(text: costText)
 							}
@@ -76,7 +81,7 @@ public struct SessionRow: View {
 	}
 
 	private var hasChips: Bool {
-		session.awaitingInput == true || session.pr?.number != nil || session.cost?.costUsd != nil
+		session.awaitingInput == true || session.pr?.number != nil || session.issues?.isEmpty == false || session.cost?.costUsd != nil
 			|| (session.context?.percent ?? 0) >= 66
 	}
 

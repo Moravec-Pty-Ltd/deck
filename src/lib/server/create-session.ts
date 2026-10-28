@@ -1,13 +1,13 @@
 import { error } from '@sveltejs/kit';
 import fs from 'node:fs';
-import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
+import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type DeckSession, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
 import { createSession } from './sessions';
 import { clearWorktreeBranch, createWorktree, fetchPullRef, isGitRepo } from './git';
 import { isFlagSafe } from './agents/args';
 import { slugifyBranch } from './branch-core';
 import { agentSend } from './agents/dispatch';
 import { appendEvent } from './claude';
-import { listProjects, updateProject, rememberModel, rememberEffort } from './store';
+import { listProjects, updateProject, rememberModel, rememberEffort, updateSession } from './store';
 import { parseEffort } from './session-effort-core';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
@@ -49,13 +49,16 @@ function safeHttpUrl(url: unknown): string {
 // Cap on issues attached to one session — the picker is a shortlist, and this
 // bounds the create-time detail fan-out.
 const ISSUE_CAP = 10;
+// Bounds a stored issue title from an untyped body; real titles are far shorter.
+const ISSUE_TITLE_CHARS = 500;
 
 export function parseIssue(raw: unknown): PickedIssue | undefined {
 	const o = (raw ?? {}) as Record<string, unknown>;
 	const source = o.source as IssueSourceType;
 	const id = asStr(o.id);
 	if (!id || !ISSUE_SOURCES.includes(source)) return undefined;
-	return { issue: { source, id, url: safeHttpUrl(o.url) }, sourceId: asStr(o.sourceId) };
+	const title = [...asStr(o.title)].slice(0, ISSUE_TITLE_CHARS).join('');
+	return { issue: { source, id, url: safeHttpUrl(o.url), ...(title ? { title } : {}) }, sourceId: asStr(o.sourceId) };
 }
 
 // Issue metadata the picker attaches; stored on the session for the header
@@ -299,10 +302,19 @@ async function maybeDispatch(
 	if (!isAgentKind(kind)) return;
 	if (!promptText) return;
 	const issueContext = await issuePromptContext(session.cwd, picked);
+	refreshIssueTitles(session, issueContext.titles);
 	const warning = issueContextWarning(promptText, issueContext);
 	if (warning) appendEvent(session.id, { type: 'deck.warning', text: warning, ts: Date.now() });
 	const ctx = { ...contextFromSession(session), ...issueContext };
 	await agentSend(session, expandPlaceholders(promptText, ctx));
+}
+
+// Store the titles the first-prompt fetch read, which are fresher than (or fill
+// in for) the ones the picker sent. The session's own name is left alone.
+function refreshIssueTitles(session: DeckSession, titles: Record<string, string> | undefined): void {
+	const issues = session.issues ?? [];
+	if (!titles || !issues.some((i) => titles[i.id] && titles[i.id] !== i.title)) return;
+	updateSession(session.id, { issues: issues.map((i) => (titles[i.id] ? { ...i, title: titles[i.id] } : i)) });
 }
 
 // Record this create's model/effort as the project's (and globally, the

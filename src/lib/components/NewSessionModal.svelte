@@ -32,7 +32,7 @@
 		loadAgentKinds,
 		loadAgentModels
 	} from '$lib/agent-models-store.svelte';
-	import { shortIssueId } from '$lib/issues';
+	import { shortIssueId, singleIssueTitle } from '$lib/issues';
 	import {
 		conflictMessage,
 		fixDetail,
@@ -167,10 +167,10 @@
 	// pick (unchanged), else the refs joined so the field reads sensibly.
 	const prTitleField = (list: AgentPr[]) =>
 		list.length === 1 ? list[0].title : list.map((p) => `#${p.number}`).join('+');
-	// Same for an issue selection. Short ids, matching the split-create path and
-	// the header chip; the full ref stays on the issue itself.
+	// Same for an issue selection: one issue's own title (trimmed), else the
+	// short ids joined; the full ref stays on the issue itself.
 	const issueTitleField = (list: AgentIssue[]) =>
-		list.map((i) => shortIssueId(i.source, i.id)).join('+');
+		singleIssueTitle(list) || list.map((i) => shortIssueId(i.source, i.id)).join('+');
 
 	let wasOpen = false;
 	$effect(() => {
@@ -532,7 +532,8 @@
 			source: i.source,
 			sourceId: i.sourceId,
 			id: i.id,
-			url: i.url
+			url: i.url,
+			title: i.title
 		});
 		const newWorktree = (b: string) =>
 			worktreeMode === 'new' && b.trim()
@@ -547,7 +548,7 @@
 				body: {
 					...common,
 					cwd: startCwd,
-					title: shortIssueId(issue.source, issue.id),
+					title: singleIssueTitle([issue]),
 					worktree: newWorktree(issue.id),
 					issues: [issueField(issue)]
 				}

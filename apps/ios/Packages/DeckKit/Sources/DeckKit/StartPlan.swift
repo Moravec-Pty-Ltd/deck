@@ -57,6 +57,7 @@ public struct CreateSessionRequest: Equatable, Sendable {
 		var result: [String: Any] = ["source": issue.source, "id": issue.issueId]
 		if let url = issue.url { result["url"] = url }
 		if let sourceId = issue.sourceId { result["sourceId"] = sourceId }
+		if let title = issue.title { result["title"] = title }
 		return result
 	}
 }
@@ -127,7 +128,7 @@ public struct StartPlan: Equatable, Sendable {
 		return StartPlan(items: issues.map { issue in
 			var request = base
 			request.issues = [issue]
-			request.title = issue.shortId
+			request.title = DeckIssue.singleTitle([issue])
 			request.worktree = WorktreeOptions(branch: issue.issueId, newBranch: true, base: base.worktree?.base)
 			return Item(id: issue.id, label: issue.shortId, request: request, idempotencyKey: makeKey())
 		})

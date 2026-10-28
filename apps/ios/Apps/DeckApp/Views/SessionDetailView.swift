@@ -245,7 +245,10 @@ struct SessionDetailView: View {
 			ToolbarItem(placement: .topBarLeading) { closeButton(onClose) }
 		}
 		ToolbarItem(placement: .principal) {
-			titleButton
+			HStack(spacing: 6) {
+				titleButton
+				issueChips
+			}
 		}
 		// With two sessions showing, the browser sits in each pane's menu.
 		if onClose == nil {
@@ -274,6 +277,7 @@ struct SessionDetailView: View {
 				.accessibilityIdentifier("sessionBack")
 			}
 			titleButton
+			issueChips
 			if let pr = finishedPR, let state = PRDisplay.readiness(for: pr) {
 				// The title gives way first.
 				Text(verbatim: pr.number.map { "#\($0)" } ?? "PR")
@@ -303,6 +307,19 @@ struct SessionDetailView: View {
 		.accessibilityIdentifier("closePane")
 	}
 
+	/// The issue chip beside the title, opening the first issue. The title
+	/// gives way first.
+	@ViewBuilder private var issueChips: some View {
+		if let label = DeckIssue.chipLabel(session?.issues) {
+			if let url = session?.issues?.first?.url.flatMap(URL.init(string:)) {
+				Link(destination: url) { Chip(text: label) }
+					.fixedSize()
+			} else {
+				Chip(text: label).fixedSize()
+			}
+		}
+	}
+
 	private var titleButton: some View {
 		Button {
 			onActivate?()
@@ -311,6 +328,7 @@ struct SessionDetailView: View {
 			Text(title)
 				.font(.headline)
 				.lineLimit(1)
+				.truncationMode(.tail)
 				.foregroundStyle(isActivePane == false ? .secondary : .primary)
 				.frame(minHeight: 44)
 				.contentShape(Rectangle())

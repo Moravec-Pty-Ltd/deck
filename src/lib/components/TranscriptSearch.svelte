@@ -143,17 +143,17 @@
 				{/if}
 				<li>
 					<button
-						class="flex flex-col items-start gap-0.5 {i === selected ? 'active' : ''}"
+						class="flex w-full min-w-0 flex-col items-start gap-0.5 {i === selected ? 'active' : ''}"
 						onclick={() => open(row)}
 						onmouseenter={() => (selected = i)}
 					>
 						{#if row.kind === 'session'}
-							<span class="flex w-full items-center gap-2">
+							<span class="flex w-full min-w-0 items-center gap-2">
 								<MessageSquare size={13} class="shrink-0 opacity-60" />
-								<span class="truncate font-medium">{row.title}</span>
+								<span class="truncate font-medium" title={row.title}>{row.title}</span>
 							</span>
 						{:else}
-							<span class="flex w-full items-center gap-2 text-xs opacity-60">
+							<span class="flex w-full min-w-0 items-center gap-2 text-xs opacity-60">
 								{#if row.hit.role === 'user'}<User size={12} />{:else}<Bot size={12} />{/if}
 								<span class="truncate font-medium">{row.hit.title}</span>
 								<span class="ml-auto shrink-0">{relativeTime(row.hit.at)}</span>

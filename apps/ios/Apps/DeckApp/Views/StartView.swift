@@ -343,10 +343,10 @@ struct StartConfirmSheet: View {
 		baseBranch.isEmpty || branches.contains(baseBranch) ? branches : [baseBranch] + branches
 	}
 
-	/// The branch a new worktree gets: the title until the field is edited, the
-	/// same default the web new-session modal applies.
+	/// The branch a new worktree gets: the issue's id for a single issue, else
+	/// the title, until the field is edited.
 	private var effectiveBranch: String {
-		let name = branchDirty ? branchName : effectiveTitle
+		let name = branchDirty ? branchName : (singleIssue?.issueId ?? effectiveTitle)
 		return name.trimmingCharacters(in: .whitespacesAndNewlines)
 	}
 
@@ -355,6 +355,7 @@ struct StartConfirmSheet: View {
 	private var effectiveTitle: String {
 		let typed = title.trimmingCharacters(in: .whitespacesAndNewlines)
 		if !typed.isEmpty { return typed }
+		if let issue = singleIssue { return DeckIssue.singleTitle([issue]) }
 		return StartConfirmSheet.titleFromPrompt(firstPrompt)
 	}
 
@@ -722,6 +723,11 @@ struct StartConfirmSheet: View {
 		let custom = customModel.trimmingCharacters(in: .whitespacesAndNewlines)
 		if !custom.isEmpty { return custom }
 		return model.isEmpty ? nil : model
+	}
+
+	/// The issue a session is named and branched after: only when it is the sole one.
+	private var singleIssue: DeckIssue? {
+		additionalIssueIds.isEmpty ? primaryIssue : nil
 	}
 
 	private var primaryIssue: DeckIssue? {

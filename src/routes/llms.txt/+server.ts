@@ -111,7 +111,7 @@ bypasses the 60s cache). Each row maps onto \`create\`'s \`issue\`:
   "errors": [{ "sourceId": "...", "message": "..." }] }
 \`\`\`
 
-Pass \`{ source, sourceId, id, url }\` straight through as \`create\`'s \`issue\`.
+Pass \`{ source, sourceId, id, url, title }\` straight through as \`create\`'s \`issue\`.
 \`updatedAt\` is epoch ms; \`blockers\` lists the open issues this one waits on.
 
 ### GET /api/agent/prs?project=<path>
@@ -503,8 +503,9 @@ Preserve discovery's \`sourceId\` so keyed trackers use the correct credential.
 Older clients without it use the project's matching source where unambiguous.
 
 When \`title\` is omitted or blank, a session on exactly one issue is titled
-with its display id (\`#1\` for a GitHub issue, \`ABC-123\` otherwise), else
-with the worktree branch.
+with the issue's \`title\` (trimmed to about 60 characters), else its display id
+(\`#1\` for a GitHub issue, \`ABC-123\` otherwise) when the issue carries no
+title; several issues fall back to the worktree branch.
 
 **Leftover branch (409)**: when the worktree's branch already exists or a stale
 worktree holds it, create returns 409
