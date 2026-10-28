@@ -148,7 +148,8 @@ so a voice client does not need its own copy of the matching.
 ### GET /api/agent/defaults?project=<path>
 
 What a new session in a project starts with when you pick nothing: the same
-defaults the web new-session modal preselects.
+defaults the web new-session modal preselects. A folder that isn't a project
+gets the last-used picks, with no base branch or prompt templates.
 
 \`\`\`json
 { "path": "/path/to/project", "base": "main",

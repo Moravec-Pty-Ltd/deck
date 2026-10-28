@@ -371,13 +371,17 @@ public struct AddProjectForm: View {
 
 /// A folder path with the server's directory suggestions under it. Picking
 /// one fills it in and lists what is inside, as the web PathInput does.
-struct PathField: View {
+public struct PathField: View {
 	@Binding var path: String
 	@Environment(DeckStore.self) private var store
 	@State private var query = ""
 	@State private var suggestions: [String] = []
 
-	var body: some View {
+	public init(path: Binding<String>) {
+		_path = path
+	}
+
+	public var body: some View {
 		TextField("~/code/example", text: Binding(
 			get: { path },
 			set: { path = $0; query = $0 }))
