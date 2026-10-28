@@ -105,7 +105,7 @@ public struct PaletteIndex: Sendable {
 		case .action(let action):
 			SessionSearch.rank(action.title, against: query, extra: action.keywords.joined(separator: " "))
 		case .session(let session):
-			SessionSearch.rank(session.title ?? "", against: query)
+			SessionSearch.rank(session, against: query)
 		}
 	}
 }

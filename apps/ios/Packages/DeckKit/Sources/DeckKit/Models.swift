@@ -69,6 +69,36 @@ public struct DeckIssue: Codable, Hashable, Identifiable, Sendable {
 		return "#\(number)"
 	}
 
+	/// Issue titles run long; a session name is read in a one-line row, so cut
+	/// at a word boundary near `max` characters. Mirrors the web's trimIssueTitle.
+	public static func trimTitle(_ title: String, max: Int = 60) -> String {
+		let flat = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+		// Counted in code points, as the web's is, so both cut in the same place.
+		let scalars = Array(flat.unicodeScalars)
+		guard scalars.count > max else { return flat }
+		// A word longer than half the budget is cut mid-word rather than leaving a stub.
+		let space = scalars[..<max].lastIndex(of: " ").flatMap { $0 * 2 > max ? $0 : nil }
+		var kept = String.UnicodeScalarView()
+		kept.append(contentsOf: scalars[..<(space ?? max - 1)])
+		return String(kept).trimmingCharacters(in: .whitespaces) + "\u{2026}"
+	}
+
+	/// A session's issue chip: the first issue's short id, plus how many more
+	/// (`#315 +2`), matching the web's. Nil with no issues.
+	public static func chipLabel(_ issues: [DeckIssue]?) -> String? {
+		guard let issues, let first = issues.first else { return nil }
+		let more = issues.count - 1
+		return more > 0 ? "\(first.shortId) +\(more)" : first.shortId
+	}
+
+	/// What a session started on exactly one issue is named: its trimmed title,
+	/// else its short id. Empty for zero or several issues. Mirrors singleIssueTitle.
+	public static func singleTitle(_ issues: [DeckIssue]) -> String {
+		guard issues.count == 1, let issue = issues.first else { return "" }
+		let title = trimTitle(issue.title ?? "")
+		return title.isEmpty ? issue.shortId : title
+	}
+
 	/// The `owner/repo` a GitHub id names, for surfaces with room to keep it
 	/// beside the short form. Nil when the id carries no repo.
 	public var repo: String? {

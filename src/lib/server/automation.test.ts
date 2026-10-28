@@ -202,7 +202,7 @@ describe('automation with workflows (issue #233)', () => {
 		await pollAutomation();
 		expect(fake.created).toEqual([]);
 		expect(fake.runs).toEqual([
-			{ cwd: '/p/acme', category: 'dev', issue: { source: 'github', id: 'acme/web#7', url: issue.url, sourceId: 's1' } },
+			{ cwd: '/p/acme', category: 'dev', issue: { source: 'github', id: 'acme/web#7', url: issue.url, sourceId: 's1', title: 'a bug' } },
 			{ cwd: '/p/acme', category: 'review', pr: { repo: 'acme/web', number: 1, url: 'https://example.com', title: 'pr 1', baseRefName: 'main' } }
 		]);
 		expect(Object.keys(fake.processed)).toEqual(['auto:work:github:acme/web#7', 'auto:review:acme/web#1@sha1']);

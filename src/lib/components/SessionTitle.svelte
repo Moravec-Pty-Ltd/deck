@@ -97,7 +97,7 @@
 	<button
 		type="button"
 		class="min-w-0 truncate rounded-btn px-1 text-left font-medium hover:bg-base-200"
-		title="Rename session"
+		title={`${title}\nClick to rename`}
 		onclick={begin}
 	>
 		{title}

@@ -70,3 +70,34 @@ describe('matchSessionNames', () => {
 		expect(matchSessionNames('deck', sessions).some((m) => m.id === 'c_5' || m.id === 'c_6')).toBe(false);
 	});
 });
+
+describe('matchSessionNames by issue and PR number', () => {
+	const sessions = [
+		{ id: 'c_1', title: 'Refresh the token', issues: [{ id: 'acme/web#315', title: 'Token refresh fails' }] },
+		{ id: 'c_2', title: 'Review the API', pr: { repo: 'acme/api', number: 315 } },
+		{ id: 'c_3', title: 'Linear work', issues: [{ id: 'ENG-123' }] },
+		{ id: 'c_4', title: 'Bump 315 deps' }
+	];
+	const ids = (q: string) => matchSessionNames(q, sessions).map((m) => m.id);
+
+	it('finds the issue and the PR by bare or hashed number, title matches first', () => {
+		expect(ids('315')).toEqual(['c_4', 'c_1', 'c_2']);
+		expect(ids('#315')).toEqual(['c_1', 'c_2']);
+	});
+
+	it('matches a number whole, not as part of a longer one', () => {
+		expect(ids('31')).toEqual(['c_4']);
+		expect(ids('#31')).toEqual([]);
+	});
+
+	it('matches full and Linear-style references, any case', () => {
+		expect(ids('acme/web#315')).toEqual(['c_1']);
+		expect(ids('eng-123')).toEqual(['c_3']);
+		expect(ids('ENG-123')).toEqual(['c_3']);
+	});
+
+	it("matches words from the issue's title, mixed with the session's", () => {
+		expect(ids('fails')).toEqual(['c_1']);
+		expect(ids('refresh #315')).toEqual(['c_1']);
+	});
+});

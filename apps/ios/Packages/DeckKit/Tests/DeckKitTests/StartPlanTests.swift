@@ -3,7 +3,7 @@ import XCTest
 
 final class StartPlanTests: XCTestCase {
 	private let issues = [
-		DeckIssue(source: "github", sourceId: "source-a", issueId: "acme/web#1"),
+		DeckIssue(source: "github", sourceId: "source-a", issueId: "acme/web#1", title: "Fix the login page"),
 		DeckIssue(source: "linear", sourceId: "source-b", issueId: "EX-2")
 	]
 
@@ -32,7 +32,7 @@ final class StartPlanTests: XCTestCase {
 	func testSplitWorkIsOneCreatePerIssueOnItsOwnBranch() {
 		let plan = StartPlan.work(work(), issues: issues, split: true, makeKey: keys())
 		XCTAssertEqual(plan.items.map(\.request.issues), [[issues[0]], [issues[1]]])
-		XCTAssertEqual(plan.items.map(\.request.title), ["#1", "EX-2"], "titled with the short issue id")
+		XCTAssertEqual(plan.items.map(\.request.title), ["Fix the login page", "EX-2"], "titled with the issue title, else the short id")
 		XCTAssertEqual(plan.items.map(\.request.worktree?.branch), ["acme/web#1", "EX-2"])
 		XCTAssertEqual(plan.items.map(\.request.worktree?.base), ["main", "main"])
 		XCTAssertEqual(plan.items.map(\.idempotencyKey), ["key-1", "key-2"])

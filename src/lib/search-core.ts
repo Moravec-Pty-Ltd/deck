@@ -2,6 +2,8 @@
 // an event contributes, and how a hit is snipped for display. Node-free so it
 // unit-tests; the file streaming lives in server/search.ts.
 
+import { sessionIssues, sessionRefs } from './issues';
+
 export interface SearchHit {
 	sessionId: string;
 	title: string;
@@ -62,17 +64,25 @@ export function normaliseQuery(raw: string | null | undefined): string {
 export interface NameMatch {
 	id: string;
 	title: string;
-	// Lower sorts first: an exact title, then a prefix, then anything else.
+	// Lower sorts first: an exact title, then a prefix, then anywhere in the
+	// title, then an issue/PR reference or issue title.
 	rank: number;
 }
 
+type NamedSession = {
+	id: string;
+	title?: string | null;
+	issues?: { id: string; title?: string }[];
+	issue?: { id: string; title?: string };
+	pr?: { repo: string; number: number };
+};
+
 // Every session whose title contains all the words typed, best match first.
 // Word-wise rather than substring, so "auth token" finds "Auth: token refresh"
-// and the order of what you type does not matter.
-export function matchSessionNames(
-	query: string,
-	sessions: { id: string; title?: string | null }[]
-): NameMatch[] {
+// and the order of what you type does not matter. A word may also be one of the
+// session's issue or PR references (`315`, `#315`, `owner/repo#315`, `ENG-123`),
+// matched whole, or part of an issue's title; those matches rank below the title.
+export function matchSessionNames(query: string, sessions: NamedSession[]): NameMatch[] {
 	const needle = normaliseQuery(query).toLowerCase();
 	if (needle.length < MIN_QUERY_CHARS) return [];
 	const words = needle.split(' ').filter(Boolean);
@@ -80,15 +90,23 @@ export function matchSessionNames(
 	const matches: NameMatch[] = [];
 	for (const session of sessions) {
 		const title = (session.title ?? '').trim();
-		if (!title) continue;
-		const lower = title.toLowerCase();
-		if (!words.every((w) => lower.includes(w))) continue;
-		matches.push({
-			id: session.id,
-			title,
-			rank: lower === needle ? 0 : lower.startsWith(needle) ? 1 : 2
-		});
+		const rank = title ? nameRank(needle, words, title.toLowerCase(), session) : null;
+		if (rank !== null) matches.push({ id: session.id, title, rank });
 	}
 	// Stable within a rank, so the caller's order (recency) is kept.
 	return matches.sort((a, b) => a.rank - b.rank);
+}
+
+function nameRank(needle: string, words: string[], lower: string, session: NamedSession): number | null {
+	if (words.every((w) => lower.includes(w))) return lower === needle ? 0 : lower.startsWith(needle) ? 1 : 2;
+	return matchesRefs(words, lower, session) ? 3 : null;
+}
+
+function matchesRefs(words: string[], title: string, session: NamedSession): boolean {
+	const refs = sessionRefs(session);
+	const issueTitles = sessionIssues(session)
+		.map((i) => i.title ?? '')
+		.join(' ')
+		.toLowerCase();
+	return words.every((w) => title.includes(w) || refs.includes(w) || issueTitles.includes(w));
 }

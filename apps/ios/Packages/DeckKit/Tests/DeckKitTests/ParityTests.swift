@@ -120,6 +120,15 @@ final class ParityTests: XCTestCase {
 		XCTAssertNil(legacy.sourceId)
 	}
 
+	func testIssueTitleIsSentAndDecoded() async throws {
+		let client = client { _, body in
+			XCTAssertEqual((body["issue"] as? [String: Any])?["title"] as? String, "Fix it")
+		}
+		_ = try await client.createWorkSession(cwd: "/path/to/project", issue: DeckIssue(source: "github", issueId: "acme/web#1", title: "Fix it"))
+		let session = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle","issues":[{"source":"github","id":"acme/web#1","title":"Fix it"}]}"#.utf8))
+		XCTAssertEqual(session.issues?.first?.title, "Fix it")
+	}
+
 	func testMultipleIssuesPreserveSourcesAndRetryKey() async throws {
 		let client = client { request, body in
 			let issues = body["issues"] as? [[String: String]]

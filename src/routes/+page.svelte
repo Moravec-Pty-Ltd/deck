@@ -19,6 +19,7 @@
 	import DeleteSessionModal from '$lib/components/DeleteSessionModal.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
 	import PairApprovals from '$lib/components/PairApprovals.svelte';
+	import IssueChip from '$lib/components/IssueChip.svelte';
 	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff, CheckCheck } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
@@ -242,6 +243,7 @@
 		<a
 			href={`/s/${encodeURIComponent(s.id)}`}
 			class="flex min-w-0 flex-1 items-center gap-2 py-3 pl-3 sm:gap-3 sm:pl-4"
+			title={s.title}
 			role={selectMode ? 'checkbox' : undefined}
 			aria-checked={selectMode ? picked : undefined}
 			onclick={(e) => {
@@ -282,6 +284,7 @@
 			</span>
 			<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>
 		</a>
+		<IssueChip issues={s.issues ?? []} class="max-sm:hidden" />
 		{#if !s.hidden}
 			<button
 				class="btn btn-ghost btn-xs"

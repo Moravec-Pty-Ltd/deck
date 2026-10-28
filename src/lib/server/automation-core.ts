@@ -3,7 +3,7 @@
 // orchestration (feed fetch, session create, notify, durable ledger) lives in the
 // sibling automation.ts.
 import { z } from 'zod';
-import { shortIssueId } from '$lib/issues';
+import { singleIssueTitle } from '$lib/issues';
 import { EFFORT_LEVELS } from '$lib/effort';
 import { isReviewSession } from '$lib/pr';
 import { AGENT_KINDS } from '$lib/types';
@@ -148,7 +148,7 @@ function rememberedChoice(project: Project, kind: AgentKind, agent: AutomationAg
 }
 
 // The create-pipeline body for a work session, mirroring the New Session modal's
-// per-issue split: titled with the issue's display id and run in a fresh worktree whose
+// per-issue split: titled with the issue's title (else its display id) and run in a fresh worktree whose
 // branch is the issue id, off the project's remembered base (repo default when
 // unset), never the project checkout itself. Seeded with the project's `template`
 // (blank-safe: an empty prompt just leaves the session idle, like the UI). `issue`
@@ -159,9 +159,9 @@ export function workBody(project: Project, issue: Issue): Record<string, unknown
 	return {
 		...agentFields(project, project.automation?.workAgent),
 		cwd: project.path,
-		title: shortIssueId(issue.sourceType, issue.id),
+		title: singleIssueTitle([{ source: issue.sourceType, id: issue.id, title: issue.title }]),
 		prompt: project.template ?? '',
-		issue: { source: issue.sourceType, id: issue.id, url: issue.url, sourceId: issue.sourceId },
+		issue: { source: issue.sourceType, id: issue.id, url: issue.url, sourceId: issue.sourceId, title: issue.title },
 		worktree: { branch: issue.id, newBranch: true, base: project.lastBase || undefined }
 	};
 }
@@ -182,7 +182,7 @@ export function reviewBody(project: Project, pr: PullRequest): Record<string, un
 
 // The issue and PR a workflow run starts from, in the shapes the run keeps.
 export function runIssue(issue: Issue): SessionIssue {
-	return { source: issue.sourceType, id: issue.id, url: issue.url, sourceId: issue.sourceId };
+	return { source: issue.sourceType, id: issue.id, url: issue.url, sourceId: issue.sourceId, ...(issue.title ? { title: issue.title } : {}) };
 }
 
 export function runPr(pr: PullRequest): RunPr {

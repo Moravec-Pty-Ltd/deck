@@ -101,14 +101,14 @@ struct StartConfirmationView: View {
 				switch target {
 				case .issue(let issue, let project):
 					// Same defaults the web modal applies: last-used model/effort,
-					// and a title and new branch named after the issue ref.
+					// a title from the issue's own title, and a new branch named after its ref.
 					let defaults = store.startDefaults(kind: kind, projectPath: project.path)
 					try await store.startWork(
 						issue: issue,
 						project: project,
 						prompt: defaults.firstPrompt ?? FallbackPrompt.work,
 						kind: kind,
-						title: issue.issueId,
+						title: DeckIssue.singleTitle([issue]),
 						model: defaults.modelId,
 						provider: defaults.model.provider,
 						effort: defaults.effort,

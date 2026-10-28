@@ -261,6 +261,8 @@ export interface IssuePromptContext {
 	// One line per attached issue whose context could not be fetched, so the
 	// session can say so instead of quietly rendering empty blocks.
 	warnings: string[];
+	// Each fetched issue's title by its id, to refresh the one stored on the session.
+	titles: Record<string, string>;
 }
 
 const hasImages = (d: IssueDetail) => d.images.length > 0;
@@ -305,6 +307,7 @@ export async function buildIssuePrompt(
 		issueTitle: renderIssueTitle(details),
 		issueBody: renderIssueBody(details),
 		issueComments: renderIssueComments(details),
-		warnings
+		warnings,
+		titles: Object.fromEntries(details.filter((d) => d.title).map((d) => [d.ref, d.title]))
 	};
 }
