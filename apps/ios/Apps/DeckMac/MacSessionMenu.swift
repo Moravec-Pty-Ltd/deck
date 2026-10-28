@@ -127,14 +127,19 @@ struct MacSessionSheetContent: View {
 	@Environment(DeckStore.self) private var store
 
 	var body: some View {
-		content.frame(minWidth: 460, idealWidth: 560, minHeight: 360, idealHeight: 520)
+		// The delete confirmation sizes itself, like a Mac alert.
+		if sheet == .delete {
+			content
+		} else {
+			content.frame(minWidth: 460, idealWidth: 560, minHeight: 360, idealHeight: 520)
+		}
 	}
 
 	@ViewBuilder
 	private var content: some View {
 		switch sheet {
 		case .delete:
-			DeleteSessionSheet(hasWorktree: session?.worktree != nil) { deleteWorktree, deleteBranch in
+			DeleteSessionSheet(hasWorktree: session?.worktree != nil, name: title) { deleteWorktree, deleteBranch in
 				Task {
 					if await viewModel.delete(deleteWorktree: deleteWorktree, deleteBranch: deleteBranch) { onDeleted?() }
 				}
