@@ -191,6 +191,7 @@ struct MergeSheet: View {
 struct DeleteSessionSheet: View {
 	let hasWorktree: Bool
 	var count: Int = 1
+	var name: String? = nil
 	var onDelete: (_ deleteWorktree: Bool, _ deleteBranch: Bool) -> Void
 
 	@Environment(\.dismiss) private var dismiss
@@ -198,6 +199,60 @@ struct DeleteSessionSheet: View {
 	@State private var deleteBranch = true
 
 	var body: some View {
+		#if os(macOS)
+		macBody
+		#else
+		phoneBody
+		#endif
+	}
+
+	#if os(macOS)
+	/// A Mac confirmation: title, one line, checkboxes, Cancel / Delete at the bottom right.
+	private var macBody: some View {
+		VStack(alignment: .leading, spacing: 12) {
+			Text(macTitle).font(.headline)
+				.fixedSize(horizontal: false, vertical: true)
+			Text(count == 1
+				? "The session stops and leaves deck. This can't be undone."
+				: "The sessions stop and leave deck. This can't be undone.")
+				.foregroundStyle(.secondary)
+				.fixedSize(horizontal: false, vertical: true)
+			if hasWorktree {
+				VStack(alignment: .leading, spacing: 6) {
+					Toggle(worktreeLabel, isOn: $deleteWorktree)
+					Toggle(branchLabel, isOn: $deleteBranch)
+						.disabled(!deleteWorktree)
+				}
+				.toggleStyle(.checkbox)
+			}
+			HStack {
+				Spacer()
+				Button("Cancel", role: .cancel) { dismiss() }
+					.keyboardShortcut(.cancelAction)
+				// No default button: Return must not delete a worktree by habit.
+				Button("Delete", role: .destructive, action: confirm)
+			}
+			.padding(.top, 8)
+		}
+		.padding(20)
+		.frame(width: 380)
+		.onChange(of: deleteWorktree) { _, on in
+			if !on { deleteBranch = false }
+		}
+	}
+
+	private var macTitle: String {
+		if count == 1, let name, !name.isEmpty { return "Delete \u{201C}\(name)\u{201D}?" }
+		return count == 1 ? "Delete this session?" : "Delete \(count) sessions?"
+	}
+	#endif
+
+	private func confirm() {
+		onDelete(hasWorktree && deleteWorktree, hasWorktree && deleteWorktree && deleteBranch)
+		dismiss()
+	}
+
+	private var phoneBody: some View {
 		NavigationStack {
 			Form {
 				if hasWorktree {
@@ -212,10 +267,7 @@ struct DeleteSessionSheet: View {
 					}
 				}
 				Section {
-					Button(role: .destructive) {
-						onDelete(hasWorktree && deleteWorktree, hasWorktree && deleteWorktree && deleteBranch)
-						dismiss()
-					} label: {
+					Button(role: .destructive, action: confirm) {
 						Text(title).frame(maxWidth: .infinity)
 					}
 				}
