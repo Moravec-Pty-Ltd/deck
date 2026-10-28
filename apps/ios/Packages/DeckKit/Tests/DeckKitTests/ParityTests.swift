@@ -834,6 +834,9 @@ final class ParityTests: XCTestCase {
 
 		let cancel = await requests { try await $0.cancelWatch(id: "w1") }
 		assertShape(cancel, "DELETE", "/api/agent/watches/w1")
+
+		let run = await requests { try await $0.runWatchNow(id: "w1") }
+		assertShape(run, "POST", "/api/agent/watches/w1/run")
 	}
 
 	/// The same merge, cap and countdown as the web's activity-core.

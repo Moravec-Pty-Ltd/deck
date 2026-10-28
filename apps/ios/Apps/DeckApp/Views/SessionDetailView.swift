@@ -827,7 +827,10 @@ struct SessionDetailView: View {
 						.id("streaming")
 					}
 					if embedsActivity, !(isShort && composerFocused) {
-						ActivityList(entries: viewModel.activity, onCancel: viewModel.cancelWatch, onOpen: viewModel.open)
+						ActivityList(
+							entries: viewModel.activity, turnRunning: viewModel.turnRunning, onCancel: viewModel.cancelWatch,
+							onRunNow: viewModel.runWatchNow, onOpen: viewModel.open
+						)
 					}
 					// A fixed-size end marker to scroll to: aiming at the last row
 					// itself lands short while the lazy stack is still estimating

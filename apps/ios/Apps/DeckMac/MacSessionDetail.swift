@@ -233,7 +233,10 @@ struct MacSessionDetail: View {
 					if !viewModel.streamingText.isEmpty {
 						MacBubble(text: viewModel.streamingText, isUser: false, viewModel: nil)
 					}
-					ActivityList(entries: viewModel.activity, onCancel: viewModel.cancelWatch, onOpen: viewModel.open)
+					ActivityList(
+						entries: viewModel.activity, turnRunning: viewModel.turnRunning, onCancel: viewModel.cancelWatch,
+						onRunNow: viewModel.runWatchNow, onOpen: viewModel.open
+					)
 					if isWorking(viewModel) {
 						MacWorkingRow()
 					}

@@ -10,7 +10,7 @@ import { agentEnv } from './agents/env';
 import { resolveWithinProjects } from './confine';
 import { getSession } from './sessions';
 import { sendAgentMessage } from './send-agent-message';
-import { CHECK_TIMEOUT_MS, OUTPUT_CAP, checkAllowed, CHECK_NOT_ALLOWED, isDue, tail, wakeMessage } from './watch-core';
+import { CHECK_TIMEOUT_MS, OUTPUT_CAP, bringForward, checkAllowed, CHECK_NOT_ALLOWED, isDue, tail, wakeMessage } from './watch-core';
 import { cancelSessionWatches, getWatch, listWatches, saveWatch } from './watch-store';
 
 // Run a check command once, killing its whole process group past the limit.
@@ -88,36 +88,64 @@ async function fire(watch: Watch, session: DeckSession): Promise<void> {
 	}
 }
 
-let polling = false;
-
 // One pass over the due watches, hung on its own timer in monitor.ts. A watch
 // that fell due while deck was down is simply due on the first pass.
-export async function pollWatches(): Promise<void> {
-	if (polling) return;
-	polling = true;
-	try {
-		const now = Date.now();
-		const fires: Promise<void>[] = [];
-		// One wake-up per session per pass; a second due watch waits for that turn to end.
-		const woken = new Set<string>();
-		for (const watch of listWatches()) {
-			if (!isDue(watch, now)) continue;
-			const session = await getSession(watch.sessionId);
-			if (!session || !isAgentKind(session.kind)) {
-				cancelSessionWatches(watch.sessionId);
-				continue;
-			}
-			// The whole fire waits for the turn to end, so the check result is fresh
-			// and the agent is never interrupted.
-			if (woken.has(session.id) || agentTurnRunning(session.id)) continue;
-			// Re-read: it may have been cancelled while getSession awaited.
-			const current = getWatch(watch.id);
-			if (current?.state !== 'active') continue;
-			woken.add(session.id);
-			fires.push(fire(current, session));
+async function pass(): Promise<void> {
+	const now = Date.now();
+	const fires: Promise<void>[] = [];
+	// One wake-up per session per pass; a second due watch waits for that turn to end.
+	const woken = new Set<string>();
+	for (const watch of listWatches()) {
+		if (!isDue(watch, now)) continue;
+		const session = await getSession(watch.sessionId);
+		if (!session || !isAgentKind(session.kind)) {
+			cancelSessionWatches(watch.sessionId);
+			continue;
 		}
-		await Promise.all(fires);
-	} finally {
-		polling = false;
+		// The whole fire waits for the turn to end, so the check result is fresh
+		// and the agent is never interrupted.
+		if (woken.has(session.id) || agentTurnRunning(session.id)) continue;
+		// Re-read: it may have been cancelled while getSession awaited.
+		const current = getWatch(watch.id);
+		if (current?.state !== 'active') continue;
+		woken.add(session.id);
+		fires.push(fire(current, session));
 	}
+	await Promise.all(fires);
+}
+
+let inflight: Promise<void> | null = null;
+let again = false;
+
+// Single-flight: a call during a pass shares it, and the pass runs once more at
+// its end so a watch brought forward meanwhile does not wait for the next tick.
+export function pollWatches(): Promise<void> {
+	if (inflight) {
+		again = true;
+		return inflight;
+	}
+	inflight = (async () => {
+		try {
+			do {
+				again = false;
+				await pass();
+			} while (again);
+		} finally {
+			inflight = null;
+		}
+	})();
+	return inflight;
+}
+
+// Run a watch now: bring it due and poll, so it fires through the normal path
+// (its check, one wake per session, never mid-turn). Undefined when unknown.
+export function runWatchNow(id: string): Watch | undefined {
+	const watch = getWatch(id);
+	if (!watch) return undefined;
+	const next = bringForward(watch, Date.now());
+	if (next !== watch) {
+		saveWatch(next);
+		void pollWatches().catch(() => {});
+	}
+	return next;
 }

@@ -629,6 +629,11 @@ public final class DeckClient: @unchecked Sendable {
 		_ = try await requestData("DELETE", "/api/agent/watches/\(seg(id))")
 	}
 
+	/// Fire a watch now; it still waits for a running turn to end.
+	public func runWatchNow(id: String) async throws {
+		_ = try await requestData("POST", "/api/agent/watches/\(seg(id))/run")
+	}
+
 	public func events(since: Int? = nil, wait: Bool = false) async throws -> EventsResponse {
 		var query: [URLQueryItem] = []
 		if let since { query.append(URLQueryItem(name: "since", value: String(since))) }

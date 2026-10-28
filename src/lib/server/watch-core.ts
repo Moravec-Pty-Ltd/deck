@@ -85,6 +85,12 @@ export function isDue(watch: Watch, now: number): boolean {
 	return watch.state === 'active' && watch.dueAt <= now;
 }
 
+// Run now: due at once, so the next poll fires it exactly as the timer would.
+// An ended watch, or one already due, comes back as it is.
+export function bringForward(watch: Watch, now: number): Watch {
+	return watch.state === 'active' && watch.dueAt > now ? { ...watch, dueAt: now } : watch;
+}
+
 // Ended watches stay a day as history, then go.
 export function prune(watches: Watch[], now: number): Watch[] {
 	return watches.filter((w) => w.state === 'active' || (w.endedAt ?? 0) > now - HISTORY_MS);
