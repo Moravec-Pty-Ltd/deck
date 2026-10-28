@@ -160,8 +160,7 @@ gets the last-used picks, with no base branch or prompt templates.
 
 \`base\` and each \`prompts\` entry are absent when the project has none
 configured; an empty \`model\` means the CLI picks. Send these values on create
-to start exactly what the web modal would, or override any of them. 404 for a
-path that isn't a registered project.
+to start exactly what the web modal would, or override any of them.
 
 The response also carries \`"expensiveModels": ["fable", ...]\`: the premium
 models the web asks you to confirm before using. A model counts as expensive
