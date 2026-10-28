@@ -41,7 +41,7 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>deck scans the QR code shown by your deck server to sign in.</string>
+	<string>deck uses the camera to scan its sign-in QR code and to take photos you attach to a message.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>deck records what you say in voice mode and sends it to your deck server for transcription.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
