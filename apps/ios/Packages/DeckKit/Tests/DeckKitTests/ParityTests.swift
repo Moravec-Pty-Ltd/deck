@@ -471,6 +471,28 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual((sent.first?.json as? [String: Any])?["key"] as? String, "C-c")
 	}
 
+	func testACustomFolderStartsWithItsPathAsCwdAndNoWorktree() async {
+		let folder = DeckProject(folder: "~/code/example")
+		XCTAssertEqual(folder.name, "example")
+		let sent = await requests(reply: #"{"id":"example"}"#) {
+			_ = try await $0.createSession(CreateSessionRequest(mode: .work, cwd: folder.path))
+		}
+		assertShape(sent, "POST", "/api/agent/sessions", keys: ["cwd", "mode"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["cwd"] as? String, "~/code/example")
+	}
+
+	func testAMissingCustomFolderShowsTheServersMessage() async {
+		RequestStub.status = 400
+		RequestStub.handler = { _ in Data(#"{"message":"cwd does not exist"}"#.utf8) }
+		do {
+			_ = try await Self.stubbedClient().createSession(CreateSessionRequest(mode: .work, cwd: "~/code/missing"))
+			XCTFail("a 400 must throw")
+		} catch {
+			guard case .failed(let message) = StartPlan.status(for: error) else { return XCTFail("expected a failure, got \(error)") }
+			XCTAssertTrue(message.contains("cwd does not exist"), message)
+		}
+	}
+
 	func testAShellStartsInShellMode() async {
 		let sent = await requests(reply: #"{"id":"example"}"#) { _ = try await $0.createShellSession(cwd: "/path/to/project") }
 		assertShape(sent, "POST", "/api/agent/sessions", keys: ["cwd", "mode"])

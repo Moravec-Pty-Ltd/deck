@@ -18,6 +18,9 @@ struct StartView: View {
 
 	@Environment(DeckStore.self) private var store
 	@State private var selectedProject: DeckProject?
+	/// "Custom path…" is picked: start in the typed folder instead of a project.
+	@State private var custom = false
+	@State private var customPath = ""
 	@State private var mode: Mode = .issues
 	@State private var selectedIssue: DeckIssue?
 	@State private var selectedPR: DeckPR?
@@ -34,7 +37,14 @@ struct StartView: View {
 						systemImage: "folder",
 						description: Text("Register a project in deck first."))
 				} else {
-					Picker("Project", selection: $selectedProject) {
+					// nil stands for the custom path, so the picked project survives a
+					// look at it and comes back when picked again.
+					Picker("Project", selection: Binding(
+						get: { custom ? nil : selectedProject },
+						set: { picked in
+							custom = picked == nil
+							if let picked { selectedProject = picked }
+						})) {
 						ForEach(ProjectGroups.grouped(store.projects)) { entry in
 							Section(entry.name) {
 								ForEach(entry.projects) { project in
@@ -42,17 +52,22 @@ struct StartView: View {
 								}
 							}
 						}
+						Text("Custom path…").tag(DeckProject?.none)
 					}
 					.pickerStyle(.menu)
 					.padding(.horizontal)
+					.accessibilityIdentifier("startProject")
 
-					Picker("Mode", selection: $mode) {
-						ForEach(Mode.allCases) { mode in
-							Text(mode.rawValue).tag(mode)
+					// A folder has no issues or PRs, so it only starts from a prompt.
+					if !custom {
+						Picker("Mode", selection: $mode) {
+							ForEach(Mode.allCases) { mode in
+								Text(mode.rawValue).tag(mode)
+							}
 						}
+						.pickerStyle(.segmented)
+						.padding()
 					}
-					.pickerStyle(.segmented)
-					.padding()
 
 					list
 				}
@@ -74,15 +89,20 @@ struct StartView: View {
 			// Once per opening rather than per appearance, so a project picked by
 			// hand survives a trip to Schedules.
 			.onChange(of: opening) { _, _ in pickDefaultProject() }
+			// Projects that land after the first look still get a default, or the
+			// menu would show the custom path as picked.
+			.onChange(of: store.projects) { _, _ in
+				if selectedProject == nil && !custom { pickDefaultProject() }
+			}
 			.onChange(of: selectedProject) { _, _ in Task { await refresh() } }
 			.onChange(of: mode) { _, _ in Task { await refresh() } }
 			.sheet(item: $selectedIssue) { issue in
-				if let project = selectedProject {
+				if let project = activeProject {
 					StartConfirmSheet(kind: .issue(issue), project: project, onCreated: onSessionCreated)
 				}
 			}
 			.sheet(item: $selectedPR) { pr in
-				if let project = selectedProject {
+				if let project = activeProject {
 					StartConfirmSheet(kind: .pr(pr), project: project, onCreated: onSessionCreated)
 				}
 			}
@@ -92,55 +112,71 @@ struct StartView: View {
 				Text(shellError ?? "")
 			}
 			.sheet(isPresented: $startingPrompt) {
-				if let project = selectedProject {
+				if let project = activeProject {
 					StartConfirmSheet(kind: .prompt, project: project, onCreated: onSessionCreated)
 				}
 			}
 		}
 	}
 
+	/// The picked project, or the typed folder standing in for one.
+	private var activeProject: DeckProject? {
+		guard custom else { return selectedProject }
+		let path = customPath.trimmingCharacters(in: .whitespacesAndNewlines)
+		return path.isEmpty ? nil : DeckProject(folder: path)
+	}
+
 	@ViewBuilder
 	private var list: some View {
-		if let project = selectedProject {
+		if custom || selectedProject != nil {
 			List {
-				switch mode {
-				case .prompt:
-					// Work with no issue or PR behind it: just a project and a
-					// first message.
-					Button {
-						startingPrompt = true
-					} label: {
-						Label("New session in \(project.name)", systemImage: "plus.circle")
-					}
-					Text("Starts a session on its own branch with whatever you type as the first message.")
-						.font(.footnote)
-						.foregroundStyle(.secondary)
-					if store.supports(.terminal) {
+				if custom {
+					// In the list so its suggestions scroll rather than push the rows away.
+					PathField(path: $customPath)
+						.accessibilityIdentifier("customPath")
+				}
+				if let project = activeProject {
+					switch custom ? .prompt : mode {
+					case .prompt:
+						// Work with no issue or PR behind it: just a project and a
+						// first message.
 						Button {
-							Task { await startShell(in: project) }
+							startingPrompt = true
 						} label: {
-							Label("Terminal in \(project.name)", systemImage: "terminal")
+							Label("New session in \(project.name)", systemImage: "plus.circle")
 						}
-						.disabled(startingShell)
-						.accessibilityIdentifier("startShell")
-					}
-				case .issues:
-					let issues = store.issuesByProject[project.path] ?? []
-					if issues.isEmpty {
-						Text("No open issues.").foregroundStyle(.secondary)
-					}
-					ForEach(issues) { issue in
-						Button { selectedIssue = issue } label: { IssueRow(issue: issue) }
-							.buttonStyle(.plain)
-					}
-				case .prs:
-					let prs = store.prsByProject[project.path] ?? []
-					if prs.isEmpty {
-						Text("No open PRs.").foregroundStyle(.secondary)
-					}
-					ForEach(prs) { pr in
-						Button { selectedPR = pr } label: { PRRow(pr: pr) }
-							.buttonStyle(.plain)
+						Text(custom
+							? "Starts a session in this folder with whatever you type as the first message."
+							: "Starts a session on its own branch with whatever you type as the first message.")
+							.font(.footnote)
+							.foregroundStyle(.secondary)
+						if store.supports(.terminal) {
+							Button {
+								Task { await startShell(in: project) }
+							} label: {
+								Label("Terminal in \(project.name)", systemImage: "terminal")
+							}
+							.disabled(startingShell)
+							.accessibilityIdentifier("startShell")
+						}
+					case .issues:
+						let issues = store.issuesByProject[project.path] ?? []
+						if issues.isEmpty {
+							Text("No open issues.").foregroundStyle(.secondary)
+						}
+						ForEach(issues) { issue in
+							Button { selectedIssue = issue } label: { IssueRow(issue: issue) }
+								.buttonStyle(.plain)
+						}
+					case .prs:
+						let prs = store.prsByProject[project.path] ?? []
+						if prs.isEmpty {
+							Text("No open PRs.").foregroundStyle(.secondary)
+						}
+						ForEach(prs) { pr in
+							Button { selectedPR = pr } label: { PRRow(pr: pr) }
+								.buttonStyle(.plain)
+						}
 					}
 				}
 			}
@@ -165,12 +201,13 @@ struct StartView: View {
 	}
 
 	private func pickDefaultProject() {
+		custom = false
 		let open = store.sessions.first { $0.id == openSessionId }
 		selectedProject = SessionProject.startDefault(openSession: open, current: selectedProject, in: store.projects)
 	}
 
 	private func refresh(force: Bool = false) async {
-		guard let project = selectedProject else { return }
+		guard !custom, let project = selectedProject else { return }
 		switch mode {
 		case .prompt: break
 		case .issues: await store.refreshIssues(project: project.path, refresh: force)
@@ -274,6 +311,10 @@ struct StartConfirmSheet: View {
 
 	private var isReview: Bool { if case .pr = kind { return true }; return false }
 
+	/// A typed folder rather than a project: the server only makes worktrees
+	/// inside registered projects, so it runs in the folder itself.
+	private var isFolder: Bool { !store.projects.contains { $0.path == project.path } }
+
 	/// One session per issue needs a fresh worktree for each, as on the web.
 	private var canSplit: Bool { !additionalIssueIds.isEmpty && worktreeMode == .newBranch }
 	private var isSplitting: Bool { splitPerIssue && canSplit }
@@ -328,8 +369,20 @@ struct StartConfirmSheet: View {
 	var body: some View {
 		NavigationStack {
 			Form {
+				// First, so a phone shows it without scrolling past the whole form.
+				if let errorMessage {
+					Section {
+						Text(errorMessage)
+							.foregroundStyle(.red)
+							.font(.footnote)
+					}
+				}
 				Section("Target") {
-					LabeledContent("Project", value: project.name)
+					if isFolder {
+						LabeledContent("Folder", value: project.path)
+					} else {
+						LabeledContent("Project", value: project.name)
+					}
 					switch kind {
 					case .prompt:
 						EmptyView()
@@ -431,10 +484,12 @@ struct StartConfirmSheet: View {
 								set: { title = $0 }))
 								.accessibilityIdentifier("sessionTitle")
 						}
-						Picker("Worktree", selection: $worktreeMode) {
-							Text("New branch").tag(StartWorktreeMode.newBranch)
-							Text("Existing").tag(StartWorktreeMode.existing)
-							Text("None").tag(StartWorktreeMode.none)
+						if !isFolder {
+							Picker("Worktree", selection: $worktreeMode) {
+								Text("New branch").tag(StartWorktreeMode.newBranch)
+								Text("Existing").tag(StartWorktreeMode.existing)
+								Text("None").tag(StartWorktreeMode.none)
+							}
 						}
 						if worktreeMode == .newBranch && !isSplitting {
 							TextField("Branch name (defaults to title)", text: Binding(
@@ -491,13 +546,6 @@ struct StartConfirmSheet: View {
 					}
 				}
 
-				if let errorMessage {
-					Section {
-						Text(errorMessage)
-							.foregroundStyle(.red)
-							.font(.footnote)
-					}
-				}
 			}
 			.navigationTitle(navigationTitle)
 			.deckInlineNavigationTitle()
@@ -580,7 +628,7 @@ struct StartConfirmSheet: View {
 		switch worktreeMode {
 		case .newBranch: return "Runs in a fresh git worktree on a new branch."
 		case .existing: return "Runs in a worktree that already exists, on its current branch."
-		case .none: return "Runs directly in the project directory, with no worktree."
+		case .none: return isFolder ? "Runs directly in this folder." : "Runs directly in the project directory, with no worktree."
 		}
 	}
 
@@ -609,6 +657,8 @@ struct StartConfirmSheet: View {
 			place = "in a new git worktree on \(effectiveBranch)\(off)"
 		} else if worktreeMode == .existing, let worktree = worktrees.first(where: { $0.path == existingWorktree }) {
 			place = "in the existing worktree on \(worktree.branch)"
+		} else if isFolder {
+			place = "in \(project.path)"
 		} else {
 			place = "in the project directory (no worktree)"
 		}
@@ -619,6 +669,7 @@ struct StartConfirmSheet: View {
 		agentKind = availableKinds.contains("claude") ? "claude" : (availableKinds.first ?? "claude")
 		if case .issue(let issue) = kind { title = issue.issueId }
 		if case .prompt = kind { title = "" }
+		if isFolder { worktreeMode = .none }
 		// The server resolves what the web modal would preselect for this
 		// project; fetch it before seeding any field from it.
 		await store.loadStartDefaults(projectPath: project.path)
@@ -627,7 +678,7 @@ struct StartConfirmSheet: View {
 		if firstPrompt.isEmpty { firstPrompt = defaults.firstPrompt ?? "" }
 		seedModel()
 		defaultsLoaded = true
-		if !isReview, store.supports(.git), let client = store.client {
+		if !isReview, !isFolder, store.supports(.git), let client = store.client {
 			branches = (try? await client.branches(repo: project.path)) ?? []
 		}
 	}

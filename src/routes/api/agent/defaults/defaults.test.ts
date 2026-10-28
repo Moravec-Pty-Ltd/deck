@@ -23,7 +23,14 @@ it('publishes the resolved defaults for a registered project', async () => {
 	expect(body.expensiveModels).toEqual(expect.arrayContaining(['fable']));
 });
 
-it('rejects a missing or unknown project', async () => {
+it('rejects a missing project', async () => {
 	await expect(get('')).rejects.toMatchObject({ status: 400 });
-	await expect(get('?project=/elsewhere')).rejects.toMatchObject({ status: 404 });
+});
+
+it('gives a folder outside the projects the global last-used picks', async () => {
+	const body = await (await get('?project=~/elsewhere')).json();
+	expect(body.path).toBe('/home/example/elsewhere');
+	expect(body.base).toBeUndefined();
+	expect(body.prompts).toEqual({});
+	expect(body.kinds.claude).toEqual({ model: 'sonnet', permissionMode: 'bypassPermissions' });
 });

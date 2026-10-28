@@ -9,14 +9,15 @@ import { EXPENSIVE_MODELS } from '$lib/models';
 // the remembered model/effort per kind, the base branch, the first-prompt
 // templates, and claude's permission mode. The same resolver the web modal
 // preselects from, published so native clients don't keep a second copy of the
-// rules. `project` is a discovery path; unknown paths are a 404.
+// rules. `project` is a discovery path; a folder that isn't a registered
+// project (a custom start path) gets the global last-used picks, as the web
+// modal resolves for one.
 // `expensiveModels` is the cost-confirm list, matched as a case-insensitive
 // substring of the model id or provider (isExpensiveModel).
 export const GET: RequestHandler = async ({ url }) => {
 	const raw = url.searchParams.get('project');
 	if (!raw) error(400, 'project required');
 	const path = expandTilde(raw.trim()).replace(/\/+$/, '');
-	const project = listProjects().find((p) => p.path === path);
-	if (!project) error(404, 'project not found');
+	const project = listProjects().find((p) => p.path === path) ?? { name: '', path };
 	return json({ ...projectStartDefaults(project, readSettings()), expensiveModels: [...EXPENSIVE_MODELS] });
 };

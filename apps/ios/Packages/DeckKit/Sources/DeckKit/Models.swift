@@ -13,6 +13,13 @@ public struct DeckProject: Codable, Hashable, Identifiable, Sendable {
 	public var hidden: Bool?
 }
 
+extension DeckProject {
+	/// A folder that isn't registered, which the start sheet starts in by path.
+	public init(folder path: String) {
+		self.init(path: path, name: (path as NSString).lastPathComponent, group: nil)
+	}
+}
+
 public struct KindModel: Codable, Hashable, Sendable {
 	public let provider: String?
 	public let model: String
