@@ -28,7 +28,7 @@ struct SessionsView: View {
 	/// turn after folding: pushed in the same update that narrows the stack,
 	/// the session keeps the half width it was laid out at.
 	@State private var pushed: SessionTarget?
-	/// Bumped a moment after the window changes width, to build the fold's
+	/// Bumped when the window's bottom safe area changes, to build the fold's
 	/// session pane again (see below).
 	@State private var paneBuild = 0
 	@State private var railWidth: CGFloat = 0
@@ -140,22 +140,20 @@ struct SessionsView: View {
 					.frame(width: wide ? foldWidth : nil)
 					if wide {
 						foldDivider
-						// Built again once unfolding has settled: until then the system
-						// reports most of the window as bottom safe area, the pane
-						// keeps it, and the session is squeezed to its composer.
+						// Built again once the window's bottom safe area settles: unfolding,
+						// the system first reports most of the window as bottom safe
+						// area, the pane keeps it, and the session is squeezed to its
+						// composer.
 						NavigationStack { detail }
 							.id(paneBuild)
 					}
 				})
 			}
 		}
-		.task(id: hinge.windowSize.width) {
-			// shortcut: a fixed delay, found on a device; the insets come right
-			// with no event to wait on. Lengthen it if a squeezed pane returns.
-			try? await Task.sleep(for: .milliseconds(600))
-			if !Task.isCancelled { paneBuild += 1 }
-		}
+		.onChange(of: hinge.bottomInset) { if wide { paneBuild += 1 } }
 		.onChange(of: wide, initial: true) { _, wide in
+			// Folding takes the pane down before the pushed session appears.
+			if !wide { models.releasePlaces() }
 			// One session fits: the one with focus stays, the other leaves.
 			if !wide, let beside {
 				if focusedPane == .beside {
@@ -863,6 +861,11 @@ final class OpenSessionModel {
 		// pane is the one the list returns to.
 		close(.beside)
 		close(.main)
+	}
+
+	/// No transcript keeps a reader's place until the next one appears.
+	func releasePlaces() {
+		for slot in slots.values { slot.model.placeKeeper = nil }
 	}
 
 	/// The beside pane's model takes the main slot without leaving.

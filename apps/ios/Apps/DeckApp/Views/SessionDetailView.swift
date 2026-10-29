@@ -81,6 +81,11 @@ struct SessionDetailView: View {
 	/// The row to put back and hold at the top once a fold or unfold has laid
 	/// the transcript out at its new size.
 	@State private var restoreTop: String?
+	@State private var placeId = UUID()
+	/// Whether this transcript has scrolled other than by its layout settling.
+	/// Until then only a scroll leaves the end it opened at: the offset moves
+	/// up as rows at the new size take their heights, which is not the reader.
+	@State private var scrolled = false
 	@State private var confirmCrossSend = false
 
 	/// What this screen reads from deck beyond the baseline routes.
@@ -865,6 +870,7 @@ struct SessionDetailView: View {
 			// Simultaneous, so rows, links and disclosures still take the tap.
 			.simultaneousGesture(TapGesture().onEnded { composerFocused = false })
 			.onAppear {
+				viewModel.placeKeeper = placeId
 				guard !viewModel.isNearBottom, let top = viewModel.topRowId else { return }
 				restoreTop = top
 				proxy.scrollTo(top, anchor: .top)
@@ -887,6 +893,7 @@ struct SessionDetailView: View {
 			}
 			.onScrollPhaseChange { _, phase in
 				if phase == .interacting { restoreTop = nil }
+				if phase != .idle { scrolled = true }
 			}
 			.onScrollGeometryChange(for: ScrollEdges.self) { geometry in
 				ScrollEdges(offset: geometry.contentOffset.y, top: geometry.contentOffset.y + geometry.contentInsets.top)
@@ -898,7 +905,10 @@ struct SessionDetailView: View {
 			}
 			// Older rows arriving above the reader hold their place rather than
 			// pulling the view to the end.
-			.followsTranscriptEnd(isNearBottom: Bindable(viewModel).isNearBottom, proxy: proxy, paused: anchorId != nil || restoreTop != nil)
+			.followsTranscriptEnd(isNearBottom: Binding(
+				get: { viewModel.isNearBottom },
+				set: { if viewModel.placeKeeper == placeId, scrolled || $0 { viewModel.isNearBottom = $0 } }
+			), proxy: proxy, paused: anchorId != nil || restoreTop != nil)
 			.onChange(of: viewModel.didLoadOnce) { _, loaded in
 				guard loaded, let focusIndex, !focused else { return }
 				focused = true
@@ -976,7 +986,7 @@ struct SessionDetailView: View {
 	private func noteVisibility(_ id: String, _ visible: Bool, in groups: [TranscriptGroup], _ viewModel: SessionDetailViewModel) {
 		if visible { visibleRows.insert(id) } else { visibleRows.remove(id) }
 		// The rows of a layout coming or going are not the reader's place.
-		guard restoreTop == nil, !leaving else { return }
+		guard restoreTop == nil, !leaving, viewModel.placeKeeper == placeId else { return }
 		if let top = groups.first(where: { visibleRows.contains($0.id) }) { viewModel.topRowId = top.id }
 	}
 

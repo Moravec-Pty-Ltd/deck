@@ -19,6 +19,9 @@ final class HingeMonitor {
 		didSet { fullHeight = windowSize.width == oldValue.width ? max(fullHeight, windowSize.height) : windowSize.height }
 	}
 	private var fullHeight: CGFloat = 0
+	/// The window's bottom safe area as UIKit has it, which settles after the
+	/// window moves to the other display; the fold's panes are built again on it.
+	var bottomInset: CGFloat = 0
 
 	/// A phone window under 720 pt tall: either display of a foldable (678 and
 	/// 669 pt), not a phone in portrait (850 pt or more). It gives the title
@@ -113,15 +116,26 @@ final class HingeMonitor {
 	}
 }
 
-/// A zero-size view hosting the hinge interaction, placed once anywhere in
-/// the hierarchy. The window size comes from SwiftUI (see RootView), which
-/// unlike a zero-size UIView is laid out again on every turn.
+/// A view the size of the window hosting the hinge interaction, placed once
+/// behind everything (see RootView). It reports the window's safe area as
+/// UIKit sees it; the window size comes from SwiftUI.
 struct HingeObserver: UIViewRepresentable {
 	let monitor: HingeMonitor
 
+	final class SafeAreaView: UIView {
+		var changed: (CGFloat) -> Void = { _ in }
+		override func safeAreaInsetsDidChange() {
+			super.safeAreaInsetsDidChange()
+			// The window's: this view stops at the keyboard, which is not a
+			// change of the window's safe area.
+			if let window { changed(window.safeAreaInsets.bottom) }
+		}
+	}
+
 	func makeUIView(context: Context) -> UIView {
-		let view = UIView()
+		let view = SafeAreaView()
 		view.isUserInteractionEnabled = false
+		view.changed = { monitor.bottomInset = $0 }
 		if #available(iOS 27.1, *) {
 			view.addInteraction(UIHingeInteraction { _, update in
 				guard HingeMonitor.override == nil else { return }

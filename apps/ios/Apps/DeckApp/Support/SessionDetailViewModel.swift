@@ -47,6 +47,10 @@ final class SessionDetailViewModel {
 	@ObservationIgnored private var restoring = false
 	var composerFocused = false
 	var topRowId: String?
+	/// The transcript keeping the reader's place: the one that appeared last.
+	/// A fold or unfold builds the new one before the old has gone, and the
+	/// old one's scrolls as it is taken down are not the reader's.
+	@ObservationIgnored var placeKeeper: UUID?
 	/// The picks made on a pending question, by ask and when it was asked.
 	var askDrafts: [String: AskAnswerDraft] = [:]
 
