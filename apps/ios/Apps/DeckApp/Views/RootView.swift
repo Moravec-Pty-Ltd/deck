@@ -21,7 +21,6 @@ struct RootView: View {
 		.background {
 			GeometryReader { geometry in
 				HingeObserver(monitor: hinge)
-					.frame(width: 0, height: 0)
 					.onChange(of: geometry.size, initial: true) { _, size in hinge.windowSize = size }
 			}
 			// Only the container inset: ignoring every region would include the

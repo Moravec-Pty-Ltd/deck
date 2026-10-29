@@ -363,6 +363,131 @@ final class FoldableUITests: XCTestCase {
 		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 5), "Back goes to the list")
 	}
 
+	/// Unfolded, the list's rows and the session fill their panes after every
+	/// change of width: unfolding, a divider drag, folding and unfolding again,
+	/// and a second session opened and closed. An iPad stands in for the Duo,
+	/// as above.
+	func testPanesFillTheirWidthAfterEveryChange() throws {
+		guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("needs a window that is regular when unfolded: an iPad simulator") }
+		let app = try Self.launch(environment: ["DECK_HINGE": "switchable"])
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = Self.listItem("long transcript", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the seeded session")
+		row.tap()
+		XCTAssertTrue(app.staticTexts["Reply 60, the latest message."].waitForExistence(timeout: 20))
+		let window = app.windows.firstMatch.frame
+		addTeardownBlock {
+			if app.navigationBars["Sessions"].exists, abs(Self.listEdge(in: app) - window.midX) > 2 { Self.dragDivider(to: window.midX, in: app) }
+		}
+
+		Self.post("deck.hinge.fullyOpen")
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
+		assertPanesFill(app, "unfolded")
+		Self.dragDivider(to: window.midX - 120, in: app)
+		assertPanesFill(app, "narrowed by the divider")
+		Self.dragDivider(to: window.midX + 100, in: app)
+		assertPanesFill(app, "widened by the divider")
+
+		Self.post("deck.hinge.closed")
+		XCTAssertTrue(app.navigationBars["long transcript"].waitForExistence(timeout: 10))
+		Self.post("deck.hinge.fullyOpen")
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
+		assertPanesFill(app, "folded and unfolded")
+
+		Self.listItem("Yolo badge in session header", in: app).press(forDuration: 1)
+		app.buttons["Open beside"].tap()
+		let closes = app.buttons.matching(identifier: "closePane")
+		XCTAssertTrue(closes.element(boundBy: 1).waitForExistence(timeout: 20), "no second session\n\(app.debugDescription.prefix(3000))")
+		sleep(1)
+		let transcripts = app.scrollViews.matching(identifier: "transcript").allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
+		let edge = Self.dividerX(in: app)
+		XCTAssertEqual(transcripts.count, 2)
+		XCTAssertEqual(transcripts[0].maxX, edge, accuracy: 2, "two up, the left session reaches the divider")
+		XCTAssertEqual(transcripts[1].minX, edge, accuracy: 2, "two up, the right session starts at the divider")
+		XCTAssertEqual(transcripts[1].maxX, Self.railEdge(in: app), accuracy: 2, "two up, the right session reaches the rail")
+		closes.allElementsBoundByIndex.min { $0.frame.minX < $1.frame.minX }?.tap()
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
+		assertPanesFill(app, "with the second session closed")
+	}
+
+	/// Folding with a session open shows that session on the outer display,
+	/// whole: its title, its messages and its composer. With two open, the
+	/// one with focus stays. Repeated, since a blank screen came and went.
+	func testFoldingShowsTheOpenSession() throws {
+		guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("needs a window that is regular when unfolded: an iPad simulator") }
+		let app = try Self.launch(environment: ["DECK_HINGE": "switchable"])
+		Self.post("deck.hinge.fullyOpen")
+		app.buttons["Sessions"].firstMatch.tap()
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
+		let row = Self.listItem("long transcript", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the seeded session")
+		row.tap()
+		XCTAssertTrue(app.staticTexts["Reply 60, the latest message."].waitForExistence(timeout: 20))
+
+		// The last round folds with the second session focused, which takes the main pane.
+		for round in 0..<4 {
+			var name = "long transcript", last = "Reply 60, the latest message."
+			if round >= 2 {
+				Self.listItem("Yolo badge in session header", in: app).press(forDuration: 1)
+				app.buttons["Open beside"].tap()
+				XCTAssertTrue(app.buttons.matching(identifier: "closePane").element(boundBy: 1).waitForExistence(timeout: 20))
+				if round == 2 {
+					// Focus back on the main pane, so it is the one that stays.
+					app.staticTexts[last].tap()
+				} else {
+					name = "Yolo badge in session header"
+					last = "Done. The yolo badge shows in the header whenever the session runs with bypassPermissions, and the type-check is clean."
+				}
+			}
+			Self.post("deck.hinge.closed")
+			let title = app.navigationBars[name]
+			XCTAssertTrue(title.waitForExistence(timeout: 10), "round \(round): no session header\n\(app.debugDescription.prefix(3000))")
+			XCTAssertTrue(app.staticTexts[last].waitForExistence(timeout: 5), "round \(round): no messages")
+			XCTAssertTrue(app.staticTexts[last].isHittable, "round \(round): the messages are off screen")
+			XCTAssertTrue(app.textViews["sessionComposer"].isHittable, "round \(round): no composer")
+			assertWholeLayout(app, "folded, round \(round)")
+			attach(app, "folded-\(round)")
+			if round == 3 { break }
+			Self.post("deck.hinge.fullyOpen")
+			XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
+		}
+	}
+
+	/// The list's rows reach the divider, and the session spans from the
+	/// divider to the rail with its composer at the foot.
+	private func assertPanesFill(_ app: XCUIApplication, _ step: String, file: StaticString = #filePath, line: UInt = #line) {
+		sleep(1)
+		let edge = Self.dividerX(in: app)
+		let bar = app.navigationBars["Sessions"].firstMatch.frame
+		let cell = app.collectionViews.firstMatch.cells.containing(NSPredicate(format: "label == 'long transcript'")).firstMatch
+		XCTAssertTrue(cell.exists, "\(step): no row", file: file, line: line)
+		let text = cell.staticTexts.allElementsBoundByIndex.map(\.frame.maxX).max() ?? 0
+		let found = "\(step): divider \(edge) bar \(bar) cell \(cell.frame) text to \(text)"
+		XCTAssertEqual(bar.maxX, edge, accuracy: 2, "the list reaches the divider: \(found)", file: file, line: line)
+		XCTAssertEqual(cell.frame.maxX, edge, accuracy: 2, "the row reaches the divider: \(found)", file: file, line: line)
+		XCTAssertGreaterThan(text, edge - 44, "the row's text runs to the divider: \(found)", file: file, line: line)
+
+		let rail = Self.railEdge(in: app)
+		let transcript = app.scrollViews["transcript"].frame
+		let composer = app.textViews["sessionComposer"].frame
+		let session = "\(step): divider \(edge) rail \(rail) transcript \(transcript) composer \(composer)"
+		XCTAssertEqual(transcript.minX, edge, accuracy: 2, "the session starts at the divider: \(session)", file: file, line: line)
+		XCTAssertEqual(transcript.maxX, rail, accuracy: 2, "the session reaches the rail: \(session)", file: file, line: line)
+		XCTAssertLessThan(composer.minX, edge + 40, "the composer starts at the divider: \(session)", file: file, line: line)
+		XCTAssertGreaterThan(composer.maxX, rail - 140, "the composer spans the pane: \(session)", file: file, line: line)
+		assertWholeLayout(app, step, file: file, line: line)
+	}
+
+	private static func dividerX(in app: XCUIApplication) -> CGFloat {
+		app.descendants(matching: .any).matching(identifier: "foldDivider").firstMatch.frame.midX
+	}
+
+	/// Where the tab rail starts, or the window's edge where the tabs are a bar.
+	private static func railEdge(in app: XCUIApplication) -> CGFloat {
+		let inbox = app.buttons["Inbox"].firstMatch.frame, sessions = app.buttons["Sessions"].firstMatch.frame
+		return abs(inbox.midX - sessions.midX) < 4 ? min(inbox.minX, sessions.minX) : app.windows.firstMatch.frame.maxX
+	}
+
 	/// The composer at the foot of the window and the transcript filling the
 	/// space above it, rather than squeezed to nothing under the title.
 	private func assertWholeLayout(_ app: XCUIApplication, _ posture: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -372,7 +497,7 @@ final class FoldableUITests: XCTestCase {
 		XCTAssertTrue(composer.exists, "\(posture): no composer", file: file, line: line)
 		XCTAssertGreaterThan(composer.frame.minY, window.midY, "\(posture): the composer sits at the bottom", file: file, line: line)
 		XCTAssertGreaterThan(transcript.height, window.height / 3, "\(posture): the transcript fills the pane", file: file, line: line)
-		let pane = app.navigationBars["Sessions"].exists ? window.width / 2 : window.width
+		let pane = app.navigationBars["Sessions"].exists ? Self.railEdge(in: app) - Self.listEdge(in: app) : window.width
 		XCTAssertGreaterThan(transcript.width, pane - 40, "\(posture): the transcript spans its pane", file: file, line: line)
 		XCTAssertLessThanOrEqual(transcript.maxY, composer.frame.minY + 1, "\(posture): the transcript sits above the composer", file: file, line: line)
 	}
