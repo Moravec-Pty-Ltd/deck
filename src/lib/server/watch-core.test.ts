@@ -3,13 +3,16 @@ import type { Watch } from '$lib/watches';
 import {
 	ACTIVE_CAP,
 	HISTORY_MS,
+	MAX_DELAY_CEILING_MS,
 	MAX_DELAY_MS,
 	OUTPUT_CAP,
 	WatchError,
 	activeFor,
 	bringForward,
 	capReached,
+	describeMaxDelay,
 	isDue,
+	maxDelayFromEnv,
 	parseDelay,
 	parseWatchRequest,
 	prune,
@@ -39,10 +42,12 @@ describe('parseDelay', () => {
 		['2h', 7_200_000],
 		['1h30m', 5_400_000],
 		['1h 30m 5s', 5_405_000],
-		[' 10M ', 600_000]
+		[' 10M ', 600_000],
+		['1d', 86_400_000],
+		['2d 12h', 216_000_000]
 	])('%s', (text, ms) => expect(parseDelay(text)).toBe(ms));
 
-	it.each(['', '10', 'ten minutes', '10m1h', '1d', '-5m', '1.5h'])('rejects %j', (text) =>
+	it.each(['', '10', 'ten minutes', '10m1h', '1h1d', '-5m', '1.5h', '1.5d'])('rejects %j', (text) =>
 		expect(parseDelay(text)).toBeNull()
 	);
 });
@@ -92,6 +97,33 @@ describe('parseWatchRequest', () => {
 	it('allows exactly 24 hours', () => {
 		expect(parseWatchRequest({ ...base, in: '24h' }, NOW).dueAt).toBe(NOW + MAX_DELAY_MS);
 	});
+
+	it('honours a raised limit and names it in the error', () => {
+		const week = 7 * 86_400_000;
+		expect(parseWatchRequest({ ...base, in: '3d' }, NOW, week).dueAt).toBe(NOW + 3 * 86_400_000);
+		expect(() => parseWatchRequest({ ...base, in: '8d' }, NOW, week)).toThrow(/7 days/);
+	});
+});
+
+describe('maxDelayFromEnv', () => {
+	it.each([
+		[undefined, MAX_DELAY_MS],
+		['', MAX_DELAY_MS],
+		['soon', MAX_DELAY_MS],
+		['0s', MAX_DELAY_MS],
+		['72h', 72 * 3_600_000],
+		['7d', 7 * 86_400_000],
+		['400d', MAX_DELAY_CEILING_MS]
+	])('%j', (value, ms) => expect(maxDelayFromEnv(value)).toBe(ms));
+});
+
+describe('describeMaxDelay', () => {
+	it.each([
+		[MAX_DELAY_MS, '24 hours'],
+		[36 * 3_600_000, '36 hours'],
+		[7 * 86_400_000, '7 days'],
+		[3_600_000, '1 hour']
+	])('%d', (ms, text) => expect(describeMaxDelay(ms)).toBe(text));
 });
 
 describe('activeFor and capReached', () => {

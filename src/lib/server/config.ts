@@ -4,11 +4,14 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
 import { DEMO } from './demo';
+import { maxDelayFromEnv } from './watch-core';
 
 // Exported so callers that need a literal filesystem path outside the
 // readJson/writeJson helpers (e.g. apns.ts's default key file location) still
 // respect a DECK_DATA override in tests.
 export const dataDir = process.env.DECK_DATA ?? path.join(os.homedir(), '.deck');
+// How far ahead an agent may set a watch (DECK_WATCH_MAX_DELAY, default 24h).
+export const watchMaxDelayMs = maxDelayFromEnv(process.env.DECK_WATCH_MAX_DELAY);
 export const transcriptsDir = path.join(dataDir, 'transcripts');
 // Per-session resume files for per-turn agents (pi session files, etc).
 export const agentSessionsDir = path.join(dataDir, 'agent-sessions');

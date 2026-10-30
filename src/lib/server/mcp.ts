@@ -5,7 +5,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { registerAsk, type AskQuestion } from './ask';
-import { WatchError } from './watch-core';
+import { WatchError, describeMaxDelay } from './watch-core';
+import { watchMaxDelayMs } from './config';
 import { activeWatches, cancelWatch, createWatch, getWatch } from './watch-store';
 import type { Watch } from '$lib/watches';
 
@@ -63,7 +64,7 @@ function registerWatchTools(server: McpServer, deckId: string): void {
 		{
 			title: 'Set a watch',
 			description:
-				'Wake this session later: deck sends `prompt` back to you at the time, with the exit code and output tail of `command` if you gave one. Returns at once; end your turn after calling it instead of sleeping or polling in the shell. Fires once; set another if what you wait for is not ready yet. At most 5 active, at most 24 h ahead.',
+				`Wake this session later: deck sends \`prompt\` back to you at the time, with the exit code and output tail of \`command\` if you gave one. Returns at once; end your turn after calling it instead of sleeping or polling in the shell. Fires once; set another if what you wait for is not ready yet. At most 5 active, at most ${describeMaxDelay(watchMaxDelayMs)} ahead.`,
 			inputSchema: WATCH_INPUT
 		},
 		async (args) => {
