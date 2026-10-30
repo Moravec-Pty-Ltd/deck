@@ -3,7 +3,7 @@
 // The create / list / cancel calls live here rather than in watcher.ts so that
 // sessions.ts can cancel a deleted session's watches without an import cycle.
 import { customAlphabet } from 'nanoid';
-import { readJson, writeJson } from './config';
+import { readJson, watchMaxDelayMs, writeJson } from './config';
 import { publishAgentEvent } from './agent-feed';
 import { getStoredSession } from './store';
 import { CHECK_NOT_ALLOWED, WatchError, activeFor, capReached, checkAllowed, parseWatchRequest, prune } from './watch-core';
@@ -60,7 +60,7 @@ export function saveWatch(watch: Watch): void {
 // Throws a WatchError the MCP tool hands back to the agent as text.
 export function createWatch(sessionId: string, raw: unknown): Watch {
 	const now = Date.now();
-	const input = parseWatchRequest(raw, now);
+	const input = parseWatchRequest(raw, now, watchMaxDelayMs);
 	const session = getStoredSession(sessionId);
 	if (input.command && !(session && checkAllowed(session))) throw new WatchError(CHECK_NOT_ALLOWED);
 	if (capReached(state().watches, sessionId)) {

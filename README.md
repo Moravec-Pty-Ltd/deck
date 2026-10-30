@@ -104,6 +104,7 @@ Dev server: `pnpm dev`.
 | `DECK_PUSH_SUBJECT` | `mailto:info@moravec.tech` | VAPID contact for web push (Apple rejects a localhost mailto) |
 | `DECK_TURN_SILENCE_MS` | `1800000` | How long a pi/codex/opencode turn may produce no output on either stdout or stderr before deck kills it and marks the session errored. These agents emit on completed items rather than streaming deltas, so a slow tool call is legitimately silent; raise this if a healthy turn is being cut off. |
 | `DECK_MORABOT_STATUS` | unset | Absolute path to morabot's `status.json` (enables the morabot integration, review verdicts, and notifications). |
+| `DECK_WATCH_MAX_DELAY` | `24h` | How far ahead an agent may set a watch (`mcp__deck__watch`), as a delay like `72h` or `7d`. Capped at `30d`; an unreadable value keeps the default. |
 | `DECK_SECRETS_FILE` | unset | Set to `1` to store issue-source API keys in `~/.deck/secrets.json` (**plaintext**, mode `0600`) instead of the OS keyring. See [Issue-source API keys](#issue-source-api-keys). |
 
 **Configuration**: Variables are loaded from a `.env` file in the repo root by `vite dev` (dev server) and via `node --env-file=.env build/index.js` (production). Explicit environment variables (set inline or exported) always take precedence over `.env` values.
