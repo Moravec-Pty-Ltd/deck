@@ -240,7 +240,9 @@ unregistered path.
 
 \`{ "path": "<registered path>", ...fields }\` edits a project. Only the fields
 you send change: \`name\`, \`group\`, \`template\`, \`reviewPrompt\`,
-\`lastBase\` (strings; a blank clears, a non-string is a 400), \`dev\` and
+\`lastBase\`, \`account\` (strings; a blank clears, a non-string is a 400;
+\`account\` must name an account from \`GET /api/agent/accounts\`, blank means
+Default), \`dev\` and
 \`automation\` (validated; a bad shape is a 400 naming the problem). \`hidden\`
 has its own route, sources theirs, and the remembered model picks are written
 by session creates, so those are ignored here. Returns the updated record; 404
@@ -261,6 +263,51 @@ optional; step and server \`cwd\` are relative to the worktree:
 
 Server names must be unique (also after tmux sanitising) and \`readyPattern\`
 must compile as a regex; a port is an integer 1-65535.
+
+### GET /api/agent/accounts
+
+The Claude accounts a project can run its sessions under. Default (your own
+\`~/.claude\`) is built in and not listed. A new session records its project's
+\`account\` and keeps it for life, even if the project's changes later; a
+claude session whose account is missing or not ready fails to start with the
+reason (a 400 on create) and never falls back to Default.
+
+\`\`\`json
+[{ "name": "acme", "kind": "login|api", "share": ["CLAUDE.md", "skills"],
+	"envKeys": [], "configDir": "/path/to/.deck/claude-accounts/acme",
+	"loginCommand"?: "CLAUDE_CONFIG_DIR='...' claude auth login",
+	"ready": false, "problem"?: "Account acme is not logged in",
+	"email"?: "...", "org"?: "..." }]
+\`\`\`
+
+A \`login\` account has its own config directory; run \`loginCommand\` once to
+log it in. An \`api\` account uses a stored API key, plus any \`env\` set on it
+in settings.json (only the keys are shown). No \`ANTHROPIC_*\`, \`AWS_*\`,
+\`GOOGLE_*\`, \`CLOUD_ML_*\`, \`CLOUDSDK_*\`, \`CLAUDE_CODE_USE_*\` or
+\`CLAUDE_CODE_SKIP_*\` variable from deck's own environment reaches a
+non-Default account. So an \`api\` account names its own credential: a stored
+key or \`ANTHROPIC_API_KEY\`/\`ANTHROPIC_AUTH_TOKEN\` in \`env\`, or, with a
+cloud provider switched on, that provider's (\`AWS_PROFILE\` and the like for
+Bedrock, \`GOOGLE_APPLICATION_CREDENTIALS\` for Vertex,
+\`ANTHROPIC_FOUNDRY_API_KEY\` for Foundry). Restate any non-secret cloud setting
+it needs too, such as \`AWS_REGION\`. A session on a model profile keeps the
+account's config directory, but the account's key does not go to the profile's
+backend. A shared \`settings.json\`
+that sets credentials makes the account not ready.
+
+\`share\` lists the parts of your own config (\`CLAUDE.md\`, \`settings.json\`,
+\`skills\`, \`plugins\`, \`hooks\`) linked into the account's directory; the rest
+stay empty.
+
+### POST /api/agent/accounts
+
+\`{ "name", "kind"?, "share"?, "apiKey"? }\` adds or updates an account (kind
+is required when adding). An empty-string \`apiKey\` clears the stored key. Returns
+201 with the account as \`GET\` lists it.
+
+### DELETE /api/agent/accounts?name=<name>
+
+Removes the account and its stored key. Its config directory stays on disk.
 
 ### POST /api/agent/projects/clone
 

@@ -4,6 +4,7 @@ import { getStoredSession, updateSession } from './store';
 import { objectBody } from './http';
 import { agentTurnRunning } from './agents/dispatch';
 import { agentAvailability } from './agents/available';
+import { accountProblem } from './accounts';
 import { appendEvent, stopProcess } from './claude';
 import { agentTranscriptView, transcriptPath } from './transcript';
 import { whenDrained } from './transcript-writer';
@@ -19,6 +20,11 @@ export async function changeSessionAgent(event: {
 	if (!kind) error(400, 'invalid agent');
 	const available = await agentAvailability();
 	if (!available[kind]) error(400, `${kind} is not installed`);
+	if (kind === 'claude') {
+		// The account is fixed for the session's life, so reading it before the wait is safe.
+		const problem = await accountProblem(getStoredSession(id)?.account);
+		if (problem) error(400, problem);
+	}
 	await whenDrained(transcriptPath(id));
 	// Re-read after asynchronous work so a newly started turn cannot be switched.
 	const session = getStoredSession(id);

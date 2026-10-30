@@ -15,6 +15,7 @@
 	import { pickSessionIcon, type SessionIconKind } from '$lib/session-icon';
 	import ReviewMarks from './ReviewMarks.svelte';
 	import IssueChip from './IssueChip.svelte';
+	import AccountChip from './AccountChip.svelte';
 	import {
 		decisionLabel,
 		phaseLabel,
@@ -198,6 +199,7 @@
 			{/if}
 		</a>
 		<!-- Only once the sidebar is widened: at its default width the chip would squeeze the title away. -->
+		<AccountChip session={s} class="hidden max-w-24 @[18rem]:inline-flex" />
 		<IssueChip issues={s.issues ?? []} class="hidden @[18rem]:inline-flex" />
 		{#if s.kind !== 'shell' && s.worktree}
 			<button

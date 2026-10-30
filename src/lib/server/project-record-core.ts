@@ -49,6 +49,7 @@ export function buildProjectRecord(
 		path: dir,
 		group: carryStr(body.group, existing.group, 'group'),
 		template: carryStr(body.template, existing.template, 'template'),
+		account: carryStr(body.account, existing.account, 'account'),
 		reviewPrompt: carryStr(body.reviewPrompt, existing.reviewPrompt, 'reviewPrompt'),
 		lastBase: carryStr(body.lastBase, existing.lastBase, 'lastBase'),
 		// Written only by other endpoints (projects/hidden, session creates,

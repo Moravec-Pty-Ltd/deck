@@ -53,6 +53,38 @@ export interface ModelProfile {
 	env: Record<string, string>;
 }
 
+// A Claude account a project's sessions can run under (issue #362), stored in
+// ~/.deck/settings.json. `login` keeps its own config directory under deck's
+// data directory, logged in once with `claude auth login`; `api` uses an API
+// key held in the secret store (never here), plus any non-secret `env` such as
+// Bedrock or Vertex settings. Absent everywhere means the built-in Default,
+// the user's own ~/.claude.
+export type ClaudeAccountKind = 'login' | 'api';
+export const SHARED_PARTS = ['CLAUDE.md', 'settings.json', 'skills', 'plugins', 'hooks'] as const;
+export type SharedPart = (typeof SHARED_PARTS)[number];
+
+export interface ClaudeAccount {
+	name: string;
+	kind: ClaudeAccountKind;
+	// Parts of the default config linked into this account's config directory.
+	share?: SharedPart[];
+	env?: Record<string, string>;
+}
+
+// GET /api/agent/accounts: no secret values, only whether the account can run.
+export interface ClaudeAccountView {
+	name: string;
+	kind: ClaudeAccountKind;
+	share: SharedPart[];
+	envKeys: string[];
+	configDir: string;
+	loginCommand?: string;
+	ready: boolean;
+	problem?: string;
+	email?: string;
+	org?: string;
+}
+
 // Reasoning-effort levels the claude CLI accepts via `--effort` (issue #178).
 // claude-only; the other kinds have no equivalent. Absent means the CLI default.
 export type DeckEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -77,6 +109,10 @@ export interface DeckSession {
 	// Fresh native runtime after an agent handoff; keeps pi history isolated.
 	agentRuntimeId?: string;
 	pendingHandoff?: string;
+	// The project's Claude account when the session was created, fixed for its
+	// life: `--resume` only finds a conversation in the config directory that
+	// made it. Absent means Default.
+	account?: string;
 	model?: string;
 	provider?: string;
 	// Reasoning effort for claude sessions (issue #178). Absent runs the CLI's own
@@ -222,6 +258,9 @@ export interface Project {
 	// nothing is deleted.
 	hidden?: boolean;
 	template?: string;
+	// Claude account new sessions run under, by name (see ClaudeAccount). Absent
+	// means Default.
+	account?: string;
 	// First-prompt template for Review-mode sessions (started on a PR awaiting
 	// review). Empty means an empty prompt field, exactly like `template`.
 	reviewPrompt?: string;
@@ -555,6 +594,7 @@ export interface DeckSettings {
 	// Lives here (local settings) rather than in source so private infra stays
 	// out of the public repo.
 	modelProfiles?: ModelProfile[];
+	claudeAccounts?: ClaudeAccount[];
 	lastModels?: Partial<Record<AgentKind, ModelChoice>>;
 	// Global fallback for the new-session modal's effort default (issue #178): the
 	// effort last picked for a claude session anywhere, used when the project has none.

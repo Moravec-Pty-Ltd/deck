@@ -47,6 +47,7 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		createdAt: s.createdAt,
 		lastActiveAt: s.lastActiveAt,
 		model: s.model,
+		account: s.account,
 		effort: s.effort,
 		...runtimeFields(s),
 		...shellFlags(s),

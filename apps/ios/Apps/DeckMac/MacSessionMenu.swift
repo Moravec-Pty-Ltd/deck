@@ -58,6 +58,10 @@ struct MacSessionMenu: View {
 		}
 		if isClaude {
 			Button(session?.effort.map { "Thinking: \($0)" } ?? "Thinking Level…", systemImage: "brain") { sheet = .effort }
+			if let account = session?.account, !account.isEmpty {
+				Button("Account: \(account)", systemImage: "person.crop.circle") {}
+					.disabled(true)
+			}
 			if let context = session?.context {
 				Button("Compact Context (\(context.percent)%)", systemImage: "arrow.down.right.and.arrow.up.left", action: onCompact)
 					.disabled(isRunning || compacting)

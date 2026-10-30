@@ -847,6 +847,20 @@ final class ParityTests: XCTestCase {
 		XCTAssertNil(none.watches)
 	}
 
+	func testAccountsDecodeOnProjectsSessionsAndTheAccountsRoute() async throws {
+		let detail = try JSONDecoder().decode(ProjectDetail.self, from: Data(#"{"path":"/path/to/project","account":"work"}"#.utf8))
+		XCTAssertEqual(detail.account, "work")
+		let session = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle","account":"work"}"#.utf8))
+		XCTAssertEqual(session.account, "work")
+		let json = #"[{"name":"work","kind":"login","share":["CLAUDE.md","skills"],"envKeys":[],"configDir":"~/.deck/accounts/work","loginCommand":"claude login","ready":false,"problem":"Not signed in","email":null,"org":null}]"#
+		var accounts: [ClaudeAccount] = []
+		let sent = await requests(reply: json) { accounts = try await $0.accounts() }
+		assertShape(sent, "GET", "/api/agent/accounts")
+		XCTAssertEqual(accounts.first?.share, ["CLAUDE.md", "skills"])
+		XCTAssertEqual(accounts.first?.problem, "Not signed in")
+		XCTAssertEqual(accounts.first?.ready, false)
+	}
+
 	func testWatchesListAndCancelUseTheAgentRoutes() async throws {
 		let fired = #"""
 		{"id":"w2","sessionId":"example","title":"Up","prompt":"","createdAt":1,"dueAt":2,"state":"fired","endedAt":3,
