@@ -793,13 +793,24 @@ struct SessionDetailView: View {
 
 	private var workingIndicator: some View {
 		HStack {
-			WorkingLabel()
+			if viewModel?.stopping == true {
+				Text("Stopping…").foregroundStyle(.secondary)
+			} else {
+				WorkingLabel()
+			}
 			Spacer()
+			if viewModel?.canForceStop == true {
+				Button("Force stop", role: .destructive) {
+					Task { await viewModel?.stop(force: true) }
+				}
+				.controlSize(.small)
+			}
 			// ⌘. is the same stop (DeckCommands).
 			Button("Stop", systemImage: "stop.circle", role: .destructive) {
 				Task { await viewModel?.stop() }
 			}
 			.controlSize(.small)
+			.disabled(viewModel?.stopping == true)
 		}
 		.padding(.horizontal)
 		.padding(.vertical, 6)

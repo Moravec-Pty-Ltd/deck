@@ -15,6 +15,7 @@ import { findModelProfile, resolveModelArg } from './model-profiles';
 import { isFlagSafe } from './agents/args';
 import { AGENT_BINARIES } from './agents/binaries';
 import { spawnAgent } from './agents/spawn';
+import { resultEvent } from './agents/events';
 import { lastPrLink } from '../pr';
 import type { DeckSession } from '$lib/types';
 
@@ -233,6 +234,7 @@ async function startProcess(id: string, token: object): Promise<Proc | undefined
 	let child: ChildProcess | undefined;
 	let failure: Error | undefined;
 	try {
+		await ensureMcp(); // the MCP server must be listening before the process spawns
 		child = await spawnAgent(AGENT_BINARIES.claude, claudeArgs(id, session), {
 			cwd: session.cwd,
 			env: agentEnv(id, session.cwd, profile?.env),
@@ -241,9 +243,9 @@ async function startProcess(id: string, token: object): Promise<Proc | undefined
 	} catch (err) {
 		failure = err as Error;
 	}
-	// stopProcess ran while it started (the session is being deleted).
+	// Stopped while it started (Stop, or the session is being deleted).
 	if (starting.get(id)?.token !== token) {
-		child?.kill('SIGTERM');
+		if (child) killHard(child);
 		return undefined;
 	}
 	if (!child) {
@@ -348,9 +350,15 @@ function handleStreamEvent(id: string, proc: Proc, event: Record<string, unknown
 	return true;
 }
 
-// Rate-limit and control-response chatter is dropped silently.
-function isIgnoredEvent(_id: string, _proc: Proc, event: Record<string, unknown>): boolean {
-	return event.type === 'rate_limit_event' || event.type === 'control_response';
+// Rate-limit and control-response chatter is dropped; the interrupt's response
+// is logged, to tell an interrupt claude refused from one it took (issue #361).
+function isIgnoredEvent(id: string, proc: Proc, event: Record<string, unknown>): boolean {
+	if (event.type === 'control_response') {
+		const response = event.response as { subtype?: string; error?: string } | undefined;
+		console.log(`[deck] control_response ${id}: ${response?.subtype ?? 'unknown'}${response?.error ? ` (${response.error})` : ''}, turn ${proc.running ? 'still running' : 'ended'}`);
+		return true;
+	}
+	return event.type === 'rate_limit_event';
 }
 
 // Our own replayed user messages echo back; skip them, but keep tool_result turns.
@@ -426,7 +434,6 @@ export interface SendMeta {
 export async function sendMessage(id: string, text: string, images?: ImageInput[], meta?: SendMeta) {
 	const session = getStoredSession(id);
 	if (!session || session.kind !== 'claude') throw new Error('not a claude session');
-	await ensureMcp(); // the MCP server must be listening before the process spawns
 	const hasImages = !!images && images.length > 0;
 	// Persist attachments out-of-band; the transcript keeps only file references so
 	// the JSONL (and every full re-parse of it) stays small. The CLI still gets the
@@ -439,12 +446,13 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 		answers: meta?.answers,
 		ts: Date.now()
 	});
+	// Running from here, so Stop shows while claude starts.
+	setStatus(id, 'running');
 	// After the message is recorded, so a spawn failure's error lands below it.
 	const proc = await ensureProcess(id);
 	if (!proc) return;
 	if (proc.idleTimer) clearTimeout(proc.idleTimer);
 	proc.running = true;
-	setStatus(id, 'running');
 	// Re-read: a message that shared this start may already have sent the handoff.
 	const { pendingHandoff } = getStoredSession(id) ?? session;
 	const prompt = handoffPrompt(pendingHandoff, meta?.voice ? spokenPrompt(text) : text);
@@ -464,9 +472,18 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 }
 
 // Stop the current turn but keep the session alive (control_request interrupt).
-export function interrupt(id: string) {
+// True when there was a turn to stop.
+export function interrupt(id: string): boolean {
+	// Still starting: the start drops its child once it is up and never sends
+	// the message, so the turn ends here.
+	if (starting.delete(id)) {
+		console.log(`[deck] stop ${id}: during start-up`);
+		endTurn(id);
+		return true;
+	}
 	const proc = procs.get(id);
-	if (!proc) return;
+	console.log(`[deck] stop ${id}: ${proc ? `process found, turn ${proc.running ? 'running' : 'idle'}` : 'no process'}`);
+	if (!proc) return false;
 	rejectAsk(id, 'interrupted');
 	proc.reqSeq += 1;
 	proc.child.stdin!.write(
@@ -476,9 +493,18 @@ export function interrupt(id: string) {
 			request: { subtype: 'interrupt' }
 		}) + '\n'
 	);
+	return proc.running;
 }
 
-// Hard-stop the process entirely (used on session deletion).
+function endTurn(id: string) {
+	appendEvent(id, resultEvent({ subtype: 'interrupted' }));
+	setStatus(id, 'idle');
+}
+
+// A claude hung on a model request ignores SIGTERM; only SIGKILL ends it.
+const KILL_GRACE_MS = 3000;
+
+// Hard-stop the process entirely (session deletion, Force stop).
 export function stopProcess(id: string) {
 	starting.delete(id);
 	const proc = procs.get(id);
@@ -486,5 +512,23 @@ export function stopProcess(id: string) {
 	clearTimeout(proc.idleTimer);
 	procs.delete(id);
 	rejectAsk(id, 'process stopped');
-	proc.child.kill('SIGTERM');
+	killHard(proc.child);
+}
+
+function killHard(child: ChildProcess) {
+	child.kill('SIGTERM');
+	setTimeout(() => {
+		if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+	}, KILL_GRACE_MS).unref();
+}
+
+// Force stop: end the process, and with it the turn and any background
+// subagents. The next message resumes the session. True when a turn was live.
+export function forceStop(id: string): boolean {
+	const live = starting.has(id) || isTurnRunning(id);
+	console.log(`[deck] force stop ${id}: ${live ? 'turn live' : 'no live turn'}`);
+	stopProcess(id);
+	// stopProcess deregisters the process first, so its exit reports nothing.
+	if (live) endTurn(id);
+	return live;
 }

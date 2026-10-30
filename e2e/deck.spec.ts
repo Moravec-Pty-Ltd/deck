@@ -97,6 +97,18 @@ test('shows Working while a turn runs and stops it', async ({ page }) => {
 	await expect(page.getByText('Working…')).toBeHidden();
 });
 
+test('force stops a turn that ignores Stop, and the session carries on', async ({ page }) => {
+	await openSession(page, 'hang');
+	await send(page, '[hang] never answer');
+	await expect(page.getByText('Working…')).toBeVisible();
+	await page.getByRole('button', { name: 'Stop' }).click();
+	await expect(page.getByText('Stopping…')).toBeVisible();
+	await page.getByRole('button', { name: 'Force stop' }).click({ timeout: 10_000 });
+	await expect(page.getByText('Stopping…')).toBeHidden();
+	await send(page, 'still there?');
+	await expect(page.getByText('Fake reply to: still there?')).toBeVisible({ timeout: 10_000 });
+});
+
 test('at phone width the views move from the tab row into the View menu', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await openSession(page, 'phone views');

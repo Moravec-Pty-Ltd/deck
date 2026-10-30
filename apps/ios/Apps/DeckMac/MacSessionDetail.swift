@@ -92,6 +92,7 @@ struct MacSessionDetail: View {
 					} label: {
 						Label("Stop", systemImage: "stop.circle")
 					}
+					.disabled(viewModel.stopping)
 				}
 			}
 			ToolbarItem {
@@ -291,7 +292,10 @@ struct MacSessionDetail: View {
 				images: Bindable(viewModel).draftImages,
 				sending: sending,
 				working: isWorking(viewModel),
+				stopping: viewModel.stopping,
+				canForceStop: viewModel.canForceStop,
 				onStop: { Task { await viewModel.stop() } },
+				onForceStop: { Task { await viewModel.stop(force: true) } },
 				onSend: { sendComposer(viewModel) },
 				onQuickMessage: { text in Task { await viewModel.sendQuickMessage(text: text) } },
 				onManageQuickMessages: { sheet = .quickMessages },

@@ -196,6 +196,7 @@ final class SessionDetailViewModel {
 					case .exit:
 						refreshAgents()
 					case .status(let status):
+						if status != "running" { clearStopping() }
 						voice?.turnRunning = status == "running"
 					}
 				}
@@ -377,12 +378,37 @@ final class SessionDetailViewModel {
 		return url
 	}
 
-	func stop() async {
+	/// Set from a plain stop until the turn ends; a turn that ignores the
+	/// interrupt for a few seconds offers a force stop.
+	private(set) var stopping = false
+	private(set) var canForceStop = false
+	@ObservationIgnored private var forceOffer: Task<Void, Never>?
+
+	func stop(force: Bool = false) async {
+		guard force || !stopping else { return }
+		forceOffer?.cancel()
+		stopping = true
+		canForceStop = false
+		forceOffer = Task {
+			try? await Task.sleep(for: .seconds(5))
+			if !Task.isCancelled, stopping { canForceStop = true }
+		}
 		do {
-			try await store.stop(sessionId: sessionId)
+			let response = try await store.stop(sessionId: sessionId, force: force)
+			if response.outcome != "interrupted" {
+				clearStopping()
+				await store.refreshSessions()
+			}
 		} catch {
+			clearStopping()
 			report(error)
 		}
+	}
+
+	private func clearStopping() {
+		forceOffer?.cancel()
+		stopping = false
+		canForceStop = false
 	}
 
 	func sendQuickMessage(text: String) async {

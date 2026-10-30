@@ -28,12 +28,29 @@ export function turnRunning(id: string): boolean {
 	return procs.has(id) || starting.has(id);
 }
 
-export function interruptTurn(id: string) {
+// True when there was a turn to stop.
+export function interruptTurn(id: string): boolean {
+	const live = turnRunning(id);
 	// A turn still starting kills its child once it is up, and ends there.
 	const start = starting.get(id);
 	if (start) start.stopped = true;
 	starting.delete(id);
 	procs.get(id)?.kill('SIGTERM');
+	return live;
+}
+
+// Force stop: SIGKILL a turn that ignored the interrupt, and end it here, since
+// its deregistered child's exit reports nothing.
+export function forceStopTurn(id: string): boolean {
+	const child = procs.get(id);
+	const live = interruptTurn(id);
+	if (child) {
+		procs.delete(id);
+		child.kill('SIGKILL');
+		appendEvent(id, resultEvent());
+		setStatus(id, 'idle');
+	}
+	return live;
 }
 
 function agentTitle(id: string): string {

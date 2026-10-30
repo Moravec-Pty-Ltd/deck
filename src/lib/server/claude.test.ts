@@ -35,6 +35,7 @@ function fakeChild() {
 		stderr: new EventEmitter(),
 		stdin: { write: vi.fn() },
 		exitCode: null,
+		signalCode: null,
 		killed: false,
 		kill: vi.fn()
 	});
@@ -96,5 +97,59 @@ describe('sendMessage when claude cannot start', () => {
 		expect(stale.stdin.write).not.toHaveBeenCalled();
 		expect(spawnAgent).toHaveBeenCalledOnce();
 		expect(claude.hasProcess(id)).toBe(false);
+	});
+});
+
+describe('stopping a turn', () => {
+	it('stops a turn while claude is still starting, so the message never runs', async () => {
+		const id = `c_early_${seq}`;
+		const child = fakeChild();
+		let up!: (c: unknown) => void;
+		spawnAgent.mockReturnValueOnce(new Promise((r) => (up = r)));
+		const sent = claude.sendMessage(id, 'one');
+		await vi.waitFor(() => expect(spawnAgent).toHaveBeenCalled());
+
+		expect(claude.interrupt(id)).toBe(true);
+		up(child);
+		await sent;
+
+		expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+		expect(child.stdin.write).not.toHaveBeenCalled();
+		expect(written().map((e) => e.type)).toEqual(['deck.user', 'result']);
+		expect(vi.mocked(setSessionStatus).mock.calls.at(-1)?.[1]).toBe('idle');
+	});
+
+	it('interrupts a running turn, and reports an idle process as nothing to stop', async () => {
+		const id = `c_turn_${seq}`;
+		const child = fakeChild();
+		spawnAgent.mockResolvedValueOnce(child);
+		await claude.sendMessage(id, 'one');
+
+		expect(claude.interrupt(id)).toBe(true);
+		expect(JSON.parse(child.stdin.write.mock.calls.at(-1)![0]).request.subtype).toBe('interrupt');
+		child.stdout.emit('data', Buffer.from(JSON.stringify({ type: 'result', subtype: 'error_during_execution' }) + '\n'));
+		expect(claude.interrupt(id)).toBe(false);
+		expect(claude.interrupt('c_none')).toBe(false);
+	});
+
+	it('force stop ends the turn, and SIGKILLs a process that ignores SIGTERM', async () => {
+		vi.useFakeTimers();
+		try {
+			const id = `c_force_${seq}`;
+			const child = fakeChild();
+			spawnAgent.mockResolvedValueOnce(child);
+			await claude.sendMessage(id, 'one');
+
+			expect(claude.forceStop(id)).toBe(true);
+			expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+			expect(claude.hasProcess(id)).toBe(false);
+			expect(written().at(-1)?.type).toBe('result');
+			expect(vi.mocked(setSessionStatus).mock.calls.at(-1)?.[1]).toBe('idle');
+
+			vi.advanceTimersByTime(3000);
+			expect(child.kill).toHaveBeenLastCalledWith('SIGKILL');
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

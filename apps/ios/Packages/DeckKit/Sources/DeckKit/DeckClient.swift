@@ -319,8 +319,8 @@ public final class DeckClient: @unchecked Sendable {
 	}
 
 	@discardableResult
-	public func stop(sessionId: String) async throws -> MessageResponse {
-		try await post("/api/agent/sessions/\(sessionId)/stop", json: [:])
+	public func stop(sessionId: String, force: Bool = false) async throws -> StopResponse {
+		try await post("/api/agent/sessions/\(sessionId)/stop", json: force ? ["force": true] : [:])
 	}
 
 	/// Answer a blocking question. `answers` (one per question) persists the
