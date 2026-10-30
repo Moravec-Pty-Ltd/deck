@@ -14,11 +14,30 @@ export interface StatusBucket {
 // colours.
 export const UNREAD_DOT = 'bg-accent';
 
+type DotSession = Pick<SessionView, 'status' | 'unread'> & Partial<Pick<SessionView, 'awaitingInput'>>;
+
+// Where motion is off (reduced motion, e-ink) a still ring would read as the
+// hollow dead dot, so it fills back in to the plain running dot.
+const WORKING_DOT =
+	'border-[1.5px] border-primary border-r-transparent animate-spin motion-reduce:animate-none motion-reduce:bg-primary [[data-theme=eink]_&]:bg-primary';
+
+function isWorking(s: DotSession): boolean {
+	return s.status === 'running' && s.awaitingInput !== true;
+}
+
+// The dot's spoken label: only the states its colour alone carries.
+export function statusDotLabel(s: DotSession): string | undefined {
+	if (isWorking(s)) return s.unread ? 'Working, unread' : 'Working';
+	return s.unread ? 'Unread' : undefined;
+}
+
 // A session row's status dot: primary = running, red = error, a hollow ring for
 // dead (so it survives e-ink without colour), neutral for idle. An unread idle
 // session takes the unread colour in place of neutral, so marking it read or
-// unread never shifts the row (issue #342).
-export function statusDotClass(s: Pick<SessionView, 'status' | 'unread'>): string {
+// unread never shifts the row (issue #342). A working session spins a ring in
+// the dot's box (issue #366); one waiting on a question is not working.
+export function statusDotClass(s: DotSession): string {
+	if (isWorking(s)) return WORKING_DOT;
 	if (s.status === 'running') return 'bg-primary';
 	if (s.status === 'error') return 'bg-error';
 	if (s.status === 'dead') return 'border border-base-content/40';

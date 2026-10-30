@@ -330,13 +330,16 @@ struct SessionDetailView: View {
 			onActivate?()
 			showRenameSheet = true
 		} label: {
-			Text(title)
-				.font(.headline)
-				.lineLimit(1)
-				.truncationMode(.tail)
-				.foregroundStyle(isActivePane == false ? .secondary : .primary)
-				.frame(minHeight: 44)
-				.contentShape(Rectangle())
+			HStack(spacing: 6) {
+				if let session { StatusDot(session: session) }
+				Text(title)
+					.font(.headline)
+					.lineLimit(1)
+					.truncationMode(.tail)
+					.foregroundStyle(isActivePane == false ? .secondary : .primary)
+			}
+			.frame(minHeight: 44)
+			.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
 		.accessibilityHint("Rename")

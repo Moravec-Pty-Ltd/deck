@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionStatus } from '$lib/types';
 import type { SessionView } from '$lib/session-view';
-import { bucketSessions, statusDotClass, UNREAD_DOT } from './status-groups';
+import { bucketSessions, statusDotClass, statusDotLabel, UNREAD_DOT } from './status-groups';
 
 function session(
 	id: string,
@@ -136,8 +136,29 @@ describe('statusDotClass', () => {
 	it('takes the unread colour in place of idle grey only', () => {
 		expect(statusDotClass({ status: 'idle', unread: true })).toBe(UNREAD_DOT);
 		expect(statusDotClass({ status: 'idle' })).toBe('bg-base-content/35');
-		expect(statusDotClass({ status: 'running', unread: true })).toBe('bg-primary');
 		expect(statusDotClass({ status: 'error', unread: true })).toBe('bg-error');
 		expect(statusDotClass({ status: 'dead', unread: true })).toBe('border border-base-content/40');
+	});
+});
+
+describe('the working spinner', () => {
+	it('spins for a running session, in the dot\'s box, and reads as Working', () => {
+		const cls = statusDotClass({ status: 'running', unread: true });
+		expect(cls).toContain('animate-spin');
+		expect(cls).toContain('border-r-transparent');
+		expect(cls).toContain('motion-reduce:bg-primary');
+		expect(statusDotLabel({ status: 'running' })).toBe('Working');
+		expect(statusDotLabel({ status: 'running', unread: true })).toBe('Working, unread');
+		expect(cls).toContain('[[data-theme=eink]_&]:bg-primary');
+	});
+
+	it('stays a dot for a session waiting on a question', () => {
+		expect(statusDotClass({ status: 'running', awaitingInput: true })).toBe('bg-primary');
+		expect(statusDotLabel({ status: 'running', awaitingInput: true })).toBeUndefined();
+	});
+
+	it('labels unread idle dots only', () => {
+		expect(statusDotLabel({ status: 'idle', unread: true })).toBe('Unread');
+		expect(statusDotLabel({ status: 'idle' })).toBeUndefined();
 	});
 });

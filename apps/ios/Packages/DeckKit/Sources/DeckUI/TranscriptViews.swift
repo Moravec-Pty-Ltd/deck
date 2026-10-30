@@ -45,7 +45,7 @@ public struct WorkingLabel: View {
 
 	public var body: some View {
 		HStack(spacing: 8) {
-			ProgressView().controlSize(.small)
+			WorkingSpinner().accessibilityHidden(true)
 			Text("Working…")
 				.font(.footnote)
 				.foregroundStyle(.secondary)
