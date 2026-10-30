@@ -35,7 +35,7 @@ async function authStatus(env: Record<string, string | undefined>): Promise<Auth
 	try {
 		const { stdout } = await exec(AGENT_BINARIES.claude, ['auth', 'status', '--json'], {
 			env: { ...process.env, ...env },
-			timeout: 15_000
+			timeout: 5_000
 		});
 		return JSON.parse(stdout) as AuthStatus;
 	} catch {
