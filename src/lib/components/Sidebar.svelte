@@ -5,7 +5,7 @@
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
 	import { deriveGroup, relativeTime } from '$lib/time';
-	import { bucketSessions, BUCKET_DOT, statusDotClass } from '$lib/status-groups';
+	import { bucketSessions, BUCKET_DOT, statusDotClass, statusDotLabel } from '$lib/status-groups';
 	import { markRead } from '$lib/mark-read';
 	import { viewMode } from '$lib/view-mode.svelte';
 	import { viewModeLabel } from '$lib/view-mode';
@@ -164,7 +164,7 @@
 			{:else}
 				<Bot size={13} class="shrink-0 opacity-60" />
 			{/if}
-			<span class="size-1.5 shrink-0 rounded-full {statusDotClass(s)}" role={s.unread ? 'img' : undefined} aria-label={s.unread ? 'Unread' : undefined} title={s.unread ? `Unread, ${s.status}` : s.status}></span>
+			<span class="size-1.5 shrink-0 rounded-full {statusDotClass(s)}" role={statusDotLabel(s) ? 'img' : undefined} aria-label={statusDotLabel(s)} title={s.unread ? `Unread, ${s.status}` : s.status}></span>
 			<div class="flex min-w-0 flex-1 flex-col">
 				<span class="flex min-w-0 items-center gap-1.5 text-sm {s.unread ? 'font-semibold' : ''}">
 					<span class="truncate">{s.title}</span>

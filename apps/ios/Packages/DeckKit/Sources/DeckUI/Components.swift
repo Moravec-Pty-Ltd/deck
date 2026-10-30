@@ -1,8 +1,8 @@
 import SwiftUI
 import DeckKit
 
-/// Small colored status indicator: green running, gray idle, orange awaiting
-/// input, red error/dead.
+/// Small colored status indicator: a green spinner while working, gray idle,
+/// orange awaiting input, red error/dead.
 public struct StatusDot: View {
 	let session: SessionDigest
 
@@ -23,12 +23,49 @@ public struct StatusDot: View {
 		}
 	}
 
+	/// Waiting on a question is not working.
+	private var working: Bool { session.status == .running && session.awaitingInput != true }
+
 	public var body: some View {
-		Circle()
-			.fill(color)
-			.frame(width: 8, height: 8)
-			.accessibilityHidden(!unread)
-			.accessibilityLabel("Unread")
+		if working {
+			WorkingSpinner()
+				.accessibilityLabel(unread ? "Working, unread" : "Working")
+		} else {
+			Circle()
+				.fill(color)
+				.frame(width: 8, height: 8)
+				.accessibilityHidden(!unread)
+				.accessibilityLabel("Unread")
+		}
+	}
+}
+
+/// The running dot, spinning: the one busy indicator in the lists, the
+/// session's title and its working row. Reduce Motion keeps the plain dot.
+public struct WorkingSpinner: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	public init() {}
+
+	public var body: some View {
+		Group {
+			if reduceMotion {
+				Circle().fill(.green)
+			} else {
+				Circle()
+					.inset(by: 0.75)
+					.trim(from: 0, to: 0.75)
+					.stroke(.green, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+					.keyframeAnimator(initialValue: 0.0, repeating: true) { arc, degrees in
+						arc.rotationEffect(.degrees(degrees))
+					} keyframes: { _ in
+						LinearKeyframe(360, duration: 0.9)
+					}
+			}
+		}
+		.frame(width: 8, height: 8)
+		.accessibilityElement()
+		.accessibilityLabel("Working")
 	}
 }
 

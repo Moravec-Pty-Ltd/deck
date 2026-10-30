@@ -85,6 +85,13 @@ struct MacSessionDetail: View {
 			Text("\((pendingExpensiveModel ?? nil) ?? "") is an expensive model. Switch this session to it anyway?")
 		}
 		.toolbar {
+			// Leading, so it sits just before the window's title.
+			if let session {
+				ToolbarItem(placement: .navigation) {
+					StatusDot(session: session)
+				}
+				.sharedBackgroundVisibility(.hidden)
+			}
 			if !isTerminal, session?.status == .running, let viewModel {
 				ToolbarItem {
 					Button {

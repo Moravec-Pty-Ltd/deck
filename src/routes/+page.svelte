@@ -7,7 +7,7 @@
 	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
-	import { bucketSessions, BUCKET_DOT, statusDotClass } from '$lib/status-groups';
+	import { bucketSessions, BUCKET_DOT, statusDotClass, statusDotLabel } from '$lib/status-groups';
 	import { markRead } from '$lib/mark-read';
 	import { viewMode } from '$lib/view-mode.svelte';
 	import { viewModeLabel } from '$lib/view-mode';
@@ -280,7 +280,7 @@
 				<span class="badge badge-ghost badge-sm">adhoc</span>
 			{/if}
 			<span class="flex shrink-0 items-center gap-1.5">
-				<span class="size-2 shrink-0 rounded-full {statusDotClass(s)}" role={s.unread ? 'img' : undefined} aria-label={s.unread ? 'Unread' : undefined} title={s.unread ? `Unread, ${s.status}` : undefined}></span>
+				<span class="size-2 shrink-0 rounded-full {statusDotClass(s)}" role={statusDotLabel(s) ? 'img' : undefined} aria-label={statusDotLabel(s)} title={s.unread ? `Unread, ${s.status}` : undefined}></span>
 				<span class="text-xs {statusText(s)}">{s.status}</span>
 			</span>
 			<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>
