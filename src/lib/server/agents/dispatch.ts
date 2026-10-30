@@ -23,11 +23,11 @@ export function agentInterrupt(id: string, force = false): StopOutcome {
 	let live: boolean;
 	if (session?.kind === 'claude') {
 		live = force ? claude.forceStop(id) : claude.interrupt(id);
-		// A send still waiting on its start no longer holds the turn open.
-		sending.delete(id);
 	} else {
 		live = force ? runner.forceStopTurn(id) : runner.interruptTurn(id);
 	}
+	// A send still waiting on its start no longer holds the turn open.
+	sending.delete(id);
 	const outcome = stopOutcome(live, session?.status === 'running');
 	if (outcome === 'not-tracked') claude.setStatus(id, 'idle');
 	return outcome;

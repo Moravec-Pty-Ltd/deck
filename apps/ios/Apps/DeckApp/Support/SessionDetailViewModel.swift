@@ -389,9 +389,10 @@ final class SessionDetailViewModel {
 		forceOffer?.cancel()
 		stopping = true
 		canForceStop = false
-		forceOffer = Task {
+		forceOffer = Task { [weak self] in
 			try? await Task.sleep(for: .seconds(5))
-			if !Task.isCancelled, stopping { canForceStop = true }
+			guard let self, !Task.isCancelled, stopping else { return }
+			canForceStop = true
 		}
 		do {
 			let response = try await store.stop(sessionId: sessionId, force: force)
