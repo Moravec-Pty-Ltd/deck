@@ -8,6 +8,7 @@ const stored: Project = {
 	group: 'apps',
 	hidden: true,
 	template: 'Work on {issue}',
+	account: 'acme',
 	reviewPrompt: 'Review it',
 	lastBase: 'main',
 	lastModels: { claude: { model: 'opus' } },
@@ -27,8 +28,8 @@ describe('buildProjectRecord', () => {
 	});
 
 	it('overwrites only the fields sent, and a blank string clears', () => {
-		const next = buildProjectRecord({ name: ' Renamed ', group: '', template: 'New' }, stored.path, stored);
-		expect(next).toEqual({ ...stored, name: 'Renamed', group: undefined, template: 'New' });
+		const next = buildProjectRecord({ name: ' Renamed ', group: '', account: '', template: 'New' }, stored.path, stored);
+		expect(next).toEqual({ ...stored, name: 'Renamed', group: undefined, account: undefined, template: 'New' });
 	});
 
 	it('never takes the fields other endpoints own from the body', () => {

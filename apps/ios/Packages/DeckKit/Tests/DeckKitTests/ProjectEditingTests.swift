@@ -17,6 +17,13 @@ final class ProjectEditingTests: XCTestCase {
 		XCTAssertEqual(draft.changes(from: ProjectDraft(name: "example")), ["name": "renamed"])
 	}
 
+	func testTheAccountIsSentAndClearsToEmpty() {
+		var draft = ProjectDraft(name: "example")
+		draft.account = "work"
+		XCTAssertEqual(draft.changes(from: ProjectDraft(name: "example")), ["account": "work"])
+		XCTAssertEqual(ProjectDraft(name: "example").changes(from: draft), ["account": ""])
+	}
+
 	func testTheDraftPrefersTheStoredRecord() {
 		let project = DeckProject(path: "/path/to/project", name: "listed", group: nil)
 		let detail = ProjectDetail(path: project.path, name: "stored", group: "apps", template: "go", automation: nil)

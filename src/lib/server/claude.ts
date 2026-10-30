@@ -12,6 +12,8 @@ import { transcriptPath, transcriptCostSummary } from './transcript';
 import { publishAgentEvent } from './agent-feed';
 import { agentEnv } from './agents/env';
 import { findModelProfile, resolveModelArg } from './model-profiles';
+import { sessionAccountEnv } from './accounts';
+import { sessionEnv } from './accounts-core';
 import { isFlagSafe } from './agents/args';
 import { AGENT_BINARIES } from './agents/binaries';
 import { spawnAgent } from './agents/spawn';
@@ -235,9 +237,12 @@ async function startProcess(id: string, token: object): Promise<Proc | undefined
 	let failure: Error | undefined;
 	try {
 		await ensureMcp(); // the MCP server must be listening before the process spawns
+		// Throws when the session's account can't run, which reports as a crash
+		// with the reason instead of starting under the default login.
+		const account = await sessionAccountEnv(session.account);
 		child = await spawnAgent(AGENT_BINARIES.claude, claudeArgs(id, session), {
 			cwd: session.cwd,
-			env: agentEnv(id, session.cwd, profile?.env),
+			env: agentEnv(id, session.cwd, sessionEnv(account, profile?.env)),
 			stdio: ['pipe', 'pipe', 'pipe']
 		});
 	} catch (err) {

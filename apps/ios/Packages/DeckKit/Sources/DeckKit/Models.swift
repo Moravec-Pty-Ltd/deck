@@ -241,6 +241,8 @@ public struct SessionDigest: Codable, Hashable, Identifiable, Sendable {
 	public var lastActiveAt: Double?
 	public let model: String?
 	public var effort: String?
+	/// The Claude account it was created with; absent means Default.
+	public let account: String?
 	public let worktree: SessionWorktree?
 	public let issues: [DeckIssue]?
 	public var pr: SessionPR?
@@ -273,6 +275,7 @@ public struct SessionDetail: Codable, Sendable {
 	public let awaitingInput: Bool?
 	public let model: String?
 	public let effort: String?
+	public let account: String?
 	public let worktree: SessionWorktree?
 	public let pr: SessionPR?
 	public let cost: SessionCost?
@@ -714,11 +717,14 @@ public struct ProjectDetail: Codable, Sendable {
 	public let hidden: Bool?
 	public let automation: ProjectAutomation?
 	public let dev: DevConfig?
+	/// The Claude account its new sessions use; absent means the built-in Default.
+	public let account: String?
 
 	public init(
 		path: String, name: String?, group: String?, template: String? = nil, reviewPrompt: String? = nil,
-		hidden: Bool? = nil, automation: ProjectAutomation?, dev: DevConfig? = nil
+		hidden: Bool? = nil, automation: ProjectAutomation?, dev: DevConfig? = nil, account: String? = nil
 	) {
+		self.account = account
 		self.path = path
 		self.name = name
 		self.group = group
@@ -728,6 +734,21 @@ public struct ProjectDetail: Codable, Sendable {
 		self.automation = automation
 		self.dev = dev
 	}
+}
+
+/// A Claude account (GET /api/agent/accounts). The built-in Default is not listed.
+public struct ClaudeAccount: Codable, Hashable, Identifiable, Sendable {
+	public var id: String { name }
+	public let name: String
+	public let kind: String
+	public let share: [String]
+	public let envKeys: [String]
+	public let configDir: String
+	public let loginCommand: String?
+	public let ready: Bool
+	public let problem: String?
+	public let email: String?
+	public let org: String?
 }
 
 /// What one agent kind starts with by default in a project, as the server

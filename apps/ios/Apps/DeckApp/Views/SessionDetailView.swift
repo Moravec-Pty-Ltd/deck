@@ -408,6 +408,10 @@ struct SessionDetailView: View {
 						Label(session?.effort.map { "Thinking: \($0)" } ?? "Thinking level", systemImage: "brain")
 					}
 				}
+				if session?.kind == "claude", let account = session?.account, !account.isEmpty {
+					Button {} label: { Label("Account: \(account)", systemImage: "person.crop.circle") }
+						.disabled(true)
+				}
 				if session?.kind == "claude", let context = session?.context {
 					Button {
 						Task { await compact() }

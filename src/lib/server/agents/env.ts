@@ -16,7 +16,7 @@ import { authToken, baseUrl } from '../config';
 export function agentEnv(
 	id: string,
 	cwd: string,
-	extra?: Record<string, string>
+	extra?: Record<string, string | undefined>
 ): NodeJS.ProcessEnv {
 	return {
 		...process.env,

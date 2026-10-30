@@ -19,6 +19,8 @@ export interface AgentSessionDigest {
 	createdAt: number;
 	lastActiveAt: number;
 	model?: string;
+	// The Claude account (issue #362); absent means Default.
+	account?: string;
 	// pi's --provider; absent for the kinds that carry it inside `model`.
 	provider?: string;
 	effort?: DeckSession['effort'];

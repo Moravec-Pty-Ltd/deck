@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { confirmAction } from '$lib/confirm.svelte';
-	import type { AgentSettingsView, Project } from '$lib/types';
+	import type { AgentSettingsView, ClaudeAccountView, Project } from '$lib/types';
 	import { shortPath } from '$lib/time';
 	import { groupProjects, UNGROUPED } from '$lib/groups';
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
@@ -21,6 +21,7 @@
 
 	// modelProfiles for the claude model select; empty until the fetch lands.
 	let settings = $state<AgentSettingsView>({});
+	let accounts = $state<ClaudeAccountView[]>([]);
 	let projects = $state<ProjectRow[]>([]);
 	let loaded = $state(false);
 	let savedPath = $state<string | null>(null);
@@ -86,6 +87,10 @@
 	$effect(() => {
 		load();
 		loadSettings().then((s) => (settings = s));
+		fetch('/api/agent/accounts')
+			.then((r) => (r.ok ? r.json() : []))
+			.then((a: ClaudeAccountView[]) => (accounts = a))
+			.catch(() => {});
 	});
 
 	async function save(p: ProjectRow) {
@@ -98,6 +103,7 @@
 				name: p.name,
 				group: p.group ?? '',
 				template: p.template,
+				account: p.account ?? '',
 				reviewPrompt: p.reviewPrompt ?? '',
 				lastBase: p.lastBase,
 				automation: {
@@ -250,6 +256,22 @@
 										placeholder="Default base branch (remembered automatically)"
 										bind:value={p.lastBase}
 									/>
+									{#if accounts.length || p.account}
+										{@const problem = accounts.find((a) => a.name === p.account)?.problem}
+										<label class="mt-2 flex flex-wrap items-center gap-2 text-sm">
+											<span class="text-xs font-medium opacity-70">Claude account</span>
+											<select class="select select-sm w-48" bind:value={p.account}>
+												<option value={undefined}>Default</option>
+												{#each accounts as a (a.name)}
+													<option value={a.name}>{a.name}</option>
+												{/each}
+												{#if p.account && !accounts.some((a) => a.name === p.account)}
+													<option value={p.account}>{p.account} (missing)</option>
+												{/if}
+											</select>
+											{#if problem}<span class="text-xs text-warning">{problem}</span>{/if}
+										</label>
+									{/if}
 									<div class="mt-2">
 										<span class="text-xs font-medium opacity-70">Automation</span>
 										<label class="mt-1 flex cursor-pointer items-center gap-2 text-sm">

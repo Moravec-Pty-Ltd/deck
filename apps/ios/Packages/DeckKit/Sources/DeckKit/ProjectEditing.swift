@@ -7,8 +7,11 @@ public struct ProjectDraft: Equatable, Sendable {
 	public var group: String
 	public var template: String
 	public var reviewPrompt: String
+	/// A Claude account name; empty is the built-in Default.
+	public var account: String
 
-	public init(name: String = "", group: String = "", template: String = "", reviewPrompt: String = "") {
+	public init(name: String = "", group: String = "", template: String = "", reviewPrompt: String = "", account: String = "") {
+		self.account = account
 		self.name = name
 		self.group = group
 		self.template = template
@@ -21,18 +24,20 @@ public struct ProjectDraft: Equatable, Sendable {
 			name: detail?.name ?? project.name,
 			group: detail?.group ?? project.group ?? "",
 			template: detail?.template ?? "",
-			reviewPrompt: detail?.reviewPrompt ?? "")
+			reviewPrompt: detail?.reviewPrompt ?? "",
+			account: detail?.account ?? "")
 	}
 
 	/// The changed fields, trimmed the way the server stores them. A blank
-	/// group or prompt clears it; a blank name is left out, because the server
+	/// group, prompt or account clears it; a blank name is left out, because the server
 	/// would keep the old one anyway.
 	public func changes(from original: ProjectDraft) -> [String: String] {
 		var body: [String: String] = [:]
 		let pairs: [(String, String, String)] = [
 			("group", group, original.group),
 			("template", template, original.template),
-			("reviewPrompt", reviewPrompt, original.reviewPrompt)
+			("reviewPrompt", reviewPrompt, original.reviewPrompt),
+			("account", account, original.account)
 		]
 		for (key, value, old) in pairs where trim(value) != trim(old) {
 			body[key] = trim(value)
