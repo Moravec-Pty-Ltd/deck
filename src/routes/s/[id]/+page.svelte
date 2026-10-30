@@ -16,6 +16,7 @@
 	import NewSessionModal from '$lib/components/NewSessionModal.svelte';
 	import PrMenu from '$lib/components/PrMenu.svelte';
 	import IssueMenu from '$lib/components/IssueMenu.svelte';
+	import AccountChip from '$lib/components/AccountChip.svelte';
 	import AgentMenu from '$lib/components/AgentMenu.svelte';
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
 	import EffortMenu from '$lib/components/EffortMenu.svelte';
@@ -510,6 +511,7 @@
 					<IssueMenu issues={issueChips} />
 				{/if}
 				{#if !prOnFlatHalf}{@render prMenu()}{/if}
+				<AccountChip {session} class="header-chip max-w-40" />
 				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
 			</div>
 			<div class="flex items-center gap-2">

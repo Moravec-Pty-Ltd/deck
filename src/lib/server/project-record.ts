@@ -6,6 +6,7 @@ import { addProject, listProjects, removeProject } from './store';
 import { completeDirs, expandTilde } from './fsutil';
 import { isPickerAllowed } from './confine';
 import { objectBody } from './http';
+import { accountExists } from './accounts';
 import { buildProjectRecord, homeRegistrationRefusal } from './project-record-core';
 
 // Project registration and config handlers. Register and remove are shared
@@ -32,11 +33,17 @@ function findProject(path: string): Project | undefined {
 }
 
 function build(body: Record<string, unknown>, dir: string, existing?: Project): Project {
+	let project: Project;
 	try {
-		return buildProjectRecord(body, dir, existing);
+		project = buildProjectRecord(body, dir, existing);
 	} catch (e) {
 		error(400, e instanceof Error ? e.message : 'invalid project');
 	}
+	// A stored name that has since been deleted may stay; a newly sent one must exist.
+	if (body.account !== undefined && project.account && !accountExists(project.account)) {
+		error(400, `no account named ${project.account}`);
+	}
+	return project;
 }
 
 // A new project's stored path: canonical, so a symlink can't later be swapped

@@ -140,6 +140,7 @@ public struct ProjectEditorForm<Extra: View>: View {
 	@State private var draft = ProjectDraft()
 	@State private var original = ProjectDraft()
 	@State private var loaded = false
+	@State private var accounts: [ClaudeAccount] = []
 	@State private var isSaving = false
 	@State private var errorMessage: String?
 	@State private var confirmRemove = false
@@ -206,6 +207,16 @@ public struct ProjectEditorForm<Extra: View>: View {
 			NavigationLink("Dev servers") { DevConfigEditor(project: project) }
 		}
 		Section {
+			Picker("Claude account", selection: $draft.account) {
+				Text("Default").tag("")
+				ForEach(accountNames, id: \.self) { Text($0).tag($0) }
+			}
+		} footer: {
+			if let problem = accounts.first(where: { $0.name == draft.account && !$0.ready }) {
+				Text(problem.problem ?? "\(problem.name) is not ready.")
+			}
+		}
+		Section {
 			TextField("Default first prompt (optional)", text: $draft.template, axis: .vertical)
 				.lineLimit(3...12)
 		} header: {
@@ -223,7 +234,15 @@ public struct ProjectEditorForm<Extra: View>: View {
 		}
 	}
 
+	/// The fetched accounts, plus the saved one if the fetch failed or dropped it.
+	private var accountNames: [String] {
+		var names = accounts.map(\.name)
+		if !draft.account.isEmpty, !names.contains(draft.account) { names.append(draft.account) }
+		return names
+	}
+
 	private func load() async {
+		accounts = (try? await store.client?.accounts()) ?? []
 		// Once: coming back from a pushed screen keeps unsaved edits.
 		guard !loaded else { return }
 		if store.supports(.projectConfig), store.projectDetails[project.path] == nil {

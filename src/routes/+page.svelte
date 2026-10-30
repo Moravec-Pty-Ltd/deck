@@ -20,6 +20,7 @@
 	import QrModal from '$lib/components/QrModal.svelte';
 	import PairApprovals from '$lib/components/PairApprovals.svelte';
 	import IssueChip from '$lib/components/IssueChip.svelte';
+	import AccountChip from '$lib/components/AccountChip.svelte';
 	import { Bot, Terminal, Plus, Trash2, RefreshCw, FolderGit2, FolderTree, Activity, QrCode, ChevronRight, ChevronDown, X, Square, SquareCheckBig, Eye, EyeOff, CheckCheck } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
@@ -284,6 +285,7 @@
 			</span>
 			<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>
 		</a>
+		<AccountChip session={s} class="max-w-32 max-sm:hidden" />
 		<IssueChip issues={s.issues ?? []} class="max-sm:hidden" />
 		{#if !s.hidden}
 			<button

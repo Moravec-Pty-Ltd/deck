@@ -38,6 +38,9 @@ public struct SessionRow: View {
 					if let model = session.model, !model.isEmpty {
 						Text("· \(model)")
 					}
+					if (session.kind ?? "claude") == "claude", let account = session.account, !account.isEmpty {
+						Text("· \(account)")
+					}
 				}
 				.font(.caption)
 				.foregroundStyle(.secondary)

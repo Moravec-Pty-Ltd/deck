@@ -105,6 +105,11 @@ public final class DeckClient: @unchecked Sendable {
 		try await get("/api/agent/projects/config")
 	}
 
+	/// The named Claude accounts a project's sessions can use.
+	public func accounts() async throws -> [ClaudeAccount] {
+		try await get("/api/agent/accounts")
+	}
+
 	/// Save a project's automation config. The PATCH changes only the fields it
 	/// names, so nothing else on the record needs to ride along.
 	@discardableResult

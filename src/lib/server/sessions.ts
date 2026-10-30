@@ -198,6 +198,7 @@ export async function createSession(input: {
 	provider?: string;
 	effort?: DeckSession['effort'];
 	permissionMode?: DeckSession['permissionMode'];
+	account?: string;
 	command?: string;
 	worktree?: { repo: string; branch: string; createdBranch: boolean; base?: string };
 	issues?: SessionIssue[];
@@ -232,6 +233,8 @@ export async function createSession(input: {
 	if (isAgentKind(input.kind)) {
 		session.model = input.model || undefined;
 		session.provider = input.provider || undefined;
+		// Kept on every agent kind so a later handoff to claude still runs under it.
+		session.account = input.account || undefined;
 		if (input.kind === 'claude') {
 			session.permissionMode = input.permissionMode ?? 'acceptEdits';
 			session.effort = input.effort || undefined;

@@ -9,6 +9,7 @@
 	import PairApprovals from '$lib/components/PairApprovals.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
 	import ZedSettings from '$lib/components/ZedSettings.svelte';
+	import ClaudeAccounts from '$lib/components/ClaudeAccounts.svelte';
 
 	const SECTIONS = {
 		theme: { title: 'Theme', description: 'How deck looks on this device. Saved in this browser only.' },
@@ -20,6 +21,10 @@
 			title: 'Watch operator',
 			description:
 				'The model behind the hands-free operator on Apple Watch, which cannot run one on the device.'
+		},
+		accounts: {
+			title: 'Claude accounts',
+			description: 'Other Claude logins or API keys, so a project can run its sessions under the account its client provides.'
 		},
 		compact: {
 			title: 'Auto-compact',
@@ -106,6 +111,10 @@
 
 		<SettingsSection id="operator" {...SECTIONS.operator}>
 			<OperatorSettings />
+		</SettingsSection>
+
+		<SettingsSection id="accounts" {...SECTIONS.accounts}>
+			<ClaudeAccounts />
 		</SettingsSection>
 
 		<SettingsSection id="compact" {...SECTIONS.compact}>

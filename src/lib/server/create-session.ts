@@ -9,6 +9,7 @@ import { agentSend } from './agents/dispatch';
 import { appendEvent } from './claude';
 import { listProjects, updateProject, rememberModel, rememberEffort, updateSession } from './store';
 import { parseEffort } from './session-effort-core';
+import { accountProblem } from './accounts';
 import { expandTilde } from './fsutil';
 import { resolveWithinProjects, projectForPath } from './confine';
 import { conflictMessage, isWorktreeFix, worktreeConflict } from '$lib/worktree-conflict';
@@ -317,6 +318,13 @@ function refreshIssueTitles(session: DeckSession, titles: Record<string, string>
 	updateSession(session.id, { issues: issues.map((i) => (titles[i.id] ? { ...i, title: titles[i.id] } : i)) });
 }
 
+// The account of the project the session starts in, fixed on the session at
+// creation so a later change to the project's account leaves it alone.
+function projectAccount(cwd: string): string | undefined {
+	const path = projectForPath(cwd);
+	return listProjects().find((p) => p.path === path)?.account;
+}
+
 // Record this create's model/effort as the project's (and globally, the
 // last-used) pick, so the next manual create defaults to it.
 function rememberPicks(
@@ -360,6 +368,11 @@ export async function createSessionFromRequest(
 	const effortLevel = safeEffort(effort, kind);
 
 	const startCwd = resolveCwd(body.cwd);
+	const account = isAgentKind(kind) ? projectAccount(startCwd) : undefined;
+	if (kind === 'claude') {
+		const problem = await accountProblem(account);
+		if (problem) error(400, problem);
+	}
 	const { cwd, worktree, branch } = await resolveWorktree(startCwd, body as { worktree?: WorktreeReq });
 	const picked = parseIssues(body);
 	const pr = parsePr(body.pr);
@@ -372,6 +385,7 @@ export async function createSessionFromRequest(
 		provider,
 		effort: effortLevel,
 		permissionMode,
+		account,
 		command,
 		worktree,
 		issues: picked.map((p) => ({ ...p.issue, ...(p.sourceId ? { sourceId: p.sourceId } : {}) })),
