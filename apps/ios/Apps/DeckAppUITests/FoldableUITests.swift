@@ -398,16 +398,50 @@ final class FoldableUITests: XCTestCase {
 		app.buttons["Open beside"].tap()
 		let closes = app.buttons.matching(identifier: "closePane")
 		XCTAssertTrue(closes.element(boundBy: 1).waitForExistence(timeout: 20), "no second session\n\(app.debugDescription.prefix(3000))")
-		sleep(1)
-		let transcripts = app.scrollViews.matching(identifier: "transcript").allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
-		let edge = Self.dividerX(in: app)
-		XCTAssertEqual(transcripts.count, 2)
-		XCTAssertEqual(transcripts[0].maxX, edge, accuracy: 2, "two up, the left session reaches the divider")
-		XCTAssertEqual(transcripts[1].minX, edge, accuracy: 2, "two up, the right session starts at the divider")
-		XCTAssertEqual(transcripts[1].maxX, Self.railEdge(in: app), accuracy: 2, "two up, the right session reaches the rail")
+		assertTwoUpFill(app, "two up")
 		closes.allElementsBoundByIndex.min { $0.frame.minX < $1.frame.minX }?.tap()
 		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
 		assertPanesFill(app, "with the second session closed")
+	}
+
+	/// Opened flat, the list's rows and the session fill their panes after the
+	/// divider is dragged in and out, and with a second session. An iPad told
+	/// it is open flat stands in for the Duo, whose simulator boots folded.
+	func testPanesFillTheirWidthAfterDividerDrags() throws {
+		guard Self.isFoldable || UIDevice.current.userInterfaceIdiom == .pad else {
+			throw XCTSkip("opened flat needs the iPhone Duo or an iPad simulator")
+		}
+		let app = try Self.launch(environment: ["DECK_HINGE": "fullyOpen"])
+		let window = app.windows.firstMatch.frame
+		guard window.width > 700 else { throw XCTSkip("the simulator booted folded") }
+		// The divider, not the list's bar: two up, the list is not showing.
+		addTeardownBlock {
+			let divider = app.descendants(matching: .any).matching(identifier: "foldDivider").firstMatch
+			if divider.exists, abs(divider.frame.midX - window.midX) > 2 { Self.dragDivider(to: window.midX, in: app) }
+		}
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = Self.listItem("long transcript", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the seeded session")
+		row.tap()
+		XCTAssertTrue(app.staticTexts["Reply 60, the latest message."].waitForExistence(timeout: 20))
+		assertPanesFill(app, "opened")
+
+		Self.dragDivider(to: window.minX + 40, in: app)
+		assertPanesFill(app, "at the minimum")
+		Self.dragDivider(to: window.maxX - 40, in: app)
+		assertPanesFill(app, "from the minimum to the maximum")
+		Self.dragDivider(to: window.midX - 15, in: app)
+		assertPanesFill(app, "snapped back to the fold")
+
+		Self.listItem("Yolo badge in session header", in: app).press(forDuration: 1)
+		app.buttons["Open beside"].tap()
+		let closes = app.buttons.matching(identifier: "closePane")
+		XCTAssertTrue(closes.element(boundBy: 1).waitForExistence(timeout: 20))
+		Self.dragDivider(to: window.maxX - 40, in: app)
+		assertTwoUpFill(app, "two up, widened by the divider")
+		closes.allElementsBoundByIndex.min { $0.frame.minX < $1.frame.minX }?.tap()
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
+		assertPanesFill(app, "with the second session closed after a drag")
 	}
 
 	/// Folding with a session open shows that session on the outer display,
@@ -451,6 +485,27 @@ final class FoldableUITests: XCTestCase {
 			Self.post("deck.hinge.fullyOpen")
 			XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
 		}
+	}
+
+	/// Two sessions side by side: each spans its pane, the left to the
+	/// divider and the right from the divider to the rail, composers too.
+	private func assertTwoUpFill(_ app: XCUIApplication, _ step: String, file: StaticString = #filePath, line: UInt = #line) {
+		sleep(1)
+		let edge = Self.dividerX(in: app), rail = Self.railEdge(in: app)
+		let frames = { (id: String, type: XCUIElement.ElementType) in
+			app.descendants(matching: type).matching(identifier: id).allElementsBoundByIndex.map(\.frame).sorted { $0.minX < $1.minX }
+		}
+		let transcripts = frames("transcript", .scrollView), composers = frames("sessionComposer", .textView)
+		XCTAssertEqual(transcripts.count, 2, "\(step): two sessions", file: file, line: line)
+		XCTAssertEqual(composers.count, 2, "\(step): two composers", file: file, line: line)
+		guard transcripts.count == 2, composers.count == 2 else { return }
+		XCTAssertEqual(transcripts[0].maxX, edge, accuracy: 2, "\(step): the left session reaches the divider", file: file, line: line)
+		XCTAssertEqual(transcripts[1].minX, edge, accuracy: 2, "\(step): the right session starts at the divider", file: file, line: line)
+		XCTAssertEqual(transcripts[1].maxX, rail, accuracy: 2, "\(step): the right session reaches the rail", file: file, line: line)
+		XCTAssertLessThan(composers[0].minX, 40, "\(step): the left composer starts at the window's edge", file: file, line: line)
+		XCTAssertGreaterThan(composers[0].maxX, edge - 140, "\(step): the left composer spans its pane", file: file, line: line)
+		XCTAssertLessThan(composers[1].minX, edge + 40, "\(step): the right composer starts at the divider", file: file, line: line)
+		XCTAssertGreaterThan(composers[1].maxX, rail - 140, "\(step): the right composer spans its pane", file: file, line: line)
 	}
 
 	/// The list's rows reach the divider, and the session spans from the

@@ -31,7 +31,6 @@ struct SessionsView: View {
 	/// Bumped when the window's bottom safe area changes, to build the fold's
 	/// session pane again (see below).
 	@State private var paneBuild = 0
-	@State private var railWidth: CGFloat = 0
 	/// Where the divider was let go on the fold, 0 for the fold itself.
 	@AppStorage(FoldSplit.storageKey) private var listWidth = 0.0
 	/// The list pane's width while the divider is being dragged; a cancelled
@@ -68,10 +67,19 @@ struct SessionsView: View {
 
 	private var wide: Bool { sizeClass == .regular && !hinge.isTabletop }
 
+	private var split: Bool { hinge.splitWidth(sizeClass) != nil }
+
 	/// The list pane's width on the fold: half the window, or where the
-	/// divider was dragged.
-	private var foldWidth: CGFloat? {
-		hinge.splitWidth(sizeClass).map { _ in dragWidth ?? FoldSplit.width(listWidth, window: hinge.windowSize.width) }
+	/// divider was dragged. Takes the width from the layout it sizes: the
+	/// monitor's window size arrives an update later, and unfolding, the first
+	/// layout framed the list for the outer display and its rows kept that.
+	private func foldWidth(_ window: CGFloat) -> CGFloat? {
+		split ? dragWidth ?? FoldSplit.width(listWidth, window: window) : nil
+	}
+
+	/// Where across the window a pane on the fold runs, for its popovers.
+	private func foldPane(_ pane: Pane, window: CGFloat, rail: CGFloat) -> ClosedRange<CGFloat>? {
+		foldWidth(window).map { pane == .beside ? 0...$0 : min($0 + 1, window - rail)...(window - rail) }
 	}
 
 	private var twoUp: Bool { wide && beside != nil }
@@ -86,7 +94,7 @@ struct SessionsView: View {
 	/// The open session's model, on the fold with one session showing: the
 	/// one its pane uses, so the list pane can show that session's activity.
 	private var foldModel: SessionDetailViewModel? {
-		guard wide, foldWidth != nil, !twoUp, let open else { return nil }
+		guard wide, split, !twoUp, let open else { return nil }
 		return models.model(for: open, pane: .main, store: store)
 	}
 
@@ -102,19 +110,23 @@ struct SessionsView: View {
 	var body: some View {
 		Group {
 			if twoUp {
-				clearOfRail(HStack(spacing: 0) {
-					NavigationStack {
-						if let beside { session(beside, pane: .beside) }
+				clearOfRail { window, rail in
+					HStack(spacing: 0) {
+						NavigationStack {
+							if let beside { session(beside, pane: .beside) }
+						}
+						.frame(width: foldWidth(window))
+						.frame(maxWidth: foldWidth(window) ?? .infinity)
+						.environment(\.foldPane, foldPane(.beside, window: window, rail: rail))
+						.overlay(alignment: .top) { focusBar(.beside) }
+						foldDivider(window)
+						NavigationStack { detail }
+							.frame(maxWidth: .infinity)
+							.environment(\.foldPane, foldPane(.main, window: window, rail: rail))
+							.overlay(alignment: .top) { focusBar(.main) }
 					}
-					.frame(width: foldWidth)
-					.frame(maxWidth: foldWidth ?? .infinity)
-					.overlay(alignment: .top) { focusBar(.beside) }
-					foldDivider
-					NavigationStack { detail }
-						.frame(maxWidth: .infinity)
-						.overlay(alignment: .top) { focusBar(.main) }
-				})
-			} else if wide, foldWidth == nil {
+				}
+			} else if wide, !split {
 				NavigationSplitView(columnVisibility: $columns) {
 					sidebar
 						.navigationSplitViewColumnWidth(min: 260, ideal: 360, max: 560)
@@ -127,27 +139,30 @@ struct SessionsView: View {
 			} else {
 				// The phone's list and the fold's left half are one stack, so
 				// folding and unfolding keep the list where it was.
-				clearOfRail(HStack(spacing: 0) {
-					NavigationStack(path: phonePath) {
-						if activityInListPane, let foldModel {
-							activityPane(foldModel)
-						} else {
-							sidebar.navigationDestination(for: SessionTarget.self) { target in
-								session(target)
+				clearOfRail { window, rail in
+					HStack(spacing: 0) {
+						NavigationStack(path: phonePath) {
+							if activityInListPane, let foldModel {
+								activityPane(foldModel)
+							} else {
+								sidebar.navigationDestination(for: SessionTarget.self) { target in
+									session(target)
+								}
 							}
 						}
+						.frame(width: wide ? foldWidth(window) : nil)
+						if wide {
+							foldDivider(window)
+							// Built again once the window's bottom safe area settles: unfolding,
+							// the system first reports most of the window as bottom safe
+							// area, the pane keeps it, and the session is squeezed to its
+							// composer.
+							NavigationStack { detail }
+								.id(paneBuild)
+								.environment(\.foldPane, foldPane(.main, window: window, rail: rail))
+						}
 					}
-					.frame(width: wide ? foldWidth : nil)
-					if wide {
-						foldDivider
-						// Built again once the window's bottom safe area settles: unfolding,
-						// the system first reports most of the window as bottom safe
-						// area, the pane keeps it, and the session is squeezed to its
-						// composer.
-						NavigationStack { detail }
-							.id(paneBuild)
-					}
-				})
+				}
 			}
 		}
 		.onChange(of: hinge.bottomInset) { if wide { paneBuild += 1 } }
@@ -200,9 +215,8 @@ struct SessionsView: View {
 
 	/// The line between the fold's panes, which a drag moves within
 	/// FoldSplit's limits; let go near the fold, it snaps back to it.
-	@ViewBuilder private var foldDivider: some View {
-		if let foldWidth {
-			let window = hinge.windowSize.width
+	@ViewBuilder private func foldDivider(_ window: CGFloat) -> some View {
+		if let foldWidth = foldWidth(window) {
 			let settled = FoldSplit.width(listWidth, window: window)
 			Divider()
 				.overlay {
@@ -238,12 +252,14 @@ struct SessionsView: View {
 	/// along the trailing edge as a safe area inset. Reaching under it, the
 	/// session's bar handed its buttons to the rail's column and its working
 	/// row ran under the rail; the left pane took the rail's inset too and
-	/// stopped short of the fold.
-	private func clearOfRail(_ content: some View) -> some View {
-		content
-			.padding(.trailing, railWidth)
-			.ignoresSafeArea(.container, edges: .trailing)
-			.onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.trailing } action: { railWidth = $0 }
+	/// stopped short of the fold. Hands the content the window's width and the
+	/// rail's from the same layout pass, so neither is a size from before.
+	private func clearOfRail(_ content: @escaping (_ window: CGFloat, _ rail: CGFloat) -> some View) -> some View {
+		GeometryReader { geometry in
+			content(geometry.size.width, geometry.safeAreaInsets.trailing)
+				.padding(.trailing, geometry.safeAreaInsets.trailing)
+		}
+		.ignoresSafeArea(.container, edges: .trailing)
 	}
 
 	/// The active pane's mark, along its top edge above its title.
@@ -282,7 +298,6 @@ struct SessionsView: View {
 			onActivate: twoUp ? { focusedPane = pane } : nil,
 			embedsActivity: !(pane == .main && activityInListPane)
 		)
-		.environment(\.foldPane, foldWidth.map { pane == .beside ? 0...$0 : min($0 + 1, hinge.windowSize.width - railWidth)...(hinge.windowSize.width - railWidth) })
 		.id(target)
 	}
 
