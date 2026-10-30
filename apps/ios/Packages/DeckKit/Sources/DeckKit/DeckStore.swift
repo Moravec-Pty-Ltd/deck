@@ -800,8 +800,9 @@ public final class DeckStore {
 		try await client.send(sessionId: sessionId, text: text, voice: voice)
 	}
 
-	public func stop(sessionId: String) async throws {
+	@discardableResult
+	public func stop(sessionId: String, force: Bool = false) async throws -> StopResponse {
 		guard let client else { throw DeckError.notConfigured }
-		try await client.stop(sessionId: sessionId)
+		return try await client.stop(sessionId: sessionId, force: force)
 	}
 }

@@ -277,3 +277,18 @@ describe('runTurn while the CLI is starting', () => {
 		expect(runner.turnRunning(id)).toBe(true);
 	});
 });
+
+describe('forceStopTurn', () => {
+	it('SIGKILLs a turn that ignored the stop and ends it once', async () => {
+		const id = `s_force_${seq}`;
+		const child = await startTurn(id);
+		expect(runner.forceStopTurn(id)).toBe(true);
+		child.emit('exit', null, 'SIGKILL');
+
+		expect(child.killed).toEqual(['SIGTERM', 'SIGKILL']);
+		expect(runner.turnRunning(id)).toBe(false);
+		expect(statuses()).toEqual(['running', 'idle']);
+		expect(appended('result')).toHaveLength(1);
+		expect(notify).not.toHaveBeenCalled();
+	});
+});

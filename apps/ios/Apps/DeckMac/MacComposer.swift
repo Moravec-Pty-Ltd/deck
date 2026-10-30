@@ -12,7 +12,10 @@ struct MacComposer: View {
 	@Binding var images: [DeckImage]
 	let sending: Bool
 	var working = false
+	var stopping = false
+	var canForceStop = false
 	var onStop: () -> Void = {}
+	var onForceStop: () -> Void = {}
 	var onSend: () -> Void
 	var onQuickMessage: (String) -> Void
 	var onManageQuickMessages: () -> Void
@@ -97,11 +100,20 @@ struct MacComposer: View {
 
 	private var status: some View {
 		HStack {
-			WorkingLabel()
+			if stopping {
+				Text("Stopping…").foregroundStyle(.secondary)
+			} else {
+				WorkingLabel()
+			}
 			Spacer()
+			if canForceStop {
+				Button("Force stop", role: .destructive, action: onForceStop)
+					.controlSize(.small)
+			}
 			// ⌘. is the Session menu's Stop (DeckCommands).
 			Button("Stop", systemImage: "stop.circle", action: onStop)
 				.controlSize(.small)
+				.disabled(stopping)
 				.help("Stop this turn (⌘.)")
 		}
 	}

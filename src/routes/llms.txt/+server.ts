@@ -583,7 +583,11 @@ other runtimes return 400 rather than silently discarding attachments.
 
 ### POST /api/agent/sessions/{id}/stop
 
-Interrupt the in-flight turn (empty body). Returns \`{ "ok": true }\`.
+Interrupt the in-flight turn (empty body). \`{ "force": true }\` ends the agent
+process instead, for a turn that ignores the interrupt; the next message resumes
+the session. Returns \`{ "ok": true, "outcome": "interrupted" | "nothing-running" | "not-tracked" }\`:
+\`not-tracked\` means the session was marked running with no live turn behind
+it, and is now idle. An interrupted turn stays running until it ends.
 
 ### POST /api/agent/sessions/{id}/agent
 Switch coding agents between turns. Body: { "kind": "claude" | "codex" | "pi" | "opencode" }.

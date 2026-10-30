@@ -321,6 +321,18 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(handoff, "agent claude → pi")
 	}
 
+	func testStopDecodesTheOutcomeAndForceSendsTheFlag() async throws {
+		var result: StopResponse?
+		var sent = await requests(reply: #"{"ok":true,"outcome":"nothing-running"}"#) {
+			result = try await $0.stop(sessionId: "example")
+		}
+		assertShape(sent, "POST", "/api/agent/sessions/example/stop", keys: [])
+		XCTAssertEqual(result?.outcome, "nothing-running")
+		sent = await requests { _ = try await $0.stop(sessionId: "example", force: true) }
+		assertShape(sent, "POST", "/api/agent/sessions/example/stop", keys: ["force"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["force"] as? Bool, true)
+	}
+
 	func testStructuredAnswersTravelWithTheAskId() async throws {
 		let client = client { request, body in
 			XCTAssertEqual(request.url?.path, "/api/agent/sessions/example/answer")

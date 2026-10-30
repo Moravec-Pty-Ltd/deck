@@ -120,6 +120,12 @@ async function respond(prompt) {
 			result(started, 'error_during_execution');
 			return;
 		}
+		if (prompt.includes('[hang]')) {
+			out({ type: 'stream_event', session_id: sessionId, event: { type: 'message_start' } });
+			// Like a claude stuck on a model request: deaf to interrupt and SIGTERM.
+			process.on('SIGTERM', () => {});
+			await new Promise(() => {});
+		}
 		if (prompt.includes('[tool]')) {
 			const id = `toolu_${randomUUID()}`;
 			assistant([{ type: 'tool_use', id, name: 'Bash', input: { command: 'echo fake', description: 'Echo a fake line' } }]);

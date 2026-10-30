@@ -33,6 +33,7 @@ interrupt ends the turn. Keywords in the prompt pick the reply:
 | `[background:<seconds>]` | reports a running background task, replies, then reports it finished after that many seconds |
 | `[background-agent:<seconds>]` | the same for a background `Agent` call, with its `task_started` and `task_notification` events |
 | `[slow]` | starts a turn and waits until interrupted, so Working and Stop show |
+| `[hang]` | starts a turn that ignores the interrupt and SIGTERM, so only Force stop ends it |
 | `[error]` | an error message and an `error_during_execution` result |
 | `[file:<path>]` | a reply naming each path, so deck previews the files |
 | `[ask]` | calls deck's MCP `ask` tool and replies with the answer |

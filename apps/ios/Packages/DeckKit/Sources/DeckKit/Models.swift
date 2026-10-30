@@ -392,6 +392,13 @@ public struct MessageResponse: Codable, Sendable {
 	public let seq: Int?
 }
 
+/// `outcome` is "interrupted" while a live turn took the stop; any other value
+/// means nothing was running and the server has the session idle.
+public struct StopResponse: Codable, Sendable {
+	public let ok: Bool
+	public let outcome: String?
+}
+
 public struct AnswerResponse: Codable, Sendable {
 	public let ok: Bool
 	public let seq: Int?

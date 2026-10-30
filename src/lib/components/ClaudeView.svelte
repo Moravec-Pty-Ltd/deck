@@ -322,6 +322,7 @@
 		// Clear the previous session synchronously so its history and live stream
 		// can't bleed into this one while the new snapshot is in flight.
 		untrack(() => voice.disable());
+		clearStop();
 		events = [];
 		cost = emptyCostSummary();
 		context = emptyContext();
@@ -887,8 +888,32 @@
 		if (!input.trim()) input = text;
 	}
 
-	async function interrupt() {
-		await agentPost(sessionPath(session.id, 'stop')).catch(() => {});
+	// Stop shows Stopping… until the turn ends, and offers Force stop if it
+	// still runs a few seconds on (issue #361).
+	let stopping = $state(false);
+	let forceable = $state(false);
+	let forceTimer: ReturnType<typeof setTimeout> | undefined;
+	function clearStop() {
+		stopping = false;
+		forceable = false;
+		clearTimeout(forceTimer);
+	}
+	$effect(() => {
+		if (status !== 'running') clearStop();
+	});
+
+	async function interrupt(force = false) {
+		// The voice bar stops speech this way too, with no turn to wait on.
+		stopping = status === 'running';
+		forceable = false;
+		clearTimeout(forceTimer);
+		forceTimer = setTimeout(() => (forceable = stopping), 5000);
+		const id = session.id;
+		const res = await agentPost<{ outcome?: string }>(sessionPath(id, 'stop'), force ? { force } : {}).catch(() => undefined);
+		if (res?.outcome === 'interrupted' || id !== session.id) return;
+		clearStop();
+		// No turn to stop: the server is not running one, whatever this view showed.
+		if (res) status = 'idle';
 	}
 
 	function onKeydown(e: KeyboardEvent) {
@@ -1138,10 +1163,16 @@
 	<div role="status">
 		{#if status === 'running'}
 			<div class="-mx-2 flex items-center gap-2 border-t border-base-300 px-3 py-1 text-sm">
-				<span class="opacity-60">Working…</span>
-				<button class="btn btn-error btn-xs ml-auto" onclick={interrupt}>
-					<Square size={12} /> Stop
-				</button>
+				<span class="opacity-60">{stopping ? 'Stopping…' : 'Working…'}</span>
+				{#if forceable}
+					<button class="btn btn-error btn-xs ml-auto" onclick={() => interrupt(true)}>
+						<Square size={12} /> Force stop
+					</button>
+				{:else}
+					<button class="btn btn-error btn-xs ml-auto" onclick={() => interrupt()} disabled={stopping}>
+						<Square size={12} /> Stop
+					</button>
+				{/if}
 			</div>
 		{/if}
 	</div>
