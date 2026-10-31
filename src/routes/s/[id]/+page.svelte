@@ -679,8 +679,12 @@
 			onclick={() => (sidebarOpen = false)}
 			aria-label="Close sessions"
 		></button>
+		<!-- The drawer sits at the screen's edge, so on a phone it keeps clear of a
+		     notch or Dynamic Island itself (the page's own safe-area padding can't
+		     reach a fixed layer). -->
 		<div
 			class="absolute inset-y-0 left-0 w-72 max-w-[80%] overflow-y-auto border-r border-base-300 bg-base-100 p-3"
+			style="padding-left: max(0.75rem, env(safe-area-inset-left)); padding-top: max(0.75rem, env(safe-area-inset-top)); padding-bottom: max(0.75rem, env(safe-area-inset-bottom))"
 		>
 			<div class="mb-2 flex justify-end">
 				<button class="btn btn-ghost btn-sm" onclick={() => (sidebarOpen = false)} aria-label="Close">
