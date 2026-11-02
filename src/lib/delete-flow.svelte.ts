@@ -2,7 +2,7 @@ import { confirmAction } from '$lib/confirm.svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import type { SessionView } from '$lib/session-view';
 import { ownsWorktreeBranch } from '$lib/pr';
-import { batchErrorMessage, deleteSequentially } from '$lib/delete-flow-core';
+import { batchErrorMessage, deleteLabel, deleteSequentially, runningWarning } from '$lib/delete-flow-core';
 import { agentDelete, sessionPath } from '$lib/agent-api';
 
 export async function requestDelete(
@@ -53,7 +53,8 @@ export class DeleteFlow {
 		const ok = await confirmAction({
 			title: `Remove "${s.title}"?`,
 			body: 'Kills the session and removes it from deck.',
-			confirmLabel: 'Remove',
+			warning: runningWarning([s]),
+			confirmLabel: deleteLabel([s], 'Remove'),
 			danger: true
 		});
 		if (ok) this.run(s, {});

@@ -17,6 +17,7 @@
 	icon={c?.danger ? TriangleAlert : undefined}
 	iconClass="text-error"
 >
+	{#if c?.warning}<div role="alert" class="alert alert-warning mb-3 py-2 text-sm">{c.warning}</div>{/if}
 	{#if c?.body}<p class="text-sm opacity-70">{c.body}</p>{/if}
 	{#snippet footer()}
 		<button class="btn" onclick={() => settle(false)}>{c?.cancelLabel ?? 'Cancel'}</button>

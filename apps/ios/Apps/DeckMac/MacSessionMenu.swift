@@ -143,7 +143,7 @@ struct MacSessionSheetContent: View {
 	private var content: some View {
 		switch sheet {
 		case .delete:
-			DeleteSessionSheet(hasWorktree: session?.worktree != nil, name: title) { deleteWorktree, deleteBranch in
+			DeleteSessionSheet(hasWorktree: session?.worktree != nil, name: title, sessions: session.map { [$0] } ?? []) { deleteWorktree, deleteBranch in
 				Task {
 					if await viewModel.delete(deleteWorktree: deleteWorktree, deleteBranch: deleteBranch) { onDeleted?() }
 				}

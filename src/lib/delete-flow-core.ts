@@ -33,3 +33,25 @@ export function batchErrorMessage(failed: SessionView[], total: number): string 
 	if (failed.length === 1) return `Couldn't remove "${failed[0].title}".`;
 	return `Couldn't remove ${failed.length} of ${total} sessions.`;
 }
+
+// Sessions mid-turn. One only waiting on a question is not working, so it gets
+// the normal confirm. Mirrored in DeckKit's DeleteWarning.
+export function runningSessions(list: SessionView[]): SessionView[] {
+	return list.filter((s) => s.status === 'running' && !s.awaitingInput);
+}
+
+// The in-progress warning for a delete confirm, null when nothing is working.
+export function runningWarning(list: SessionView[]): string | null {
+	const running = runningSessions(list);
+	if (running.length === 0) return null;
+	if (list.length === 1)
+		return 'This session is still working. Deleting it stops the current turn and any subagents, and the work in progress is lost.';
+	const n = running.length;
+	return `${n} of these sessions ${n === 1 ? 'is' : 'are'} still working: ${running.map((s) => s.title).join(', ')}.`;
+}
+
+// The confirm button: name the stop when any session is working.
+export function deleteLabel(list: SessionView[], plain: string): string {
+	if (runningSessions(list).length === 0) return plain;
+	return list.length === 1 ? 'Stop and Delete' : `Stop and Delete ${list.length} Sessions`;
+}

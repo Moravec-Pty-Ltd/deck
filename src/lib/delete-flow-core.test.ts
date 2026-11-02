@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionView } from '$lib/session-view';
-import { batchErrorMessage, deleteSequentially } from './delete-flow-core';
+import { batchErrorMessage, deleteLabel, deleteSequentially, runningSessions, runningWarning } from './delete-flow-core';
 
 function session(id: string): SessionView {
 	return { url: '', awaitingInput: false, id, kind: 'claude', title: id, cwd: '/x', createdAt: 0, lastActiveAt: 0, status: 'idle' };
@@ -78,5 +78,41 @@ describe('batchErrorMessage', () => {
 
 	it('counts them against the batch when several failed', () => {
 		expect(batchErrorMessage(batch, 12)).toBe(`Couldn't remove 3 of 12 sessions.`);
+	});
+});
+
+describe('running warning', () => {
+	const at = (id: string, status: SessionView['status'], awaitingInput = false): SessionView => ({
+		...session(id),
+		status,
+		awaitingInput
+	});
+
+	it('counts only sessions mid-turn, not ones waiting on a question', () => {
+		const list = [at('a', 'running'), at('b', 'idle'), at('c', 'running', true)];
+		expect(runningSessions(list).map((s) => s.id)).toEqual(['a']);
+	});
+
+	it('leaves an idle confirm unchanged', () => {
+		expect(runningWarning([at('a', 'idle')])).toBeNull();
+		expect(runningWarning([at('a', 'running', true)])).toBeNull();
+		expect(deleteLabel([at('a', 'idle')], 'Remove')).toBe('Remove');
+	});
+
+	it('warns for one running session', () => {
+		const one = [at('a', 'running')];
+		expect(runningWarning(one)).toBe(
+			'This session is still working. Deleting it stops the current turn and any subagents, and the work in progress is lost.'
+		);
+		expect(deleteLabel(one, 'Remove')).toBe('Stop and Delete');
+	});
+
+	it('names how many and which in a batch', () => {
+		const list = [at('a', 'running'), at('b', 'idle'), at('c', 'running')];
+		expect(runningWarning(list)).toBe('2 of these sessions are still working: a, c.');
+		expect(runningWarning([at('a', 'running'), at('b', 'idle')])).toBe(
+			'1 of these sessions is still working: a.'
+		);
+		expect(deleteLabel(list, 'Remove')).toBe('Stop and Delete 3 Sessions');
 	});
 });

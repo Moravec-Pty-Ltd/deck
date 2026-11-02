@@ -622,7 +622,9 @@ struct SessionsView: View {
 		.sheet(item: $pendingDelete) { request in
 			DeleteSessionSheet(
 				hasWorktree: request.sessions.contains { $0.worktree != nil },
-				count: request.sessions.count
+				count: request.sessions.count,
+				// Live state, so a session that starts a turn while this is open still warns.
+				sessions: request.sessions.map { picked in store.activeSessions.first { $0.id == picked.id } ?? picked }
 			) { deleteWorktree, deleteBranch in
 				Task { await delete(request.sessions, worktree: deleteWorktree, branch: deleteBranch) }
 			}
