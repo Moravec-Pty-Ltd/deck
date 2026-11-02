@@ -292,6 +292,7 @@ describe('live activity pushes', () => {
 		expect(JSON.stringify(push)).toBe(
 			'{"aps":{"timestamp":1800000000,"event":"start","content-state":{"status":"running","awaitingInput":false,"lastText":"Reading the router","costUsd":0.25,"turns":3,"updatedAt":1800000000000},"attributes-type":"SessionActivityAttributes","attributes":{"sessionId":"abc","title":"Fix login","startedAt":821692800},"alert":{"title":"Fix login","body":"Working"}}}'
 		);
+		expect(toActivityStartPush({ id: 'abc', title: 't' }, state, 1_800_000_000_789).aps.attributes.startedAt).toBe(821692800);
 	});
 });
 

@@ -357,7 +357,7 @@ export function toActivityStartPush(
 			event: 'start',
 			'content-state': state,
 			'attributes-type': 'SessionActivityAttributes',
-			attributes: { sessionId: session.id, title: session.title, startedAt: nowMs / 1000 - APPLE_EPOCH_OFFSET_S },
+			attributes: { sessionId: session.id, title: session.title, startedAt: Math.floor(nowMs / 1000) - APPLE_EPOCH_OFFSET_S },
 			alert: { title: session.title, body: state.awaitingInput ? 'Needs your input' : 'Working' }
 		}
 	};
