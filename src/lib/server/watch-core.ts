@@ -5,7 +5,12 @@
 import { z } from 'zod';
 import type { Watch, WatchResult } from '$lib/watches';
 
+// How far ahead a watch may fire. The default keeps a forgotten watch from
+// waking a session days later; DECK_WATCH_MAX_DELAY (see maxDelayFromEnv)
+// raises or lowers it for an install that waits on slower things.
 export const MAX_DELAY_MS = 24 * 60 * 60 * 1000;
+// The setting is clamped here so a typo cannot park a watch for a year.
+export const MAX_DELAY_CEILING_MS = 30 * 24 * 60 * 60 * 1000;
 // A looping agent must not be able to pile watches up.
 export const ACTIVE_CAP = 5;
 export const CHECK_TIMEOUT_MS = 60_000;
@@ -34,13 +39,28 @@ export interface WatchInput {
 	dueAt: number;
 }
 
-const UNIT_MS: Record<string, number> = { h: 3_600_000, m: 60_000, s: 1000 };
+const UNIT_MS: Record<string, number> = { d: 86_400_000, h: 3_600_000, m: 60_000, s: 1000 };
 
-// "30s", "10m", "2h", "1h30m": each unit at most once, largest first.
+// "30s", "10m", "2h", "1h30m", "3d": each unit at most once, largest first.
 export function parseDelay(text: string): number | null {
-	const m = text.trim().toLowerCase().match(/^(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?$/);
-	if (!m || !(m[1] || m[2] || m[3])) return null;
-	return [m[1], m[2], m[3]].reduce((ms, n, i) => ms + Number(n ?? 0) * UNIT_MS['hms'[i]], 0);
+	const m = text.trim().toLowerCase().match(/^(?:(\d+)d)?\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?$/);
+	if (!m || !(m[1] || m[2] || m[3] || m[4])) return null;
+	return [m[1], m[2], m[3], m[4]].reduce((ms, n, i) => ms + Number(n ?? 0) * UNIT_MS['dhms'[i]], 0);
+}
+
+// DECK_WATCH_MAX_DELAY ("72h", "7d"): unset or unreadable keeps the default,
+// anything above the ceiling is clamped to it.
+export function maxDelayFromEnv(value: string | undefined): number {
+	const ms = value?.trim() ? parseDelay(value) : null;
+	if (!ms) return MAX_DELAY_MS;
+	return Math.min(ms, MAX_DELAY_CEILING_MS);
+}
+
+// "24 hours", "7 days", "36 hours": how the limit reads in errors and docs.
+export function describeMaxDelay(ms: number): string {
+	const hours = Math.round(ms / 3_600_000);
+	if (hours >= 48 && hours % 24 === 0) return `${hours / 24} days`;
+	return hours === 1 ? '1 hour' : `${hours} hours`;
 }
 
 function parseAt(at: string | number): number | null {
@@ -48,7 +68,7 @@ function parseAt(at: string | number): number | null {
 	return Number.isFinite(ms) ? ms : null;
 }
 
-export function parseWatchRequest(raw: unknown, now: number): WatchInput {
+export function parseWatchRequest(raw: unknown, now: number, maxDelayMs = MAX_DELAY_MS): WatchInput {
 	const parsed = requestSchema.safeParse(raw);
 	if (!parsed.success) {
 		const issue = parsed.error.issues[0];
@@ -58,7 +78,7 @@ export function parseWatchRequest(raw: unknown, now: number): WatchInput {
 	let dueAt: number;
 	if (r.in !== undefined) {
 		const delay = parseDelay(r.in);
-		if (delay === null) throw new WatchError('in: use a delay like "30s", "10m", "2h" or "1h30m"');
+		if (delay === null) throw new WatchError('in: use a delay like "30s", "10m", "2h", "1h30m" or "2d"');
 		dueAt = now + delay;
 	} else {
 		const at = parseAt(r.at!);
@@ -66,7 +86,7 @@ export function parseWatchRequest(raw: unknown, now: number): WatchInput {
 		dueAt = at;
 	}
 	if (dueAt <= now) throw new WatchError('the watch must fire in the future');
-	if (dueAt - now > MAX_DELAY_MS) throw new WatchError('a watch can fire at most 24 hours from now');
+	if (dueAt - now > maxDelayMs) throw new WatchError(`a watch can fire at most ${describeMaxDelay(maxDelayMs)} from now`);
 	return { title: r.title, prompt: r.prompt, command: r.command || undefined, dueAt };
 }
 

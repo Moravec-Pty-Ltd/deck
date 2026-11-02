@@ -1,5 +1,6 @@
 import type { RequestHandler } from './$types';
-import { baseUrl } from '$lib/server/config';
+import { baseUrl, watchMaxDelayMs } from '$lib/server/config';
+import { describeMaxDelay } from '$lib/server/watch-core';
 import { shippedSkillVersion } from '$lib/server/skills';
 import { AGENT_CAPABILITIES } from '$lib/server/agent-capabilities';
 import { MIN_QUERY_CHARS } from '$lib/search-core';
@@ -991,8 +992,9 @@ not ready yet. One that fell due while deck was down fires on the first poll aft
 The agent sets them through deck's MCP server:
 
 - \`mcp__deck__watch\` \`{ title, prompt, in | at, command? }\`: exactly one of
-  \`in\` (\`"30s"\`, \`"10m"\`, \`"2h"\`, \`"1h30m"\`) or \`at\` (ISO time or epoch
-  ms), at most 24 hours ahead. At most 5 active per session. Returns the id and
+  \`in\` (\`"30s"\`, \`"10m"\`, \`"2h"\`, \`"1h30m"\`, \`"2d"\`) or \`at\` (ISO time or
+  epoch ms), at most ${describeMaxDelay(watchMaxDelayMs)} ahead (\`DECK_WATCH_MAX_DELAY\` on the
+  server, default 24 hours). At most 5 active per session. Returns the id and
   the fire time. A \`command\` runs outside the agent's own permission checks,
   so it is only accepted, and only run, while the session is in
   \`bypassPermissions\` mode; otherwise the watch is refused, or fires with a
