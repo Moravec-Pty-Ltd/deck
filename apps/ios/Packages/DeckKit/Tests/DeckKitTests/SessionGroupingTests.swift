@@ -7,12 +7,21 @@ final class SessionGroupingTests: XCTestCase {
 
 	private func session(
 		_ id: String, status: String = "idle", asking: Bool = false, cwd: String? = nil,
-		agoSeconds: Double = 3600, repo: String? = nil, unread: Bool = false
+		agoSeconds: Double = 3600, repo: String? = nil, unread: Bool = false,
+		dueIn: [Double] = [], subagents: Int? = nil
 	) -> SessionDigest {
 		let worktree = repo.map { #","worktree":{"repo":"\#($0)","branch":"b"}"# } ?? ""
 		let dir = cwd.map { #","cwd":"\#($0)""# } ?? ""
-		let json = #"{"id":"\#(id)","status":"\#(status)","awaitingInput":\#(asking),"lastActiveAt":\#(nowMs - agoSeconds * 1000)\#(dir)\#(worktree)\#(unread ? #","unread":true"# : "")}"#
+		let json = #"{"id":"\#(id)","status":"\#(status)","awaitingInput":\#(asking),"lastActiveAt":\#(nowMs - agoSeconds * 1000)\#(dir)\#(worktree)\#(unread ? #","unread":true"# : "")\#(watchJSON(dueIn))\#(subagents.map { #","subagents":\#($0)"# } ?? "")}"#
 		return try! JSONDecoder().decode(SessionDigest.self, from: Data(json.utf8))
+	}
+
+	private func watchJSON(_ dueIn: [Double]) -> String {
+		if dueIn.isEmpty { return "" }
+		let list = dueIn.enumerated().map { i, d in
+			#"{"id":"w\#(i)","sessionId":"x","title":"t","prompt":"p","createdAt":1,"dueAt":\#(d),"state":"active"}"#
+		}
+		return #","watches":[\#(list.joined(separator: ","))]"#
 	}
 
 	private func project(_ name: String, group: String? = nil) -> DeckProject {
@@ -158,5 +167,51 @@ final class SessionGroupingTests: XCTestCase {
 		let sessions = [session("b", cwd: "/p/beta"), session("a", cwd: "/p/alpha")]
 		let sections = SessionGrouping.byProject(sessions, projects: [project("alpha"), project("beta")])
 		XCTAssertEqual(sections.first?.subgroups.map(\.key), ["/p/alpha", "/p/beta"])
+	}
+
+	func testWaitingSitsBetweenActiveAndJustFinished() {
+		let sections = SessionGrouping.byStatus([
+			session("fresh", agoSeconds: 60), session("wait", dueIn: [5]), session("run", status: "running")
+		], now: now)
+		XCTAssertEqual(sections.map(\.bucket), [.active, .waiting, .justFinished])
+		XCTAssertEqual(SessionGrouping.Bucket.waiting.label, "Waiting")
+	}
+
+	func testWaitingPrecedence() {
+		func bucket(_ s: SessionDigest) -> SessionGrouping.Bucket { SessionGrouping.byStatus([s], now: now)[0].bucket }
+		XCTAssertEqual(bucket(session("a", unread: true, dueIn: [5])), .unread)
+		XCTAssertEqual(bucket(session("b", asking: true, dueIn: [5])), .needsAttention)
+		XCTAssertEqual(bucket(session("c", status: "error", dueIn: [5])), .needsAttention)
+		XCTAssertEqual(bucket(session("d", status: "running", dueIn: [5])), .active)
+		XCTAssertEqual(bucket(session("e", dueIn: [5])), .waiting)
+	}
+
+	func testWaitingOrdersBySoonestWatch() {
+		let sections = SessionGrouping.byStatus([
+			session("late", dueIn: [900]), session("soon", dueIn: [800, 100]), session("mid", dueIn: [500])
+		], now: now)
+		XCTAssertEqual(sections[0].sessions.map(\.id), ["soon", "mid", "late"])
+	}
+
+	func testIdleSessionWithSubagentsIsActive() {
+		XCTAssertEqual(SessionGrouping.byStatus([session("s", subagents: 2)], now: now)[0].bucket, .active)
+	}
+
+	func testIsWorking() {
+		XCTAssertTrue(session("a", status: "running").isWorking)
+		XCTAssertTrue(session("b", subagents: 2).isWorking)
+		XCTAssertFalse(session("c").isWorking)
+		XCTAssertFalse(session("d", subagents: 0).isWorking)
+		XCTAssertFalse(session("e", status: "running", asking: true).isWorking)
+		XCTAssertTrue(session("e", status: "running", asking: true).canStop)
+		XCTAssertTrue(session("b", subagents: 2).canStop)
+		XCTAssertFalse(session("c").canStop)
+	}
+
+	func testWorkingLabelCountsSubagentsOnceTheTurnEnds() {
+		XCTAssertEqual(session("a", status: "running").workingLabel, "Working…")
+		XCTAssertEqual(session("b", status: "running", subagents: 2).workingLabel, "Working…")
+		XCTAssertEqual(session("c", subagents: 1).workingLabel, "1 subagent working")
+		XCTAssertEqual(session("d", subagents: 2).workingLabel, "2 subagents working")
 	}
 }

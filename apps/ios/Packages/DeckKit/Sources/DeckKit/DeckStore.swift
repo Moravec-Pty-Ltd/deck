@@ -534,6 +534,9 @@ public final class DeckStore {
 			if event.type == "watches" {
 				sessions[index].watches = event.watches?.isEmpty == false ? event.watches : nil
 			}
+			if event.type == "subagents" {
+				sessions[index].subagents = (event.subagents ?? 0) > 0 ? event.subagents : nil
+			}
 			if let cost = event.cost { sessions[index].cost = cost }
 			if let at = event.at { sessions[index].lastActiveAt = at }
 		}

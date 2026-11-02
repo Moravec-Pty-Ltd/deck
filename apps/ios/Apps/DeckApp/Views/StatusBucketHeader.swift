@@ -15,6 +15,7 @@ struct StatusBucketHeader: View {
 				case .unread: Circle().fill(.teal)
 				case .needsAttention: Circle().fill(.red)
 				case .active: Circle().fill(Color.accentColor)
+				case .waiting: Circle().fill(.yellow)
 				case .justFinished: Circle().fill(.green)
 				case .idle: Circle().fill(.secondary)
 				case .dead: Circle().stroke(.secondary, lineWidth: 1.5)

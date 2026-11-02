@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionStatus } from '$lib/types';
 import type { SessionView } from '$lib/session-view';
-import { bucketSessions, statusDotClass, statusDotLabel, UNREAD_DOT } from './status-groups';
+import type { Watch } from '$lib/watches';
+import { bucketSessions, isWorking, statusDotClass, statusDotLabel, UNREAD_DOT } from './status-groups';
 
 function session(
 	id: string,
@@ -39,9 +40,10 @@ describe('bucketSessions', () => {
 		]);
 	});
 
-	it('orders buckets needs-attention -> active -> just-finished -> idle -> dead', () => {
+	it('orders buckets needs-attention -> active -> waiting -> just-finished -> idle -> dead', () => {
 		const sessions = [
 			session('dead', 'dead', 1),
+			waiting('wait', NOW, [NOW + 60_000]),
 			session('idle', 'idle', NOW - 30 * 60 * 1000),
 			session('just', 'idle', NOW - 5 * 60 * 1000),
 			session('run', 'running', NOW),
@@ -50,6 +52,7 @@ describe('bucketSessions', () => {
 		expect(bucketSessions(sessions, NOW).map((b) => b.key)).toEqual([
 			'needs-attention',
 			'active',
+			'waiting',
 			'just-finished',
 			'idle',
 			'dead'
@@ -129,6 +132,74 @@ describe('bucketSessions', () => {
 			status: 'idle'
 		} as SessionView;
 		expect(bucketSessions([s]).map((b) => b.key)).toEqual(['idle']);
+	});
+});
+
+function waiting(id: string, lastActiveAt: number, dues: number[], status: SessionStatus = 'idle'): SessionView {
+	const watches = dues.map((dueAt, i) => ({ id: `${id}-${i}`, dueAt }) as Watch);
+	return { ...session(id, status, lastActiveAt), watches };
+}
+
+describe('the Waiting bucket', () => {
+	it('holds a session that ended its turn with a watch set, recently idle or not', () => {
+		const buckets = bucketSessions([waiting('recent', NOW, [NOW + 1]), waiting('old', 1, [NOW + 2])], NOW);
+		expect(buckets.map((x) => x.key)).toEqual(['waiting']);
+		expect(buckets[0].sessions).toHaveLength(2);
+	});
+
+	it('gives way to Unread, Needs attention and Active', () => {
+		const sessions = [
+			{ ...waiting('unread', NOW, [NOW + 1]), unread: true },
+			{ ...waiting('asking', NOW, [NOW + 1]), awaitingInput: true },
+			waiting('err', NOW, [NOW + 1], 'error'),
+			waiting('run', NOW, [NOW + 1], 'running'),
+			{ ...waiting('subs', NOW, [NOW + 1]), subagents: 1 }
+		];
+		expect(bucketSessions(sessions, NOW).map((x) => [x.key, x.sessions.map((s) => s.id).sort()])).toEqual([
+			['unread', ['unread']],
+			['needs-attention', ['asking', 'err']],
+			['active', ['run', 'subs']]
+		]);
+	});
+
+	it('drops an unread session into Waiting once it is read', () => {
+		const read = waiting('s', NOW, [NOW + 1]);
+		expect(bucketSessions([{ ...read, unread: true }], NOW)[0].key).toBe('unread');
+		expect(bucketSessions([read], NOW)[0].key).toBe('waiting');
+	});
+
+	it('leaves a session with no watches left to Just finished', () => {
+		expect(bucketSessions([session('s', 'idle', NOW)], NOW)[0].key).toBe('just-finished');
+	});
+
+	it('puts the session whose watch is due soonest first', () => {
+		const sessions = [
+			waiting('later', NOW, [NOW + 50_000]),
+			waiting('soon', 1, [NOW + 90_000, NOW + 10_000]),
+			waiting('mid', NOW, [NOW + 30_000])
+		];
+		expect(bucketSessions(sessions, NOW)[0].sessions.map((s) => s.id)).toEqual(['soon', 'mid', 'later']);
+	});
+});
+
+describe('isWorking', () => {
+	it('counts a running turn or running subagents, not a question', () => {
+		expect(isWorking({ status: 'running' })).toBe(true);
+		expect(isWorking({ status: 'idle', subagents: 2 })).toBe(true);
+		expect(isWorking({ status: 'running', awaitingInput: true })).toBe(false);
+		expect(isWorking({ status: 'idle', subagents: 2, awaitingInput: true })).toBe(false);
+	});
+
+	it('leaves a session whose only background work is a shell idle', () => {
+		// The server counts subagents only, so a dev server leaves `subagents` unset.
+		expect(isWorking({ status: 'idle' })).toBe(false);
+		expect(isWorking({ status: 'idle', subagents: 0 })).toBe(false);
+	});
+
+	it('spins the dot and sorts into Active while only subagents work', () => {
+		expect(statusDotClass({ status: 'idle', subagents: 2 })).toContain('animate-spin');
+		expect(statusDotLabel({ status: 'idle', subagents: 2 })).toBe('Working');
+		expect(bucketSessions([{ ...session('s', 'idle', 1), subagents: 2 }])[0].key).toBe('active');
 	});
 });
 

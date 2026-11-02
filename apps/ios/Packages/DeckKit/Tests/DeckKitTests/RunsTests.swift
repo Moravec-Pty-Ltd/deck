@@ -260,6 +260,20 @@ final class RunsTests: XCTestCase {
 		XCTAssertNil(store.sessions.first?.watches)
 	}
 
+	func testSubagentsEventSetsAndClearsTheCount() throws {
+		let store = makeStore()
+		func send(_ seq: Int, _ n: Int) throws {
+			store.apply(try JSONDecoder().decode(EventsResponse.self, from: Data("""
+			{ "snapshot": [{ "id": "c_1", "status": "idle" }],
+			  "events": [{ "seq": \(seq), "sessionId": "c_1", "type": "subagents", "subagents": \(n) }], "seq": \(seq) }
+			""".utf8)))
+		}
+		try send(3, 2)
+		XCTAssertEqual(store.sessions.first?.subagents, 2)
+		try send(4, 0)
+		XCTAssertNil(store.sessions.first?.subagents)
+	}
+
 	/// The phase session's own question events never clear a run's question.
 	func testSessionAskEventsLeaveTheRunAskAlone() async throws {
 		let store = makeStore()

@@ -5,7 +5,7 @@ import { emptyCostSummary, foldResult, type CostSummary } from '$lib/session-cos
 import { emptyContext, foldContext, type ContextUsage } from '$lib/context-core';
 import { projectTranscript, type TranscriptMessage } from '$lib/agent-transcript-core';
 import { isAskTool } from '$lib/transcript-groups';
-import { emptyAgents, foldAgents, mayAffectAgents, stopAll, withoutOldReports, type AgentsState } from '$lib/subagents-core';
+import { emptyAgents, foldAgents, mayAffectAgents, runningAgents, stopAll, withoutOldReports, type AgentsState } from '$lib/subagents-core';
 import { whenDrained } from './transcript-writer';
 import { RANGE_MAX } from '$lib/transcript-range-core';
 
@@ -423,6 +423,13 @@ export function sessionAgents(id: string, live = true): AgentsState {
 	const agents = structuredClone(index ? agentsFromIndex(id, index) : emptyAgents());
 	if (!live) stopAll(agents);
 	return agents;
+}
+
+// Task ids of the subagents the transcript shows running. The caller knows
+// whether a process is alive to run them.
+export function runningSubagentIds(id: string): string[] {
+	const index = transcriptIndex(id);
+	return index ? runningAgents(agentsFromIndex(id, index)).map((t) => t.taskId) : [];
 }
 
 // Call `fn` with each line in [from, to) no longer than `max` bytes, read by the

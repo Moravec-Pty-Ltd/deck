@@ -19,13 +19,14 @@ public enum SessionGrouping {
 	// MARK: - By status
 
 	public enum Bucket: String, CaseIterable, Sendable {
-		case unread, needsAttention = "needs-attention", active, justFinished = "just-finished", idle, dead
+		case unread, needsAttention = "needs-attention", active, waiting, justFinished = "just-finished", idle, dead
 
 		public var label: String {
 			switch self {
 			case .unread: "Unread"
 			case .needsAttention: "Needs attention"
 			case .active: "Active"
+			case .waiting: "Waiting"
 			case .justFinished: "Just finished"
 			case .idle: "Idle"
 			case .dead: "Dead"
@@ -47,18 +48,24 @@ public enum SessionGrouping {
 		let nowMs = now.timeIntervalSince1970 * 1000
 		let buckets = Dictionary(grouping: sessions) { bucket(of: $0, nowMs: nowMs) }
 		return Bucket.allCases.compactMap { bucket in
-			buckets[bucket].map { StatusSection(bucket: bucket, sessions: recentFirst($0)) }
+			buckets[bucket].map { StatusSection(bucket: bucket, sessions: bucket == .waiting ? soonestFirst($0) : recentFirst($0)) }
 		}
 	}
 
 	private static func bucket(of s: SessionDigest, nowMs: Double) -> Bucket {
 		if s.status == .error || s.awaitingInput == true { return .needsAttention }
 		if s.unread == true { return .unread }
+		if s.isWorking { return .active }
+		if s.watches?.isEmpty == false { return .waiting }
 		switch s.status {
-		case .running: return .active
 		case .dead: return .dead
 		default: return nowMs - (s.lastActiveAt ?? 0) <= justFinishedWindow * 1000 ? .justFinished : .idle
 		}
+	}
+
+	private static func soonestFirst(_ list: [SessionDigest]) -> [SessionDigest] {
+		func due(_ s: SessionDigest) -> Double { s.watches?.map(\.dueAt).min() ?? .infinity }
+		return list.sorted { due($0) < due($1) }
 	}
 
 	private static func recentFirst(_ list: [SessionDigest]) -> [SessionDigest] {
@@ -138,6 +145,20 @@ public enum SessionGrouping {
 	static func shortPath(_ path: String) -> String {
 		path.replacingOccurrences(
 			of: #"^(/Users/[^/]+|/home/[^/]+|/root)(?=/|$)"#, with: "~", options: .regularExpression)
+	}
+}
+
+public extension SessionDigest {
+	/// The one working rule: a turn running or subagents still going, and not stopped on a question.
+	var isWorking: Bool { canStop && awaitingInput != true }
+
+	/// A turn or subagents to stop, including a turn stopped on a question.
+	var canStop: Bool { status == .running || (subagents ?? 0) > 0 }
+
+	/// The Working row's text: the subagent count once only subagents are left.
+	var workingLabel: String {
+		let n = subagents ?? 0
+		return status != .running && n > 0 ? "\(n) subagent\(n == 1 ? "" : "s") working" : "Working…"
 	}
 }
 

@@ -103,7 +103,7 @@ struct MacComposer: View {
 			if stopping {
 				Text("Stopping…").foregroundStyle(.secondary)
 			} else {
-				WorkingLabel()
+				WorkingLabel(session?.workingLabel)
 			}
 			Spacer()
 			if canForceStop {

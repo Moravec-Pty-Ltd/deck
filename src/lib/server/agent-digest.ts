@@ -5,6 +5,7 @@ import { baseUrl } from './config';
 import { sessionLastResult, transcriptContext, transcriptCostSummary } from './transcript';
 import type { ContextUsage } from '$lib/context-core';
 import { activeWatches } from './watch-store';
+import { subagentCount } from './subagent-count';
 
 // A session that has produced no figures yet carries no `context` at all,
 // rather than a `{ used: 0, window: 0 }` a consumer would have to special-case.
@@ -61,7 +62,8 @@ export function sessionDigest(s: DeckSession, opts?: { lastResult?: boolean }): 
 		// Same: one bounded tail read, cached against the file's size and mtime.
 		context: isAgentKind(s.kind) ? definedContext(s.id) : undefined,
 		lastResult: opts?.lastResult && isAgentKind(s.kind) ? sessionLastResult(s.id) : undefined,
-		...watchesField(s.id)
+		...watchesField(s.id),
+		...(subagentCount(s.id) ? { subagents: subagentCount(s.id) } : {})
 	};
 }
 

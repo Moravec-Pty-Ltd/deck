@@ -256,6 +256,8 @@ public struct SessionDigest: Codable, Hashable, Identifiable, Sendable {
 	public var unread: Bool?
 	/// Its active watches, newest first; absent when none.
 	public var watches: [Watch]?
+	/// Running subagents; absent when none.
+	public var subagents: Int?
 
 	/// A review session: its worktree is parked on the captured PR's `pr/<n>`
 	/// ref. Mirrors the web's isReviewSession in src/lib/pr.ts.
@@ -462,6 +464,8 @@ public struct DeckEvent: Codable, Sendable {
 	/// or the request was decided (approved or denied).
 	/// `watches`: the session's full new list of active watches, empty when none are left.
 	public let watches: [Watch]?
+	/// `subagents`: how many subagents the session now has running.
+	public let subagents: Int?
 	public let pairingId: String?
 	public let code: String?
 	public let state: String?

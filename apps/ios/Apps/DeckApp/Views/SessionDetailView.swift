@@ -159,7 +159,7 @@ struct SessionDetailView: View {
 			&& session?.status != .running && !compacting
 		return DeckSessionActions(
 			send: canSend ? { if let viewModel { sendComposer(viewModel) } } : nil,
-			stop: session?.status == .running ? { Task { await viewModel?.stop() } } : nil,
+			stop: session?.canStop == true ? { Task { await viewModel?.stop() } } : nil,
 			compact: canCompact ? { Task { await compact() } } : nil)
 	}
 
@@ -586,7 +586,7 @@ struct SessionDetailView: View {
 		VStack(spacing: 0) {
 			if showsPRRow { prHeader(viewModel) }
 			transcript(viewModel)
-			if session?.status == .running {
+			if session?.canStop == true {
 				workingIndicator
 			}
 			askCard(viewModel, available: stackedHeight)
@@ -642,7 +642,7 @@ struct SessionDetailView: View {
 					} else if composerFocused || voice == nil {
 						Spacer(minLength: 0)
 					}
-					if session?.status == .running {
+					if session?.canStop == true {
 						workingIndicator
 					}
 					composer(viewModel)
@@ -803,7 +803,7 @@ struct SessionDetailView: View {
 			if viewModel?.stopping == true {
 				Text("Stopping…").foregroundStyle(.secondary)
 			} else {
-				WorkingLabel()
+				WorkingLabel(session?.workingLabel)
 			}
 			Spacer()
 			if viewModel?.canForceStop == true {

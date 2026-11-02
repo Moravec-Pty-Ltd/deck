@@ -85,6 +85,15 @@ describe('sessionDigest', () => {
 		expect('managed' in agent || 'attached' in agent).toBe(false);
 	});
 
+	it('carries the running subagent count only while there is one', async () => {
+		const { setSubagentCount } = await import('./subagent-count');
+		expect(sessionDigest(session())).not.toHaveProperty('subagents');
+		setSubagentCount('c_abc123', 2);
+		expect(sessionDigest(session()).subagents).toBe(2);
+		setSubagentCount('c_abc123', 0);
+		expect(sessionDigest(session())).not.toHaveProperty('subagents');
+	});
+
 	it('normalises absent awaitingInput to false', () => {
 		expect(sessionDigest(session()).awaitingInput).toBe(false);
 	});

@@ -377,6 +377,11 @@ inside \`model\`), \`permissionMode\` (acceptEdits | bypassPermissions | default
 plan), and on shell sessions \`managed\` (deck owns the tmux session) and
 \`attached\` (a terminal client is attached to it).
 
+\`subagents\` is present only on a claude session with subagents still running,
+and gives how many. A session counts as working while \`status\` is running or
+\`subagents\` is set: subagents launched in the background keep going after the
+turn ends. Background shells (a dev server) are not counted.
+
 \`hidden\` is present only on a hidden session, whether it was hidden itself or
 its project was. A client that lists sessions should keep those out of its main
 list and offer them in a "Hidden" section instead.
@@ -587,7 +592,9 @@ Interrupt the in-flight turn (empty body). \`{ "force": true }\` ends the agent
 process instead, for a turn that ignores the interrupt; the next message resumes
 the session. Returns \`{ "ok": true, "outcome": "interrupted" | "nothing-running" | "not-tracked" }\`:
 \`not-tracked\` means the session was marked running with no live turn behind
-it, and is now idle. An interrupted turn stays running until it ends.
+it, and is now idle. An interrupted turn stays running until it ends. With no
+turn running but subagents still working, Stop ends the subagents instead
+(outcome \`interrupted\`); \`force\` ends them with the process.
 
 ### POST /api/agent/sessions/{id}/agent
 Switch coding agents between turns. Body: { "kind": "claude" | "codex" | "pi" | "opencode" }.
@@ -1355,6 +1362,8 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 - \`session-deleted\` — {}
 - \`watches\`: { watches } (the session's active watches changed; the full new
 	list, empty when none are left)
+- \`subagents\`: { subagents } (how many subagents are still running, 0 when the
+	last one ended)
 - \`run-updated\`: { runId, status, phase, updatedAt } (a workflow run changed;
 	fetch \`GET /api/agent/runs/{id}\` for its digest;
 	\`sessionId\` carries the run id)

@@ -136,6 +136,11 @@ describe('foldAgents', () => {
 		expect(s2.tasks.t2.status).toBe('stopped');
 	});
 
+	it('ends background agents whose process exited without telling us', () => {
+		const s = fold([started('t1', 'a', { is_backgrounded: true }), { type: 'result' }, { type: 'deck.process-exit' }]);
+		expect(s.tasks.t1.status).toBe('stopped');
+	});
+
 	it('learns where a call sits even when its start arrived first', () => {
 		const s = emptyAgents();
 		foldAgents(s, started('t1', 'toolu_a'));
@@ -159,7 +164,7 @@ describe('foldAgents', () => {
 
 describe('mayAffectAgents', () => {
 	it('passes every line the fold reads, as claude writes them', () => {
-		for (const e of [call('a'), started('t', 'a'), progress('t', 'x'), notified('t'), bgList('t'), { type: 'result' }, { type: 'deck.restart' }]) {
+		for (const e of [call('a'), started('t', 'a'), progress('t', 'x'), notified('t'), bgList('t'), { type: 'result' }, { type: 'deck.restart' }, { type: 'deck.process-exit' }]) {
 			expect(mayAffectAgents(JSON.stringify(e)), JSON.stringify(e)).toBe(true);
 		}
 	});

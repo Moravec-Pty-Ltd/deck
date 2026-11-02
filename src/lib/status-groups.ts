@@ -2,7 +2,14 @@ import type { SessionView } from '$lib/session-view';
 
 // The attention-first grouping for the sidebar's "By status" view (issue #48):
 // cuts across projects so whatever needs you is up top.
-export type StatusBucketKey = 'unread' | 'needs-attention' | 'active' | 'just-finished' | 'idle' | 'dead';
+export type StatusBucketKey =
+	| 'unread'
+	| 'needs-attention'
+	| 'active'
+	| 'waiting'
+	| 'just-finished'
+	| 'idle'
+	| 'dead';
 
 export interface StatusBucket {
 	key: StatusBucketKey;
@@ -14,15 +21,18 @@ export interface StatusBucket {
 // colours.
 export const UNREAD_DOT = 'bg-accent';
 
-type DotSession = Pick<SessionView, 'status' | 'unread'> & Partial<Pick<SessionView, 'awaitingInput'>>;
+type DotSession = Pick<SessionView, 'status' | 'unread'> & Partial<Pick<SessionView, 'awaitingInput' | 'subagents'>>;
 
 // Where motion is off (reduced motion, e-ink) a still ring would read as the
 // hollow dead dot, so it fills back in to the plain running dot.
 const WORKING_DOT =
 	'border-[1.5px] border-primary border-r-transparent animate-spin motion-reduce:animate-none motion-reduce:bg-primary [[data-theme=eink]_&]:bg-primary';
 
-function isWorking(s: DotSession): boolean {
-	return s.status === 'running' && s.awaitingInput !== true;
+// The one "working" rule (issue #374): a turn is running, or subagents it
+// launched still are after it ended. Background shells never count (the server
+// sends only subagents), and a session waiting on a question is not working.
+export function isWorking(s: DotSession): boolean {
+	return (s.status === 'running' || (s.subagents ?? 0) > 0) && s.awaitingInput !== true;
 }
 
 // The dot's spoken label: only the states its colour alone carries.
@@ -51,6 +61,7 @@ export const BUCKET_DOT: Record<StatusBucketKey, string> = {
 	unread: UNREAD_DOT,
 	'needs-attention': 'bg-error',
 	active: 'bg-primary',
+	waiting: 'bg-warning',
 	'just-finished': 'bg-success',
 	idle: 'bg-base-content/35',
 	dead: 'border border-base-content/40'
@@ -64,6 +75,7 @@ const BUCKETS: { key: StatusBucketKey; label: string }[] = [
 	{ key: 'unread', label: 'Unread' },
 	{ key: 'needs-attention', label: 'Needs attention' },
 	{ key: 'active', label: 'Active' },
+	{ key: 'waiting', label: 'Waiting' },
 	{ key: 'just-finished', label: 'Just finished' },
 	{ key: 'idle', label: 'Idle' },
 	{ key: 'dead', label: 'Dead' }
@@ -86,13 +98,19 @@ function idleBucket(s: SessionView, now: number): StatusBucketKey {
 function bucketOf(s: SessionView, now: number): StatusBucketKey {
 	if (needsAttention(s)) return 'needs-attention';
 	if (s.unread) return 'unread';
-	if (s.status === 'running') return 'active';
+	if (isWorking(s)) return 'active';
+	// Done its turn but set a watch (issue #373): deck will wake it.
+	if (s.watches?.length) return 'waiting';
 	if (s.status === 'dead') return 'dead';
 	return idleBucket(s, now);
 }
 
+function nextDue(s: SessionView): number {
+	return Math.min(...(s.watches ?? []).map((w) => w.dueAt));
+}
+
 // Group sessions into the fixed status buckets, flat within each and most-recent
-// first. Empty buckets are dropped so the caller renders only what's populated.
+// first (Waiting: the next to wake first). Empty buckets are dropped so the caller renders only what's populated.
 // `now` is threaded so the just-finished window is testable and re-reads each
 // poll, letting sessions drift into Idle on their own.
 export function bucketSessions(sessions: SessionView[], now = Date.now()): StatusBucket[] {
@@ -106,7 +124,7 @@ export function bucketSessions(sessions: SessionView[], now = Date.now()): Statu
 	return BUCKETS.flatMap(({ key, label }) => {
 		const list = byKey.get(key);
 		if (!list) return [];
-		list.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+		list.sort(key === 'waiting' ? (a, b) => nextDue(a) - nextDue(b) : (a, b) => b.lastActiveAt - a.lastActiveAt);
 		return [{ key, label, sessions: list }];
 	});
 }
