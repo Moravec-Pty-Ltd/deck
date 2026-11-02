@@ -26,7 +26,7 @@ public struct CheckAttentionIntent: AppIntent {
 		})
 
 		if asks.isEmpty {
-			let running = sessions.filter { $0.status == .running }.count
+			let running = sessions.filter(\.isWorking).count
 			let summary = running > 0
 				? "Nothing needs you. \(running) session\(running == 1 ? " is" : "s are") still running."
 				: "Nothing needs you, and nothing is running."
@@ -86,7 +86,7 @@ public struct ListSessionsIntent: AppIntent {
 
 		let entities = hits.map(SessionEntity.init)
 		let waiting = hits.filter { $0.awaitingInput == true }.count
-		let running = hits.filter { $0.status == .running }.count
+		let running = hits.filter(\.isWorking).count
 
 		// Spoken, so a count and the few that matter, not forty titles.
 		var summary = "\(hits.count) session\(hits.count == 1 ? "" : "s")"

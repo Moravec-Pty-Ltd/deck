@@ -41,12 +41,14 @@ private struct TranscriptEndFollower: ViewModifier {
 
 /// A spinner and "Working…", shown while a session's turn runs.
 public struct WorkingLabel: View {
-	public init() {}
+	let label: String
+
+	public init(_ label: String? = nil) { self.label = label ?? "Working…" }
 
 	public var body: some View {
 		HStack(spacing: 8) {
 			WorkingSpinner().accessibilityHidden(true)
-			Text("Working…")
+			Text(label)
 				.font(.footnote)
 				.foregroundStyle(.secondary)
 		}

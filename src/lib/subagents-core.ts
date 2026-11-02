@@ -184,7 +184,7 @@ export function foldAgents(state: AgentsState, event: AnyEvent, index: number | 
 	if (event.type === 'system') onSystem(state, event);
 	else if (event.type === 'assistant' && !event.parent_tool_use_id) onAssistant(state, event, index);
 	else if (event.type === 'result' && !event.parent_tool_use_id) onTurnEnd(state);
-	else if (event.type === 'deck.restart') stopAll(state);
+	else if (event.type === 'deck.restart' || event.type === 'deck.process-exit') stopAll(state);
 	return state;
 }
 
@@ -216,6 +216,7 @@ export function mayAffectAgents(line: string): boolean {
 		line.includes('"task_') ||
 		line.includes('"background_tasks_changed"') ||
 		line.includes('"deck.restart"') ||
+		line.includes('"deck.process-exit"') ||
 		line.includes('"type":"result"') ||
 		(line.includes('"tool_use"') && (line.includes('"Agent"') || line.includes('"Task"')))
 	);

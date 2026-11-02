@@ -6,11 +6,12 @@ final class MenuBarDigestTests: XCTestCase {
 		try JSONDecoder().decode(T.self, from: Data(json.utf8))
 	}
 
-	private func session(_ id: String, _ status: String, title: String? = nil, cwd: String? = nil, active: Int = 0, hidden: Bool = false) throws -> SessionDigest {
+	private func session(_ id: String, _ status: String, title: String? = nil, cwd: String? = nil, active: Int = 0, hidden: Bool = false, subagents: Int? = nil) throws -> SessionDigest {
 		var fields = [#""id": "\#(id)""#, #""status": "\#(status)""#, #""lastActiveAt": \#(active)"#]
 		if let title { fields.append(#""title": "\#(title)""#) }
 		if let cwd { fields.append(#""cwd": "\#(cwd)""#) }
 		if hidden { fields.append(#""hidden": true"#) }
+		if let subagents { fields.append(#""subagents": \#(subagents)"#) }
 		return try decode(SessionDigest.self, "{\(fields.joined(separator: ","))}")
 	}
 
@@ -52,10 +53,11 @@ final class MenuBarDigestTests: XCTestCase {
 				try session("c_new", "running", active: 5),
 				try session("c_idle", "idle", active: 9),
 				try session("c_hidden", "running", active: 9, hidden: true),
-				try session("c_ask", "running", active: 9)
+				try session("c_ask", "running", active: 9),
+				try session("c_sub", "idle", active: 3, subagents: 2)
 			],
 			runs: [])
-		XCTAssertEqual(digest.running.map(\.id), ["c_new", "c_old"])
+		XCTAssertEqual(digest.running.map(\.id), ["c_new", "c_sub", "c_old"])
 	}
 
 	func testNothingWaitingHasNoBadgeAndManyCaps() {

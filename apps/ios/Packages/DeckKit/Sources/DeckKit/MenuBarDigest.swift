@@ -34,7 +34,7 @@ public struct MenuBarDigest: Equatable, Sendable {
 		}
 		let waitingIds = Set(asks.map(\.sessionId))
 		running = sessions
-			.filter { $0.status == .running && $0.hidden != true && !waitingIds.contains($0.id) }
+			.filter { $0.isWorking && $0.hidden != true && !waitingIds.contains($0.id) }
 			.sorted { ($0.lastActiveAt ?? 0) > ($1.lastActiveAt ?? 0) }
 	}
 

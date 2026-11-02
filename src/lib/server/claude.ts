@@ -8,7 +8,9 @@ import { getStoredSession, setSessionStatus, updateSession } from './store';
 import { ensureMcp, mcpUrl } from './mcp';
 import { rejectAsk } from './ask';
 import { notify } from './push';
-import { transcriptPath, transcriptCostSummary } from './transcript';
+import { runningSubagentIds, transcriptPath, transcriptCostSummary } from './transcript';
+import { mayAffectAgents } from '$lib/subagents-core';
+import { setSubagentCount, subagentCount } from './subagent-count';
 import { publishAgentEvent } from './agent-feed';
 import { agentEnv } from './agents/env';
 import { findModelProfile, resolveModelArg } from './model-profiles';
@@ -53,6 +55,8 @@ interface Proc {
 	// process, from the latest background_tasks_changed event.
 	backgroundTasks: number;
 	idleSince?: number;
+	// Stop ended its subagents, so their finishing is not news (issue #374).
+	stoppedSubagents?: boolean;
 }
 
 // One long-lived `claude --input-format stream-json` process per active session.
@@ -111,8 +115,38 @@ export function appendEvent(id: string, event: Record<string, unknown>) {
 					cost: transcriptCostSummary(id)
 				});
 			}
+			if (mayAffectAgents(serialized)) syncSubagents(id);
 		});
 	capturePr(id, serialized);
+}
+
+// Recount the session's running subagents (issue #374) and publish a change.
+// The last one ending while no turn runs is the session finishing its work: it
+// goes idle afresh (so it reads as Just finished) and notifies like a turn.
+function syncSubagents(id: string) {
+	const before = subagentCount(id);
+	const alive = procs.has(id);
+	const now = alive ? runningSubagentIds(id).length : 0;
+	if (!setSubagentCount(id, now)) return;
+	publishAgentEvent(id, 'subagents', { subagents: now });
+	if (before && !now && alive) subagentsFinished(id);
+}
+
+function subagentsFinished(id: string) {
+	if (isTurnRunning(id)) return;
+	const session = getStoredSession(id);
+	if (session?.status !== 'idle') return;
+	setStatus(id, 'idle');
+	if (procs.get(id)?.stoppedSubagents) return;
+	notify({
+		reason: 'stopped',
+		title: `Subagents finished · ${session.title}`,
+		body: 'Tap to open the session',
+		tag: id,
+		sessionId: id,
+		unread: true,
+		url: `/s/${id}`
+	});
 }
 
 // Capture the most recent GitHub PR link an agent prints. This is the shared
@@ -259,6 +293,9 @@ async function startProcess(id: string, token: object): Promise<Proc | undefined
 		return undefined;
 	}
 	const proc: Proc = { child, running: false, buf: '', stderrTail: '', reqSeq: 0, backgroundTasks: 0 };
+	// A new process has no subagents yet: any the transcript still shows running
+	// were lost with a process deck never saw end (a server restart).
+	endSubagents(id);
 	procs.set(id, proc);
 
 	child.stdout!.on('data', (chunk: Buffer) => {
@@ -289,6 +326,7 @@ async function startProcess(id: string, token: object): Promise<Proc | undefined
 		// or we'd deregister the live proc and reject its pending asks.
 		if (procs.get(id) !== proc) return;
 		procs.delete(id);
+		endSubagents(id);
 		rejectAsk(id, 'process exited');
 		if (!proc.running) return;
 		if (code === 0) setStatus(id, 'idle');
@@ -349,6 +387,7 @@ function handleStreamEvent(id: string, proc: Proc, event: Record<string, unknown
 	const ev = event.event as { type?: string } | undefined;
 	if (ev?.type === 'message_start') {
 		proc.running = true;
+		proc.stoppedSubagents = false;
 		setStatus(id, 'running');
 	}
 	bus.emit(`event:${id}`, event);
@@ -458,6 +497,7 @@ export async function sendMessage(id: string, text: string, images?: ImageInput[
 	if (!proc) return;
 	if (proc.idleTimer) clearTimeout(proc.idleTimer);
 	proc.running = true;
+	proc.stoppedSubagents = false;
 	// Re-read: a message that shared this start may already have sent the handoff.
 	const { pendingHandoff } = getStoredSession(id) ?? session;
 	const prompt = handoffPrompt(pendingHandoff, meta?.voice ? spokenPrompt(text) : text);
@@ -490,15 +530,22 @@ export function interrupt(id: string): boolean {
 	console.log(`[deck] stop ${id}: ${proc ? `process found, turn ${proc.running ? 'running' : 'idle'}` : 'no process'}`);
 	if (!proc) return false;
 	rejectAsk(id, 'interrupted');
-	proc.reqSeq += 1;
-	proc.child.stdin!.write(
-		JSON.stringify({
-			type: 'control_request',
-			request_id: `deck-${proc.reqSeq}`,
-			request: { subtype: 'interrupt' }
-		}) + '\n'
-	);
+	// No turn, but subagents it launched still run: Stop ends them instead.
+	if (!proc.running) {
+		const tasks = runningSubagentIds(id);
+		for (const task_id of tasks) control(proc, { subtype: 'stop_task', task_id });
+		if (tasks.length) {
+			proc.stoppedSubagents = true;
+			return true;
+		}
+	}
+	control(proc, { subtype: 'interrupt' });
 	return proc.running;
+}
+
+function control(proc: Proc, request: Record<string, unknown>) {
+	proc.reqSeq += 1;
+	proc.child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: `deck-${proc.reqSeq}`, request }) + '\n');
 }
 
 function endTurn(id: string) {
@@ -516,8 +563,17 @@ export function stopProcess(id: string) {
 	if (!proc) return;
 	clearTimeout(proc.idleTimer);
 	procs.delete(id);
+	endSubagents(id);
 	rejectAsk(id, 'process stopped');
 	killHard(proc.child);
+}
+
+// The process is gone, and its subagents with it, without the task events that
+// would end them in the transcript. Mark that, so the fold (and with it the
+// count a later process reports) ends them; the marker renders nothing.
+function endSubagents(id: string) {
+	if (runningSubagentIds(id).length) appendEvent(id, { type: 'deck.process-exit', ts: Date.now() });
+	else syncSubagents(id);
 }
 
 function killHard(child: ChildProcess) {
@@ -531,9 +587,13 @@ function killHard(child: ChildProcess) {
 // subagents. The next message resumes the session. True when a turn was live.
 export function forceStop(id: string): boolean {
 	const live = starting.has(id) || isTurnRunning(id);
-	console.log(`[deck] force stop ${id}: ${live ? 'turn live' : 'no live turn'}`);
+	const subagents = subagentCount(id) > 0;
+	console.log(`[deck] force stop ${id}: ${live ? 'turn live' : subagents ? 'subagents live' : 'no live turn'}`);
 	stopProcess(id);
 	// stopProcess deregisters the process first, so its exit reports nothing.
 	if (live) endTurn(id);
-	return live;
+	// Only subagents were working: announce idle again so a client waiting on
+	// its Stop settles.
+	else if (subagents) setStatus(id, 'idle');
+	return live || subagents;
 }

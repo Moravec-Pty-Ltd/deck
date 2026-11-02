@@ -90,7 +90,7 @@ public struct SubagentsState: Decodable, Equatable, Sendable {
 			return subtype.hasPrefix("task_") || subtype == "background_tasks_changed"
 		case "result":
 			return (event["parent_tool_use_id"].string ?? "").isEmpty
-		case "deck.restart":
+		case "deck.restart", "deck.process-exit":
 			return true
 		default:
 			return false

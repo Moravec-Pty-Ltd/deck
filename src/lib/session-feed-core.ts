@@ -49,6 +49,12 @@ const PATCHES: Record<string, (s: SessionView, e: FeedEvent) => SessionView> = {
 		else delete next.watches;
 		return next;
 	},
+	subagents: (s, e) => {
+		const next = { ...s };
+		if (typeof e.subagents === 'number' && e.subagents > 0) next.subagents = e.subagents;
+		else delete next.subagents;
+		return next;
+	},
 	'session-hidden': (s, e) => {
 		const next = { ...s };
 		if (e.hidden) next.hidden = true;

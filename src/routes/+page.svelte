@@ -7,7 +7,7 @@
 	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
-	import { bucketSessions, BUCKET_DOT, statusDotClass, statusDotLabel } from '$lib/status-groups';
+	import { bucketSessions, BUCKET_DOT, isWorking, statusDotClass, statusDotLabel, statusWord } from '$lib/status-groups';
 	import { markRead } from '$lib/mark-read';
 	import { viewMode } from '$lib/view-mode.svelte';
 	import { viewModeLabel } from '$lib/view-mode';
@@ -175,8 +175,8 @@
 	// neutral so a list at rest reads calm. Solid vs hollow keeps idle and dead
 	// apart under e-ink, where colour collapses to monochrome.
 	function statusText(s: SessionView) {
-		if (s.status === 'running') return 'font-medium text-primary';
-		if (s.status === 'error') return 'font-medium text-error';
+		if (isWorking(s)) return 'font-medium text-primary';
+		if (s.status === 'error' || s.awaitingInput) return 'font-medium text-error';
 		if (s.status === 'dead') return 'text-base-content/40';
 		return 'text-base-content/55';
 	}
@@ -281,7 +281,7 @@
 			{/if}
 			<span class="flex shrink-0 items-center gap-1.5">
 				<span class="size-2 shrink-0 rounded-full {statusDotClass(s)}" role={statusDotLabel(s) ? 'img' : undefined} aria-label={statusDotLabel(s)} title={s.unread ? `Unread, ${s.status}` : undefined}></span>
-				<span class="text-xs {statusText(s)}">{s.status}</span>
+				<span class="text-xs {statusText(s)}">{statusWord(s)}</span>
 			</span>
 			<span class="w-10 text-right text-xs tabular-nums opacity-60">{relativeTime(s.lastActiveAt)}</span>
 		</a>

@@ -194,6 +194,9 @@
 		const since = agentSeen[a.taskId];
 		return a.durationMs + (a.status === 'running' && since ? Math.max(0, agentClock - since) : 0);
 	}
+	// Working while the turn runs or subagents it launched still do (issue #374).
+	const subagentsRunning = $derived(status === 'running' ? 0 : runningAgents(agents).length);
+	const working = $derived(status === 'running' || subagentsRunning > 0);
 	const barAgents = $derived([
 		...runningAgents(agents),
 		...Object.values(agents.tasks).filter((t) => t.status !== 'running' && agentDone[t.taskId])
@@ -899,12 +902,12 @@
 		clearTimeout(forceTimer);
 	}
 	$effect(() => {
-		if (status !== 'running') clearStop();
+		if (!working) clearStop();
 	});
 
 	async function interrupt(force = false) {
 		// The voice bar stops speech this way too, with no turn to wait on.
-		stopping = status === 'running';
+		stopping = working;
 		forceable = false;
 		clearTimeout(forceTimer);
 		forceTimer = setTimeout(() => (forceable = stopping), 5000);
@@ -1161,9 +1164,15 @@
 
 	<!-- An always-present live region, so "Working…" is announced when it appears. -->
 	<div role="status">
-		{#if status === 'running'}
+		{#if working}
 			<div class="-mx-2 flex items-center gap-2 border-t border-base-300 px-3 py-1 text-sm">
-				<span class="opacity-60">{stopping ? 'Stopping…' : 'Working…'}</span>
+				<span class="opacity-60"
+					>{stopping
+						? 'Stopping…'
+						: subagentsRunning
+							? `${subagentsRunning} subagent${subagentsRunning === 1 ? '' : 's'} working`
+							: 'Working…'}</span
+				>
 				{#if forceable}
 					<button class="btn btn-error btn-xs ml-auto" onclick={() => interrupt(true)}>
 						<Square size={12} /> Force stop

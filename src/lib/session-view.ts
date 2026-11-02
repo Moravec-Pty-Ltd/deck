@@ -43,6 +43,9 @@ export interface AgentSessionDigest {
 	unread?: boolean;
 	// Active watches (issue #277), newest first. Omitted when there are none.
 	watches?: Watch[];
+	// Subagents still running (issue #374), so the session counts as working after
+	// its turn ends. Background shells are not counted. Omitted when there are none.
+	subagents?: number;
 	// The session's most recent assistant reply, attached only when requested (the
 	// single-session GET), since it reads the transcript. Omitted on the list/feed
 	// digests, which stay cheap. null means "no text produced yet".

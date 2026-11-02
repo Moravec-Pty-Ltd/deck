@@ -24,7 +24,7 @@ public struct StatusDot: View {
 	}
 
 	/// Waiting on a question is not working.
-	private var working: Bool { session.status == .running && session.awaitingInput != true }
+	private var working: Bool { session.isWorking }
 
 	public var body: some View {
 		if working {

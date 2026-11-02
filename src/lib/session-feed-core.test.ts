@@ -138,6 +138,13 @@ describe('applyEvents', () => {
 		expect(s.sessions.find((x) => x.id === 'a')).not.toHaveProperty('watches');
 	});
 
+	it('sets and clears the running subagent count', () => {
+		let s = applyEvents(base(), [ev(11, 'subagents', 'a', { subagents: 2 })]);
+		expect(s.sessions.find((x) => x.id === 'a')?.subagents).toBe(2);
+		s = applyEvents(s, [ev(12, 'subagents', 'a', { subagents: 0 })]);
+		expect(s.sessions.find((x) => x.id === 'a')).not.toHaveProperty('subagents');
+	});
+
 	it('takes the pr, and clears it on null', () => {
 		const pr = { repo: 'acme/app', number: 4, url: 'https://github.com/acme/app/pull/4' };
 		let s = applyEvents(base(), [ev(11, 'pr', 'a', { pr })]);

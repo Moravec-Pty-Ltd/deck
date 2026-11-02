@@ -859,6 +859,13 @@ final class ParityTests: XCTestCase {
 		XCTAssertNil(none.watches)
 	}
 
+	func testSessionDigestDecodesSubagents() throws {
+		let some = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle","subagents":2}"#.utf8))
+		XCTAssertEqual(some.subagents, 2)
+		let none = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle"}"#.utf8))
+		XCTAssertNil(none.subagents)
+	}
+
 	func testAccountsDecodeOnProjectsSessionsAndTheAccountsRoute() async throws {
 		let detail = try JSONDecoder().decode(ProjectDetail.self, from: Data(#"{"path":"/path/to/project","account":"work"}"#.utf8))
 		XCTAssertEqual(detail.account, "work")

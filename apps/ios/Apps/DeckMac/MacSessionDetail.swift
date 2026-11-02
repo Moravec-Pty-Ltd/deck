@@ -37,7 +37,7 @@ struct MacSessionDetail: View {
 			&& session?.status != .running && !compacting
 		return DeckSessionActions(
 			send: canSend ? { if let viewModel { sendComposer(viewModel) } } : nil,
-			stop: session?.status == .running ? { Task { await viewModel?.stop() } } : nil,
+			stop: session?.canStop == true ? { Task { await viewModel?.stop() } } : nil,
 			compact: canCompact ? { compact() } : nil)
 	}
 
@@ -92,7 +92,7 @@ struct MacSessionDetail: View {
 				}
 				.sharedBackgroundVisibility(.hidden)
 			}
-			if !isTerminal, session?.status == .running, let viewModel {
+			if !isTerminal, session?.canStop == true, let viewModel {
 				ToolbarItem {
 					Button {
 						Task { await viewModel.stop() }
@@ -246,7 +246,7 @@ struct MacSessionDetail: View {
 						onRunNow: viewModel.runWatchNow, onOpen: viewModel.open
 					)
 					if isWorking(viewModel) {
-						MacWorkingRow()
+						MacWorkingRow(label: session?.workingLabel)
 					}
 					Color.clear.frame(height: 1).id("bottom")
 				}
@@ -269,7 +269,7 @@ struct MacSessionDetail: View {
 	/// A turn is under way and not stopped on a question, whose card already
 	/// says what the session is waiting for.
 	private func isWorking(_ viewModel: SessionDetailViewModel) -> Bool {
-		!isTerminal && session?.status == .running && viewModel.pendingAsk == nil
+		!isTerminal && session?.isWorking == true && viewModel.pendingAsk == nil
 	}
 
 	@ViewBuilder
@@ -373,9 +373,11 @@ private struct MacTranscriptRow: View {
 /// The last row while a turn runs, so a reply that has not started streaming
 /// yet still shows the session is busy.
 private struct MacWorkingRow: View {
+	let label: String?
+
 	var body: some View {
 		HStack {
-			WorkingLabel()
+			WorkingLabel(label)
 				.padding(.horizontal, 10)
 				.padding(.vertical, 8)
 				.background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: DeckStyle.Radius.card))
