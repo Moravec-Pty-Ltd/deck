@@ -95,7 +95,11 @@ final class ActivityManager {
 		let sessionId = activity.attributes.sessionId
 		for other in Activity<SessionActivityAttributes>.activities where other.id != activity.id && other.attributes.sessionId == sessionId {
 			ending.insert(other.id)
-			Task { await other.end(nil, dismissalPolicy: .immediate) }
+			// Once ended it no longer reads as live, which keeps it from being adopted.
+			Task { [weak self] in
+				await other.end(nil, dismissalPolicy: .immediate)
+				self?.ending.remove(other.id)
+			}
 		}
 		watchTokens(activity)
 	}
@@ -136,6 +140,7 @@ final class ActivityManager {
 			for await state in activity.activityStateUpdates where state == .dismissed || state == .ended {
 				self?.tokenTasks[id]?.cancel()
 				self?.tokenTasks[id] = nil
+				self?.adopted.remove(id)
 				if let token = activity.pushToken?.map({ String(format: "%02x", $0) }).joined(), let client = self?.currentClient {
 					try? await client.unregisterActivity(token: token)
 				}
