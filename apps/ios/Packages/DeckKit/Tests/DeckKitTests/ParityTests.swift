@@ -211,6 +211,28 @@ final class ParityTests: XCTestCase {
 		_ = try await client.createReviewSession(cwd: "/path/to/project", pr: DeckPR(repo: "acme/web", number: 12, baseRefName: "release"))
 	}
 
+	/// deck's push-to-start payload, verbatim from apns-core.test.ts. iOS drops a
+	/// start it can't decode, so the attributes and state must decode with the
+	/// default coding ActivityKit uses (dates as seconds since 2001).
+	func testServerStartPushDecodesIntoTheActivity() throws {
+		let json = #"{"aps":{"timestamp":1800000000,"event":"start","content-state":{"status":"running","awaitingInput":false,"lastText":"Reading the router","costUsd":0.25,"turns":3,"updatedAt":1800000000000},"attributes-type":"SessionActivityAttributes","attributes":{"sessionId":"abc","title":"Fix login","startedAt":821692800},"alert":{"title":"Fix login","body":"Working"}}}"#
+		struct Aps: Decodable {
+			let attributesType: String
+			let attributes: SessionActivityAttributes
+			let contentState: SessionActivityAttributes.ContentState
+			enum CodingKeys: String, CodingKey {
+				case attributesType = "attributes-type", attributes, contentState = "content-state"
+			}
+		}
+		struct Push: Decodable { let aps: Aps }
+		let aps = try JSONDecoder().decode(Push.self, from: Data(json.utf8)).aps
+		XCTAssertEqual(aps.attributesType, String(describing: SessionActivityAttributes.self))
+		XCTAssertEqual(aps.attributes.sessionId, "abc")
+		XCTAssertEqual(aps.attributes.title, "Fix login")
+		XCTAssertEqual(aps.attributes.startedAt, Date(timeIntervalSince1970: 1_800_000_000))
+		XCTAssertEqual(aps.contentState, .init(status: "running", awaitingInput: false, lastText: "Reading the router", costUsd: 0.25, turns: 3, updatedAt: 1_800_000_000_000))
+	}
+
 	func testAgentSwitchUsesSharedServerRoute() async throws {
 		let client = client { request, body in
 			XCTAssertEqual(request.url?.path, "/api/agent/sessions/example/agent")

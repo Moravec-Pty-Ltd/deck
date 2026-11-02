@@ -6,21 +6,8 @@ import DeckKit
 /// The Live Activity for a running session: what the lock screen and Dynamic
 /// Island show, and the button they offer. Compiled into both the app (which
 /// starts and updates the activity) and the widget extension (which renders
-/// it). `ContentState` mirrors the `content-state` deck pushes, key for key.
-struct SessionActivityAttributes: ActivityAttributes {
-	struct ContentState: Codable, Hashable {
-		var status: String
-		var awaitingInput: Bool
-		var lastText: String
-		var costUsd: Double
-		var turns: Int
-		var updatedAt: Double
-	}
-
-	let sessionId: String
-	let title: String
-	let startedAt: Date
-}
+/// it). The attributes and content state live in DeckKit.
+extension SessionActivityAttributes: @retroactive ActivityAttributes {}
 
 /// Runs in the app's process when tapped on the card: interrupts the session's
 /// turn through the same route the Stop button uses.

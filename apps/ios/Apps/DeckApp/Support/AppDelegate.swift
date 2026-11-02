@@ -8,6 +8,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 	) -> Bool {
 		// Set before app start so a launch-by-notification-tap is still caught.
 		UNUserNotificationCenter.current().delegate = PushManager.shared
+		// A push-to-start card launches the app in the background to hand over
+		// its token.
+		ActivityManager.shared.observe()
 		return true
 	}
 

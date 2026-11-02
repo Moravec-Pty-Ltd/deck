@@ -260,7 +260,8 @@ const sha256Hex = (value: string) => crypto.createHash('sha256').update(value).d
 export async function apnsNotify(payload: core.DeckPushPayload): Promise<void> {
 	if (!apnsEnabled) return;
 	try {
-		const devices = loadDevices();
+		// A push-to-start token only ever starts a card.
+		const devices = loadDevices().filter((d) => d.platform !== 'activity-start');
 		if (!devices.length) return;
 		const apnsPayload = core.toApnsPayload(payload);
 		const collapseId = payload.tag === undefined ? undefined : core.collapseId(payload.tag, sha256Hex);
@@ -283,9 +284,10 @@ function saveActivities(list: core.ActivityToken[]) {
 }
 
 // Throws (a ZodError) on invalid input; the route catches it and returns 400.
-export function registerActivity(raw: unknown): void {
+export function registerActivity(raw: unknown): string {
 	const input = core.registerActivitySchema.parse(raw);
 	saveActivities(core.upsertActivity(loadActivities(), { ...input, addedAt: Date.now() }));
+	return input.sessionId;
 }
 
 export function unregisterActivity(token: string): void {
@@ -316,5 +318,27 @@ export async function apnsActivity(sessionId: string, push: core.ActivityPush): 
 		);
 	} catch (err) {
 		console.error('[deck] apnsActivity failed:', err);
+	}
+}
+
+// Start a session's card on every phone that handed over a push-to-start
+// token. The phone then registers the card's own token, which later updates
+// and ends go to. Never throws.
+export async function apnsActivityStart(push: core.ActivityStartPush): Promise<void> {
+	if (!apnsEnabled) return;
+	try {
+		const starters = loadDevices().filter((d) => d.platform === 'activity-start');
+		await Promise.all(
+			starters.map(async (d) => {
+				const dead = await send(
+					{ token: d.token, env: d.env, label: `a ${d.env} live activity start` },
+					{ topic: core.activityTopic(config.topic), pushType: 'liveactivity', priority: '10' },
+					push
+				);
+				if (dead) unregisterDevice(d.token);
+			})
+		);
+	} catch (err) {
+		console.error('[deck] apnsActivityStart failed:', err);
 	}
 }

@@ -32,12 +32,16 @@ struct RootView: View {
 			case .active:
 				store.start()
 				ActivityManager.shared.configure(client: store.client)
-				ActivityManager.shared.reconcile(with: store.sessions)
 			case .background:
 				store.stopEventLoop()
 				DraftStore.shared.flush()
 			default: break
 			}
+		}
+		// Check cards against the first fresh session list, not the one held
+		// from before the app went to the background (empty on a cold launch).
+		.onChange(of: store.connection) { _, connection in
+			if connection == .live { ActivityManager.shared.reconcile(with: store.sessions) }
 		}
 		.onChange(of: store.badgeCount, initial: true) { _, count in if let count { AskNotification.setBadge(count) } }
 		// A Live Activity tap opens its session (deck://s/<id>).
