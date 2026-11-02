@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { SessionStatus } from '$lib/types';
 import type { SessionView } from '$lib/session-view';
 import type { Watch } from '$lib/watches';
-import { bucketSessions, isWorking, statusDotClass, statusDotLabel, UNREAD_DOT } from './status-groups';
+import { bucketSessions, isWorking, statusDotClass, statusDotLabel, statusWord, UNREAD_DOT } from './status-groups';
 
 function session(
 	id: string,
@@ -200,6 +200,17 @@ describe('isWorking', () => {
 		expect(statusDotClass({ status: 'idle', subagents: 2 })).toContain('animate-spin');
 		expect(statusDotLabel({ status: 'idle', subagents: 2 })).toBe('Working');
 		expect(bucketSessions([{ ...session('s', 'idle', 1), subagents: 2 }])[0].key).toBe('active');
+	});
+});
+
+describe('statusWord', () => {
+	it('reads a question as needing input, subagents as running, else the status', () => {
+		expect(statusWord({ status: 'running', awaitingInput: true })).toBe('needs input');
+		expect(statusWord({ status: 'idle', awaitingInput: true })).toBe('needs input');
+		expect(statusWord({ status: 'idle', subagents: 2 })).toBe('running');
+		expect(statusWord({ status: 'running' })).toBe('running');
+		expect(statusWord({ status: 'idle' })).toBe('idle');
+		expect(statusWord({ status: 'dead' })).toBe('dead');
 	});
 });
 

@@ -35,6 +35,13 @@ export function isWorking(s: DotSession): boolean {
 	return (s.status === 'running' || (s.subagents ?? 0) > 0) && s.awaitingInput !== true;
 }
 
+// The word a row shows for its status: a question reads as needing you (it
+// sorts under Needs attention), and subagents still going read as running.
+export function statusWord(s: DotSession): string {
+	if (s.awaitingInput) return 'needs input';
+	return isWorking(s) ? 'running' : s.status;
+}
+
 // The dot's spoken label: only the states its colour alone carries.
 export function statusDotLabel(s: DotSession): string | undefined {
 	if (isWorking(s)) return s.unread ? 'Working, unread' : 'Working';
