@@ -846,7 +846,7 @@ final class ParityTests: XCTestCase {
 
 	static let watchJSON = #"""
 	{"id":"w1","sessionId":"example","title":"CI on #42","prompt":"Check CI and carry on","command":"gh pr checks 42",
-	"createdAt":1000,"dueAt":61000,"state":"active"}
+	"createdAt":1000,"dueAt":61000,"state":"active","waitsFor":{"review":{"pr":42}}}
 	"""#
 
 	func testSessionDigestDecodesItsActiveWatches() throws {
@@ -855,6 +855,7 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(session.watches?.first?.command, "gh pr checks 42")
 		XCTAssertEqual(session.watches?.first?.state, .active)
 		XCTAssertEqual(session.watches?.first?.dueDate, Date(timeIntervalSince1970: 61))
+		XCTAssertEqual(session.watches?.first?.waitsFor?.label, "waiting for review of #42")
 		let none = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle"}"#.utf8))
 		XCTAssertNil(none.watches)
 	}

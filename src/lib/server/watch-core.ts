@@ -3,7 +3,7 @@
 // what is due, what history to keep, and the message a fired watch wakes its
 // session with. Firing is watcher.ts.
 import { z } from 'zod';
-import type { Watch, WatchResult } from '$lib/watches';
+import type { Watch, WatchResult, WatchWaitsFor } from '$lib/watches';
 
 export const MAX_DELAY_MS = 24 * 60 * 60 * 1000;
 // A looping agent must not be able to pile watches up.
@@ -21,7 +21,8 @@ const requestSchema = z
 		prompt: z.string().trim().min(1, 'a prompt is required').max(20_000),
 		in: z.string().trim().optional(),
 		at: z.union([z.string().trim(), z.number()]).optional(),
-		command: z.string().trim().max(COMMAND_CAP).optional()
+		command: z.string().trim().max(COMMAND_CAP).optional(),
+		waitsFor: z.object({ review: z.union([z.number().int().positive(), z.string().trim()]) }).optional()
 	})
 	.refine((r) => (r.in !== undefined) !== (r.at !== undefined), {
 		message: 'give exactly one of `in` (a delay like "10m") or `at` (a time)'
@@ -31,7 +32,16 @@ export interface WatchInput {
 	title: string;
 	prompt: string;
 	command?: string;
+	waitsFor?: WatchWaitsFor;
 	dueAt: number;
+}
+
+// `315`, `"#315"` or `"owner/repo#315"`.
+function parseReviewRef(ref: number | string): WatchWaitsFor['review'] {
+	if (typeof ref === 'number') return { pr: ref };
+	const m = ref.match(/^(?:([\w.-]+\/[\w.-]+)#|#?)(\d+)$/);
+	if (!m || !Number.isSafeInteger(Number(m[2])) || Number(m[2]) <= 0) throw new WatchError('waitsFor.review: use a PR number, "#315" or "owner/repo#315"');
+	return m[1] ? { repo: m[1], pr: Number(m[2]) } : { pr: Number(m[2]) };
 }
 
 const UNIT_MS: Record<string, number> = { h: 3_600_000, m: 60_000, s: 1000 };
@@ -67,7 +77,29 @@ export function parseWatchRequest(raw: unknown, now: number): WatchInput {
 	}
 	if (dueAt <= now) throw new WatchError('the watch must fire in the future');
 	if (dueAt - now > MAX_DELAY_MS) throw new WatchError('a watch can fire at most 24 hours from now');
-	return { title: r.title, prompt: r.prompt, command: r.command || undefined, dueAt };
+	const waitsFor = r.waitsFor && { review: parseReviewRef(r.waitsFor.review) };
+	return { title: r.title, prompt: r.prompt, command: r.command || undefined, waitsFor, dueAt };
+}
+
+// Text about reviewing this PR: the word "review" (not "preview") and the number,
+// on its own in a command, as `#n` in a title so "review in 20 min" is not PR 20.
+function aboutReviewOf(text: string | undefined, num: RegExp): boolean {
+	return !!text && /\breview/i.test(text) && num.test(text);
+}
+
+// Is this watch waiting for a review of this PR? `waitsFor` decides when set.
+export function waitsForReview(
+	watch: Pick<Watch, 'title' | 'command' | 'waitsFor'>,
+	review: { repo: string; pr: number }
+): boolean {
+	const want = watch.waitsFor?.review;
+	if (want) return want.pr === review.pr && (!want.repo || want.repo.toLowerCase() === review.repo.toLowerCase());
+	// shortcut: a guess for watches set without waitsFor (`gh pr view 315 --json reviews`,
+	// "review on #315"); waitsFor is the reliable path.
+	return (
+		aboutReviewOf(watch.command, new RegExp(`(^|\\D)${review.pr}(\\D|$)`)) ||
+		aboutReviewOf(watch.title, new RegExp(`#${review.pr}(\\D|$)`))
+	);
 }
 
 // This session's active watches, newest first: what the digest and `watches` list.

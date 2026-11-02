@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { DeckSession } from '$lib/types';
 
 // A registered project holding a fresh morabot status.json, wired up through the
 // env before the module loads (config reads DECK_MORABOT_STATUS at import).
@@ -16,6 +17,8 @@ fs.writeFileSync(statusFile, JSON.stringify({ version: 1, updatedAt: new Date().
 fs.writeFileSync(path.join(dataDir, 'projects.json'), JSON.stringify([{ name: 'p', path: projRoot }]));
 
 vi.mock('./push', () => ({ notify: vi.fn() }));
+const { runReviewWatches } = vi.hoisted(() => ({ runReviewWatches: vi.fn() }));
+vi.mock('./watcher', () => ({ runReviewWatches }));
 
 afterAll(() => {
 	for (const [key, value] of [
@@ -48,5 +51,40 @@ describe('morabot poll state', () => {
 		fs.utimesSync(statusFile, future / 1000, future / 1000);
 		first.pollMorabot([]);
 		expect(second.cachedReviews().updatedAt).toBe(first.cachedReviews().updatedAt);
+	});
+});
+
+describe('a new verdict', () => {
+	const review = (reviewId: number, pr: number) => ({
+		repo: 'acme/app',
+		pr,
+		headSha: 'abc',
+		decision: 'APPROVE',
+		reviewId,
+		url: `https://github.com/acme/app/pull/${pr}#pullrequestreview-${reviewId}`,
+		reviewedAt: new Date().toISOString()
+	});
+	let tick = Date.now() + 10_000;
+	const write = (recent: unknown[]) => {
+		fs.writeFileSync(statusFile, JSON.stringify({ version: 1, updatedAt: new Date().toISOString(), recent }));
+		tick += 1000;
+		fs.utimesSync(statusFile, tick / 1000, tick / 1000);
+	};
+	const sessions = [{ id: 'c_1', title: 's', pr: { url: '', repo: 'acme/app', number: 315, seenAt: 0 } }] as unknown as DeckSession[];
+
+	it("runs the matched session's review watches, once, and only for a new verdict", async () => {
+		const { pollMorabot } = await import('./morabot');
+		write([review(1, 315)]);
+		pollMorabot(sessions);
+		expect(runReviewWatches).not.toHaveBeenCalled();
+
+		write([review(2, 315), review(1, 315)]);
+		pollMorabot(sessions);
+		expect(runReviewWatches).toHaveBeenCalledTimes(1);
+		expect(runReviewWatches).toHaveBeenCalledWith('c_1', expect.objectContaining({ repo: 'acme/app', pr: 315 }));
+
+		write([review(3, 999), review(2, 315), review(1, 315)]);
+		pollMorabot(sessions);
+		expect(runReviewWatches).toHaveBeenCalledTimes(1);
 	});
 });

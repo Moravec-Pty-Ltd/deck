@@ -33,7 +33,7 @@ vi.mock('./store', () => ({
 	getStoredSession: (sid: string) => fake.sessions.find(({ id }) => id === sid)
 }));
 
-const { pollWatches, runWatchNow } = await import('./watcher');
+const { pollWatches, runReviewWatches, runWatchNow } = await import('./watcher');
 const store = await import('./watch-store');
 const { createWatch, getWatch, listWatches, saveWatch } = store;
 
@@ -243,5 +243,22 @@ describe('watch store', () => {
 		expect(store.activeWatches('c_live')).toEqual([]);
 		expect(listWatches('c_live')).toMatchObject([{ id: a.id, state: 'cancelled' }]);
 		expect(store.cancelWatch('wat_nope')).toBeUndefined();
+	});
+});
+
+describe('runReviewWatches', () => {
+	it("fires the session's watch for that review with its check, and leaves the others", async () => {
+		const review = createWatch('c_live', { title: 'Review', prompt: 'Address it.', in: '20m', command: 'echo approved', waitsFor: { review: 315 } }).id;
+		const deploy = createWatch('c_live', { title: 'Deploy', prompt: 'Check prod.', in: '20m' }).id;
+		const otherPr = createWatch('c_live', { title: 'x', prompt: 'p', in: '20m', command: 'gh pr view 316 --json reviews' }).id;
+		runReviewWatches('c_live', { repo: 'acme/app', pr: 315 });
+		await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+		expect(fake.sent[0].text).toContain('approved');
+		expect(getWatch(review)?.state).toBe('fired');
+		expect([getWatch(deploy)?.state, getWatch(otherPr)?.state]).toEqual(['active', 'active']);
+
+		runReviewWatches('c_live', { repo: 'acme/app', pr: 315 });
+		await pollWatches();
+		expect(fake.sent).toHaveLength(1);
 	});
 });

@@ -10,8 +10,8 @@ import { agentEnv } from './agents/env';
 import { resolveWithinProjects } from './confine';
 import { getSession } from './sessions';
 import { sendAgentMessage } from './send-agent-message';
-import { CHECK_TIMEOUT_MS, OUTPUT_CAP, bringForward, checkAllowed, CHECK_NOT_ALLOWED, isDue, tail, wakeMessage } from './watch-core';
-import { cancelSessionWatches, getWatch, listWatches, saveWatch } from './watch-store';
+import { CHECK_TIMEOUT_MS, OUTPUT_CAP, bringForward, checkAllowed, CHECK_NOT_ALLOWED, isDue, tail, waitsForReview, wakeMessage } from './watch-core';
+import { activeWatches, cancelSessionWatches, getWatch, listWatches, saveWatch } from './watch-store';
 
 // Run a check command once, killing its whole process group past the limit.
 function runCheck(command: string, cwd: string, env: NodeJS.ProcessEnv, limitMs = CHECK_TIMEOUT_MS): Promise<WatchResult> {
@@ -148,4 +148,10 @@ export function runWatchNow(id: string): Watch | undefined {
 		void pollWatches().catch(() => {});
 	}
 	return next;
+}
+
+// A morabot verdict landed on this session's PR (issue #376): run the watches
+// waiting for that review now. The session's other watches keep their time.
+export function runReviewWatches(sessionId: string, review: { repo: string; pr: number }): void {
+	for (const w of activeWatches(sessionId)) if (waitsForReview(w, review)) runWatchNow(w.id);
 }

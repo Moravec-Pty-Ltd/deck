@@ -24,10 +24,13 @@ public struct Watch: Codable, Hashable, Identifiable, Sendable {
 	public let state: State
 	public let endedAt: Double?
 	public let result: WatchResult?
+	/// Set when the watch waits for a PR review; a morabot verdict runs it early.
+	public let waitsFor: WatchWaitsFor?
 
 	public init(
 		id: String, sessionId: String, title: String, prompt: String = "", command: String? = nil,
-		createdAt: Double, dueAt: Double, state: State = .active, endedAt: Double? = nil, result: WatchResult? = nil
+		createdAt: Double, dueAt: Double, state: State = .active, endedAt: Double? = nil, result: WatchResult? = nil,
+		waitsFor: WatchWaitsFor? = nil
 	) {
 		self.id = id
 		self.sessionId = sessionId
@@ -39,9 +42,23 @@ public struct Watch: Codable, Hashable, Identifiable, Sendable {
 		self.state = state
 		self.endedAt = endedAt
 		self.result = result
+		self.waitsFor = waitsFor
 	}
 
 	public var dueDate: Date { Date(timeIntervalSince1970: dueAt / 1000) }
+}
+
+public struct WatchWaitsFor: Codable, Hashable, Sendable {
+	public struct Review: Codable, Hashable, Sendable {
+		/// Nil when the watch named a bare PR number: the session's captured PR.
+		public let repo: String?
+		public let pr: Int
+	}
+
+	public let review: Review
+
+	/// "waiting for review of #315", like the web's `waitsForLabel`.
+	public var label: String { "waiting for review of \(review.repo ?? "")#\(review.pr)" }
 }
 
 public struct WatchResult: Codable, Hashable, Sendable {

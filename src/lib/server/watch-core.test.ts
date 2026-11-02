@@ -14,6 +14,7 @@ import {
 	parseWatchRequest,
 	prune,
 	tail,
+	waitsForReview,
 	wakeMessage
 } from './watch-core';
 
@@ -186,5 +187,55 @@ describe('wakeMessage', () => {
 	it('uses a fence longer than any backticks in the output', () => {
 		const msg = wakeMessage(watch({ command: 'cat x', result: { exitCode: 0, output: 'a ```` b' } }));
 		expect(msg).toContain('`````\na ```` b\n`````');
+	});
+});
+
+describe('waitsFor', () => {
+	const req = (waitsFor: unknown) => parseWatchRequest({ title: 't', prompt: 'p', in: '20m', waitsFor }, NOW).waitsFor;
+
+	it('takes a bare number, "#n" or "owner/repo#n"', () => {
+		expect(req({ review: 315 })).toEqual({ review: { pr: 315 } });
+		expect(req({ review: '#315' })).toEqual({ review: { pr: 315 } });
+		expect(req({ review: 'acme/app#315' })).toEqual({ review: { repo: 'acme/app', pr: 315 } });
+		expect(req(undefined)).toBeUndefined();
+	});
+
+	it('refuses anything else', () => {
+		expect(() => req({ review: 'soon' })).toThrow(WatchError);
+		expect(() => req({ review: '#0' })).toThrow(WatchError);
+		expect(() => req({ review: 'acme/app315' })).toThrow(WatchError);
+		expect(() => req({ review: -1 })).toThrow(WatchError);
+	});
+});
+
+describe('waitsForReview', () => {
+	const review = { repo: 'acme/app', pr: 315 };
+
+	it('matches waitsFor on the PR number, and the repo when given', () => {
+		expect(waitsForReview(watch({ waitsFor: { review: { pr: 315 } } }), review)).toBe(true);
+		expect(waitsForReview(watch({ waitsFor: { review: { repo: 'Acme/App', pr: 315 } } }), review)).toBe(true);
+		expect(waitsForReview(watch({ waitsFor: { review: { repo: 'acme/other', pr: 315 } } }), review)).toBe(false);
+		expect(waitsForReview(watch({ waitsFor: { review: { pr: 316 } } }), review)).toBe(false);
+	});
+
+	it('lets waitsFor decide over the heuristic', () => {
+		const w = watch({ command: 'gh pr view 315 --json reviews', waitsFor: { review: { pr: 316 } } });
+		expect(waitsForReview(w, review)).toBe(false);
+	});
+
+	it('guesses from a command that queries the PR reviews', () => {
+		expect(waitsForReview(watch({ title: 'x', command: 'gh pr view 315 --json reviews' }), review)).toBe(true);
+		expect(waitsForReview(watch({ title: 'x', command: 'gh api repos/acme/app/pulls/315/reviews' }), review)).toBe(true);
+		expect(waitsForReview(watch({ title: 'x', command: 'gh pr view 3150 --json reviews' }), review)).toBe(false);
+		expect(waitsForReview(watch({ title: 'x', command: 'gh pr checks 315' }), review)).toBe(false);
+		expect(waitsForReview(watch({ title: 'x', command: 'gh pr view 315 --json previewUrl' }), review)).toBe(false);
+	});
+
+	it('guesses from a title about reviewing the PR', () => {
+		expect(waitsForReview(watch({ title: 'morabot review on #315' }), review)).toBe(true);
+		expect(waitsForReview(watch({ title: 'Review of #316' }), review)).toBe(false);
+		expect(waitsForReview(watch({ title: 'deploy #315' }), review)).toBe(false);
+		expect(waitsForReview(watch({ title: 'Deploy preview for #315' }), review)).toBe(false);
+		expect(waitsForReview(watch({ title: 'Recheck review in 20 min' }), { repo: 'acme/app', pr: 20 })).toBe(false);
 	});
 });
