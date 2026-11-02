@@ -75,7 +75,7 @@ export const BUCKET_DOT: Record<StatusBucketKey, string> = {
 };
 
 // An idle session counts as "just finished" if it went idle within this window.
-const JUST_FINISHED_MS = 15 * 60 * 1000;
+export const JUST_FINISHED_MS = 15 * 60 * 1000;
 
 // Fixed render order; the label doubles as the header text and collapse key.
 const BUCKETS: { key: StatusBucketKey; label: string }[] = [

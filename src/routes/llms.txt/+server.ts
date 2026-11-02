@@ -1321,8 +1321,10 @@ configured; registering is harmless either way.
 
 ### POST /api/push/apns/register
 
-\`{ "token": "...", "platform": "ios" | "watchos" | "macos", "env": "development" | "production" }\`,
-upsert this device (\`token\` is the hex APNs device token). Returns
+\`{ "token": "...", "platform": "ios" | "watchos" | "macos" | "widgets" | "activity-start", "env": "development" | "production" }\`,
+upsert this device (\`token\` is the hex APNs device token; \`widgets\` is the
+widget's WidgetKit token, \`activity-start\` the phone's Live Activity
+push-to-start token, which deck uses to start a session's card). Returns
 \`{ "ok": true }\`. \`macos\` is accepted when \`GET /api/agent\` lists the
 \`apns-macos\` capability; the Mac app shares the iOS bundle id, so it is sent
 on the same topic.

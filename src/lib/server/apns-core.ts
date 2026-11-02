@@ -5,10 +5,14 @@
 // transport. Mirrors the pairing-core.ts / pairing.ts split.
 
 import { z } from 'zod';
+import { isWorking, JUST_FINISHED_MS } from '$lib/status-groups';
+import type { SessionStatus } from '$lib/types';
 
 // `widgets` is the phone's home-screen widget: its own WidgetKit push token,
 // which only ever gets a "content changed" push that reloads it.
-export type ApnsPlatform = 'ios' | 'watchos' | 'macos' | 'widgets';
+// `activity-start` is the phone's Live Activity push-to-start token, which
+// only ever starts a session's card.
+export type ApnsPlatform = 'ios' | 'watchos' | 'macos' | 'widgets' | 'activity-start';
 export type ApnsEnv = 'development' | 'production';
 
 export interface ApnsDevice {
@@ -24,7 +28,7 @@ export interface ApnsDevice {
 // quickmessages.ts's schema.parse -> 400-on-throw pattern.
 export const registerDeviceSchema = z.object({
 	token: z.string().regex(/^[0-9a-fA-F]{1,200}$/),
-	platform: z.enum(['ios', 'watchos', 'macos', 'widgets']),
+	platform: z.enum(['ios', 'watchos', 'macos', 'widgets', 'activity-start']),
 	env: z.enum(['development', 'production'])
 });
 
@@ -273,6 +277,34 @@ export function activityText(text: string | null | undefined): string {
 	return flat.length > ACTIVITY_TEXT_CHARS ? `${flat.slice(0, ACTIVITY_TEXT_CHARS - 1)}…` : flat;
 }
 
+// Whether a session's card stays live (issue #378): it is working (a turn, or
+// subagents after one), asking a question, or errored and not yet read. Any
+// other session's card ends, staying on the lock screen through the "just
+// finished" window. Waiting on a watch ends like idle; the wake-up starts a
+// new card.
+export interface ActivitySession {
+	status: SessionStatus;
+	awaitingInput?: boolean;
+	subagents?: number;
+	unread?: boolean;
+}
+
+export function keepsActivity(s: ActivitySession): boolean {
+	return isWorking(s) || s.awaitingInput === true || (s.status === 'error' && s.unread === true);
+}
+
+// Only a turn starting or a question starts a card by push, since iOS budgets
+// push starts.
+export function startsActivity(s: ActivitySession): boolean {
+	return keepsActivity(s) && (s.status === 'running' || s.awaitingInput === true);
+}
+
+// When an ended card leaves the lock screen: the end of the just-finished
+// window after the session went quiet, in epoch seconds.
+export function activityDismissAt(lastActiveAtMs: number): number {
+	return Math.floor((lastActiveAtMs + JUST_FINISHED_MS) / 1000);
+}
+
 export interface ActivityPush {
 	aps: {
 		timestamp: number;
@@ -284,17 +316,60 @@ export interface ActivityPush {
 }
 
 // A finished session's card goes stale after this long (the system dims it);
-// an ended session's card is dismissed shortly after.
+// a deleted session's card is dismissed shortly after.
 const ACTIVITY_STALE_AFTER_S = 30 * 60;
 const ACTIVITY_DISMISS_AFTER_S = 60;
 
-export function toActivityPush(state: ActivityState, event: 'update' | 'end', nowMs: number): ActivityPush {
+// `dismissAt` (epoch seconds) overrides an end's default short dismissal.
+export function toActivityPush(state: ActivityState, event: 'update' | 'end', nowMs: number, dismissAt?: number): ActivityPush {
 	const now = Math.floor(nowMs / 1000);
 	const aps: ActivityPush['aps'] = { timestamp: now, event, 'content-state': state };
-	if (event === 'end') aps['dismissal-date'] = now + ACTIVITY_DISMISS_AFTER_S;
+	if (event === 'end') aps['dismissal-date'] = dismissAt ?? now + ACTIVITY_DISMISS_AFTER_S;
 	else if (state.status !== 'running') aps['stale-date'] = now + ACTIVITY_STALE_AFTER_S;
 	return { aps };
 }
+
+// Swift's default Date coding, which ActivityKit decodes attributes with, is
+// seconds since 2001-01-01, not the Unix epoch.
+const APPLE_EPOCH_OFFSET_S = 978_307_200;
+
+export interface ActivityStartPush {
+	aps: {
+		timestamp: number;
+		event: 'start';
+		'content-state': ActivityState;
+		'attributes-type': 'SessionActivityAttributes';
+		attributes: { sessionId: string; title: string; startedAt: number };
+		alert: ApnsAlert;
+	};
+}
+
+// Starts a session's card by push-to-start; iOS requires the alert, shown
+// without a sound.
+export function toActivityStartPush(
+	session: { id: string; title: string },
+	state: ActivityState,
+	nowMs: number
+): ActivityStartPush {
+	return {
+		aps: {
+			timestamp: Math.floor(nowMs / 1000),
+			event: 'start',
+			'content-state': state,
+			'attributes-type': 'SessionActivityAttributes',
+			attributes: { sessionId: session.id, title: session.title, startedAt: Math.floor(nowMs / 1000) - APPLE_EPOCH_OFFSET_S },
+			alert: { title: session.title, body: state.awaitingInput ? 'Needs your input' : 'Working' }
+		}
+	};
+}
+
+// A push start registers no token until the phone hands it over, so a second
+// trigger in that gap (running, then a question) must not start another card.
+export const ACTIVITY_START_GAP_MS = 2 * 60 * 1000;
+
+// A push start waits this long first: the app, when open, starts its own card
+// and registers it within a second or two, and a very short turn is over.
+export const ACTIVITY_START_DELAY_MS = 10_000;
 
 // Text updates mid-turn are throttled (Apple budgets Live Activity pushes per
 // hour); status changes always go through.

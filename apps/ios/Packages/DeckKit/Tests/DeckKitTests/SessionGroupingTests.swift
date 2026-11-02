@@ -30,6 +30,18 @@ final class SessionGroupingTests: XCTestCase {
 
 	// MARK: status
 
+	func testActivityShowsWhileWorkingAskingOrJustFinished() {
+		let shows = { (s: SessionDigest) in SessionGrouping.showsActivity(s, now: self.now) }
+		XCTAssertTrue(shows(session("a", status: "running")))
+		XCTAssertTrue(shows(session("b", subagents: 1)))
+		XCTAssertTrue(shows(session("c", asking: true)))
+		XCTAssertTrue(shows(session("d", status: "error", unread: true)))
+		XCTAssertTrue(shows(session("e", agoSeconds: 14 * 60)))
+		XCTAssertFalse(shows(session("f", agoSeconds: 16 * 60)))
+		XCTAssertFalse(shows(session("g", status: "error")))
+		XCTAssertFalse(shows(session("h", agoSeconds: 16 * 60, dueIn: [nowMs + 60_000])))
+	}
+
 	func testBucketsFollowTheFixedOrderAndDropEmptyOnes() {
 		let sections = SessionGrouping.byStatus([
 			session("dead", status: "dead"),

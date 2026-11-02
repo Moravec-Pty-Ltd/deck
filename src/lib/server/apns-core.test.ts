@@ -264,6 +264,36 @@ describe('live activity pushes', () => {
 		expect(shouldPushText(0, ACTIVITY_TEXT_INTERVAL_MS)).toBe(true);
 		expect(activityTopic('tech.example.app')).toBe('tech.example.app.push-type.liveactivity');
 	});
+	it('keeps a card while the session works, asks or has an unread error, and ends it otherwise', async () => {
+		const { keepsActivity, startsActivity } = await import('./apns-core');
+		expect(keepsActivity({ status: 'running' })).toBe(true);
+		expect(keepsActivity({ status: 'idle', subagents: 2 })).toBe(true);
+		expect(keepsActivity({ status: 'running', awaitingInput: true })).toBe(true);
+		expect(keepsActivity({ status: 'error', unread: true })).toBe(true);
+		expect(keepsActivity({ status: 'error' })).toBe(false);
+		expect(keepsActivity({ status: 'idle' })).toBe(false);
+		expect(keepsActivity({ status: 'dead' })).toBe(false);
+		expect(startsActivity({ status: 'running' })).toBe(true);
+		expect(startsActivity({ status: 'idle', awaitingInput: true })).toBe(true);
+		expect(startsActivity({ status: 'idle', subagents: 1 })).toBe(false);
+		expect(startsActivity({ status: 'error', unread: true })).toBe(false);
+	});
+	it('ends a quiet card at the end of the just-finished window', async () => {
+		const { toActivityPush, activityDismissAt } = await import('./apns-core');
+		const state = { status: 'idle', awaitingInput: false, lastText: '', costUsd: 0, turns: 1, updatedAt: 0 };
+		expect(activityDismissAt(1_000_000)).toBe(1000 + 15 * 60);
+		expect(toActivityPush(state, 'end', 2_000_000, activityDismissAt(1_000_000)).aps['dismissal-date']).toBe(1900);
+	});
+	// The same JSON is decoded in ParityTests.swift; change both together.
+	it('builds a push-to-start payload ActivityKit decodes', async () => {
+		const { toActivityStartPush } = await import('./apns-core');
+		const state = { status: 'running', awaitingInput: false, lastText: 'Reading the router', costUsd: 0.25, turns: 3, updatedAt: 1800000000000 };
+		const push = toActivityStartPush({ id: 'abc', title: 'Fix login' }, state, 1_800_000_000_000);
+		expect(JSON.stringify(push)).toBe(
+			'{"aps":{"timestamp":1800000000,"event":"start","content-state":{"status":"running","awaitingInput":false,"lastText":"Reading the router","costUsd":0.25,"turns":3,"updatedAt":1800000000000},"attributes-type":"SessionActivityAttributes","attributes":{"sessionId":"abc","title":"Fix login","startedAt":821692800},"alert":{"title":"Fix login","body":"Working"}}}'
+		);
+		expect(toActivityStartPush({ id: 'abc', title: 't' }, state, 1_800_000_000_789).aps.attributes.startedAt).toBe(821692800);
+	});
 });
 
 describe('collapseId', () => {
