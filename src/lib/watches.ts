@@ -12,12 +12,23 @@ export interface WatchResult {
 	timedOut?: boolean;
 }
 
+// What a watch waits for (issue #376): a PR's review. With no `repo` it is the
+// session's captured PR. A morabot verdict on that PR runs the watch at once.
+export interface WatchWaitsFor {
+	review: { repo?: string; pr: number };
+}
+
+export function waitsForLabel(w: WatchWaitsFor): string {
+	return `waiting for review of ${w.review.repo ?? ''}#${w.review.pr}`;
+}
+
 export interface Watch {
 	id: string;
 	sessionId: string;
 	title: string;
 	prompt: string;
 	command?: string;
+	waitsFor?: WatchWaitsFor;
 	createdAt: number;
 	dueAt: number;
 	state: WatchState;

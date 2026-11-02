@@ -990,13 +990,20 @@ not ready yet. One that fell due while deck was down fires on the first poll aft
 
 The agent sets them through deck's MCP server:
 
-- \`mcp__deck__watch\` \`{ title, prompt, in | at, command? }\`: exactly one of
+- \`mcp__deck__watch\` \`{ title, prompt, in | at, command?, waitsFor? }\`: exactly one of
   \`in\` (\`"30s"\`, \`"10m"\`, \`"2h"\`, \`"1h30m"\`) or \`at\` (ISO time or epoch
   ms), at most 24 hours ahead. At most 5 active per session. Returns the id and
   the fire time. A \`command\` runs outside the agent's own permission checks,
   so it is only accepted, and only run, while the session is in
   \`bypassPermissions\` mode; otherwise the watch is refused, or fires with a
   "not run" note if the mode changed after it was set.
+  \`waitsFor: { review: "owner/repo#42" }\` (or \`{ review: 42 }\` for the
+  session's captured PR) says the watch checks on that PR's review: when
+  morabot posts a verdict on the session's PR, deck runs the session's watches
+  waiting for it at once, as \`POST /api/agent/watches/{id}/run\` would, and
+  leaves its other watches alone. A watch without \`waitsFor\` counts too when
+  its command or title says "review" and names that PR number (\`gh pr view 42
+  --json reviews\`).
 - \`mcp__deck__watches\`: this session's active watches.
 - \`mcp__deck__unwatch\` \`{ id }\`: cancel one of this session's watches.
 
@@ -1018,11 +1025,13 @@ in the last 24 hours.
 \`\`\`json
 { "id": "wat_...", "sessionId": "c_...", "title": "CI on #42",
 	"prompt": "If CI passed, merge; otherwise fix it.", "command": "gh pr checks 42",
+	"waitsFor": { "review": { "repo": "acme/app", "pr": 42 } },
 	"createdAt": 0, "dueAt": 0, "state": "fired", "endedAt": 0,
 	"result": { "exitCode": 0, "output": "...", "timedOut": false } }
 \`\`\`
 
-\`state\` is \`active\`, \`fired\` or \`cancelled\`. \`result\` is set once a
+\`state\` is \`active\`, \`fired\` or \`cancelled\`. \`waitsFor\` is
+present only when set; its \`repo\` is absent for a bare PR number. \`result\` is set once a
 watch with a command has fired; \`exitCode\` is null when the check timed out
 (\`timedOut: true\`) or could not run.
 

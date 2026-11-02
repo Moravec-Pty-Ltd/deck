@@ -9,6 +9,7 @@ import type { DeckSession } from '$lib/types';
 import { morabotStatusPath, readJson, writeJson } from './config';
 import { resolveWithinProjects } from './confine';
 import { notify } from './push';
+import { runReviewWatches } from './watcher';
 import {
 	deriveReviewsPayload,
 	decisionLabel,
@@ -99,6 +100,8 @@ function markAndNotify(l: Ledger, r: RecentReview, sessions: DeckSession[], now:
 		sessionId: session.id,
 		url: `/s/${session.id}`
 	});
+	// An agent waiting on this review picks it up now rather than at its timer.
+	runReviewWatches(session.id, r);
 }
 
 // One push per new verdict matching a session's captured PR. Every fresh review id

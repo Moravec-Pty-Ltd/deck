@@ -6,7 +6,7 @@
 	import { agentDelete, agentPost } from '$lib/agent-api';
 	import { activityEntries, formatCountdown, visibleEntries } from '$lib/activity-core';
 	import { formatDuration, type AgentState } from '$lib/subagents-core';
-	import type { Watch } from '$lib/watches';
+	import { waitsForLabel, type Watch } from '$lib/watches';
 
 	let {
 		watches,
@@ -62,6 +62,9 @@
 						<Timer size={14} class="shrink-0 opacity-60" />
 						<span class="min-w-0 flex-1">
 							<span class="block truncate font-medium">{e.watch.title}</span>
+							{#if e.watch.waitsFor}
+								<span class="block truncate opacity-60">{waitsForLabel(e.watch.waitsFor)}</span>
+							{/if}
 							{#if expanded && e.watch.command}
 								<code class="block truncate opacity-60">{e.watch.command}</code>
 							{/if}
