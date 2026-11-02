@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { DeleteFlow } from '$lib/delete-flow.svelte';
 	import { ownsWorktreeBranch } from '$lib/pr';
+	import { deleteLabel, runningWarning } from '$lib/delete-flow-core';
 	import Modal from './Modal.svelte';
 
 	// Confirm modal for deleting sessions: one worktree session (home list or
@@ -28,6 +29,8 @@
 		return `${picked} of ${total} live in a git worktree; the rest are unaffected by the options below.`;
 	});
 
+	let warning = $derived(runningWarning(sessions));
+
 	let heading = $derived(
 		flow.batch
 			? `Remove ${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'}`
@@ -47,6 +50,7 @@
 </script>
 
 <Modal open={sessions.length > 0} onclose={close} title={heading}>
+	{#if warning}<div role="alert" class="alert alert-warning mb-3 py-2 text-sm">{warning}</div>{/if}
 	{#if flow.batch}
 		<p class="mb-3 text-sm opacity-70">Kills every selected session. {batchNote}</p>
 	{:else if flow.target}
@@ -81,6 +85,6 @@
 	{/if}
 	{#snippet footer()}
 		<button class="btn" onclick={close}>Cancel</button>
-		<button class="btn btn-error" onclick={confirm}>Remove</button>
+		<button class="btn btn-error" onclick={confirm}>{deleteLabel(sessions, 'Remove')}</button>
 	{/snippet}
 </Modal>

@@ -109,6 +109,40 @@ test('force stops a turn that ignores Stop, and the session carries on', async (
 	await expect(page.getByText('Fake reply to: still there?')).toBeVisible({ timeout: 10_000 });
 });
 
+test('warns before removing a session that is still working', async ({ page }) => {
+	const warning = 'This session is still working. Deleting it stops the current turn and any subagents, and the work in progress is lost.';
+	const dialog = page.getByRole('dialog');
+	await openSession(page, 'warn-run');
+	await send(page, '[slow] keep going');
+	await expect(page.getByText('Working…')).toBeVisible();
+	const ask = await page.request.post('/api/agent/sessions', { headers, data: { mode: 'work', kind: 'claude', cwd: project, title: 'warn-ask' } });
+	await page.goto(`/s/${(await ask.json()).id}`);
+	await send(page, '[ask] pick one');
+	await expect(page.getByText('Which colour?')).toBeVisible();
+	await page.goto('/');
+	await open(page.getByRole('button', { name: /^Ungrouped/ }), page.getByRole('button', { name: 'Remove warn-run' }));
+
+	await page.getByRole('button', { name: 'Remove warn-run' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText(warning);
+	await expect(dialog.getByRole('button', { name: 'Stop and Delete' })).toBeVisible();
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+	// Waiting on a question is not working: the normal confirm.
+	await page.getByRole('button', { name: 'Remove warn-ask' }).click();
+	await expect(dialog.getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
+	await expect(dialog.getByRole('alert')).toBeHidden();
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+	await page.getByRole('button', { name: 'Select' }).click();
+	await page.getByRole('checkbox', { name: 'warn-run' }).click();
+	await page.getByRole('checkbox', { name: 'warn-ask' }).click();
+	await page.getByRole('button', { name: 'Remove (2)' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText('1 of these sessions is still working: warn-run.');
+	await dialog.getByRole('button', { name: 'Stop and Delete 2 Sessions' }).click();
+	await expect(page.getByRole('checkbox', { name: 'warn-run' })).toBeHidden();
+	await expect(page.getByRole('checkbox', { name: 'warn-ask' })).toBeHidden();
+});
+
 test('at phone width the views move from the tab row into the View menu', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await openSession(page, 'phone views');

@@ -192,6 +192,8 @@ struct DeleteSessionSheet: View {
 	let hasWorktree: Bool
 	var count: Int = 1
 	var name: String? = nil
+	/// The sessions being deleted, so a running one gets the in-progress warning.
+	let sessions: [SessionDigest]
 	var onDelete: (_ deleteWorktree: Bool, _ deleteBranch: Bool) -> Void
 
 	@Environment(\.dismiss) private var dismiss
@@ -212,6 +214,11 @@ struct DeleteSessionSheet: View {
 		VStack(alignment: .leading, spacing: 12) {
 			Text(macTitle).font(.headline)
 				.fixedSize(horizontal: false, vertical: true)
+			if let warning = DeleteWarning.message(sessions) {
+				Label(warning, systemImage: "exclamationmark.triangle.fill")
+					.foregroundStyle(.orange)
+					.fixedSize(horizontal: false, vertical: true)
+			}
 			Text(count == 1
 				? "The session stops and leaves deck. This can't be undone."
 				: "The sessions stop and leave deck. This can't be undone.")
@@ -230,7 +237,7 @@ struct DeleteSessionSheet: View {
 				Button("Cancel", role: .cancel) { dismiss() }
 					.keyboardShortcut(.cancelAction)
 				// No default button: Return must not delete a worktree by habit.
-				Button("Delete", role: .destructive, action: confirm)
+				Button(DeleteWarning.buttonLabel(sessions, plain: "Delete"), role: .destructive, action: confirm)
 			}
 			.padding(.top, 8)
 		}
@@ -255,6 +262,12 @@ struct DeleteSessionSheet: View {
 	private var phoneBody: some View {
 		NavigationStack {
 			Form {
+				if let warning = DeleteWarning.message(sessions) {
+					Section {
+						Label(warning, systemImage: "exclamationmark.triangle.fill")
+							.foregroundStyle(.orange)
+					}
+				}
 				if hasWorktree {
 					Section {
 						Toggle(worktreeLabel, isOn: $deleteWorktree)
@@ -268,7 +281,7 @@ struct DeleteSessionSheet: View {
 				}
 				Section {
 					Button(role: .destructive, action: confirm) {
-						Text(title).frame(maxWidth: .infinity)
+						Text(DeleteWarning.buttonLabel(sessions, plain: title)).frame(maxWidth: .infinity)
 					}
 				}
 			}

@@ -543,7 +543,7 @@ struct SessionDetailView: View {
 			NavigationStack { SchedulesView(startFor: sessionId) }
 		}
 		.offTheFold(isPresented: $showDeleteSheet) {
-			DeleteSessionSheet(hasWorktree: session?.worktree != nil) { deleteWorktree, deleteBranch in
+			DeleteSessionSheet(hasWorktree: session?.worktree != nil, sessions: session.map { [$0] } ?? []) { deleteWorktree, deleteBranch in
 				Task {
 					if await viewModel?.delete(deleteWorktree: deleteWorktree, deleteBranch: deleteBranch) == true {
 						dismiss()

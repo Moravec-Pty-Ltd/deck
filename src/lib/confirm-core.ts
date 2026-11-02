@@ -1,6 +1,8 @@
 export interface ConfirmOptions {
 	title: string;
 	body?: string;
+	// Shown above the body as a prominent alert.
+	warning?: string | null;
 	confirmLabel?: string;
 	cancelLabel?: string;
 	danger?: boolean;
