@@ -160,7 +160,7 @@ extension PaletteAction {
 		id: "schedules", title: "Schedules", keywords: ["cron", "repeat", "clock"], systemImage: "clock.arrow.2.circlepath")
 }
 
-/// The sidebar: places, then the sessions, then the hidden ones. A
+/// The sidebar: pinned places over the scrolling sessions and hidden ones. A
 /// double-click (or "Open in New Window") gives a session a window of its own.
 private struct MacSidebar: View {
 	@Environment(DeckStore.self) private var store
@@ -169,25 +169,78 @@ private struct MacSidebar: View {
 	@Binding var query: String
 	let listed: [SessionDigest]
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
+	@State private var placesHeight: CGFloat = 120
+	@FocusState private var focus: SidebarList?
+
+	private enum SidebarList { case places, sessions }
+
+	/// The session row the arrow keys reach from Start, and leave for it.
+	private var firstSession: String? {
+		listed.first?.id ?? (isFiltering ? nil : store.hiddenSessions.first?.id)
+	}
 
 	private var isFiltering: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
 	var body: some View {
+		VStack(spacing: 0) {
+			places
+			Divider()
+			sessions
+		}
+		.navigationTitle("deck")
+		.toolbar {
+			ToolbarItem {
+				Button {
+					grouping = grouping.toggled
+				} label: {
+					Label(grouping.toggleLabel, systemImage: "rectangle.3.group")
+				}
+				.help(grouping.toggleLabel)
+			}
+			ToolbarItem {
+				Button {
+					Task { await store.refreshSessions() }
+				} label: {
+					Label("Refresh", systemImage: "arrow.clockwise")
+				}
+			}
+		}
+	}
+
+	/// The places stay put above the scrolling sessions: a list of their own,
+	/// sharing the selection, sized to its rows so it never scrolls.
+	private var places: some View {
+		List(selection: $selection) {
+			Label("Inbox", systemImage: "tray")
+				.badge(store.awaitingCount)
+				.tag(MacPane.inbox)
+			Label("Runs", systemImage: "point.3.connected.trianglepath.dotted")
+				.badge(store.runs.filter { !$0.status.isFinished }.count)
+				.tag(MacPane.runs)
+			Label("Schedules", systemImage: "clock.arrow.2.circlepath").tag(MacPane.schedules)
+			Label("Start", systemImage: "plus.circle").tag(MacPane.start)
+		}
+		.scrollDisabled(true)
+		.onScrollGeometryChange(for: CGFloat.self) {
+			$0.contentSize.height + $0.contentInsets.top + $0.contentInsets.bottom
+		} action: { placesHeight = $1 }
+		.frame(height: placesHeight)
+		.focused($focus, equals: .places)
+		// Two lists, so the arrow keys are carried across the seam by hand.
+		.onKeyPress(.downArrow) {
+			guard selection == .start, let id = firstSession else { return .ignored }
+			selection = .session(id)
+			focus = .sessions
+			return .handled
+		}
+	}
+
+	private var sessions: some View {
 		List(selection: $selection) {
 			if store.serverTooOld {
 				ServerTooOldBanner()
 			}
 			PairingBanner()
-			Section {
-				Label("Inbox", systemImage: "tray")
-					.badge(store.awaitingCount)
-					.tag(MacPane.inbox)
-				Label("Runs", systemImage: "point.3.connected.trianglepath.dotted")
-					.badge(store.runs.filter { !$0.status.isFinished }.count)
-					.tag(MacPane.runs)
-				Label("Schedules", systemImage: "clock.arrow.2.circlepath").tag(MacPane.schedules)
-				Label("Start", systemImage: "plus.circle").tag(MacPane.start)
-			}
 			if isFiltering {
 				Section("Sessions") {
 					ForEach(listed) { row($0) }
@@ -231,23 +284,12 @@ private struct MacSidebar: View {
 			}
 		}
 		.safeAreaInset(edge: .bottom) { MacConnectionStatus() }
-		.navigationTitle("deck")
-		.toolbar {
-			ToolbarItem {
-				Button {
-					grouping = grouping.toggled
-				} label: {
-					Label(grouping.toggleLabel, systemImage: "rectangle.3.group")
-				}
-				.help(grouping.toggleLabel)
-			}
-			ToolbarItem {
-				Button {
-					Task { await store.refreshSessions() }
-				} label: {
-					Label("Refresh", systemImage: "arrow.clockwise")
-				}
-			}
+		.focused($focus, equals: .sessions)
+		.onKeyPress(.upArrow) {
+			guard let id = selection?.sessionId, id == firstSession else { return .ignored }
+			selection = .start
+			focus = .places
+			return .handled
 		}
 	}
 
