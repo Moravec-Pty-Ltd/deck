@@ -6,6 +6,7 @@ import DeckKit
 public struct ToolCallCard: View {
 	let call: ToolCall
 	@State private var showOutput = false
+	@State private var selecting: SelectTextItem?
 
 	public init(call: ToolCall) {
 		self.call = call
@@ -21,7 +22,7 @@ public struct ToolCallCard: View {
 				todoList
 			}
 			if call.isError, !call.output.isEmpty {
-				CodeBlock(text: clipped, tint: .red)
+				CodeBlock(text: clipped, tint: .red).contextMenu { selectOutput }
 			} else if !call.output.isEmpty, !call.hidesOutput {
 				Button {
 					withAnimation(.easeInOut(duration: 0.15)) { showOutput.toggle() }
@@ -34,7 +35,7 @@ public struct ToolCallCard: View {
 				}
 				.buttonStyle(.plain)
 				if showOutput {
-					CodeBlock(text: clipped)
+					CodeBlock(text: clipped).contextMenu { selectOutput }
 				}
 			}
 			if call.showsRawInput {
@@ -51,6 +52,18 @@ public struct ToolCallCard: View {
 		.overlay(
 			RoundedRectangle(cornerRadius: DeckStyle.Radius.card)
 				.stroke(call.isError ? Color.red.opacity(0.4) : Color.deckSeparator, lineWidth: 0.5))
+		.selectTextSheet($selecting)
+	}
+
+	private var selectOutput: some View {
+		Group {
+			Button {
+				TextClipboard.copy(call.output)
+			} label: {
+				Label("Copy", systemImage: "doc.on.doc")
+			}
+			SelectTextButton { selecting = SelectTextItem(SelectableMarkdown.code(call.output)) }
+		}
 	}
 
 	private var header: some View {

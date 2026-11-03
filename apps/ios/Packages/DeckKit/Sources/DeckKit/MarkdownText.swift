@@ -178,13 +178,14 @@ private struct MarkdownTableView: View {
 
 enum MarkdownInline {
 	static func text(_ string: String) -> Text {
-		if let attributed = try? AttributedString(
+		Text(attributed(string))
+	}
+
+	static func attributed(_ string: String) -> AttributedString {
+		(try? AttributedString(
 			markdown: string,
 			options: .init(
 				interpretedSyntax: .inlineOnlyPreservingWhitespace,
-				failurePolicy: .returnPartiallyParsedIfPossible)) {
-			return Text(attributed)
-		}
-		return Text(string)
+				failurePolicy: .returnPartiallyParsedIfPossible))) ?? AttributedString(string)
 	}
 }

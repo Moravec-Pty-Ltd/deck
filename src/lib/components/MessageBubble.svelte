@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Copy, Check, Volume2 } from '@lucide/svelte';
+	import { Copy, Check, TextSelection, Volume2 } from '@lucide/svelte';
 	import FileAttachments from './FileAttachments.svelte';
 	import Linked from './Linked.svelte';
 	import Markdown from './Markdown.svelte';
@@ -16,6 +16,9 @@
 	// of plain text + URL autolinks; `streaming`/`streamId` are forwarded to the
 	// renderer for the live block, which receives partial Markdown as it streams.
 	// (Thinking blocks render Markdown directly via the Markdown component.)
+	// After a long-press copy, a "Select text" button turns native selection back
+	// on for this bubble (with the whole text selected, so the handles show) until
+	// the next press outside it, for copying part of a message on a phone.
 	// `onread`, when given, adds a hover button that reads the message aloud.
 	// `sessionId`, when given, shows the local files the text mentions under
 	// it (image previews, download chips) once the text has finished streaming.
@@ -58,11 +61,33 @@
 	const LONG_PRESS_MS = 500;
 	const MOVE_CANCEL_PX = 10;
 	let pressTimer: ReturnType<typeof setTimeout> | undefined;
+	let bubble: HTMLDivElement;
+	let content: HTMLDivElement;
+	let offerSelect = $state(false);
+	let selecting = $state(false);
+
+	function startSelecting() {
+		offerSelect = false;
+		selecting = true;
+		// Wait for the class to lift user-select before selecting.
+		requestAnimationFrame(() => window.getSelection()?.selectAllChildren(content));
+	}
+
+	$effect(() => {
+		if (!offerSelect && !selecting) return;
+		const leave = (e: PointerEvent) => {
+			if (bubble.contains(e.target as Node)) return;
+			offerSelect = false;
+			selecting = false;
+		};
+		document.addEventListener('pointerdown', leave);
+		return () => document.removeEventListener('pointerdown', leave);
+	});
 	let startX = 0;
 	let startY = 0;
 
 	function onPointerDown(e: PointerEvent) {
-		if (e.pointerType !== 'touch' || !copyable) return;
+		if (e.pointerType !== 'touch' || !copyable || selecting) return;
 		startX = e.clientX;
 		startY = e.clientY;
 		clearTimeout(pressTimer);
@@ -70,6 +95,7 @@
 			pressTimer = undefined;
 			haptic();
 			doCopy();
+			offerSelect = true;
 		}, LONG_PRESS_MS);
 	}
 	function onPointerMove(e: PointerEvent) {
@@ -91,6 +117,8 @@
 
 <div class="chat chat-{side}">
 	<div
+		bind:this={bubble}
+		class:selecting
 		class="chat-bubble bubble group relative max-w-[85%] wrap-anywhere {markdown
 			? ''
 			: 'whitespace-pre-wrap'} {bubbleClass}"
@@ -101,13 +129,26 @@
 		onpointercancel={cancelPress}
 		onpointerleave={cancelPress}
 	>
-		{@render children?.()}
-		{#if markdown}<Markdown source={text} {streaming} {streamId} />{:else if text}<Linked
-				{text}
-			/>{/if}
+		<div class="contents" bind:this={content}>
+			{@render children?.()}
+			{#if markdown}<Markdown source={text} {streaming} {streamId} />{:else if text}<Linked
+					{text}
+				/>{/if}
+		</div>
 		{#if sessionId && text && !streaming}<FileAttachments {text} {sessionId} />{/if}
 		{#if copyable}
 			<div class="absolute top-1 right-1 flex gap-0.5">
+				{#if offerSelect}
+					<button
+						type="button"
+						class="copy-btn btn btn-ghost btn-xs"
+						onclick={startSelecting}
+						aria-label="Select text"
+						title="Select text"
+					>
+						<TextSelection size={14} />
+					</button>
+				{/if}
 				{#if onread}
 					<button
 						type="button"
@@ -148,6 +189,11 @@
 			-webkit-touch-callout: none;
 			user-select: none;
 			-webkit-user-select: none;
+		}
+		.bubble.selecting {
+			-webkit-touch-callout: default;
+			user-select: text;
+			-webkit-user-select: text;
 		}
 	}
 </style>
