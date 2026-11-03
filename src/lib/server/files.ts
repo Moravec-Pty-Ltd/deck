@@ -56,9 +56,16 @@ export function resolveSessionFile(session: DeckSession, mention: string): Serve
 // change under the same path. A scriptable document (SVG, HTML) is sandboxed
 // so opened as a page it cannot run under deck's origin and cookie; <img> is
 // unaffected and other types stay plain so the browser's PDF viewer works.
+// Text is labelled UTF-8: without a charset a browser opening the file falls
+// back to a legacy single-byte encoding and garbles every accented letter.
+function contentType(mime: string): string {
+	const textual = mime.startsWith('text/') || mime === 'application/json' || mime.endsWith('xml');
+	return textual ? `${mime}; charset=utf-8` : mime;
+}
+
 export function fileHeaders(file: ServedFile, download: boolean): Record<string, string> {
 	const headers: Record<string, string> = {
-		'content-type': file.mime,
+		'content-type': contentType(file.mime),
 		'cache-control': 'private, no-cache',
 		'x-content-type-options': 'nosniff',
 		'accept-ranges': 'bytes',

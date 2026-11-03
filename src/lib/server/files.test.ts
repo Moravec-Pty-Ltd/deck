@@ -99,6 +99,14 @@ describe('fileHeaders', () => {
 		expect(fileHeaders(file, true)['content-disposition']).toBe("attachment; filename*=UTF-8''a%20b.png");
 	});
 
+	it('labels text as UTF-8 so accented letters survive, and leaves binary types alone', () => {
+		expect(fileHeaders({ ...file, mime: 'text/markdown' }, false)['content-type']).toBe('text/markdown; charset=utf-8');
+		expect(fileHeaders({ ...file, mime: 'text/plain' }, false)['content-type']).toBe('text/plain; charset=utf-8');
+		expect(fileHeaders({ ...file, mime: 'application/json' }, false)['content-type']).toBe('application/json; charset=utf-8');
+		expect(fileHeaders({ ...file, mime: 'image/svg+xml' }, false)['content-type']).toBe('image/svg+xml; charset=utf-8');
+		expect(fileHeaders({ ...file, mime: 'application/pdf' }, false)['content-type']).toBe('application/pdf');
+	});
+
 	it('sandboxes scriptable documents only', () => {
 		expect(fileHeaders({ ...file, mime: 'image/svg+xml' }, false)['content-security-policy']).toBe(
 			"default-src 'none'; sandbox"
