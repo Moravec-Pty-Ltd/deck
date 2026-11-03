@@ -304,3 +304,30 @@ test('tabletop puts the transcript on the top segment and the composer and ask o
 	// Answered, the question goes back to its place in the transcript.
 	expect((await box(page.getByText('Which colour?'))).y).toBeLessThan(330);
 });
+
+test.describe('on a phone', () => {
+	test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, permissions: ['clipboard-read', 'clipboard-write'] });
+
+	test('a long-press copies a message, then Select text allows part of it', async ({ page }) => {
+		await openSession(page, 'select-text');
+		await send(page, 'first sentence. second sentence.');
+		const reply = page.getByText('Fake reply to: first sentence. second sentence.');
+		await expect(reply).toBeVisible();
+		const bubble = page.locator('.bubble').filter({ has: reply });
+		const userSelect = () => bubble.evaluate((el) => getComputedStyle(el).webkitUserSelect || getComputedStyle(el).userSelect);
+		expect(await userSelect()).toBe('none');
+
+		await bubble.dispatchEvent('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 10 });
+		await expect(bubble.getByRole('button', { name: 'Select text' })).toBeVisible();
+		await bubble.dispatchEvent('pointerup', { pointerType: 'touch' });
+		expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('Fake reply to: first sentence. second sentence.');
+
+		await bubble.getByRole('button', { name: 'Select text' }).click();
+		await expect.poll(userSelect).toBe('text');
+		await expect.poll(() => page.evaluate(() => getSelection()?.toString())).toContain('second sentence.');
+
+		await page.locator('textarea').dispatchEvent('pointerdown', { pointerType: 'touch' });
+		await expect.poll(userSelect).toBe('none');
+		await expect(bubble.getByRole('button', { name: 'Select text' })).toBeHidden();
+	});
+});

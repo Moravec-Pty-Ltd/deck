@@ -1376,11 +1376,23 @@ struct TranscriptRow: View {
 	let item: TranscriptItem
 	var viewModel: SessionDetailViewModel?
 	var voice: VoiceController?
+	@State private var selecting: SelectTextItem?
 
 	var body: some View {
+		row.selectTextSheet($selecting)
+	}
+
+	@ViewBuilder
+	private var row: some View {
 		switch item {
 		case .user(_, let text, let images):
 			TranscriptBubble(text: text, isUser: true, images: images, viewModel: viewModel)
+				.contextMenu {
+					if !text.isEmpty {
+						copyButton(text)
+						SelectTextButton { selecting = SelectTextItem(AttributedString(text)) }
+					}
+				}
 		case .assistant(_, let text):
 			TranscriptBubble(text: text, isUser: false, viewModel: viewModel)
 				.contextMenu {
@@ -1391,17 +1403,18 @@ struct TranscriptRow: View {
 							Label("Read aloud", systemImage: "speaker.wave.2")
 						}
 					}
-					Button {
-						UIPasteboard.general.string = text
-					} label: {
-						Label("Copy", systemImage: "doc.on.doc")
-					}
+					copyButton(text)
+					SelectTextButton { selecting = SelectTextItem(SelectableMarkdown.attributed(text)) }
 				}
 		case .thinking(_, let text):
 			DisclosureGroup("thinking") {
 				MarkdownText(text)
 					.font(.footnote)
 					.padding(.top, 4)
+					.contextMenu {
+						copyButton(text)
+						SelectTextButton { selecting = SelectTextItem(SelectableMarkdown.attributed(text)) }
+					}
 			}
 			.font(.caption)
 			.foregroundStyle(.secondary)
@@ -1434,6 +1447,16 @@ struct TranscriptRow: View {
 					.foregroundStyle(.red)
 					.frame(maxWidth: .infinity, alignment: .leading)
 			}
+		}
+	}
+}
+
+extension TranscriptRow {
+	private func copyButton(_ text: String) -> some View {
+		Button {
+			UIPasteboard.general.string = text
+		} label: {
+			Label("Copy", systemImage: "doc.on.doc")
 		}
 	}
 }

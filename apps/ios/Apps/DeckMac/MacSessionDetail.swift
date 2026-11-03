@@ -338,19 +338,36 @@ struct MacSessionDetail: View {
 private struct MacTranscriptRow: View {
 	let item: TranscriptItem
 	let viewModel: SessionDetailViewModel
+	@State private var selecting: SelectTextItem?
 
 	var body: some View {
+		row.selectTextSheet($selecting)
+	}
+
+	@ViewBuilder
+	private var row: some View {
 		switch item {
 		case .user(_, let text, let images):
 			MacBubble(text: text, isUser: true, images: images, viewModel: viewModel)
+				.contextMenu {
+					if !text.isEmpty {
+						Button("Copy") { TextClipboard.copy(text) }
+						SelectTextButton { selecting = SelectTextItem(AttributedString(text)) }
+					}
+				}
 		case .assistant(_, let text):
 			MacBubble(text: text, isUser: false, viewModel: viewModel)
 				.contextMenu {
 					Button("Copy") { TextClipboard.copy(text) }
+					SelectTextButton { selecting = SelectTextItem(SelectableMarkdown.attributed(text)) }
 				}
 		case .thinking(_, let text):
 			DisclosureGroup("thinking") {
 				MarkdownText(text).font(.footnote).padding(.top, 4)
+					.contextMenu {
+						Button("Copy") { TextClipboard.copy(text) }
+						SelectTextButton { selecting = SelectTextItem(SelectableMarkdown.attributed(text)) }
+					}
 			}
 			.font(.caption)
 			.foregroundStyle(.secondary)
