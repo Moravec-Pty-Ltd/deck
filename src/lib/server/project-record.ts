@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { error, json } from '@sveltejs/kit';
 import type { Project } from '$lib/types';
 import { addProject, listProjects, removeProject } from './store';
 import { completeDirs, expandTilde } from './fsutil';
-import { isPickerAllowed } from './confine';
+import { isPickerAllowed, projectForPath } from './confine';
 import { objectBody } from './http';
 import { accountExists } from './accounts';
 import { buildProjectRecord, homeRegistrationRefusal } from './project-record-core';
@@ -69,6 +70,89 @@ export async function registerProjectRoute({ request }: Pick<ProjectEvent, 'requ
 	const project = build(body, target, existing);
 	addProject(project);
 	return json(project, { status: 201 });
+}
+
+// A typed start path as the server uses it: trimmed, ~ expanded, no trailing slash.
+function startPath(raw: unknown): string {
+	return expandTilde(String(raw ?? '').trim()).replace(/(.)\/+$/, '$1');
+}
+
+// The deepest part of `dir` that exists.
+function existingAncestor(dir: string): string {
+	let base = dir;
+	while (!fs.existsSync(base)) base = path.dirname(base);
+	return base;
+}
+
+// Why a missing folder may not be created at `dir`, or its canonical path. The
+// rules match registration and the path picker: absolute, no dot segment (so no
+// `..` escape and no hidden folder), no NUL, and under $HOME or a project root
+// once the existing part's symlinks resolve, never $HOME itself.
+function newFolder(dir: string): { real: string } | { refusal: string } {
+	if (dir.includes('\0') || !path.isAbsolute(dir)) return { refusal: 'cannot create a folder there: use an absolute path' };
+	if (dir.split('/').some((s) => s.startsWith('.'))) return { refusal: 'cannot create a hidden (dot) folder or use ..' };
+	const base = existingAncestor(dir);
+	if (!isPickerAllowed(base)) return { refusal: 'cannot create a folder outside the allowed directories' };
+	if (!fs.statSync(base).isDirectory()) return { refusal: `${base} is not a directory` };
+	const real = path.join(fs.realpathSync(base), path.relative(base, dir));
+	const refusal = homeRegistrationRefusal(real, fs.realpathSync(os.homedir()));
+	return refusal ? { refusal: refusal.replace('register', 'create a folder in') } : { real };
+}
+
+// A start request's folder, checked but not yet touched: `create` when it must be
+// made, `project` when it is to be registered. Nothing is written until
+// commitStartFolder, so a folder or registration refusal leaves neither behind.
+export interface StartFolder {
+	cwd: string;
+	create: boolean;
+	project?: Project;
+}
+
+function registration(raw: unknown, dir: string, create: boolean): Project {
+	if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) error(400, 'registerProject must be an object');
+	const { name, group } = raw as Record<string, unknown>;
+	const target = create ? dir : newProjectDir(resolveDir(dir));
+	if (findProject(target) || findProject(dir)) error(400, 'already a registered project');
+	return build({ name, group }, target);
+}
+
+export function planStartFolder(rawCwd: unknown, createDir: unknown, registerProject: unknown): StartFolder {
+	const given = startPath(rawCwd);
+	if (!given) error(400, 'cwd does not exist');
+	const create = !fs.existsSync(given);
+	if (create && createDir !== true) error(400, 'cwd does not exist');
+	const made = create ? newFolder(given) : { real: given };
+	if ('refusal' in made) error(400, made.refusal);
+	const cwd = made.real;
+	if (registerProject === undefined) return { cwd, create };
+	return { cwd, create, project: registration(registerProject, cwd, create) };
+}
+
+export function commitStartFolder({ cwd, create, project }: StartFolder): void {
+	try {
+		if (create) fs.mkdirSync(cwd, { recursive: true });
+	} catch (e) {
+		error(400, `could not create the folder: ${e instanceof Error ? e.message : e}`);
+	}
+	if (project) addProject(project);
+}
+
+// What the start sheet shows for a typed custom path: an existing folder, a new
+// one it may create, or why it can't; whether registration would accept it; and
+// the registered project it (or a new one's parent) already belongs to. Outside
+// the picker's roots it only answers `outside`, so it can't probe the rest of
+// the host (a start in an existing folder there still works).
+export function folderStateRoute({ url }: Pick<ProjectEvent, 'url'>): Response {
+	const dir = startPath(url.searchParams.get('path'));
+	if (!dir) error(400, 'path required');
+	const base = path.isAbsolute(dir) ? existingAncestor(dir) : null;
+	if (base && !isPickerAllowed(base)) return json({ state: 'outside', registrable: false });
+	if (base === dir && !isDirectory(dir)) return json({ state: 'refused', reason: 'not a folder', registrable: false });
+	const made = base === dir ? { real: fs.realpathSync(dir) } : newFolder(dir);
+	if ('refusal' in made) return json({ state: 'refused', reason: made.refusal, registrable: false });
+	const registrable = !homeRegistrationRefusal(made.real, fs.realpathSync(os.homedir()));
+	const project = projectForPath(base!);
+	return json({ state: base === dir ? 'existing' : 'new', registrable, ...(project ? { project } : {}) });
 }
 
 export function removeProjectRoute({ url }: Pick<ProjectEvent, 'url'>): Response {

@@ -21,6 +21,11 @@ struct StartView: View {
 	/// "Custom path…" is picked: start in the typed folder instead of a project.
 	@State private var custom = false
 	@State private var customPath = ""
+	/// What the server says about the typed folder, and whether to save it as a project.
+	@State private var folderState: FolderState?
+	@State private var saveAsProject = false
+	@State private var projectName = ""
+	@State private var projectGroup = ""
 	@State private var mode: Mode = .issues
 	@State private var selectedIssue: DeckIssue?
 	@State private var selectedPR: DeckPR?
@@ -96,6 +101,7 @@ struct StartView: View {
 			}
 			.onChange(of: selectedProject) { _, _ in Task { await refresh() } }
 			.onChange(of: mode) { _, _ in Task { await refresh() } }
+			.task(id: custom ? customPath : "") { await loadFolderState() }
 			.sheet(item: $selectedIssue) { issue in
 				if let project = activeProject {
 					StartConfirmSheet(kind: .issue(issue), project: project, onCreated: onSessionCreated)
@@ -113,8 +119,57 @@ struct StartView: View {
 			}
 			.sheet(isPresented: $startingPrompt) {
 				if let project = activeProject {
-					StartConfirmSheet(kind: .prompt, project: project, onCreated: onSessionCreated)
+					StartConfirmSheet(
+						kind: .prompt, project: project, createDir: createDir, registerProject: registration,
+						onCreated: onSessionCreated)
 				}
+			}
+		}
+	}
+
+	/// The typed folder doesn't exist yet, so the start creates it.
+	private var createDir: Bool { custom && folderState?.state == .new }
+
+	private var registration: ProjectRegistration? {
+		guard custom, saveAsProject, folderState?.canRegister == true else { return nil }
+		return ProjectRegistration(name: projectName, group: projectGroup)
+	}
+
+	private func loadFolderState() async {
+		folderState = nil
+		let path = customPath.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard custom, !path.isEmpty, store.supports(.newFolder), let client = store.client else { return }
+		try? await Task.sleep(for: .milliseconds(250))
+		guard !Task.isCancelled, let state = try? await client.folderState(path), !Task.isCancelled else { return }
+		folderState = state
+	}
+
+	@ViewBuilder
+	private func folderRows(_ state: FolderState) -> some View {
+		if state.state == .refused {
+			Text(state.reason ?? "This folder can't be used.")
+				.font(.footnote)
+				.foregroundStyle(.red)
+		}
+		if state.state == .new {
+			Text("New folder: created when you start.")
+				.font(.footnote)
+				.foregroundStyle(.secondary)
+		}
+		if let project = store.projects.first(where: { $0.path == state.project }) {
+			Button("In \(project.name). Switch to the project") {
+				custom = false
+				selectedProject = project
+			}
+			.font(.footnote)
+		} else if state.canRegister {
+			Toggle("Save as project", isOn: $saveAsProject)
+				.accessibilityIdentifier("saveAsProject")
+			if saveAsProject {
+				TextField((customPath as NSString).lastPathComponent, text: $projectName)
+					.deckPlainInput()
+					.accessibilityIdentifier("saveAsProjectName")
+				GroupField(group: $projectGroup)
 			}
 		}
 	}
@@ -134,6 +189,7 @@ struct StartView: View {
 					// In the list so its suggestions scroll rather than push the rows away.
 					PathField(path: $customPath)
 						.accessibilityIdentifier("customPath")
+					if let folderState { folderRows(folderState) }
 				}
 				if let project = activeProject {
 					switch custom ? .prompt : mode {
@@ -189,7 +245,8 @@ struct StartView: View {
 		startingShell = true
 		defer { startingShell = false }
 		do {
-			onSessionCreated(try await store.startShell(project: project).id)
+			onSessionCreated(try await store.startShell(
+				project: project, createDir: createDir, registerProject: registration).id)
 		} catch {
 			shellError = error.localizedDescription
 		}
@@ -202,6 +259,9 @@ struct StartView: View {
 
 	private func pickDefaultProject() {
 		custom = false
+		saveAsProject = false
+		projectName = ""
+		projectGroup = ""
 		let open = store.sessions.first { $0.id == openSessionId }
 		selectedProject = SessionProject.startDefault(openSession: open, current: selectedProject, in: store.projects)
 	}
@@ -276,6 +336,9 @@ enum StartWorktreeMode: Hashable {
 struct StartConfirmSheet: View {
 	let kind: StartTarget
 	let project: DeckProject
+	/// A custom folder only: create it, and register it, as part of the start.
+	var createDir = false
+	var registerProject: ProjectRegistration?
 	var onCreated: (String) -> Void
 
 	@Environment(DeckStore.self) private var store
@@ -751,6 +814,8 @@ struct StartConfirmSheet: View {
 		base.provider = (agentKind == "pi" && !provider.isEmpty) ? provider : nil
 		base.effort = (agentKind == "claude" && !effort.isEmpty) ? effort : nil
 		base.permissionMode = agentKind == "claude" ? (yolo ? "bypassPermissions" : "acceptEdits") : nil
+		base.createDir = createDir
+		base.registerProject = registerProject
 		switch kind {
 		case .pr(let pr):
 			let more = (store.prsByProject[project.path] ?? []).filter { additionalPRIds.contains($0.id) && $0.id != pr.id }
@@ -791,6 +856,7 @@ struct StartConfirmSheet: View {
 			}
 			for await (id, status) in group { plan?.record(id, status) }
 		}
+		if registerProject != nil { await store.refreshProjects() }
 		await store.refreshSessions()
 		isSubmitting = false
 		report()

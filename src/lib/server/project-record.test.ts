@@ -11,8 +11,16 @@ const outside = mkreal('deck-project-record-out-');
 const restoreEnv = pinEnv({ DECK_DATA: dataDir });
 vi.spyOn(os, 'homedir').mockReturnValue(home);
 
-const { registerProjectRoute, removeProjectRoute, projectConfigRoute, patchProjectConfigRoute, completeDirsRoute } =
-	await import('./project-record');
+const {
+	registerProjectRoute,
+	removeProjectRoute,
+	projectConfigRoute,
+	patchProjectConfigRoute,
+	completeDirsRoute,
+	planStartFolder,
+	commitStartFolder,
+	folderStateRoute
+} = await import('./project-record');
 const { addProject, listProjects } = await import('./store');
 
 afterAll(() => {
@@ -139,5 +147,71 @@ describe('registerProjectRoute refusals and canonical paths', () => {
 		expect(await res.json()).toEqual({ name: 'Legacy', path: legacy, template: 't' });
 		expect(listProjects()).toEqual([{ name: 'Legacy', path: legacy, template: 't' }]);
 		removeProjectRoute({ url: at(`path=${encodeURIComponent(legacy)}`) });
+	});
+});
+
+describe('start folder', () => {
+	const fresh = path.join(home, 'code', 'fresh', 'deep');
+
+	it('plans a missing folder without touching disk, then creates and registers it', () => {
+		const plan = planStartFolder(' ~/code/fresh/deep/ ', true, { name: 'Fresh', group: 'new' });
+		expect(plan).toEqual({ cwd: fresh, create: true, project: { name: 'Fresh', path: fresh, group: 'new' } });
+		expect(fs.existsSync(path.join(home, 'code', 'fresh'))).toBe(false);
+		expect(listProjects()).toEqual([]);
+		commitStartFolder(plan);
+		expect(fs.statSync(fresh).isDirectory()).toBe(true);
+		expect(listProjects()).toEqual([{ name: 'Fresh', path: fresh, group: 'new' }]);
+	});
+
+	it('keeps the 400 for a missing folder without createDir, and starts in an existing one as is', async () => {
+		expect(await status(() => planStartFolder('~/code/absent', undefined, undefined))).toBe(400);
+		expect(planStartFolder('~/apple', true, undefined)).toEqual({ cwd: path.join(home, 'apple'), create: false });
+	});
+
+	it('names a registered existing folder after itself and refuses one already registered', async () => {
+		expect(planStartFolder('~/apple', undefined, {}).project).toEqual({ name: 'apple', path: path.join(home, 'apple') });
+		expect(await status(() => planStartFolder(fresh, undefined, {}))).toBe(400);
+		expect(await status(() => planStartFolder('~/apple', undefined, true))).toBe(400);
+		expect(await status(() => planStartFolder('~/apple', undefined, { group: 1 }))).toBe(400);
+		expect(await status(() => planStartFolder('~', undefined, {}))).toBe(403);
+	});
+
+	it.each([
+		['~/.deck/x', 'hidden'],
+		['~/code/../../x', 'outside'],
+		[`${home}/code/../x`, 'hidden'],
+		['relative/x', 'absolute'],
+		['~/code/a\0b', 'absolute'],
+		['~/innocent/x', 'hidden (dot) directory'],
+		[path.join(outside, 'x'), 'outside']
+	])('refuses to create %s and creates nothing', async (raw, reason) => {
+		const before = fs.readdirSync(home).sort();
+		try {
+			planStartFolder(raw, true, {});
+			throw new Error('expected a refusal');
+		} catch (e) {
+			expect(e).toMatchObject({ status: 400, body: { message: expect.stringContaining(reason) } });
+		}
+		expect(fs.readdirSync(home).sort()).toEqual(before);
+		expect(fs.readdirSync(outside)).toEqual([]);
+	});
+
+	it('tells the start sheet whether a typed path exists, is new, or is refused', async () => {
+		const state = async (p: string) => folderStateRoute({ url: at(`path=${encodeURIComponent(p)}`) }).json();
+		expect(await state('~/code/fresh/deep/sub')).toEqual({ state: 'new', registrable: true, project: fresh });
+		expect(await state('~/code/fresh/deep/')).toEqual({ state: 'existing', registrable: true, project: fresh });
+		expect(await state('~/apple')).toEqual({ state: 'existing', registrable: true });
+		expect(await state('~/code/brand-new')).toEqual({ state: 'new', registrable: true });
+		expect(await state('~')).toEqual({ state: 'existing', registrable: false });
+		expect(await state('~/.deck/x')).toMatchObject({ state: 'refused', registrable: false });
+		// Outside the roots an existing folder, a file and a missing path all look alike.
+		fs.mkdirSync(path.join(outside, 'dir'));
+		fs.writeFileSync(path.join(outside, 'file'), '');
+		for (const p of ['dir', 'file/x', 'missing/x']) {
+			expect(await state(path.join(outside, p))).toEqual({ state: 'outside', registrable: false });
+		}
+		fs.rmSync(path.join(outside, 'dir'), { recursive: true });
+		fs.rmSync(path.join(outside, 'file'));
+		expect(await status(() => folderStateRoute({ url: at('') }))).toBe(400);
 	});
 });

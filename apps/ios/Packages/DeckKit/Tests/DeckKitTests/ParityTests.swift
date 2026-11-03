@@ -524,6 +524,41 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual((sent.first?.json as? [String: Any])?["cwd"] as? String, "~/code/example")
 	}
 
+	func testANewCustomFolderIsCreatedAndSavedAsAProject() async {
+		var request = CreateSessionRequest(mode: .work, cwd: "~/code/fresh")
+		request.createDir = true
+		request.registerProject = ProjectRegistration(name: " ", group: "apps")
+		let sent = await requests(reply: #"{"id":"example"}"#) { _ = try await $0.createSession(request) }
+		assertShape(sent, "POST", "/api/agent/sessions", keys: ["createDir", "cwd", "mode", "registerProject"])
+		let body = sent.first?.json as? [String: Any]
+		XCTAssertEqual(body?["createDir"] as? Bool, true)
+		XCTAssertEqual(body?["registerProject"] as? [String: String], ["group": "apps"])
+	}
+
+	func testANewFolderTerminalCarriesTheSameFields() async {
+		let sent = await requests(reply: #"{"id":"example"}"#) {
+			_ = try await $0.createShellSession(cwd: "~/code/fresh", createDir: true, registerProject: ProjectRegistration())
+		}
+		assertShape(sent, "POST", "/api/agent/sessions", keys: ["createDir", "cwd", "mode", "registerProject"])
+		XCTAssertEqual((sent.first?.json as? [String: Any])?["registerProject"] as? [String: String], [:])
+	}
+
+	func testAFolderStateComesFromTheFolderRoute() async throws {
+		var state: FolderState?
+		let sent = await requests(reply: #"{"state":"new","registrable":true,"project":"/path/to/project"}"#) {
+			state = try await $0.folderState("~/code/fresh")
+		}
+		assertShape(sent, "GET", "/api/agent/fs/folder", query: "path=~/code/fresh")
+		XCTAssertEqual(state?.state, .new)
+		XCTAssertEqual(state?.canRegister, false)
+		let refused = try JSONDecoder().decode(FolderState.self, from: Data(#"{"state":"refused","reason":"no","registrable":false}"#.utf8))
+		XCTAssertEqual(refused.reason, "no")
+		XCTAssertFalse(refused.canRegister)
+		XCTAssertTrue(try JSONDecoder().decode(FolderState.self, from: Data(#"{"state":"existing","registrable":true}"#.utf8)).canRegister)
+		XCTAssertFalse(try JSONDecoder().decode(FolderState.self, from: Data(#"{"state":"existing","registrable":false}"#.utf8)).canRegister)
+		XCTAssertEqual(try JSONDecoder().decode(FolderState.self, from: Data(#"{"state":"outside","registrable":false}"#.utf8)).state, .outside)
+	}
+
 	func testAMissingCustomFolderShowsTheServersMessage() async {
 		RequestStub.status = 400
 		RequestStub.handler = { _ in Data(#"{"message":"cwd does not exist"}"#.utf8) }

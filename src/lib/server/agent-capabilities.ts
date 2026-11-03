@@ -34,6 +34,7 @@ export const AGENT_CAPABILITIES: readonly string[] = [
 	'quick-messages-by-project',
 	'files-browser',
 	'subagents',
+	'new-folder',
 ];
 
 export function agentInfo(): { version: string | null; capabilities: string[] } {

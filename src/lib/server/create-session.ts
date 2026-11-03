@@ -1,5 +1,4 @@
 import { error } from '@sveltejs/kit';
-import fs from 'node:fs';
 import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type DeckSession, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
 import { createSession } from './sessions';
 import { clearWorktreeBranch, createWorktree, fetchPullRef, isGitRepo } from './git';
@@ -10,7 +9,7 @@ import { appendEvent } from './claude';
 import { listProjects, updateProject, rememberModel, rememberEffort, updateSession } from './store';
 import { parseEffort } from './session-effort-core';
 import { accountProblem } from './accounts';
-import { expandTilde } from './fsutil';
+import { commitStartFolder, planStartFolder } from './project-record';
 import { resolveWithinProjects, projectForPath } from './confine';
 import { conflictMessage, isWorktreeFix, worktreeConflict } from '$lib/worktree-conflict';
 import { singleIssueTitle } from '$lib/issues';
@@ -93,12 +92,6 @@ export function parsePr(raw: unknown): SessionPR | undefined {
 	if (!REPO_RE.test(repo) || number === null) return undefined;
 	// title mirrors url: '' when absent (the picker always sends a real one).
 	return { repo, number, url: safeHttpUrl(o.url), title: asStr(o.title), seenAt: Date.now() };
-}
-
-function resolveCwd(raw: unknown): string {
-	const cwd = expandTilde(String(raw ?? ''));
-	if (!cwd || !fs.existsSync(cwd)) error(400, 'cwd does not exist');
-	return cwd;
 }
 
 // Remember the chosen base branch on the project so the next session defaults to it.
@@ -367,7 +360,15 @@ export async function createSessionFromRequest(
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
 	const effortLevel = safeEffort(effort, kind);
 
-	const startCwd = resolveCwd(body.cwd);
+	// Create and register the folder (both optional) once their own checks pass and
+	// before the session, so it starts inside its new project. A later failure
+	// (account, worktree, tmux) leaves them in place.
+	const folder = planStartFolder(body.cwd, body.createDir, body.registerProject);
+	if (folder.create && worktreeRequested(body.worktree as WorktreeReq | undefined)) {
+		error(400, 'a new folder is not a git repository, so it cannot have a worktree');
+	}
+	commitStartFolder(folder);
+	const startCwd = folder.cwd;
 	const account = isAgentKind(kind) ? projectAccount(startCwd) : undefined;
 	if (kind === 'claude') {
 		const problem = await accountProblem(account);

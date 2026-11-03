@@ -22,6 +22,10 @@ public struct CreateSessionRequest: Equatable, Sendable {
 	public var issues: [DeckIssue] = []
 	/// Review only.
 	public var pr: DeckPR?
+	/// A custom folder only: make it first, as it does not exist yet.
+	public var createDir = false
+	/// A custom folder only: register it as a project before starting.
+	public var registerProject: ProjectRegistration?
 
 	public init(mode: Mode, cwd: String) {
 		self.mode = mode
@@ -35,6 +39,8 @@ public struct CreateSessionRequest: Equatable, Sendable {
 			("effort", effort), ("permissionMode", permissionMode)
 		]
 		for (key, value) in optional { if let value { body[key] = value } }
+		if createDir { body["createDir"] = true }
+		if let registerProject { body["registerProject"] = registerProject.json }
 		switch mode {
 		case .work:
 			if let title { body["title"] = title }
@@ -60,6 +66,45 @@ public struct CreateSessionRequest: Equatable, Sendable {
 		if let title = issue.title { result["title"] = title }
 		return result
 	}
+}
+
+/// Saving a custom folder as a project as part of a start. Blank fields are
+/// left out, so the server names the project after the folder.
+public struct ProjectRegistration: Equatable, Sendable {
+	public var name: String
+	public var group: String
+
+	public init(name: String = "", group: String = "") {
+		self.name = name
+		self.group = group
+	}
+
+	var json: [String: Any] {
+		[("name", name), ("group", group)].reduce(into: [String: Any]()) { body, field in
+			let value = field.1.trimmingCharacters(in: .whitespacesAndNewlines)
+			if !value.isEmpty { body[field.0] = value }
+		}
+	}
+}
+
+/// What a start in a typed folder would do (GET /api/agent/fs/folder).
+public struct FolderState: Decodable, Equatable, Sendable {
+	public enum State: String, Decodable, Sendable {
+		case existing, new, refused
+		/// Outside $HOME and the projects: deck says no more about it.
+		case outside
+	}
+
+	public let state: State
+	/// Why a refused folder can't be used.
+	public let reason: String?
+	/// Whether registering it as a project would be accepted.
+	public let registrable: Bool?
+	/// The registered project the folder (or a new one's parent) sits in.
+	public let project: String?
+
+	/// Only a registrable folder outside every project can be saved as one.
+	public var canRegister: Bool { registrable == true && project == nil }
 }
 
 /// A start turned into one create per session, the way the web's new-session

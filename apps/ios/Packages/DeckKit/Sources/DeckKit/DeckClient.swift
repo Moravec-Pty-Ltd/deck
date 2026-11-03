@@ -161,6 +161,11 @@ public final class DeckClient: @unchecked Sendable {
 		try await get("/api/agent/fs/complete", query: [URLQueryItem(name: "q", value: partial)])
 	}
 
+	/// Whether a typed folder exists, would be created, or is refused.
+	public func folderState(_ path: String) async throws -> FolderState {
+		try await get("/api/agent/fs/folder", query: [URLQueryItem(name: "path", value: path)])
+	}
+
 	private static func compact(_ fields: [String: String?]) -> [String: Any] {
 		fields.compactMapValues { value in
 			guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
@@ -252,9 +257,17 @@ public final class DeckClient: @unchecked Sendable {
 	}
 
 	/// Start a deck-managed tmux terminal in `cwd`.
-	public func createShellSession(cwd: String, title: String? = nil, idempotencyKey: String? = nil) async throws -> CreateSessionResponse {
+	public func createShellSession(
+		cwd: String,
+		title: String? = nil,
+		createDir: Bool = false,
+		registerProject: ProjectRegistration? = nil,
+		idempotencyKey: String? = nil
+	) async throws -> CreateSessionResponse {
 		var body: [String: Any] = ["mode": "shell", "cwd": cwd]
 		if let title { body["title"] = title }
+		if createDir { body["createDir"] = true }
+		if let registerProject { body["registerProject"] = registerProject.json }
 		return try await post("/api/agent/sessions", json: body, idempotencyKey: idempotencyKey)
 	}
 
