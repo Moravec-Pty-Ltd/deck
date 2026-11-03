@@ -2,12 +2,14 @@ import SwiftUI
 import DeckKit
 import DeckUI
 
-/// The PR reviewer panel, opened from the Sessions screen. A review whose PR a
-/// session captured opens that session; any other opens on GitHub.
+/// The PR reviewer panel: a tab on iOS, a sheet on the Mac. A review whose PR
+/// a session captured opens that session; any other opens on GitHub.
 struct ReviewsView: View {
 	@Environment(DeckStore.self) private var store
 	@Environment(\.dismiss) private var dismiss
 	@Environment(\.openURL) private var openURL
+	/// A sheet's Done; a tab has nothing to dismiss.
+	var showsDone = true
 	let openSession: (String) -> Void
 
 	var body: some View {
@@ -23,8 +25,10 @@ struct ReviewsView: View {
 			.deckInlineNavigationTitle()
 			.refreshable { await store.refreshReviews() }
 			.toolbar {
-				ToolbarItem(placement: .confirmationAction) {
-					Button("Done") { dismiss() }
+				if showsDone {
+					ToolbarItem(placement: .confirmationAction) {
+						Button("Done") { dismiss() }
+					}
 				}
 			}
 		}

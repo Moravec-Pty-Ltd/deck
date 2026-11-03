@@ -85,6 +85,7 @@ start_deck() {
 		cd "$REPO"
 		exec env -i PATH="$REPO/e2e/fake-harness:$REPO/e2e/bin:$PATH" HOME="$ROOT" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" \
 			DECK_DATA="$ROOT/data" DECK_TOKEN="$TOKEN" DECK_SECRETS_FILE=1 \
+			DECK_MORABOT_STATUS="$ROOT/files-proj/.deck/morabot-status.json" \
 			DECK_E2E_REAL_TMUX="$REAL_TMUX" DECK_E2E_TMUX_SOCKET=$SOCKET \
 			node node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port "$PORT" --strictPort
 	) >"$LOG" 2>&1 &

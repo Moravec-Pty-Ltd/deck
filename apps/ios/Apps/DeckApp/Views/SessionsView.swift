@@ -6,8 +6,9 @@ import DeckUI
 /// pushes over the list; on an iPad it sits beside it in a split view. On a
 /// foldable opened flat the list stays on the left half and the session fills
 /// the right, split on the fold, which a NavigationSplitView cannot be pinned
-/// to; half open on a table the session takes the whole window (see
-/// SessionDetailView), since a column each side of a horizontal fold reads badly.
+/// to; half open on a table, or opened flat and held upright, it lays out as a
+/// phone (see SessionDetailView), since a column each side of a fold running
+/// across the window reads badly.
 struct SessionsView: View {
 	@Environment(DeckStore.self) private var store
 	@Environment(HingeMonitor.self) private var hinge
@@ -52,7 +53,6 @@ struct SessionsView: View {
 	@State private var hiddenExpanded = false
 	@State private var pushSettings = false
 	@State private var columns = NavigationSplitViewVisibility.all
-	@State private var showReviews = false
 	/// On the fold with one session open, its activity list in the list's place.
 	@State private var activityInList = false
 	@FocusState private var searchFocused: Bool
@@ -65,9 +65,12 @@ struct SessionsView: View {
 
 	enum Pane { case main, beside }
 
-	private var wide: Bool { sizeClass == .regular && !hinge.isTabletop }
+	private var wide: Bool { sizeClass == .regular && !hinge.isPhoneLayout }
 
 	private var split: Bool { hinge.splitWidth(sizeClass) != nil }
+
+	/// Opened flat and held upright: a phone's layout in a regular window.
+	private var upright: Bool { sizeClass == .regular && hinge.isOpenPortrait }
 
 	/// The list pane's width on the fold: half the window, or where the
 	/// divider was dragged. Takes the width from the layout it sizes: the
@@ -85,9 +88,10 @@ struct SessionsView: View {
 	private var twoUp: Bool { wide && beside != nil }
 
 	/// On a phone (or folded) the open session is pushed over the list.
+	/// Upright it has a stack of its own (below), so nothing is pushed here.
 	private var phonePath: Binding<[SessionTarget]> {
 		Binding(
-			get: { wide ? [] : pushed.map { [$0] } ?? [] },
+			get: { wide || upright ? [] : pushed.map { [$0] } ?? [] },
 			set: { if !wide { open = $0.last } })
 	}
 
@@ -136,6 +140,21 @@ struct SessionsView: View {
 				// Balanced keeps the list beside the session in portrait too,
 				// rather than sliding it over the session.
 				.navigationSplitViewStyle(.balanced)
+			} else if upright, let open {
+				// In a stack of its own, as on the fold, rather than pushed over the
+				// list: pushed in a regular window, a draft in the composer set
+				// UIKit and SwiftUI relaying it out without end.
+				clearOfRail { _, _ in
+					NavigationStack {
+						session(open)
+							.toolbar {
+								ToolbarItem(placement: .topBarLeading) {
+									Button("Sessions", systemImage: "chevron.backward") { self.open = nil }
+										.accessibilityIdentifier("sessionBack")
+								}
+							}
+					}
+				}
 			} else {
 				// The phone's list and the fold's left half are one stack, so
 				// folding and unfolding keep the list where it was.
@@ -587,24 +606,12 @@ struct SessionsView: View {
 				.accessibilityLabel("Settings")
 				.accessibilityIdentifier("openSettings")
 			}
-			if store.reviews?.isShown == true {
-				ToolbarItem(placement: .topBarLeading) {
-					Button { showReviews = true } label: {
-						Image(systemName: "checklist")
-					}
-					.accessibilityLabel("Reviews")
-					.accessibilityIdentifier("openReviews")
-				}
-			}
 			if canShowActivityInList {
 				ToolbarItem(placement: .topBarLeading) { activityToggle }
 			}
 		}
 		.navigationDestination(isPresented: $pushSettings) {
 			SettingsView()
-		}
-		.sheet(isPresented: $showReviews) {
-			ReviewsView { sessionId in show(SessionTarget(sessionId: sessionId)) }
 		}
 		// A bar of our own rather than .bottomBar toolbar items: the tab bar
 		// owns the bottom of the screen, so those never show up.
