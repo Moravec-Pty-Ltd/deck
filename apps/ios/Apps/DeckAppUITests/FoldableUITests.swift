@@ -487,6 +487,89 @@ final class FoldableUITests: XCTestCase {
 		}
 	}
 
+	/// Fully open and held upright, the fold runs across the window, so deck
+	/// lays out as a large phone: the list, then a session across the whole
+	/// window, a draft and all, with Back to the list. The simulator cannot
+	/// turn the open display, so DECK_HINGE fakes it; an iPad stands in where
+	/// the Duo is missing.
+	func testOpenPortraitIsALargePhone() throws {
+		guard Self.isFoldable || UIDevice.current.userInterfaceIdiom == .pad else {
+			throw XCTSkip("opened upright needs the iPhone Duo or an iPad simulator")
+		}
+		let app = try Self.launch(environment: ["DECK_HINGE": "openPortrait"])
+		guard app.windows.firstMatch.frame.width > 700 else { throw XCTSkip("the simulator booted folded") }
+		app.buttons["Sessions"].firstMatch.tap()
+		let row = Self.listItem("long transcript", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the seeded session")
+		XCTAssertFalse(app.staticTexts["No session open"].exists, "no detail beside the list")
+		XCTAssertFalse(app.descendants(matching: .any)["foldDivider"].exists, "no split")
+		row.tap()
+		XCTAssertTrue(app.staticTexts["Reply 60, the latest message."].waitForExistence(timeout: 20))
+		XCTAssertFalse(app.navigationBars["Sessions"].exists, "the session takes the whole window")
+		assertWholeLayout(app, "upright")
+		attach(app, "open-portrait")
+
+		let composer = app.textViews["sessionComposer"]
+		composer.tap()
+		composer.typeText("upright draft")
+		XCTAssertEqual(composer.value as? String, "upright draft", "a draft does not stall the layout")
+		// Cleared, or the draft follows into the tests after.
+		composer.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "upright draft".count))
+		app.buttons["sessionBack"].tap()
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 5), "Back goes to the list")
+		XCTAssertTrue(app.staticTexts["Reply 60, the latest message."].waitForNonExistence(timeout: 5), "and the session goes")
+		Self.listItem("long transcript", in: app).tap()
+		XCTAssertTrue(app.staticTexts["Reply 60, the latest message."].waitForExistence(timeout: 20), "it opens again")
+	}
+
+	/// Turning the open display upright and back keeps the open session: the
+	/// list leaves its side and comes back. An iPad stands in, turned by the
+	/// notifications DECK_HINGE=switchable listens for. The draft is left out,
+	/// as in the fold test: the faked fold leaves an iPad that never settles
+	/// with text in the composer (testOpenPortraitIsALargePhone types one).
+	func testTurningUprightKeepsTheSession() throws {
+		guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("needs a window that is regular when unfolded: an iPad simulator") }
+		let app = try Self.launch(environment: ["DECK_HINGE": "switchable"])
+		Self.post("deck.hinge.fullyOpen")
+		app.buttons["Sessions"].firstMatch.tap()
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10))
+		let row = Self.listItem("long transcript", in: app)
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "needs the seeded session")
+		row.tap()
+		let latest = app.staticTexts["Reply 60, the latest message."]
+		XCTAssertTrue(latest.waitForExistence(timeout: 20))
+
+		Self.post("deck.hinge.openPortrait")
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForNonExistence(timeout: 10), "upright, the list goes")
+		XCTAssertTrue(app.navigationBars["long transcript"].waitForExistence(timeout: 10), "upright, the session stays open")
+
+		Self.post("deck.hinge.fullyOpen")
+		XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 10), "level again, the list comes back")
+		XCTAssertTrue(latest.waitForExistence(timeout: 10), "the same session stays open")
+	}
+
+	/// The PR reviewer's panel is a tab, so the rail, an iPad's sidebar and a
+	/// phone's tab bar (or its More list) all reach it. Needs uitest.sh, which
+	/// points the server at a morabot status so the tab shows.
+	func testReviewsIsATab() throws {
+		let app = try Self.launch(environment: Self.isFoldable ? ["DECK_HINGE": "fullyOpen"] : [:])
+		var tab = app.buttons["Reviews"].firstMatch
+		if !tab.waitForExistence(timeout: 10) {
+			// An iPad's top bar pages its tabs; a phone's puts the rest under More.
+			if app.buttons["Next Page"].exists {
+				app.buttons["Next Page"].firstMatch.tap()
+			} else if app.buttons["More"].exists {
+				app.buttons["More"].firstMatch.tap()
+				tab = app.staticTexts["Reviews"].firstMatch
+			}
+		}
+		XCTAssertTrue(tab.waitForExistence(timeout: 10), "no Reviews tab\n\(app.debugDescription.prefix(3000))")
+		tab.tap()
+		XCTAssertTrue(app.navigationBars["Reviews"].waitForExistence(timeout: 10), "the tab opens the reviews panel")
+		XCTAssertFalse(app.buttons["Done"].exists, "a tab has nothing to dismiss")
+		attach(app, "reviews-tab")
+	}
+
 	/// Two sessions side by side: each spans its pane, the left to the
 	/// divider and the right from the divider to the rail, composers too.
 	private func assertTwoUpFill(_ app: XCUIApplication, _ step: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -552,7 +635,7 @@ final class FoldableUITests: XCTestCase {
 		XCTAssertTrue(composer.exists, "\(posture): no composer", file: file, line: line)
 		XCTAssertGreaterThan(composer.frame.minY, window.midY, "\(posture): the composer sits at the bottom", file: file, line: line)
 		XCTAssertGreaterThan(transcript.height, window.height / 3, "\(posture): the transcript fills the pane", file: file, line: line)
-		let pane = app.navigationBars["Sessions"].exists ? Self.railEdge(in: app) - Self.listEdge(in: app) : window.width
+		let pane = Self.railEdge(in: app) - (app.navigationBars["Sessions"].exists ? Self.listEdge(in: app) : window.minX)
 		XCTAssertGreaterThan(transcript.width, pane - 40, "\(posture): the transcript spans its pane", file: file, line: line)
 		XCTAssertLessThanOrEqual(transcript.maxY, composer.frame.minY + 1, "\(posture): the transcript sits above the composer", file: file, line: line)
 	}

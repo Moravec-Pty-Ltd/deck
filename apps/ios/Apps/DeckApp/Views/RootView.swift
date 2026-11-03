@@ -64,7 +64,7 @@ struct RootView: View {
 
 struct MainTabView: View {
 	enum Destination: Hashable {
-		case sessions, inbox, voiceOperator, start, browser, settings
+		case sessions, inbox, voiceOperator, start, browser, reviews, settings
 	}
 
 	@Environment(DeckStore.self) private var store
@@ -81,8 +81,9 @@ struct MainTabView: View {
 	@State private var picked: PaletteItem?
 
 	/// With a sidebar to hold it, the gear opens the Settings tab. A phone's
-	/// tab bar has no room for a sixth tab (iOS buries it under "More"), so
-	/// there Settings stays out of the bar and the gear pushes it instead.
+	/// tab bar holds five; past that iOS shows four and puts the rest under
+	/// "More" (as Reviews does to Browser), so Settings stays out of the bar
+	/// and the gear pushes it instead.
 	private var openSettingsTab: (() -> Void)? {
 		sizeClass == .regular ? { selectedTab = .settings } : nil
 	}
@@ -117,6 +118,15 @@ struct MainTabView: View {
 				NavigationStack { BrowserView() }
 			}
 
+			if store.reviews?.isShown == true {
+				Tab("Reviews", systemImage: "checklist", value: .reviews) {
+					ReviewsView(showsDone: false) { sessionId in
+						deepLinkSessionId = sessionId
+						selectedTab = .sessions
+					}
+				}
+			}
+
 			Tab("Settings", systemImage: "gearshape", value: .settings) {
 				NavigationStack { SettingsView() }
 			}
@@ -139,6 +149,9 @@ struct MainTabView: View {
 		// Narrowing to compact while on Settings would leave no tab selected.
 		.onChange(of: sizeClass) { _, size in
 			if size == .compact, selectedTab == .settings { selectedTab = .sessions }
+		}
+		.onChange(of: store.reviews?.isShown) { _, shown in
+			if shown != true, selectedTab == .reviews { selectedTab = .sessions }
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .deckOpenSession)) { note in
 			guard let sessionId = note.object as? String else { return }

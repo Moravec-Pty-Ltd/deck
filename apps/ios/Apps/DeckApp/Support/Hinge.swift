@@ -33,17 +33,21 @@ final class HingeMonitor {
 	/// Tests and demos can fake the fold with `DECK_HINGE`: a posture name, or
 	/// `tabletop` for half open with the fold across the window whatever the
 	/// window's shape (the simulator can neither bend nor turn the open display),
-	/// or `switchable` to start closed and fold or unfold on a Darwin
-	/// notification (`deck.hinge.closed`, `deck.hinge.fullyOpen`), which a UI
-	/// test can post from its own process.
+	/// `openPortrait` for fully open and held upright, or `switchable` to start
+	/// closed and fold, unfold or turn upright on a Darwin notification
+	/// (`deck.hinge.closed`, `deck.hinge.fullyOpen`, `deck.hinge.openPortrait`),
+	/// which a UI test can post from its own process.
 	static let override: String? = ProcessInfo.processInfo.environment["DECK_HINGE"]
 	private static let forcedTabletop = override == "tabletop"
+	private var forcedPortrait = HingeMonitor.override == "openPortrait"
 
 	init() {
 		if Self.forcedTabletop {
 			posture = .partiallyOpen
 		} else if Self.override == "switchable" {
 			posture = .closed
+		} else if forcedPortrait {
+			posture = .fullyOpen
 		} else if let override = Self.override.flatMap(Posture.init(rawValue:)) {
 			posture = override
 		}
@@ -53,9 +57,10 @@ final class HingeMonitor {
 	/// as the outer display is, through UIKit so every view sees the change
 	/// (a SwiftUI environment override leaves UIKit's views regular, and the
 	/// two then fight over layout without end).
-	func fake(_ posture: Posture) {
+	func fake(_ posture: Posture, portrait: Bool = false) {
 		Self.faked = self
 		_ = Self.listening
+		forcedPortrait = portrait
 		self.posture = posture
 		for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
 			for window in scene.windows {
@@ -73,16 +78,16 @@ final class HingeMonitor {
 	private static weak var faked: HingeMonitor?
 
 	private static let listening: Void = {
-		for posture in [Posture.closed, .fullyOpen] {
+		for name in ["closed", "fullyOpen", "openPortrait"] {
 			CFNotificationCenterAddObserver(
 				CFNotificationCenterGetDarwinNotifyCenter(), nil,
 				{ _, _, name, _, _ in
-					guard let name = name?.rawValue as String?,
-						let posture = Posture(rawValue: String(name.dropFirst("deck.hinge.".count)))
-					else { return }
-					Task { @MainActor in HingeMonitor.faked?.fake(posture) }
+					guard let name = (name?.rawValue as String?)?.dropFirst("deck.hinge.".count) else { return }
+					let portrait = name == "openPortrait"
+					guard let posture = portrait ? .fullyOpen : Posture(rawValue: String(name)) else { return }
+					Task { @MainActor in HingeMonitor.faked?.fake(posture, portrait: portrait) }
 				},
-				"deck.hinge.\(posture.rawValue)" as CFString, nil, .deliverImmediately)
+				"deck.hinge.\(name)" as CFString, nil, .deliverImmediately)
 		}
 	}()
 
@@ -92,6 +97,18 @@ final class HingeMonitor {
 	var isTabletop: Bool {
 		Self.forcedTabletop || (posture == .partiallyOpen && windowSize.height > windowSize.width)
 	}
+
+	/// Fully open and held upright: the fold runs across the window, so a split
+	/// down its middle would miss the fold and leave two narrow columns. The
+	/// window is laid out as one large phone instead. The full height, so the
+	/// keyboard does not turn it level; a faked fold goes by the fake alone,
+	/// since the iPad standing in for it is upright too.
+	var isOpenPortrait: Bool {
+		forcedPortrait || (Self.override == nil && posture == .fullyOpen && fullHeight > windowSize.width)
+	}
+
+	/// A regular window laid out as a phone: half open on a table, or upright.
+	var isPhoneLayout: Bool { isTabletop || isOpenPortrait }
 
 	/// Where the fold crosses a window folded top over bottom.
 	var foldY: CGFloat? {
@@ -112,7 +129,7 @@ final class HingeMonitor {
 	/// definition of "split" for the sessions layout and the sheets that must
 	/// stay off the fold.
 	func splitWidth(_ sizeClass: UserInterfaceSizeClass?) -> CGFloat? {
-		sizeClass == .regular && !isTabletop ? halfWidth : nil
+		sizeClass == .regular && !isPhoneLayout ? halfWidth : nil
 	}
 }
 
