@@ -432,15 +432,19 @@ public struct PathField: View {
 }
 
 /// A group name, with the groups already in use one tap away.
-struct GroupField: View {
+public struct GroupField: View {
 	@Binding var group: String
 	@Environment(DeckStore.self) private var store
+
+	public init(group: Binding<String>) {
+		_group = group
+	}
 
 	private var existing: [String] {
 		Set(store.projects.compactMap(\.group).filter { !$0.isEmpty }).sorted()
 	}
 
-	var body: some View {
+	public var body: some View {
 		HStack {
 			TextField("Group (optional)", text: $group)
 				.deckPlainInput()

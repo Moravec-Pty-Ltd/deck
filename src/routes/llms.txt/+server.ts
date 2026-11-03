@@ -328,6 +328,20 @@ Directory completions for a path being typed, as \`["~/code/example", ...]\`
 starts with \`.\`). Confined to \`$HOME\` and the registered projects: anything
 else returns \`[]\`.
 
+### GET /api/agent/fs/folder?path=<path>
+
+(capability \`new-folder\`, which also covers \`createDir\` and
+\`registerProject\` on POST /api/agent/sessions.) What a start in this folder
+would do: \`{ "state": "existing" | "new" | "refused" | "outside", "reason"?,
+"registrable", "project"? }\`. \`new\` means a session create with
+\`createDir: true\` makes it; \`refused\` carries the reason (a dot segment or
+\`..\`, a relative path, a file in the way). \`outside\` is any path outside
+\`$HOME\` and the registered projects, existing or not. \`registrable\` says
+whether \`registerProject\` would accept it (never \`$HOME\` itself or a
+dot-directory under it); \`project\` is the path of the registered project the
+folder (or a new one's parent) sits in. Offer \`registerProject\` only when
+\`registrable\` is true and there is no \`project\`. 400 without \`path\`.
+
 ### GET /api/agent/git/branches?repo=<path>
 
 Branch names (local and remote, \`origin/\` stripped, deduplicated) for a
@@ -514,9 +528,21 @@ idempotent replay).
 	"title": "...", "model": "...",     // optional; model is free-text
 	"effort": "low|medium|high|xhigh|max",  // optional; claude reasoning effort, omit for the CLI default
 	"issue": { "source": "github|linear|clickup", "id": "owner/repo#1", "url": "..." },  // optional; from /api/agent/issues
-	"worktree": { "branch": "my-branch", "newBranch": true, "base": "main" }             // optional; a newBranch is slugified into a valid ref (owner/repo#1 -> owner-repo-1)
+	"worktree": { "branch": "my-branch", "newBranch": true, "base": "main" },            // optional; a newBranch is slugified into a valid ref (owner/repo#1 -> owner-repo-1)
+	"createDir": true,                  // optional; create a missing cwd (and its parents) first
+	"registerProject": { "name": "...", "group": "..." }  // optional; register cwd as a project first, both fields optional
 }
 \`\`\`
+
+\`createDir\` and \`registerProject\` work in every mode. Without \`createDir\` a
+missing \`cwd\` is a 400. With it, the folder is made only under \`$HOME\` or a
+registered project, never in a dot-directory or through \`..\` (400 with the
+reason otherwise; see GET /api/agent/fs/folder), and a new folder takes no
+\`worktree\`. \`registerProject\` registers \`cwd\` as POST /api/agent/projects
+would (name defaults to the folder's name; same refusals; 400 if it is already
+registered). Both are checked before anything is written, so a refusal of
+either creates no folder and no project; they happen before the session, so a
+later failure (an account problem, a bad worktree) leaves them in place.
 
 \`\`\`json
 { "mode": "review",

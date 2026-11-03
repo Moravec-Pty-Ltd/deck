@@ -127,6 +127,20 @@
 	let newProjectPath = $state('');
 	let newProjectGroup = $state('');
 	let newProjectTemplate = $state('');
+	// What the server says about a typed custom path (GET fs/folder): an existing
+	// folder, a new one Start creates, or why it can't be used, plus the project it
+	// already sits in. Saving it as a project is offered only outside every project.
+	type FolderState = {
+		state: 'existing' | 'new' | 'refused' | 'outside';
+		reason?: string;
+		registrable?: boolean;
+		project?: string;
+	};
+	let folder = $state<FolderState | null>(null);
+	let folderSeq = 0;
+	let saveProject = $state(false);
+	let saveProjectName = $state('');
+	let saveProjectGroup = $state('');
 	let busy = $state(false);
 	let errorMsg = $state('');
 	// The expensive-model confirm is showing (a fable/sol pick is awaiting a
@@ -191,6 +205,9 @@
 		showPicker = false;
 		showOptions = false;
 		addingProject = false;
+		saveProject = false;
+		saveProjectName = '';
+		saveProjectGroup = '';
 		mode = 'issue';
 		pickedIssues = [];
 		pickedPrs = [];
@@ -218,6 +235,11 @@
 	}
 
 	const effectiveCwd = $derived(cwd === '__custom' ? customCwd : cwd);
+	const customFolder = $derived(cwd === '__custom' && customCwd.trim() ? folder : null);
+	const newFolder = $derived(customFolder?.state === 'new');
+	const canSaveProject = $derived(!!customFolder?.registrable && !customFolder.project);
+	const folderProject = $derived(projects.find((p) => p.path === customFolder?.project));
+	const folderName = $derived(customCwd.trim().replace(/\/+$/, '').split('/').pop() ?? '');
 	const selectedProject = $derived(projects.find((p) => p.path === cwd));
 	const projectGroups = $derived(groupProjects(projects));
 	const groupSuggestions = $derived(existingGroupNames(projects));
@@ -318,8 +340,24 @@
 
 	// Worktree mode defaults to "new" for agents (branch off and work in isolation)
 	// and "none" for shells (run right in the project), until the user overrides.
+	// A new folder is not a git repo yet, so it never gets a worktree.
 	$effect(() => {
-		if (!worktreeModeDirty) worktreeMode = kind === 'shell' ? 'none' : 'new';
+		if (newFolder) worktreeMode = 'none';
+		else if (!worktreeModeDirty) worktreeMode = kind === 'shell' ? 'none' : 'new';
+	});
+
+	async function loadFolder(path: string, seq: number) {
+		const f = await agentGet<FolderState>(agentPath(`fs/folder?path=${encodeURIComponent(path)}`)).catch(() => null);
+		if (seq === folderSeq) folder = f;
+	}
+
+	$effect(() => {
+		const path = cwd === '__custom' ? customCwd.trim() : '';
+		const seq = ++folderSeq;
+		folder = null;
+		if (!path) return;
+		const timer = setTimeout(() => loadFolder(path, seq), 200);
+		return () => clearTimeout(timer);
 	});
 
 	function setMode(m: WorktreeMode) {
@@ -563,7 +601,12 @@
 					cwd: startCwd,
 					title: title.trim() || undefined,
 					worktree: newWorktree(branch),
-					issues: pickedIssues.length ? pickedIssues.map(issueField) : undefined
+					issues: pickedIssues.length ? pickedIssues.map(issueField) : undefined,
+					createDir: newFolder || undefined,
+					registerProject:
+						canSaveProject && saveProject
+							? { name: saveProjectName.trim() || undefined, group: saveProjectGroup.trim() || undefined }
+							: undefined
 				}
 			}
 		];
@@ -636,6 +679,8 @@
 		confirmingExpensive = false;
 		confirmedExpensive = false;
 
+		// Start pressed inside the lookup's debounce: settle whether it's a new folder first.
+		if (cwd === '__custom' && !folder) await loadFolder(customCwd.trim(), folderSeq);
 		const creates = buildCreates(startCwd);
 		// Snapshot what we submitted so the partial-failure filtering below stays
 		// correct even if a pick changes while the batch is in flight (the pickers
@@ -773,6 +818,33 @@
 		</select>
 		{#if cwd === '__custom'}
 			<PathInput placeholder="/absolute/path or ~/path" bind:value={customCwd} />
+			{#if customFolder?.state === 'refused'}
+				<p class="text-xs text-error">{customFolder.reason}</p>
+			{:else if customFolder}
+				{#if newFolder}
+					<p class="text-xs opacity-60">New folder: created when you start</p>
+				{/if}
+				{#if folderProject}
+					<p class="text-xs opacity-60">
+						In project {folderProject.name}.
+						<button class="link" onclick={() => (cwd = folderProject.path)}>Switch to it</button>
+					</p>
+				{:else if canSaveProject}
+					<label class="label mt-1 cursor-pointer gap-2 text-sm">
+						<input type="checkbox" class="toggle toggle-sm" bind:checked={saveProject} />
+						Save as project
+					</label>
+					{#if saveProject}
+						<input class="input input-sm w-full" placeholder={folderName} bind:value={saveProjectName} />
+						<input
+							class="input input-sm w-full"
+							placeholder="Group (optional)"
+							list="new-session-project-groups"
+							bind:value={saveProjectGroup}
+						/>
+					{/if}
+				{/if}
+			{/if}
 		{/if}
 		<datalist id="new-session-project-groups">
 			{#each groupSuggestions as g (g)}
@@ -962,7 +1034,7 @@
 			</button>
 			{#if showOptions}
 				<div class="border-t border-base-300 px-3 pb-3">
-					{#if !reviewMode}
+					{#if !reviewMode && !newFolder}
 						<fieldset class="fieldset">
 							<legend class="fieldset-legend">Worktree</legend>
 							<div class="join w-full">

@@ -25,9 +25,9 @@ export const GET: RequestHandler = async () => {
 // A shell is its own mode (see shellBody), never a kind here: work and review
 // both start an agent turn.
 function commonFields(body: Record<string, unknown>): Record<string, unknown> {
-	const { cwd, prompt, kind, title, model, provider, effort, permissionMode } = body;
+	const { cwd, createDir, registerProject, prompt, kind, title, model, provider, effort, permissionMode } = body;
 	if (kind === 'shell') error(400, "start a shell with mode 'shell'");
-	return { cwd, prompt, kind: kind ?? 'claude', title, model, provider, effort, permissionMode };
+	return { cwd, createDir, registerProject, prompt, kind: kind ?? 'claude', title, model, provider, effort, permissionMode };
 }
 
 // Reject an invalid pr up front with the create pipeline's own parser: it
@@ -103,6 +103,8 @@ function shellBody(body: Record<string, unknown>): Record<string, unknown> {
 	return {
 		kind: 'shell',
 		cwd: body.cwd,
+		createDir: body.createDir,
+		registerProject: body.registerProject,
 		title: optionalString(body, 'title'),
 		command,
 		worktree: body.worktree,
