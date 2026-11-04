@@ -1,4 +1,5 @@
 import DeckBrowser
+import DeckUI
 import SwiftUI
 
 /// How to reach the deck machine's SSH server, which is what makes its
@@ -13,7 +14,7 @@ struct TunnelSheet: View {
 	@Environment(\.dismiss) private var dismiss
 
 	var body: some View {
-		NavigationStack {
+		DeckFormSheet("Tunnel", width: 460) {
 			Form {
 				Section("Deck machine") {
 					TextField("Host", text: $model.settings.host)
@@ -63,10 +64,6 @@ struct TunnelSheet: View {
 				}
 			}
 			.formStyle(.grouped)
-			.navigationTitle("Tunnel")
-			#if os(iOS)
-			.navigationBarTitleDisplayMode(.inline)
-			#endif
 			.toolbar {
 				ToolbarItem(placement: .confirmationAction) {
 					Button("Done") { dismiss() }

@@ -10,8 +10,53 @@ struct ModelPickerSheet: View {
 
 	@Environment(\.dismiss) private var dismiss
 	@State private var customModel = ""
+	@State private var picked: String?
 
 	var body: some View {
+		#if os(macOS)
+		macBody
+		#else
+		phoneBody
+		#endif
+	}
+
+	#if os(macOS)
+	/// A model set by hand stays on the list, so the dialog can show it as the pick.
+	private var macModels: [String] {
+		if let current, !available.contains(current) { return available + [current] }
+		return available
+	}
+
+	private var macBody: some View {
+		let custom = customModel.trimmingCharacters(in: .whitespacesAndNewlines)
+		return MacDialog(title: "Model", message: "Applies on the next turn. Stop a running turn first.") {
+			MacDialogList {
+				Picker("Model", selection: $picked) {
+					Text("Default (\(kind))").tag(String?.none)
+					ForEach(macModels, id: \.self) { Text($0).tag(String?.some($0)) }
+				}
+				.pickerStyle(.radioGroup)
+				.labelsHidden()
+				.disabled(!custom.isEmpty)
+			}
+			TextField("Custom model id", text: $customModel, prompt: Text("Custom model id"))
+				.labelsHidden()
+				.deckPlainInput()
+		} actions: {
+			MacCancelButton()
+			Button("Save") {
+				let choice = custom.isEmpty ? picked : custom
+				// deck refuses any change during a turn, even to the same model.
+				if choice != current { onSelect(choice) }
+				dismiss()
+			}
+			.keyboardShortcut(.defaultAction)
+		}
+		.onAppear { picked = current }
+	}
+	#endif
+
+	private var phoneBody: some View {
 		NavigationStack {
 			List {
 				Section {
@@ -88,6 +133,46 @@ struct RenameSessionSheet: View {
 	private var trimmed: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
 
 	var body: some View {
+		#if os(macOS)
+		macBody
+		#else
+		phoneBody
+		#endif
+	}
+
+	#if os(macOS)
+	private var macBody: some View {
+		MacDialog(title: "Rename session") {
+			TextField("Session name", text: $draft, prompt: Text("Session name"))
+				.labelsHidden()
+				.focused($focused)
+				.onSubmit { save() }
+				.disabled(saving)
+				.accessibilityIdentifier("renameField")
+			if let failure {
+				Text(failure)
+					.foregroundStyle(.red)
+					.fixedSize(horizontal: false, vertical: true)
+			}
+		} actions: {
+			MacCancelButton().disabled(saving)
+			Button("Save") { save() }
+				.keyboardShortcut(.defaultAction)
+				.disabled(saving || trimmed.isEmpty)
+				.accessibilityIdentifier("renameSave")
+		}
+		.onAppear {
+			// Cut before focusing, so the whole name is what comes up selected.
+			draft = String(current.prefix(SessionTitle.maxLength))
+			focused = true
+		}
+		.onChange(of: draft) { _, text in clamp(text) }
+		// Disabling the field while saving took the focus away from it.
+		.onChange(of: failure) { if failure != nil { focused = true } }
+	}
+	#endif
+
+	private var phoneBody: some View {
 		NavigationStack {
 			Form {
 				Section {
@@ -119,15 +204,16 @@ struct RenameSessionSheet: View {
 				draft = current
 				focused = true
 			}
-			// deck refuses a longer title, so stop it here rather than at the
-			// round trip.
-			.onChange(of: draft) { _, text in
-				if text.count > SessionTitle.maxLength {
-					draft = String(text.prefix(SessionTitle.maxLength))
-				}
-			}
+			.onChange(of: draft) { _, text in clamp(text) }
 		}
 		.presentationDetents([.height(220)])
+	}
+
+	/// deck refuses a longer title, so stop it here rather than at the round trip.
+	private func clamp(_ text: String) {
+		if text.count > SessionTitle.maxLength {
+			draft = String(text.prefix(SessionTitle.maxLength))
+		}
 	}
 
 	private func save() {
@@ -151,14 +237,37 @@ struct MergeSheet: View {
 	@State private var deleteBranch = true
 
 	var body: some View {
+		#if os(macOS)
+		MacDialog(title: mergeTitle) {
+			methodPicker
+			Toggle("Delete branch after merge", isOn: $deleteBranch)
+				.toggleStyle(.checkbox)
+		} actions: {
+			MacCancelButton()
+			Button("Merge") {
+				onMerge(method, deleteBranch)
+				dismiss()
+			}
+			.keyboardShortcut(.defaultAction)
+		}
+		#else
+		phoneBody
+		#endif
+	}
+
+	private var methodPicker: some View {
+		Picker("Method", selection: $method) {
+			Text("Squash").tag("squash")
+			Text("Merge").tag("merge")
+			Text("Rebase").tag("rebase")
+		}
+		.pickerStyle(.segmented)
+	}
+
+	private var phoneBody: some View {
 		NavigationStack {
 			Form {
-				Picker("Method", selection: $method) {
-					Text("Squash").tag("squash")
-					Text("Merge").tag("merge")
-					Text("Rebase").tag("rebase")
-				}
-				.pickerStyle(.segmented)
+				methodPicker
 
 				Toggle("Delete branch after merge", isOn: $deleteBranch)
 
@@ -211,13 +320,12 @@ struct DeleteSessionSheet: View {
 	#if os(macOS)
 	/// A Mac confirmation: title, one line, checkboxes, Cancel / Delete at the bottom right.
 	private var macBody: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			Text(macTitle).font(.headline)
-				.fixedSize(horizontal: false, vertical: true)
+		MacDialog(title: macTitle) {
 			if let warning = DeleteWarning.message(sessions) {
 				Label(warning, systemImage: "exclamationmark.triangle.fill")
 					.foregroundStyle(.orange)
 					.fixedSize(horizontal: false, vertical: true)
+					.padding(.bottom, 4)
 			}
 			Text(count == 1
 				? "The session stops and leaves deck. This can't be undone."
@@ -225,24 +333,17 @@ struct DeleteSessionSheet: View {
 				.foregroundStyle(.secondary)
 				.fixedSize(horizontal: false, vertical: true)
 			if hasWorktree {
-				VStack(alignment: .leading, spacing: 6) {
-					Toggle(worktreeLabel, isOn: $deleteWorktree)
-					Toggle(branchLabel, isOn: $deleteBranch)
-						.disabled(!deleteWorktree)
-				}
-				.toggleStyle(.checkbox)
+				Toggle(worktreeLabel, isOn: $deleteWorktree)
+					.toggleStyle(.checkbox)
+				Toggle(branchLabel, isOn: $deleteBranch)
+					.toggleStyle(.checkbox)
+					.disabled(!deleteWorktree)
 			}
-			HStack {
-				Spacer()
-				Button("Cancel", role: .cancel) { dismiss() }
-					.keyboardShortcut(.cancelAction)
-				// No default button: Return must not delete a worktree by habit.
-				Button(DeleteWarning.buttonLabel(sessions, plain: "Delete"), role: .destructive, action: confirm)
-			}
-			.padding(.top, 8)
+		} actions: {
+			MacCancelButton()
+			// No default button: Return must not delete a worktree by habit.
+			Button(DeleteWarning.buttonLabel(sessions, plain: "Delete"), role: .destructive, action: confirm)
 		}
-		.padding(20)
-		.frame(width: 380)
 		.onChange(of: deleteWorktree) { _, on in
 			if !on { deleteBranch = false }
 		}
@@ -317,8 +418,33 @@ struct EffortPickerSheet: View {
 	var onSelect: (String?) -> Void
 
 	@Environment(\.dismiss) private var dismiss
+	@State private var picked: String?
 
 	var body: some View {
+		#if os(macOS)
+		MacDialog(title: "Thinking level", message: "Claude reasoning effort. Applies on the next turn.") {
+			Picker("Thinking level", selection: $picked) {
+				Text("Default").tag(String?.none)
+				ForEach(DeckEffort.levels, id: \.self) { Text($0.capitalized).tag(String?.some($0)) }
+			}
+			.pickerStyle(.radioGroup)
+			.labelsHidden()
+		} actions: {
+			MacCancelButton()
+			Button("Save") {
+				// deck refuses any change during a turn, even to the same level.
+				if picked != current { onSelect(picked) }
+				dismiss()
+			}
+			.keyboardShortcut(.defaultAction)
+		}
+		.onAppear { picked = current }
+		#else
+		phoneBody
+		#endif
+	}
+
+	private var phoneBody: some View {
 		NavigationStack {
 			List {
 				row(label: "Default", value: nil)

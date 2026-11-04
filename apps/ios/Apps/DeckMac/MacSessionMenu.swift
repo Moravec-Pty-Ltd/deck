@@ -116,8 +116,8 @@ struct MacSessionMenu: View {
 	}
 }
 
-/// What each sheet shows. Sized for a Mac sheet, which otherwise shrinks a
-/// Form to its narrowest.
+/// What each sheet shows. The tool windows get a window's size; the dialogs
+/// size themselves.
 struct MacSessionSheetContent: View {
 	let sheet: MacSessionSheet
 	let sessionId: String
@@ -131,10 +131,10 @@ struct MacSessionSheetContent: View {
 	@Environment(DeckStore.self) private var store
 
 	var body: some View {
-		// The delete confirmation sizes itself, like a Mac alert.
-		if sheet == .delete {
+		switch sheet {
+		case .delete, .model, .effort, .rename, .merge, .review:
 			content
-		} else {
+		case .changes, .servers, .files, .schedule, .quickMessages:
 			content.frame(minWidth: 460, idealWidth: 560, minHeight: 360, idealHeight: 520)
 		}
 	}

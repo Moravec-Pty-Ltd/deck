@@ -258,7 +258,7 @@ struct ScheduleFormView: View {
 	}
 
 	var body: some View {
-		NavigationStack {
+		DeckFormSheet(scheduleId == nil ? "New schedule" : "Edit schedule") {
 			Form {
 				Section {
 					Picker("Each run", selection: $ongoing) {
@@ -292,8 +292,9 @@ struct ScheduleFormView: View {
 				// schedule, and "ask for this, every weekday at 9am" is the order
 				// someone describes one in.
 				Section("Prompt") {
-					TextField("What should it ask for?", text: $draft.prompt, axis: .vertical)
+					TextField("What should it ask for?", text: $draft.prompt, prompt: Text("What should it ask for?"), axis: .vertical)
 						.lineLimit(4...10)
+						.deckFullWidthField()
 						.accessibilityIdentifier("schedulePrompt")
 				}
 
@@ -314,7 +315,8 @@ struct ScheduleFormView: View {
 				}
 
 				Section("Name") {
-					TextField("Taken from the prompt", text: $draft.title)
+					TextField("Taken from the prompt", text: $draft.title, prompt: Text("Taken from the prompt"))
+						.deckFullWidthField()
 				}
 
 				// Only a fresh session picks its own agent; an existing one is
@@ -329,8 +331,6 @@ struct ScheduleFormView: View {
 					}
 				}
 			}
-			.navigationTitle(scheduleId == nil ? "New schedule" : "Edit schedule")
-			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }

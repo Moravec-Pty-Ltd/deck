@@ -61,7 +61,7 @@ public struct ProjectsManagerView<Extra: View>: View {
 			}
 		}
 		.sheet(isPresented: $showAdd) {
-			NavigationStack { AddProjectForm() }.deckSheetFrame()
+			DeckFormSheet("Add project", height: 420) { AddProjectForm() }
 		}
 		.confirmationDialog(
 			"Remove \(removing?.name ?? "project")?",
@@ -314,7 +314,8 @@ public struct AddProjectForm: View {
 			}
 			if cloning {
 				Section {
-					TextField("https://github.com/acme/repo.git", text: $url)
+					TextField("https://github.com/acme/repo.git", text: $url, prompt: Text(verbatim: "https://github.com/acme/repo.git"))
+						.deckFullWidthField()
 						.deckPlainInput()
 						.onChange(of: url) { autofillName() }
 				} header: {
@@ -345,8 +346,6 @@ public struct AddProjectForm: View {
 			}
 		}
 		.formStyle(.grouped)
-		.navigationTitle("Add project")
-		.deckInlineNavigationTitle()
 		.toolbar {
 			ToolbarItem(placement: .cancellationAction) {
 				Button("Cancel") { dismiss() }
