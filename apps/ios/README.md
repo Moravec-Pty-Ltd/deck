@@ -52,7 +52,7 @@ open Deck.xcodeproj          # run DeckApp
 CI-style check without signing:
 
 ```sh
-xcodebuild -project Deck.xcodeproj -scheme DeckApp \
+./xcb.sh -project Deck.xcodeproj -scheme DeckApp \
   -destination 'generic/platform=iOS Simulator' \
   -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
 cd Packages/DeckKit && swift test
@@ -457,7 +457,7 @@ session row, tool cards, question card and terminal view) and DeckIntents, so
 the Siri phrases match the phone's.
 
 ```sh
-xcodebuild -project Deck.xcodeproj -scheme DeckMac -destination 'platform=macOS' \
+./xcb.sh -project Deck.xcodeproj -scheme DeckMac -destination 'platform=macOS' \
   -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
 ```
 

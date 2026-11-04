@@ -71,13 +71,15 @@ and `ParityTests.swift` in the same PR. The full guide is
 brew install xcodegen fastlane                 # once
 ./generate.sh                                  # Deck.xcodeproj is generated, never committed
 cd Packages/DeckKit && swift test              # unit tests
-xcodebuild -project Deck.xcodeproj -scheme DeckApp \
+./xcb.sh -project Deck.xcodeproj -scheme DeckApp \
   -destination 'generic/platform=iOS Simulator' \
   -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
 ./uitest.sh [device...]                        # UI tests against a seeded throwaway deck
 ./ship.sh [ios|mac|all]                        # TestFlight via fastlane (default ios)
 ```
 
+- Build with `./xcb.sh`, not bare `xcodebuild`: it shares one DerivedData across
+  worktrees, so they do not each leave a build cache behind. Builds run one at a time.
 - `-skipMacroValidation` is required on every command-line build (mlx-swift-lm
   uses Swift macros).
 - Run the UI tests with `./uitest.sh`, never against the live deck. It seeds a
