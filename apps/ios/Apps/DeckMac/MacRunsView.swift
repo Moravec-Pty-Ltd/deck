@@ -27,7 +27,6 @@ struct MacRunsView: View {
 			.toolbar { toolbar }
 			.sheet(isPresented: $starting) {
 				StartRunView { run in path.append(RunRoute(id: run.id)) }
-					.frame(minWidth: 480, minHeight: 480)
 			}
 			.alert("Couldn't do that", isPresented: Binding(
 				get: { errorMessage != nil },

@@ -27,7 +27,7 @@ struct MacBrowserView: View {
 		.task(id: store.client?.credentials.baseURL) { await begin() }
 		.sheet(isPresented: $showingTunnel) {
 			if let model {
-				TunnelSheet(model: model).frame(minWidth: 420, minHeight: 440)
+				TunnelSheet(model: model)
 			}
 		}
 	}

@@ -217,7 +217,7 @@ struct OperatorView: View {
 
 	#if os(macOS)
 	private var modelSheet: some View {
-		NavigationStack {
+		DeckFormSheet("Operator model") {
 			LocalModelView()
 				.toolbar {
 					ToolbarItem(placement: .confirmationAction) {
@@ -225,7 +225,6 @@ struct OperatorView: View {
 					}
 				}
 		}
-		.frame(minWidth: 480, minHeight: 520)
 	}
 	#endif
 

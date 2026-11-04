@@ -58,7 +58,9 @@ struct IssueSourcesView: View {
 			}
 		}
 		.sheet(item: $adding, onDismiss: { Task { await load() } }) { setup in
-			NavigationStack { AddIssueSourceForm(setup: setup, projectPath: project.path) }.deckSheetFrame()
+			DeckFormSheet("Add \(setup.type.label) source", height: setup.connected ? 460 : 240) {
+				AddIssueSourceForm(setup: setup, projectPath: project.path)
+			}
 		}
 		.task { await load() }
 	}
@@ -144,8 +146,6 @@ struct AddIssueSourceForm: View {
 				Section { Text(message).foregroundStyle(.red).font(.footnote) }
 			}
 		}
-		.navigationTitle("Add \(setup.type.label) source")
-		.deckInlineNavigationTitle()
 		.toolbar {
 			ToolbarItem(placement: .cancellationAction) {
 				Button("Cancel") { dismiss() }

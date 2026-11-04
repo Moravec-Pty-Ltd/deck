@@ -11,6 +11,27 @@ struct PairingSheet: View {
 	@State private var failure: String?
 
 	var body: some View {
+		#if os(macOS)
+		MacDialog(title: "Sign-in request") {
+			MacDialogList {
+				VStack(spacing: 8) {
+					ForEach(store.pairingRequests) { request in
+						PairingRequestRow(request: request, busy: busy != nil) { approve in
+							decide(request, approve: approve)
+						}
+					}
+				}
+			}
+			if let failure {
+				Text(failure).font(.footnote).foregroundStyle(.red)
+			}
+		} actions: {
+			MacCancelButton("Later")
+		}
+		.onChange(of: store.pairingRequests.isEmpty) { _, empty in
+			if empty { dismiss() }
+		}
+		#else
 		NavigationStack {
 			ScrollView {
 				VStack(spacing: 16) {
@@ -37,6 +58,7 @@ struct PairingSheet: View {
 		.onChange(of: store.pairingRequests.isEmpty) { _, empty in
 			if empty { dismiss() }
 		}
+		#endif
 	}
 
 	private func decide(_ request: PairingRequest, approve: Bool) {

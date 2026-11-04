@@ -135,6 +135,7 @@ public struct ReviewSheet: View {
 	@Environment(\.dismiss) private var dismiss
 	@State private var decision: String
 	@State private var text = ""
+	@FocusState private var editing: Bool
 
 	public init(allowsVerdict: Bool, onSubmit: @escaping (_ decision: String, _ body: String?) -> Void) {
 		self.allowsVerdict = allowsVerdict
@@ -145,26 +146,31 @@ public struct ReviewSheet: View {
 	private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
 	public var body: some View {
+		#if os(macOS)
+		MacDialog(title: allowsVerdict ? "Review" : "Comment") {
+			if allowsVerdict {
+				verdictPicker.labelsHidden()
+			}
+			messageEditor
+				.focused($editing)
+				.frame(height: 120)
+				.border(.separator)
+		} actions: {
+			MacCancelButton()
+			// Return belongs to the message, and a stray one must not post an approval.
+			submitButton
+				.keyboardShortcut(.return, modifiers: .command)
+				.buttonStyle(.borderedProminent)
+				.help("Submit (⌘Return)")
+		}
+		.onAppear { editing = true }
+		#else
 		NavigationStack {
 			VStack(spacing: 12) {
 				if allowsVerdict {
-					Picker("Review", selection: $decision) {
-						Text("Approve").tag("approve")
-						Text("Request changes").tag("request-changes")
-						Text("Comment").tag("comment")
-					}
-					.pickerStyle(.segmented)
+					verdictPicker
 				}
-				TextEditor(text: $text)
-					.overlay(alignment: .topLeading) {
-						if text.isEmpty {
-							Text(decision == "approve" ? "Optional message" : "Message")
-								.foregroundStyle(.tertiary)
-								.padding(.top, 8)
-								.padding(.leading, 5)
-								.allowsHitTesting(false)
-						}
-					}
+				messageEditor
 			}
 			.padding()
 			.navigationTitle(allowsVerdict ? "Review" : "Comment")
@@ -174,13 +180,40 @@ public struct ReviewSheet: View {
 					Button("Cancel") { dismiss() }
 				}
 				ToolbarItem(placement: .confirmationAction) {
-					Button("Submit") {
-						onSubmit(decision, trimmed.isEmpty ? nil : text)
-						dismiss()
-					}
-					.disabled(decision != "approve" && trimmed.isEmpty)
+					submitButton
 				}
 			}
 		}
+		#endif
+	}
+
+	private var verdictPicker: some View {
+		Picker("Review", selection: $decision) {
+			Text("Approve").tag("approve")
+			Text("Request changes").tag("request-changes")
+			Text("Comment").tag("comment")
+		}
+		.pickerStyle(.segmented)
+	}
+
+	private var messageEditor: some View {
+		TextEditor(text: $text)
+			.overlay(alignment: .topLeading) {
+				if text.isEmpty {
+					Text(decision == "approve" ? "Optional message" : "Message")
+						.foregroundStyle(.tertiary)
+						.padding(.top, 8)
+						.padding(.leading, 5)
+						.allowsHitTesting(false)
+				}
+			}
+	}
+
+	private var submitButton: some View {
+		Button("Submit") {
+			onSubmit(decision, trimmed.isEmpty ? nil : text)
+			dismiss()
+		}
+		.disabled(decision != "approve" && trimmed.isEmpty)
 	}
 }

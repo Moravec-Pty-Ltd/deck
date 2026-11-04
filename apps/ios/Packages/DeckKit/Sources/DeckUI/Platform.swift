@@ -79,11 +79,12 @@ extension View {
 }
 
 extension View {
-	/// A sheet's content on macOS has no size of its own: without one a
-	/// NavigationStack opens as an empty sheet that still blocks its window.
-	public func deckSheetFrame() -> some View {
+	/// A field that fills a Mac form's row instead of right-aligning after its
+	/// title. Give it a `prompt`, which takes the title's place on the Mac and is
+	/// what a phone shows anyway.
+	public func deckFullWidthField() -> some View {
 		#if os(macOS)
-		frame(minWidth: 480, idealWidth: 540, minHeight: 420, idealHeight: 520)
+		labelsHidden()
 		#else
 		self
 		#endif

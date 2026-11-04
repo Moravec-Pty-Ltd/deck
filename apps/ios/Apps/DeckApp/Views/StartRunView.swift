@@ -34,7 +34,7 @@ struct StartRunView: View {
 	}
 
 	var body: some View {
-		NavigationStack {
+		DeckFormSheet("Start a run", height: 460) {
 			Form {
 				if store.projects.isEmpty {
 					ContentUnavailableView(
@@ -56,8 +56,6 @@ struct StartRunView: View {
 					}
 				}
 			}
-			.navigationTitle("Start a run")
-			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }.disabled(starting)

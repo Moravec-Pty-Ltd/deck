@@ -431,7 +431,7 @@ struct StartConfirmSheet: View {
 	}
 
 	var body: some View {
-		NavigationStack {
+		DeckFormSheet(navigationTitle, width: 560, height: 640) {
 			Form {
 				// First, so a phone shows it without scrolling past the whole form.
 				if let errorMessage {
@@ -494,8 +494,9 @@ struct StartConfirmSheet: View {
 				}
 
 				Section {
-					TextField("Prompt", text: $firstPrompt, axis: .vertical)
+					TextField("Prompt", text: $firstPrompt, prompt: Text("Prompt"), axis: .vertical)
 						.lineLimit(3...8)
+						.deckFullWidthField()
 						.accessibilityIdentifier("firstPrompt")
 					ScrollView(.horizontal, showsIndicators: false) {
 						HStack(spacing: 6) {
@@ -611,8 +612,6 @@ struct StartConfirmSheet: View {
 				}
 
 			}
-			.navigationTitle(navigationTitle)
-			.deckInlineNavigationTitle()
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button("Cancel") { dismiss() }
