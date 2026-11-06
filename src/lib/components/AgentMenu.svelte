@@ -5,6 +5,8 @@
 	import { agentPost, sessionPath } from '$lib/agent-api';
 	import Popover from './Popover.svelte';
 	import { menuAction } from '$lib/menu-action.svelte';
+	import { agentAvailability, loadAgentKinds } from '$lib/agent-models-store.svelte';
+	import { kindShown } from '$lib/agent-kinds-core';
 
 	let { id, kind, disabled = false, onChange }: {
 		id: string;
@@ -17,7 +19,10 @@
 	$effect(() => {
 		if (disabled) open = false;
 		if (!open) act.clearErr();
+		if (open) void loadAgentKinds();
 	});
+	const agents = $derived(AGENT_KINDS.filter((a) => kindShown(a, agentAvailability(), kind)));
+	const canSwitch = $derived(agents.length > 1);
 
 	function switchTo(next: string) {
 		if (disabled || act.busy) return;
@@ -34,22 +39,26 @@
 	}
 </script>
 
-{#if disabled}
-	<span class="badge badge-outline badge-sm header-chip gap-1 opacity-50" title="Agent switches apply between turns">
+{#if disabled || (!canSwitch && kind !== 'claude')}
+	<span class="badge badge-outline badge-sm header-chip gap-1 {disabled ? 'opacity-50' : ''}" title={disabled ? 'Agent switches apply between turns' : 'No other agents are installed'}>
 		<ArrowLeftRight size={12} /> {kind}
 	</span>
 {:else}
 	<Popover bind:open direction="top" summaryClass="badge badge-outline badge-sm header-chip gap-1" summaryTitle="Agent · restart" panelClass="p-2 sm:w-64">
 		{#snippet trigger()}<ArrowLeftRight size={12} /> {kind}{/snippet}
-		<p class="px-2 py-1 text-xs opacity-70">Continue with another agent. Recent conversation text is handed off with your next message. Older context, tool output, and images may be omitted. Model settings reset.</p>
+		{#if canSwitch}
+			<p class="px-2 py-1 text-xs opacity-70">Continue with another agent. Recent conversation text is handed off with your next message. Older context, tool output, and images may be omitted. Model settings reset.</p>
+		{/if}
 		<ul class="menu menu-sm w-full p-0">
-			{#each AGENT_KINDS as agent}
-				<li><button onclick={() => switchTo(agent)} disabled={act.busy}>
-					{agent}{#if kind === agent}<Check size={14} class="ml-auto" />{/if}
-				</button></li>
-			{/each}
+			{#if canSwitch}
+				{#each agents as agent}
+					<li><button onclick={() => switchTo(agent)} disabled={act.busy}>
+						{agent}{#if kind === agent}<Check size={14} class="ml-auto" />{/if}
+					</button></li>
+				{/each}
+			{/if}
 			{#if kind === 'claude'}
-				<li><div class="divider my-1"></div></li>
+				{#if canSwitch}<li><div class="divider my-1"></div></li>{/if}
 				<li><button onclick={restart} disabled={act.busy} title="Reload changed CLAUDE.md, settings, skills, or MCP config. The conversation continues.">
 					<RotateCw size={14} /> Restart Claude
 				</button></li>

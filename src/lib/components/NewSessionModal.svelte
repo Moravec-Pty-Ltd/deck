@@ -32,6 +32,7 @@
 		loadAgentKinds,
 		loadAgentModels
 	} from '$lib/agent-models-store.svelte';
+	import { kindShown } from '$lib/agent-kinds-core';
 	import { shortIssueId, singleIssueTitle } from '$lib/issues';
 	import {
 		conflictMessage,
@@ -260,12 +261,7 @@
 	const titleRequired = $derived(isAgentKind(kind) && !reviewMode && !splitIssues);
 	const finalCwd = $derived(worktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
 
-	// shell always shows; an agent kind shows unless availability positively says
-	// it's absent. availability === null (pre-fetch or failed) reveals everything,
-	// so a transient error never hides the whole agent set.
-	const shownKinds = $derived(
-		KIND_OPTIONS.filter((k) => k.id === 'shell' || !availability || availability[k.id] !== false)
-	);
+	const shownKinds = $derived(KIND_OPTIONS.filter((k) => kindShown(k.id, availability)));
 
 	// If detection hides the currently selected kind (the 'claude' default, a
 	// preset's kind, or the prior pick), re-point to the first shown option so the
