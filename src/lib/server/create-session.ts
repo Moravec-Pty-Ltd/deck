@@ -3,6 +3,7 @@ import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type DeckSes
 import { createSession } from './sessions';
 import { clearWorktreeBranch, createWorktree, fetchPullRef, isGitRepo } from './git';
 import { isFlagSafe } from './agents/args';
+import { agentAvailability } from './agents/available';
 import { slugifyBranch } from './branch-core';
 import { agentSend } from './agents/dispatch';
 import { appendEvent } from './claude';
@@ -359,6 +360,7 @@ export async function createSessionFromRequest(
 	};
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
 	const effortLevel = safeEffort(effort, kind);
+	if (isAgentKind(kind) && !(await agentAvailability())[kind]) error(400, `${kind} is not installed`);
 
 	// Create and register the folder (both optional) once their own checks pass and
 	// before the session, so it starts inside its new project. A later failure

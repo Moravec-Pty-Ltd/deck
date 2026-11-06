@@ -12,7 +12,7 @@ const home = mkreal('deck-create-session-home-');
 const restoreEnv = pinEnv({ DECK_DATA: dataDir });
 vi.spyOn(os, 'homedir').mockReturnValue(home);
 
-const seen = vi.hoisted(() => ({ projectsAtCreate: [] as string[][] }));
+const seen = vi.hoisted(() => ({ projectsAtCreate: [] as string[][], available: vi.fn() }));
 vi.mock('./sessions', () => ({
 	createSession: async (opts: { cwd: string }) => {
 		const { listProjects } = await import('./store');
@@ -22,6 +22,7 @@ vi.mock('./sessions', () => ({
 }));
 vi.mock('./accounts', () => ({ accountProblem: async () => null }));
 vi.mock('./agents/dispatch', () => ({ agentSend: vi.fn() }));
+vi.mock('./agents/available', () => ({ agentAvailability: seen.available }));
 
 const { createSessionFromRequest } = await import('./create-session');
 const { listProjects } = await import('./store');
@@ -32,7 +33,11 @@ afterAll(() => {
 	for (const dir of [dataDir, home]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-beforeEach(() => (seen.projectsAtCreate = []));
+beforeEach(() => {
+	seen.projectsAtCreate = [];
+	seen.available.mockReset();
+	seen.available.mockResolvedValue({ claude: true, pi: false, codex: true, opencode: false });
+});
 
 const start = (body: Record<string, unknown>) => createSessionFromRequest({ kind: 'shell', ...body }, { remember: false });
 
@@ -53,6 +58,20 @@ it('starts nothing and creates nothing when registration is refused', async () =
 	expect(seen.projectsAtCreate).toEqual([]);
 	expect(fs.readdirSync(home)).toEqual(['code']);
 	expect(fs.readdirSync(path.join(home, 'code'))).toEqual(['fresh']);
+});
+
+it('refuses an uninstalled agent before creating anything', async () => {
+	const body = { kind: 'opencode', cwd: '~/code/refused', createDir: true };
+	await expect(start(body)).rejects.toMatchObject({ status: 400, body: { message: 'opencode is not installed' } });
+	expect(seen.projectsAtCreate).toEqual([]);
+	expect(fs.existsSync(path.join(home, 'code', 'refused'))).toBe(false);
+});
+
+it('starts an installed agent, and a shell without asking', async () => {
+	await expect(start({ kind: 'codex', cwd: home })).resolves.toMatchObject({ id: 'example' });
+	expect(seen.available).toHaveBeenCalledTimes(1);
+	await expect(start({ cwd: home })).resolves.toMatchObject({ id: 'example' });
+	expect(seen.available).toHaveBeenCalledTimes(1);
 });
 
 it('keeps the 400 for a missing folder without createDir', async () => {

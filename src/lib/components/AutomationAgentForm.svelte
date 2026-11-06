@@ -14,7 +14,8 @@
 		piProviderOptions
 	} from '$lib/models';
 	import { EFFORT_LEVELS } from '$lib/effort';
-	import { agentModels, loadAgentModels } from '$lib/agent-models-store.svelte';
+	import { agentAvailability, agentModels, loadAgentKinds } from '$lib/agent-models-store.svelte';
+	import { kindShown } from '$lib/agent-kinds-core';
 	import ComboInput from './ComboInput.svelte';
 
 	let {
@@ -35,13 +36,17 @@
 	// pi and opencode enumerate their models, so offer what this machine reports
 	// while the fields stay free text. The listing is cached per kind for the whole
 	// page, so several lanes on several projects share one shell-out each.
-	$effect(() => loadAgentModels(agent.kind));
+	$effect(() => void loadAgentKinds());
 	const detected = $derived(agentModels(agent.kind));
 	const piProviders = $derived(piProviderOptions(detected));
 	// opencode reports one flat list of `provider/model` ids, so only pi narrows.
 	const modelChoices = $derived(
 		piModelOptions(detected, agent.kind === 'pi' ? agent.provider : '')
 	);
+
+	const availability = $derived(agentAvailability());
+	const kinds = $derived(AGENT_KINDS.filter((k) => kindShown(k, availability, agent.kind)));
+	const kindMissing = $derived(availability?.[agent.kind] === false);
 
 	// Switching kind drops the fields the new one has no use for, so a pi provider
 	// or a claude effort can't linger and be rejected on save.
@@ -52,13 +57,13 @@
 
 <div class="mt-1 ml-8 flex flex-wrap items-center gap-2">
 	<select
-		class="select select-xs w-28"
+		class="select select-xs {kindMissing ? 'w-48' : 'w-28'}"
 		aria-label="{lane} agent"
 		bind:value={agent.kind}
 		onchange={onKind}
 	>
-		{#each AGENT_KINDS as k (k)}
-			<option value={k}>{k}</option>
+		{#each kinds as k (k)}
+			<option value={k}>{k}{availability?.[k] === false ? ' (not installed)' : ''}</option>
 		{/each}
 	</select>
 	{#if agent.kind === 'claude'}
