@@ -35,7 +35,7 @@
 			title: 'Devices',
 			description: 'Sign in another phone or browser, and approve devices that ask for access.'
 		},
-		editor: { title: 'Editor', description: 'Where "Open in Zed" connects over SSH.' }
+		editor: { title: 'Editor', description: 'Where "Open in Zed" and "Open in VS Code" connect over SSH.' }
 	} as const;
 
 	type SectionId = keyof typeof SECTIONS;

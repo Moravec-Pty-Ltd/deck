@@ -10,8 +10,8 @@ enum MacSessionSheet: Identifiable {
 }
 
 /// The session's actions menu, as the phone's: agent and model, thinking,
-/// compact and restart, rename, changes, dev servers, schedule, Open in Zed, its
-/// links, and delete.
+/// compact and restart, rename, changes, dev servers, schedule, the editors on
+/// this Mac, its links, and delete.
 struct MacSessionMenu: View {
 	let session: SessionDigest?
 	let viewModel: SessionDetailViewModel
@@ -22,8 +22,9 @@ struct MacSessionMenu: View {
 
 	@Environment(DeckStore.self) private var store
 	@Environment(\.openURL) private var openURL
-	@State private var zedInstalled = false
-	@State private var zed: ZedLink?
+	/// The session's editors that something on this Mac handles.
+	@State private var editors: [SessionEditor] = []
+	@State private var sshOff = false
 
 	private var isClaude: Bool { session?.kind == "claude" }
 	private var isRunning: Bool { session?.status == .running }
@@ -44,11 +45,11 @@ struct MacSessionMenu: View {
 			Label("Session Actions", systemImage: "ellipsis.circle")
 		}
 		.accessibilityIdentifier("sessionMenu")
-		.task(id: store.supports(.zed)) { await refreshZed() }
-		// Coming back from installing Zed, turning on Remote Login, or Settings
+		.task(id: store.supports(.editors)) { await refreshEditors() }
+		// Coming back from installing an editor, turning on Remote Login, or Settings
 		// (a window of this app, so the app itself never reactivates).
 		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-			Task { await refreshZed() }
+			Task { await refreshEditors() }
 		}
 	}
 
@@ -101,25 +102,29 @@ struct MacSessionMenu: View {
 			Button("Files", systemImage: "folder") { sheet = .files }
 		}
 		Button("Repeat on a Schedule…", systemImage: "clock.arrow.2.circlepath") { sheet = .schedule }
-		if zedInstalled, store.supports(.zed), let zed, zed.url != nil {
-			let sshOff = zed.sshReachable == false
-			Button(sshOff ? "Open in Zed (Turn on Remote Login on the deck host)" : "Open in Zed", systemImage: "chevron.left.forwardslash.chevron.right") {
-				Task { await openInZed() }
+		if store.supports(.editors) {
+			ForEach(editors) { editor in
+				Button(sshOff ? "Open in \(editor.name) (Turn on Remote Login on the deck host)" : "Open in \(editor.name)", systemImage: "chevron.left.forwardslash.chevron.right") {
+					Task { await open(editor) }
+				}
+				.disabled(sshOff)
 			}
-			.disabled(sshOff)
 		}
 	}
 
-	private func refreshZed() async {
-		zedInstalled = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "zed://")!) != nil
-		guard zedInstalled, store.supports(.zed), let client = store.client else { return }
-		if let fresh = try? await client.zedLink(sessionId: viewModel.sessionId) { zed = fresh }
+	private func refreshEditors() async {
+		guard store.supports(.editors), let client = store.client,
+			let fresh = try? await client.sessionEditors(sessionId: viewModel.sessionId) else { return }
+		editors = fresh.editors.filter { editor in
+			URL(string: "\(editor.scheme)://").flatMap(NSWorkspace.shared.urlForApplication(toOpen:)) != nil
+		}
+		sshOff = fresh.sshReachable == false
 	}
 
-	/// Fetched again so a Zed SSH target changed in Settings applies straight away.
-	private func openInZed() async {
-		await refreshZed()
-		guard zed?.sshReachable != false, let link = zed?.url.flatMap(URL.init(string:)) else { return }
+	/// Fetched again so an SSH target changed in Settings applies straight away.
+	private func open(_ editor: SessionEditor) async {
+		await refreshEditors()
+		guard !sshOff, let link = editors.first(where: { $0.id == editor.id }).flatMap({ URL(string: $0.url) }) else { return }
 		NSWorkspace.shared.open(link)
 	}
 

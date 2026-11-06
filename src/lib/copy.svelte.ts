@@ -1,5 +1,5 @@
 // Copy text to the clipboard and flash a confirmation for a moment. Shared by
-// every copy affordance (message bubbles, fenced code blocks, the Zed command
+// every copy affordance (message bubbles, fenced code blocks, the editor command
 // chip) so they agree on the timing, and on never showing the tick when the
 // write actually failed.
 

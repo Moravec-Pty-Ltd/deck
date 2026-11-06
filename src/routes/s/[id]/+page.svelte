@@ -20,7 +20,7 @@
 	import AgentMenu from '$lib/components/AgentMenu.svelte';
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
 	import EffortMenu from '$lib/components/EffortMenu.svelte';
-	import ZedButton from '$lib/components/ZedButton.svelte';
+	import EditorButton from '$lib/components/EditorButton.svelte';
 	import SessionTitle from '$lib/components/SessionTitle.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
@@ -530,8 +530,10 @@
 						</ul>
 					</Popover>
 				</div>
-				{#if liveKind !== 'shell' && data.zed?.command && data.zed.url}
-					<ZedButton command={data.zed.command} url={data.zed.url} />
+				{#if liveKind !== 'shell'}
+					{#each data.editors as editor (editor.scheme)}
+						<EditorButton {editor} />
+					{/each}
 				{/if}
 				{#if serverChip}
 					<RunButton {session} serverState={serverChip} onRefresh={refresh} />

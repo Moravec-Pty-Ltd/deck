@@ -998,22 +998,23 @@ final class ParityTests: XCTestCase {
 
 	// MARK: - Server settings
 
-	func testZedLinkDecodes() async throws {
-		var link: ZedLink?
-		let sent = await requests(reply: #"{"command":"zed ssh://u@h/srv/my%20app","url":"zed://ssh/u@h/srv/my%20app","sshReachable":false}"#) { client in
-			link = try await client.zedLink(sessionId: "s1")
+	func testSessionEditorsDecode() async throws {
+		var result: SessionEditors?
+		let reply = #"{"editors":[{"name":"Zed","scheme":"zed","url":"zed://ssh/u@h/srv/my%20app","command":"zed ssh://u@h/srv/my%20app"},{"name":"VS Code","scheme":"vscode","url":"vscode://vscode-remote/ssh-remote+u@h/srv/my%20app?windowId=_blank","command":null}],"sshReachable":false}"#
+		let sent = await requests(reply: reply) { client in
+			result = try await client.sessionEditors(sessionId: "s1")
 		}
-		XCTAssertEqual(sent.first?.path, "/api/agent/sessions/s1/zed")
-		XCTAssertEqual(link?.url, "zed://ssh/u@h/srv/my%20app")
-		XCTAssertEqual(link?.sshReachable, false)
-		XCTAssertNotNil(link?.url.flatMap(URL.init(string:)))
+		XCTAssertEqual(sent.first?.path, "/api/agent/sessions/s1/editors")
+		XCTAssertEqual(result?.editors.map(\.scheme), ["zed", "vscode"])
+		XCTAssertEqual(result?.sshReachable, false)
+		for editor in result?.editors ?? [] {
+			XCTAssertNotNil(URL(string: editor.url))
+		}
 
-		// No cwd, or a server older than the link: nothing to open.
-		for reply in [#"{"command":null,"url":null,"sshReachable":null}"#, #"{"command":"zed ssh://u@h/srv"}"#] {
-			let decoded = try JSONDecoder().decode(ZedLink.self, from: Data(reply.utf8))
-			XCTAssertNil(decoded.url)
-			XCTAssertNil(decoded.sshReachable)
-		}
+		// No cwd: nothing to open or check.
+		let none = try JSONDecoder().decode(SessionEditors.self, from: Data(#"{"editors":[],"sshReachable":null}"#.utf8))
+		XCTAssertEqual(none.editors, [])
+		XCTAssertNil(none.sshReachable)
 	}
 
 	private static let redactedSettings = #"""

@@ -3,7 +3,7 @@
 	import { Check } from '@lucide/svelte';
 	import { fetchSettings, patchSettings } from '$lib/settings-patch';
 
-	// The SSH target the session page's "Open in Zed" command uses. Blank means
+	// The SSH target the session page's editor links use. Blank means
 	// the deck server's user at the host this browser reached deck on.
 	let target = $state('');
 	let loaded = $state(false);
@@ -44,7 +44,7 @@
 	<div class="card-body gap-3 p-4">
 		{#if loaded}
 			<label class="form-control max-w-md">
-				<span class="label-text text-xs opacity-70">Zed SSH target</span>
+				<span class="label-text text-xs opacity-70">Editor SSH target</span>
 				<input
 					class="input input-sm w-full font-mono"
 					placeholder="user@host:22"

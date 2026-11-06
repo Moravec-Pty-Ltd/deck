@@ -725,15 +725,23 @@ Empty body. Dismiss the PR captured on the session (the chip goes away).
 Capture is forward-only: the next GitHub PR link the agent prints captures a PR
 again. Returns \`{ "ok": true }\`.
 
+### GET /api/agent/sessions/{id}/editors
+
+\`{ "editors": [{ "name": "Zed", "scheme": "zed", "url": "zed://ssh/user@host/path/to/worktree", "command": "zed ssh://user@host/path/to/worktree" }, { "name": "VS Code", "scheme": "vscode", "url": "vscode://vscode-remote/ssh-remote+user@host/path/to/worktree?windowId=_blank", "command": null }], "sshReachable": true }\`:
+the links that open the session's directory over SSH on the deck host (the host
+is the one you reached deck on, unless the user set an editor SSH target, the
+\`zedSshTarget\` setting). \`scheme\` is the URL scheme to check for a handler.
+\`command\` is the CLI form, for editors that have one. Path segments are
+percent-encoded. VS Code also needs the Remote - SSH extension on the client, and
+prompts to install it. \`sshReachable\` is false when nothing listens on the deck
+host's port 22, and null when not checked: with an SSH target, or for a session
+with no directory, where \`editors\` is empty.
+
 ### GET /api/agent/sessions/{id}/zed
 
-\`{ "command": "zed ssh://user@host/path/to/worktree", "url": "zed://ssh/user@host/path/to/worktree", "sshReachable": true }\`:
-the CLI command and the link that open the session's directory in Zed over SSH
-on the deck host (the host is the one you reached deck on, unless the user set a
-Zed SSH target). Path segments are percent-encoded. \`sshReachable\` is false when
-nothing listens on the deck host's port 22, and null when not checked: with a Zed
-SSH target, or for a session with no directory, where \`command\` and \`url\` are
-null too.
+The Zed entry of \`editors\` alone, for older clients:
+\`{ "command": "zed ssh://user@host/path/to/worktree", "url": "zed://ssh/user@host/path/to/worktree", "sshReachable": true }\`.
+\`command\` and \`url\` are null for a session with no directory.
 
 ### DELETE /api/agent/sessions/{id}
 
