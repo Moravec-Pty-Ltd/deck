@@ -37,6 +37,9 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
 		goto: vi.fn(),
 		openUrl: vi.fn(),
 		copy: vi.fn(),
+		groups: [],
+		selectedGroup: null,
+		pickGroup: vi.fn(),
 		cycleTheme: vi.fn(),
 		openSearch: vi.fn(),
 		notificationsSupported: false,
@@ -254,5 +257,24 @@ describe('filterCommands', () => {
 
 	it('drops non-matches', () => {
 		expect(filterCommands(all, 'zzzzz')).toEqual([]);
+	});
+});
+
+describe('group commands', () => {
+	const groups = [
+		{ name: null, label: 'All', count: 0 },
+		{ name: 'Client A', label: 'Client A', count: 1 }
+	];
+
+	it('lists every group but the selected one, and runs the pick', () => {
+		const c = ctx({ groups, selectedGroup: 'Client A' });
+		expect(ids(c)).toContain('group:');
+		expect(ids(c)).not.toContain('group:Client A');
+		buildCommands(c).find((cmd) => cmd.id === 'group:')!.run();
+		expect(c.pickGroup).toHaveBeenCalledWith(null);
+	});
+
+	it('is absent when there are no groups', () => {
+		expect(ids(ctx()).some((id) => id.startsWith('group:'))).toBe(false);
 	});
 });

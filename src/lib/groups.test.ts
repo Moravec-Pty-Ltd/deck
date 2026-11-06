@@ -7,7 +7,17 @@ import {
 	hiddenGroup,
 	existingGroupNames,
 	compareGroupNames,
+	groupAfterOpening,
+	groupEntries,
+	groupOfPath,
+	inGroup,
+	pickerGroups,
+	resolveGroup,
+	sessionPath,
+	startProject,
+	waitingElsewhere,
 	HIDDEN,
+	OTHER_GROUPS,
 	UNGROUPED
 } from './groups';
 
@@ -198,3 +208,124 @@ function shortLabel(p: string): string {
 		.replace(/^(\/Users\/[^/]+|\/home\/[^/]+|\/root)(?=\/|$)/, '~')
 		.replace(/^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/, '~');
 }
+
+describe('group switcher', () => {
+	const projects = [
+		project('web', '/p/web', 'Client A'),
+		project('api', '/p/api', 'Client A'),
+		project('site', '/p/site', 'Client B'),
+		project('scratch', '/p/scratch')
+	];
+	const asking = (id: string, cwd: string) => ({ ...session(id, cwd, 0), awaitingInput: true });
+	const unread = (id: string, cwd: string) => ({ ...session(id, cwd, 0), unread: true });
+
+	it('places worktree sessions under their repo, and anything else under Ungrouped', () => {
+		expect(groupOfPath('/p/web-worktrees/feature', projects)).toBe('Client A');
+		expect(groupOfPath('/p/site/sub', projects)).toBe('Client B');
+		expect(groupOfPath('/p/scratch', projects)).toBe(UNGROUPED);
+		expect(groupOfPath('/tmp/adhoc', projects)).toBe(UNGROUPED);
+		expect(groupOfPath('', projects)).toBe(UNGROUPED);
+	});
+
+	it('trusts the repo a worktree names, wherever the worktree sits', () => {
+		const elsewhere = { ...session('w', '/somewhere/else', 0), worktree: { repo: '/p/site', branch: 'b' } } as SessionView;
+		expect(groupOfPath(sessionPath(elsewhere), projects)).toBe('Client B');
+		expect(inGroup([elsewhere], sessionPath, projects, 'Client B')).toEqual([elsewhere]);
+		expect(groupSessions([elsewhere], projects)[0].name).toBe('Client B');
+	});
+
+	it('lists All, each group, then Ungrouped', () => {
+		expect(groupEntries([], projects).map((e) => e.label)).toEqual(['All', 'Client A', 'Client B', UNGROUPED]);
+		expect(groupEntries([], projects)[0].name).toBeNull();
+	});
+
+	it('lists Ungrouped only when a project or a session lands there', () => {
+		const grouped = projects.filter((p) => p.group);
+		expect(groupEntries([], grouped).map((e) => e.label)).toEqual(['All', 'Client A', 'Client B']);
+		const adhoc = [session('s', '/tmp/adhoc', 0)];
+		expect(groupEntries(adhoc, grouped).map((e) => e.label)).toEqual(['All', 'Client A', 'Client B', UNGROUPED]);
+	});
+
+	it('lists nothing when no project has a group', () => {
+		expect(groupEntries([session('s', '/tmp', 0)], [project('scratch', '/p/scratch')])).toEqual([]);
+	});
+
+	it('counts asking and unread per group, leaving out hidden and quiet sessions', () => {
+		const entries = groupEntries(
+			[
+				asking('a', '/p/web-worktrees/feature'),
+				unread('b', '/p/api'),
+				session('quiet', '/p/web', 0),
+				{ ...asking('gone', '/p/site'), hidden: true },
+				asking('c', '/tmp/adhoc')
+			],
+			projects
+		);
+		expect(Object.fromEntries(entries.map((e) => [e.label, e.count]))).toEqual({
+			All: 3,
+			'Client A': 2,
+			'Client B': 0,
+			[UNGROUPED]: 1
+		});
+	});
+
+	it('flags waiting in another group only', () => {
+		const entries = groupEntries([asking('a', '/p/web')], projects);
+		expect(waitingElsewhere(entries, 'Client B')).toBe(true);
+		expect(waitingElsewhere(entries, 'Client A')).toBe(false);
+		expect(waitingElsewhere(entries, null)).toBe(false);
+	});
+
+	it('falls back to All when the picked group has gone', () => {
+		const entries = groupEntries([], projects);
+		expect(resolveGroup('Client A', entries)).toBe('Client A');
+		expect(resolveGroup('Deleted', entries)).toBeNull();
+		expect(resolveGroup(null, entries)).toBeNull();
+		expect(resolveGroup('Client A', [])).toBeNull();
+	});
+
+	it('filters to the selected group, and All keeps everything', () => {
+		const sessions = [
+			session('wt', '/p/web-worktrees/feature', 0),
+			session('b', '/p/site', 0),
+			session('adhoc', '/tmp/adhoc', 0)
+		];
+		const ids = (selected: string | null) => inGroup(sessions, (s) => s.cwd, projects, selected).map((s) => s.id);
+		expect(ids('Client A')).toEqual(['wt']);
+		expect(ids(UNGROUPED)).toEqual(['adhoc']);
+		expect(ids(null)).toEqual(['wt', 'b', 'adhoc']);
+	});
+
+	it('keeps a hidden project in its group for the Hidden section', () => {
+		const hiding = [{ ...project('web', '/p/web', 'Client A'), hidden: true }, project('site', '/p/site', 'Client B')];
+		const sessions = [{ ...session('h', '/p/web', 0), hidden: true }, session('b', '/p/site', 0)];
+		const shown = inGroup(sessions, (s) => s.cwd, hiding, 'Client A');
+		expect(hiddenGroup(shown, hiding)?.subgroups[0].sessions.map((s) => s.id)).toEqual(['h']);
+		expect(groupEntries([], hiding).map((e) => e.label)).toContain('Client A');
+	});
+
+	it('follows an opened session to its group, unless on All', () => {
+		const other = session('o', '/p/site', 0);
+		expect(groupAfterOpening(other, projects, 'Client A')).toBe('Client B');
+		expect(groupAfterOpening(session('m', '/p/web', 0), projects, 'Client A')).toBe('Client A');
+		expect(groupAfterOpening(other, projects, null)).toBeNull();
+	});
+
+	it('orders the picker with the group first and the rest under Other groups', () => {
+		const withHidden = [...projects, { ...project('old', '/p/old', 'Client A'), hidden: true }];
+		expect(pickerGroups(withHidden, 'Client B').map((g) => [g.name, g.projects.map((p) => p.name)])).toEqual([
+			['Client B', ['site']],
+			[OTHER_GROUPS, ['api', 'scratch', 'web']],
+			[HIDDEN, ['old']]
+		]);
+		expect(pickerGroups(projects, null).map((g) => g.name)).toEqual(['Client A', 'Client B', UNGROUPED]);
+	});
+
+	it('starts in the selected group, keeping a pick that fits', () => {
+		expect(startProject(projects, 'Client A', '/p/site')).toBe('/p/api');
+		expect(startProject(projects, 'Client A', '/p/web')).toBe('/p/web');
+		expect(startProject(projects, 'Client A', '')).toBe('/p/api');
+		expect(startProject(projects, null, '/p/site')).toBe('/p/site');
+		expect(startProject(projects, null, '')).toBe('/p/web');
+	});
+});

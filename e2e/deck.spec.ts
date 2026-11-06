@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.env.DECK_E2E_ROOT!;
@@ -303,6 +304,67 @@ test('tabletop puts the transcript on the top segment and the composer and ask o
 	await expect(page.getByText(/You answered: .*Blue/)).toBeVisible();
 	// Answered, the question goes back to its place in the transcript.
 	expect((await box(page.getByText('Which colour?'))).y).toBeLessThan(330);
+});
+
+test('the group switcher focuses the list, follows an opened session, and falls back to All', async ({ page }) => {
+	const post = (data: object) => page.request.post('/api/projects', { headers, data });
+	const other = path.join(root, 'acme-other');
+	fs.mkdirSync(other, { recursive: true });
+	const removeOther = () => page.request.delete(`/api/projects?path=${encodeURIComponent(other)}`, { headers });
+	await post({ name: 'acme', path: project, group: 'Client A' });
+	await post({ name: 'other', path: other, group: 'Client B' });
+	try {
+		const inA = await page.request.post('/api/agent/sessions', { headers, data: { mode: 'work', kind: 'claude', cwd: project, title: 'group-a' } });
+		const inB = await page.request.post('/api/agent/sessions', { headers, data: { mode: 'work', kind: 'claude', cwd: other, title: 'group-b' } });
+		expect(inA.ok() && inB.ok()).toBe(true);
+		const { id: otherId } = await inB.json();
+		await signIn(page);
+
+		const switcher = page.locator('summary[title="Switch group"]');
+		const row = (title: string) => page.locator(`a[title="${title}"]`);
+		const line = (name: string) => page.locator('details[open] li button', { hasText: name });
+		await open(switcher, line('Client A'));
+		await line('Client A').click();
+		await expect(row('group-a')).toBeVisible();
+		await expect(row('group-b')).toHaveCount(0);
+
+		// Survives a reload, in both grouping modes.
+		await page.reload();
+		await expect(row('group-a')).toBeVisible();
+		await page.getByRole('button', { name: 'Group by status' }).click();
+		await expect(row('group-a')).toBeVisible();
+		await expect(row('group-b')).toHaveCount(0);
+		await page.getByRole('button', { name: 'Group by project' }).click();
+
+		// Opening a session in another group brings its group along.
+		await page.goto(`/s/${otherId}`);
+		await expect(switcher).toContainText('Client B');
+		await expect(row('group-b')).toBeVisible();
+		await expect(row('group-a')).toHaveCount(0);
+
+		// Picking another group with that session still open sticks, through a reload.
+		await page.keyboard.press('ControlOrMeta+2');
+		await expect(switcher).toContainText('Client A');
+		await expect(row('group-a')).toBeVisible();
+		await page.reload();
+		await expect(switcher).toContainText('Client A');
+		await expect(row('group-a')).toBeVisible();
+
+		// Jumping to it from the palette brings its group along too.
+		await page.goto('/');
+		await expect(switcher).toContainText('Client A');
+		await page.keyboard.press('ControlOrMeta+k');
+		await page.locator('dialog[open] input').first().fill('group-b');
+		await page.locator('dialog[open] li button', { hasText: 'group-b' }).click();
+		await expect(switcher).toContainText('Client B');
+
+		// Deleting the group's last project falls back to All.
+		await removeOther();
+		await expect(switcher).toContainText('All', { timeout: 15_000 });
+	} finally {
+		await post({ name: 'acme', path: project, group: '' });
+		await removeOther();
+	}
 });
 
 test.describe('on a phone', () => {

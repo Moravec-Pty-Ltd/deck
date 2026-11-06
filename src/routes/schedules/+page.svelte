@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { inGroup, sessionPath } from '$lib/groups';
+	import { groupSwitch } from '$lib/group-switch.svelte';
+	import GroupSwitcher from '$lib/components/GroupSwitcher.svelte';
 	// The scheduler's page (issue #235): the schedules, and the form to add or
 	// edit one. A schedule either sends its prompt into a session that already
 	// exists or spawns a fresh one in a directory, and that choice is the first
@@ -39,6 +42,20 @@
 	let formError = $state('');
 	// Which row's buttons are mid-request, so only that row's spinner shows.
 	let busyId = $state('');
+
+	// A schedule belongs where it runs: its directory, or its target session's. One
+	// whose session has gone has nowhere, so it counts as Ungrouped like an adhoc shell.
+	const shownSchedules = $derived(
+		inGroup(
+			schedules,
+			(s) => {
+				const target = groupSwitch.sessions.find((live) => live.id === s.sessionId);
+				return s.cwd ?? (target ? sessionPath(target) : '');
+			},
+			groupSwitch.projects,
+			groupSwitch.selected
+		)
+	);
 
 	const problem = $derived(cronProblem(cron));
 	// Recomputed off `schedules` as well as `cron`, so the preview stays live
@@ -186,6 +203,7 @@
 
 <div class="mb-4 flex items-center gap-2">
 	<h1 class="text-lg font-semibold">Schedules</h1>
+	<GroupSwitcher />
 	<div class="flex-1"></div>
 	<button class="btn btn-sm {formOpen ? 'btn-ghost' : 'btn-primary'}" onclick={() => (formOpen ? closeForm() : startAdd())}>
 		{#if formOpen}<X size={16} /> Close{:else}<Plus size={16} /> New schedule{/if}
@@ -316,13 +334,15 @@
 
 	{#if !loaded}
 		<p class="p-8 text-center opacity-60">Loading…</p>
-	{:else if schedules.length === 0}
+	{:else if shownSchedules.length === 0}
 		<p class="p-8 text-center text-sm opacity-60">
-			No schedules yet. Add one to run a prompt on a clock, in a fresh session each time or in one that keeps its context.
+			{groupSwitch.selected
+				? `No schedules in ${groupSwitch.selected}.`
+				: 'No schedules yet. Add one to run a prompt on a clock, in a fresh session each time or in one that keeps its context.'}
 		</p>
 	{:else}
 		<ul class="space-y-2">
-			{#each schedules as schedule (schedule.id)}
+			{#each shownSchedules as schedule (schedule.id)}
 				{@const outcome = schedule.lastOutcome ? OUTCOME_VIEW[schedule.lastOutcome] : null}
 				{@const broken = schedule.sessionId && !schedule.sessionTitle}
 				<li

@@ -108,7 +108,7 @@ public enum SessionGrouping {
 			var d = drafts[key] ?? Draft(
 				key: key,
 				label: owner?.name ?? shortPath(key),
-				group: owner?.group?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? ungrouped
+				group: GroupSwitch.group(of: owner)
 			)
 			d.sessions.append(s)
 			d.lastActiveAt = max(d.lastActiveAt, s.lastActiveAt ?? 0)
@@ -160,8 +160,4 @@ public extension SessionDigest {
 		let n = subagents ?? 0
 		return status != .running && n > 0 ? "\(n) subagent\(n == 1 ? "" : "s") working" : "Working…"
 	}
-}
-
-private extension String {
-	var nilIfEmpty: String? { isEmpty ? nil : self }
 }

@@ -4,7 +4,9 @@
 	import type { SessionView } from '$lib/session-view';
 	import { liveSessions } from '$lib/session-feed.svelte';
 	import { deriveGroup, relativeTime, shortPath } from '$lib/time';
-	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
+	import { groupSessions, hiddenGroup, inGroup, sessionPath, HIDDEN, type ProjectSubgroup } from '$lib/groups';
+	import { groupSwitch } from '$lib/group-switch.svelte';
+	import GroupSwitcher from '$lib/components/GroupSwitcher.svelte';
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
 	import { bucketSessions, BUCKET_DOT, isWorking, statusDotClass, statusDotLabel, statusWord } from '$lib/status-groups';
@@ -72,7 +74,15 @@
 		projectsLoaded = true;
 	}
 
-	const listed = $derived(filter === 'all' ? sessions : sessions.filter((s) => s.kind === filter));
+	const inFocus = $derived(inGroup(sessions, sessionPath, groupSwitch.projects, groupSwitch.selected));
+	// A kind the selected group has none of drops back to All, or the list would
+	// read empty with no button showing why.
+	const kind = $derived(filter === 'all' || inFocus.some((s) => s.kind === filter) ? filter : 'all');
+	const listed = $derived(kind === 'all' ? inFocus : inFocus.filter((s) => s.kind === kind));
+
+	// With one group selected its name is already in the switcher, so its header
+	// goes and its projects show open.
+	const focused = $derived(groupSwitch.selected !== null);
 
 	// Everything above the Hidden section. Hiding cuts across both views, so it is
 	// applied once here rather than inside each grouping.
@@ -85,7 +95,7 @@
 	// Only surface filter buttons for kinds that actually have sessions.
 	const filterKinds = $derived(
 		(['claude', 'pi', 'codex', 'opencode', 'shell'] as SessionKind[]).filter((k) =>
-			sessions.some((s) => s.kind === k)
+			inFocus.some((s) => s.kind === k)
 		)
 	);
 
@@ -118,7 +128,7 @@
 	const visibleOrder = $derived(
 		viewMode.current === 'status'
 			? flattenVisibleBuckets(buckets, (k) => statusCollapse.has(k))
-			: flattenVisibleGroups(groups, (n) => collapse.has(n))
+			: flattenVisibleGroups(groups, (n) => focused || collapse.has(n))
 	);
 
 	// Keep the selection to rows that are actually on the list: the live feed can
@@ -185,11 +195,12 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-	<div class="flex items-center gap-2">
+	<div class="flex min-w-0 flex-wrap items-center gap-2">
+		<GroupSwitcher />
 		<div class="join">
 			{#each ['all', ...filterKinds] as f (f)}
 				<button
-					class="btn join-item btn-sm {filter === f ? 'btn-active' : ''}"
+					class="btn join-item btn-sm {kind === f ? 'btn-active' : ''}"
 					onclick={() => (filter = f as 'all' | SessionKind)}
 				>
 					{f === 'all' ? 'All' : KIND_LABELS[f as SessionKind]}
@@ -217,7 +228,7 @@
 		<button class="btn btn-ghost btn-sm" onclick={refresh} aria-label="Refresh">
 			<RefreshCw size={16} />
 		</button>
-		{#if sessions.length > 0}
+		{#if inFocus.length > 0}
 			<button
 				class="btn btn-ghost btn-sm"
 				onclick={() => (selectMode ? exitSelect() : (selectMode = true))}
@@ -402,7 +413,7 @@
 	<p class="p-8 text-center opacity-60">Loading sessions…</p>
 {:else if listed.length === 0}
 	<div class="rounded-box border border-base-300 bg-base-100 p-10 text-center">
-		<p class="mb-3 opacity-70">No sessions yet.</p>
+		<p class="mb-3 opacity-70">{groupSwitch.selected ? `No sessions in ${groupSwitch.selected}.` : 'No sessions yet.'}</p>
 		<button class="btn btn-primary btn-sm" onclick={openNew}>
 			<Plus size={16} /> New session
 		</button>
@@ -448,23 +459,25 @@
 {:else}
 	<div class="space-y-4">
 		{#each groups as group (group.name)}
-			{@const isOpen = collapse.has(group.name)}
+			{@const isOpen = focused || collapse.has(group.name)}
 			<section>
-				<button
-					class="flex w-full items-center gap-2 rounded-btn px-1 py-1 text-left hover:bg-base-200"
-					onclick={() => collapse.toggle(group.name)}
-					aria-expanded={isOpen}
-				>
-					{#if isOpen}
-						<ChevronDown size={16} class="shrink-0 opacity-60" />
-					{:else}
-						<ChevronRight size={16} class="shrink-0 opacity-60" />
-					{/if}
-					<span class="font-semibold">{group.name}</span>
-					<span class="text-xs opacity-50">{group.sessionCount}</span>
-				</button>
+				{#if !focused}
+					<button
+						class="flex w-full items-center gap-2 rounded-btn px-1 py-1 text-left hover:bg-base-200"
+						onclick={() => collapse.toggle(group.name)}
+						aria-expanded={isOpen}
+					>
+						{#if isOpen}
+							<ChevronDown size={16} class="shrink-0 opacity-60" />
+						{:else}
+							<ChevronRight size={16} class="shrink-0 opacity-60" />
+						{/if}
+						<span class="font-semibold">{group.name}</span>
+						<span class="text-xs opacity-50">{group.sessionCount}</span>
+					</button>
+				{/if}
 				{#if isOpen}
-					<div class="mt-2 space-y-5 pl-4">
+					<div class={focused ? 'space-y-5' : 'mt-2 space-y-5 pl-4'}>
 						{#each group.subgroups as g (g.key)}
 							{@render subgroup(g)}
 						{/each}

@@ -79,6 +79,7 @@ struct MainTabView: View {
 	/// What the palette picked, run once it has gone so a search field or a
 	/// sheet has somewhere to appear.
 	@State private var picked: PaletteItem?
+	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
 
 	/// With a sidebar to hold it, the gear opens the Settings tab. A phone's
 	/// tab bar holds five; past that iOS shows four and puts the rest under
@@ -139,7 +140,9 @@ struct MainTabView: View {
 			newSession: { selectedTab = .start },
 			focusSearch: { sendToSessions(.focusSearch) },
 			previousSession: { sendToSessions(.step(-1)) },
-			nextSession: { sendToSessions(.step(1)) }))
+			nextSession: { sendToSessions(.step(1)) },
+			groups: store.groupEntries,
+			pickGroup: { pickedGroup = $0 }))
 		.sheet(isPresented: $showPalette, onDismiss: runPicked) {
 			CommandPaletteView(index: paletteIndex) { picked = $0 }
 		}
@@ -176,6 +179,7 @@ struct MainTabView: View {
 			actions.append(.stopTurn)
 		}
 		actions += [.previousSession, .nextSession, .inbox, .voiceOperator, .browser, .settings]
+		actions += GroupSwitch.paletteActions(store.groupEntries, selected: store.selectedGroup(picked: pickedGroup))
 		return PaletteIndex(actions: actions, sessions: store.activeSessions)
 	}
 
@@ -193,6 +197,8 @@ struct MainTabView: View {
 
 	private func perform(_ action: PaletteAction) {
 		switch action.id {
+		case _ where GroupSwitch.storedValue(for: action) != nil:
+			pickedGroup = GroupSwitch.storedValue(for: action) ?? ""
 		case PaletteAction.newSession.id: selectedTab = .start
 		case PaletteAction.searchSessions.id: sendToSessions(.focusSearch)
 		case PaletteAction.previousSession.id: sendToSessions(.step(-1))

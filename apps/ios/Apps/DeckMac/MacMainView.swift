@@ -23,6 +23,7 @@ struct MacMainView: View {
 	/// The session this window showed before Start, which Start defaults to.
 	@State private var lastSessionId: String?
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
+	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
 	@State private var query = ""
 	@State private var deepLinkRunId: String?
 	@State private var showPalette = false
@@ -54,7 +55,10 @@ struct MacMainView: View {
 			newSession: { selection = .start },
 			focusSearch: { searchFocused = true },
 			previousSession: { step(-1) },
-			nextSession: { step(1) }))
+			nextSession: { step(1) },
+			groups: store.groupEntries,
+			pickGroup: { pickedGroup = $0 }))
+		.followsGroup(ofSession: selection?.sessionId)
 		.sheet(isPresented: $showPalette, onDismiss: runPicked) {
 			CommandPaletteView(index: paletteIndex) { picked = $0 }
 				.frame(minWidth: 520, minHeight: 420)
@@ -101,9 +105,10 @@ struct MacMainView: View {
 	/// The sessions the sidebar lists, in its order: what ⌘[ and ⌘] step through.
 	private var listedSessions: [SessionDigest] {
 		let q = query.trimmingCharacters(in: .whitespaces)
+		let active = store.activeSessions(inGroup: store.selectedGroup(picked: pickedGroup))
 		return q.isEmpty
-			? SessionGrouping.ordered(store.activeSessions, by: grouping, projects: store.projects)
-			: SessionSearch.byName(q, in: store.activeSessions)
+			? SessionGrouping.ordered(active, by: grouping, projects: store.projects)
+			: SessionSearch.byName(q, in: active)
 	}
 
 	private func step(_ offset: Int) {
@@ -119,6 +124,7 @@ struct MacMainView: View {
 			actions.append(.stopTurn)
 		}
 		actions += [.previousSession, .nextSession, .inbox, .macRuns, .macSchedules, .voiceOperator, .browser, .settings]
+		actions += GroupSwitch.paletteActions(store.groupEntries, selected: store.selectedGroup(picked: pickedGroup))
 		return PaletteIndex(actions: actions, sessions: store.activeSessions)
 	}
 
@@ -133,6 +139,8 @@ struct MacMainView: View {
 
 	private func perform(_ action: PaletteAction) {
 		switch action.id {
+		case _ where GroupSwitch.storedValue(for: action) != nil:
+			pickedGroup = GroupSwitch.storedValue(for: action) ?? ""
 		case PaletteAction.newSession.id: selection = .start
 		case PaletteAction.searchSessions.id: searchFocused = true
 		case PaletteAction.previousSession.id: step(-1)
@@ -169,20 +177,33 @@ private struct MacSidebar: View {
 	@Binding var query: String
 	let listed: [SessionDigest]
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
+	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
 	@State private var placesHeight: CGFloat = 120
 	@FocusState private var focus: SidebarList?
 
 	private enum SidebarList { case places, sessions }
 
+	private var focusGroup: String? { store.selectedGroup(picked: pickedGroup) }
+
+	private var hidden: [SessionDigest] { store.hiddenSessions(inGroup: focusGroup) }
+
 	/// The session row the arrow keys reach from Start, and leave for it.
 	private var firstSession: String? {
-		listed.first?.id ?? (isFiltering ? nil : store.hiddenSessions.first?.id)
+		listed.first?.id ?? (isFiltering ? nil : hidden.first?.id)
 	}
 
 	private var isFiltering: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
 	var body: some View {
 		VStack(spacing: 0) {
+			if !store.groupEntries.isEmpty {
+				GroupSwitcher()
+					.menuStyle(.borderlessButton)
+					.fixedSize()
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.padding(.horizontal, 12)
+					.padding(.vertical, 6)
+			}
 			places
 			Divider()
 			sessions
@@ -215,7 +236,7 @@ private struct MacSidebar: View {
 				.badge(store.awaitingCount)
 				.tag(MacPane.inbox)
 			Label("Runs", systemImage: "point.3.connected.trianglepath.dotted")
-				.badge(store.runs.filter { !$0.status.isFinished }.count)
+				.badge(store.board(inGroup: focusGroup).filter { !$0.status.isFinished }.count)
 				.tag(MacPane.runs)
 			Label("Schedules", systemImage: "clock.arrow.2.circlepath").tag(MacPane.schedules)
 			Label("Start", systemImage: "plus.circle").tag(MacPane.start)
@@ -244,9 +265,12 @@ private struct MacSidebar: View {
 			if isFiltering {
 				Section("Sessions") {
 					ForEach(listed) { row($0) }
+					if listed.isEmpty, focusGroup != nil {
+						Button("All groups") { pickedGroup = "" }
+					}
 				}
 			} else if grouping == .status {
-				ForEach(SessionGrouping.byStatus(store.activeSessions)) { section in
+				ForEach(SessionGrouping.byStatus(store.activeSessions(inGroup: focusGroup))) { section in
 					Section {
 						ForEach(section.sessions) { row($0) }
 					} header: {
@@ -254,7 +278,7 @@ private struct MacSidebar: View {
 					}
 				}
 			} else {
-				ForEach(SessionGrouping.byProject(store.activeSessions, projects: store.projects)) { section in
+				ForEach(SessionGrouping.byProject(store.activeSessions(inGroup: focusGroup), projects: store.projects)) { section in
 					Section(section.name) {
 						ForEach(section.subgroups) { subgroup in
 							Text(subgroup.label)
@@ -265,9 +289,9 @@ private struct MacSidebar: View {
 					}
 				}
 			}
-			if !isFiltering, !store.hiddenSessions.isEmpty {
+			if !isFiltering, !hidden.isEmpty {
 				Section("Hidden") {
-					ForEach(store.hiddenSessions) { row($0) }
+					ForEach(hidden) { row($0) }
 				}
 			}
 		}
@@ -281,6 +305,8 @@ private struct MacSidebar: View {
 		.overlay {
 			if store.sessions.isEmpty, store.connection == .live {
 				ContentUnavailableView("No sessions", systemImage: "tray")
+			} else if let focusGroup, !isFiltering, listed.isEmpty, hidden.isEmpty {
+				ContentUnavailableView("No sessions in \(focusGroup)", systemImage: "tray")
 			}
 		}
 		.safeAreaInset(edge: .bottom) { MacConnectionStatus() }

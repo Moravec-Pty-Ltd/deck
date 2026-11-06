@@ -6,6 +6,8 @@
 	import type { NameMatch, SearchHit } from '$lib/search-core';
 	import { MIN_QUERY_CHARS, matchSessionNames } from '$lib/search-core';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import { groupSwitch } from '$lib/group-switch.svelte';
+	import { inGroup, sessionPath } from '$lib/groups';
 	import { DIALOG_CLASS } from './Modal.svelte';
 	import { relativeTime } from '$lib/time';
 
@@ -31,10 +33,21 @@
 
 	// Names come from the session list, which is small and already recency
 	// sorted, so matching is instant and needs no endpoint of its own.
-	const names = $derived<NameMatch[]>(matchSessionNames(query, sessions));
+	const groupSessions = $derived(
+		inGroup(sessions, sessionPath, groupSwitch.projects, groupSwitch.selected)
+	);
+	const names = $derived<NameMatch[]>(matchSessionNames(query, groupSessions));
+	// shortcut: the server caps hits before this narrows them, so a group can look
+	// empty beside "More matches exist"; All groups is the way out. Scope the search
+	// on the server if that shows up in practice.
+	const groupHits = $derived.by(() => {
+		if (groupSwitch.selected === null) return hits;
+		const ids = new Set(groupSessions.map((s) => s.id));
+		return hits.filter((hit) => ids.has(hit.sessionId));
+	});
 	const rows = $derived<Row[]>([
 		...names.map((m) => ({ kind: 'session' as const, id: m.id, title: m.title })),
-		...hits.map((hit) => ({ kind: 'hit' as const, hit }))
+		...groupHits.map((hit) => ({ kind: 'hit' as const, hit }))
 	]);
 
 	$effect(() => {
@@ -166,6 +179,9 @@
 				<li class="px-3 py-6 text-center text-sm opacity-60">
 					{#if query.trim().length >= MIN_QUERY_CHARS && searched}
 						No session or message matches "{searched}".
+						{#if groupSwitch.selected !== null}
+							<button class="btn btn-ghost btn-xs mt-2" onclick={() => groupSwitch.pick(null)}>All groups</button>
+						{/if}
 					{:else if query.trim().length >= MIN_QUERY_CHARS}
 						Searching…
 					{:else}

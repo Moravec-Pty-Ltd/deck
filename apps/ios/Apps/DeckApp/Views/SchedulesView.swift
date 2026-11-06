@@ -11,12 +11,19 @@ struct SchedulesView: View {
 	var startFor: String?
 
 	@Environment(DeckStore.self) private var store
+	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
 	@State private var schedules: [DeckSchedule] = []
 	@State private var loaded = false
 	@State private var loadError: String?
 	@State private var editing: ScheduleEdit?
 	@State private var busyId: String?
 	@State private var started = false
+
+	private var focusGroup: String? { store.selectedGroup(picked: pickedGroup) }
+
+	private var shown: [DeckSchedule] {
+		GroupSwitch.schedules(schedules, in: focusGroup, sessions: store.sessions, projects: store.projects)
+	}
 
 	var body: some View {
 		List {
@@ -25,14 +32,14 @@ struct SchedulesView: View {
 					Text(loadError).font(.footnote).foregroundStyle(.red)
 				}
 			}
-			ForEach(schedules) { schedule in
+			ForEach(shown) { schedule in
 				Section {
 					row(schedule)
 				}
 			}
-			if loaded && schedules.isEmpty {
+			if loaded && shown.isEmpty {
 				Section {
-					Text("Nothing scheduled. Add one to run a prompt on a clock, in a fresh session each time or in one that keeps what it has learned.")
+					Text(focusGroup.map { "Nothing scheduled in \($0)." } ?? "Nothing scheduled. Add one to run a prompt on a clock, in a fresh session each time or in one that keeps what it has learned.")
 						.font(.footnote)
 						.foregroundStyle(.secondary)
 				}

@@ -11,7 +11,8 @@
 		Project,
 		SessionKind
 	} from '$lib/types';
-	import { groupProjects, existingGroupNames } from '$lib/groups';
+	import { pickerGroups, startProject, existingGroupNames } from '$lib/groups';
+	import { groupSwitch } from '$lib/group-switch.svelte';
 	import {
 		claudeModelOptions,
 		EXPENSIVE_MODELS,
@@ -228,7 +229,7 @@
 				else if (p?.cwd) {
 					cwd = '__custom';
 					customCwd = p.cwd;
-				} else if (!cwd && list.length) cwd = list[0].path;
+				} else if (list.length) cwd = startProject(list, groupSwitch.selected, cwd);
 				if (p?.cwd) worktreeMode = 'none';
 				if (p?.title !== undefined) title = p.title;
 			});
@@ -241,7 +242,7 @@
 	const folderProject = $derived(projects.find((p) => p.path === customFolder?.project));
 	const folderName = $derived(customCwd.trim().replace(/\/+$/, '').split('/').pop() ?? '');
 	const selectedProject = $derived(projects.find((p) => p.path === cwd));
-	const projectGroups = $derived(groupProjects(projects));
+	const projectGroups = $derived(pickerGroups(projects, groupSwitch.selected));
 	const groupSuggestions = $derived(existingGroupNames(projects));
 	const projectHasSources = $derived(!!selectedProject?.sources?.length);
 

@@ -20,7 +20,9 @@ public enum ProjectGroups {
 
 	public static func grouped(_ projects: [DeckProject]) -> [Group] {
 		let buckets = Dictionary(grouping: projects) { project in
-			project.hidden == true ? hidden : (project.group ?? ungrouped)
+			if project.hidden == true { return hidden }
+			let name = GroupSwitch.group(of: project)
+			return name == SessionGrouping.ungrouped ? ungrouped : name
 		}
 		return buckets.keys
 			.sorted(by: before)
