@@ -117,7 +117,7 @@ The iPhone, iPad, Apple Watch and Mac clients live in [`apps/ios`](apps/ios/READ
 The nav at the top (a bottom bar on a phone) reaches every page: Sessions, Inbox, Runs, Schedules, Projects and Settings.
 
 - **Inbox** collects everything waiting on you: questions sessions have asked, and workflow runs blocked on a decision. Answer each one in place, with the same option buttons as the session view; the nav shows how many are waiting.
-- **Settings** holds what applies to the whole deck server rather than to one project: the theme (saved per browser), the voice servers, the watch operator's model, auto-compact, installing deck's skill into each coding agent, signing in another device (the QR code and access requests) and the SSH target for **Open in Zed**. **Projects** keeps per-project setup: paths, templates, issue sources, dev servers and automation.
+- **Settings** holds what applies to the whole deck server rather than to one project: the theme (saved per browser), the voice servers, the watch operator's model, auto-compact, installing deck's skill into each coding agent, signing in another device (the QR code and access requests) and the SSH target for **Open in Zed** and **Open in VS Code**. **Projects** keeps per-project setup: paths, templates, issue sources, dev servers and automation.
 
 ## Remote access (Tailscale)
 

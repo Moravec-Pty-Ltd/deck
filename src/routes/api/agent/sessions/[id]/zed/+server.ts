@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { zedCommandRoute } from '$lib/server/zed';
+import { zedCommandRoute } from '$lib/server/editors';
 
-// See zed.ts.
+// See editors.ts.
 export const GET: RequestHandler = zedCommandRoute;

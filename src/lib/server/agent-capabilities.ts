@@ -35,6 +35,7 @@ export const AGENT_CAPABILITIES: readonly string[] = [
 	'files-browser',
 	'subagents',
 	'new-folder',
+	'editors',
 ];
 
 export function agentInfo(): { version: string | null; capabilities: string[] } {

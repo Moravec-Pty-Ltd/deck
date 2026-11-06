@@ -285,7 +285,7 @@ function globalCommands(ctx: CommandContext): Command[] {
 		{
 			id: 'settings',
 			title: 'Settings',
-			keywords: ['preferences', 'voice', 'speech', 'operator', 'compact', 'skills', 'devices', 'pair', 'qr', 'zed', 'theme'],
+			keywords: ['preferences', 'voice', 'speech', 'operator', 'compact', 'skills', 'devices', 'pair', 'qr', 'zed', 'vscode', 'theme'],
 			run: () => ctx.goto('/settings')
 		},
 		{

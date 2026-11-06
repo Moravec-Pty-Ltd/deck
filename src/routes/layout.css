@@ -195,7 +195,7 @@ h3,
 }
 
 /* Session header control row: one box contract for every control (issue / PR /
-   server / model / effort / kind / yolo badges, the Zed button, and the Run/Stop
+   server / model / effort / kind / yolo badges, the editor buttons, and the Run/Stop
    split-button), so they all resolve to the same height, padding, border weight,
    font size and radius regardless of whether the primitive is a daisyUI badge
    (sized from --size-selector, its own font-size/padding) or a btn (sized from

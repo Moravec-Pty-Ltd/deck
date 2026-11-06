@@ -50,7 +50,7 @@ struct ServerSettingsLink: View {
 		} header: {
 			Text("deck server")
 		} footer: {
-			Text("Voice servers, auto-compact, the watch operator, Zed and agent skills. Saved on the server, not on this device.")
+			Text("Voice servers, auto-compact, the watch operator, editors and agent skills. Saved on the server, not on this device.")
 		}
 	}
 }

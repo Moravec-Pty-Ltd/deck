@@ -193,12 +193,12 @@ public struct ServerZedSection: View {
 			TextField("user@host[:port]", text: $model.zedSshTarget)
 				.plainEntry()
 				.accessibilityIdentifier("serverZedTarget")
-			SaveRow(model: model, block: .zed, title: "Save Zed target") { await model.saveZed() }
+			SaveRow(model: model, block: .zed, title: "Save SSH target") { await model.saveZed() }
 			BlockMessage(model: model, block: .zed)
 		} header: {
-			Text("Open in Zed")
+			Text("Open in an Editor")
 		} footer: {
-			Text("The SSH target Zed connects to, when it differs from the host the app reaches deck on. Leave blank to use that host.")
+			Text("The SSH target Zed and VS Code connect to, when it differs from the host the app reaches deck on. Leave blank to use that host.")
 		}
 	}
 }

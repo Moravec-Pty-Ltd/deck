@@ -206,8 +206,8 @@ public final class DeckClient: @unchecked Sendable {
 		try await get("/api/agent/sessions/\(sessionId)/diff")
 	}
 
-	public func zedLink(sessionId: String) async throws -> ZedLink {
-		try await get("/api/agent/sessions/\(sessionId)/zed")
+	public func sessionEditors(sessionId: String) async throws -> SessionEditors {
+		try await get("/api/agent/sessions/\(sessionId)/editors")
 	}
 
 	// MARK: - Dev servers

@@ -599,7 +599,7 @@ export interface DeckSettings {
 	// Global fallback for the new-session modal's effort default (issue #178): the
 	// effort last picked for a claude session anywhere, used when the project has none.
 	lastEffort?: DeckEffort;
-	// `user@host[:port]` override for the "Open in Zed" command, for when the SSH
+	// `user@host[:port]` override for the editor links (Open in Zed, Open in VS Code), for when the SSH
 	// target differs from the HTTP host the browser reached deck on / the deck
 	// server's own user. Unset means default to those.
 	zedSshTarget?: string;
