@@ -998,6 +998,24 @@ final class ParityTests: XCTestCase {
 
 	// MARK: - Server settings
 
+	func testZedLinkDecodes() async throws {
+		var link: ZedLink?
+		let sent = await requests(reply: #"{"command":"zed ssh://u@h/srv/my%20app","url":"zed://ssh/u@h/srv/my%20app","sshReachable":false}"#) { client in
+			link = try await client.zedLink(sessionId: "s1")
+		}
+		XCTAssertEqual(sent.first?.path, "/api/agent/sessions/s1/zed")
+		XCTAssertEqual(link?.url, "zed://ssh/u@h/srv/my%20app")
+		XCTAssertEqual(link?.sshReachable, false)
+		XCTAssertNotNil(link?.url.flatMap(URL.init(string:)))
+
+		// No cwd, or a server older than the link: nothing to open.
+		for reply in [#"{"command":null,"url":null,"sshReachable":null}"#, #"{"command":"zed ssh://u@h/srv"}"#] {
+			let decoded = try JSONDecoder().decode(ZedLink.self, from: Data(reply.utf8))
+			XCTAssertNil(decoded.url)
+			XCTAssertNil(decoded.sshReachable)
+		}
+	}
+
 	private static let redactedSettings = #"""
 	{"speech":{"ttsUrl":"http://127.0.0.1:3000","sttUrl":"http://127.0.0.1:3000","streamUrl":"ws://127.0.0.1:3000/v1/realtime","voice":"example"},
 	"operator":{"url":"http://127.0.0.1:3001/v1","model":"example-model","provider":"openai","apiKeyFile":"/path/to/key-file","hasApiKey":true},

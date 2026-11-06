@@ -32,6 +32,7 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 	case filesBrowser = "files-browser"
 	case subagents
 	case newFolder = "new-folder"
+	case zed
 
 	/// What the feature is called where a banner names what is missing.
 	public var label: String {
@@ -64,6 +65,7 @@ public enum DeckCapability: String, CaseIterable, Sendable {
 		case .filesBrowser: return "browsing a session's files"
 		case .subagents: return "live subagents"
 		case .newFolder: return "new folders and saving a folder as a project"
+		case .zed: return "opening a session in Zed"
 		}
 	}
 }

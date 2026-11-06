@@ -940,6 +940,15 @@ public struct ServerRuntime: Codable, Hashable, Identifiable, Sendable {
 	public var canStop: Bool { ["setup", "starting", "running", "stalled"].contains(state) }
 }
 
+/// GET /api/agent/sessions/{id}/zed. `url` and `command` are nil for a session
+/// with no cwd (`url` also from a server older than the link). `sshReachable` is
+/// false only when the deck host was checked and refuses SSH.
+public struct ZedLink: Codable, Equatable, Sendable {
+	public let command: String?
+	public let url: String?
+	public let sshReachable: Bool?
+}
+
 public struct ServersResponse: Codable, Sendable {
 	public let servers: [ServerRuntime]
 }

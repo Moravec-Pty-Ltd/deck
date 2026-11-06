@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { Code, Check } from '@lucide/svelte';
+	import { Code, Check, Copy } from '@lucide/svelte';
 	import { createCopier } from '$lib/copy.svelte';
 
-	// Header chip that copies the `zed ssh://…` command for the session's cwd, so
-	// the worktree can be opened in Zed on whatever machine the browser is on.
-	// Copy-only: Zed's SSH remoting has no reliable browser-launchable link, only
-	// the documented CLI form.
-	let { command }: { command: string } = $props();
+	// Header control for the session's cwd: a link that opens it in Zed over SSH,
+	// plus the `zed ssh://…` command for a machine the link cannot reach (a browser
+	// cannot tell whether Zed is installed).
+	let { command, url }: { command: string; url: string } = $props();
 
 	const copier = createCopier();
 	const copied = $derived(copier.copied);
@@ -14,16 +13,22 @@
 	$effect(() => () => copier.stop());
 </script>
 
-<button
-	type="button"
-	class="badge badge-outline badge-sm header-chip shrink-0 gap-1"
-	title={copied ? 'Copied' : `Copy: ${command}`}
-	onclick={() => copier.copy(command)}
->
-	{#if copied}
-		<Check size={12} />
-	{:else}
+<div class="join shrink-0">
+	<a class="btn btn-outline join-item btn-xs header-chip gap-1" href={url} title="Open in Zed" aria-label="Open in Zed">
 		<Code size={12} />
-	{/if}
-	<span class="hidden sm:inline">{copied ? 'Copied' : 'Zed'}</span>
-</button>
+		<span class="hidden sm:inline">Zed</span>
+	</a>
+	<button
+		type="button"
+		class="btn btn-outline join-item btn-xs header-chip"
+		title={copied ? 'Copied' : `Copy: ${command}`}
+		aria-label={copied ? 'Copied' : 'Copy the Zed command'}
+		onclick={() => copier.copy(command)}
+	>
+		{#if copied}
+			<Check size={12} />
+		{:else}
+			<Copy size={12} />
+		{/if}
+	</button>
+</div>

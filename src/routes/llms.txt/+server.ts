@@ -727,10 +727,13 @@ again. Returns \`{ "ok": true }\`.
 
 ### GET /api/agent/sessions/{id}/zed
 
-\`{ "command": "zed ssh://user@host/path/to/worktree" }\`: the command that opens
-the session's directory in Zed over SSH on the deck host (the host is the one
-you reached deck on, unless the user set a Zed SSH target). \`command\` is null
-for a session with no directory.
+\`{ "command": "zed ssh://user@host/path/to/worktree", "url": "zed://ssh/user@host/path/to/worktree", "sshReachable": true }\`:
+the CLI command and the link that open the session's directory in Zed over SSH
+on the deck host (the host is the one you reached deck on, unless the user set a
+Zed SSH target). Path segments are percent-encoded. \`sshReachable\` is false when
+nothing listens on the deck host's port 22, and null when not checked: with a Zed
+SSH target, or for a session with no directory, where \`command\` and \`url\` are
+null too.
 
 ### DELETE /api/agent/sessions/{id}
 
