@@ -7,6 +7,7 @@ import type { SessionView } from './session-view';
 import { canStart, canStop, isInFlight, type ServerAction } from './servers-client';
 import { CLAUDE_MODELS, modelLabel } from './models';
 import { isReviewSession } from './pr';
+import type { GroupEntry } from './groups';
 
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 export type ReviewDecision = 'approve' | 'request-changes' | 'comment';
@@ -25,6 +26,10 @@ export interface CommandContext {
 	session: SessionView | null;
 	// All sessions, for the "go to session" switch list.
 	sessions: SessionView[];
+	// The group switcher's lines and what is selected, for "Switch to <group>".
+	groups: GroupEntry[];
+	selectedGroup: string | null;
+	pickGroup: (name: string | null) => void;
 	// The current session's configured servers (empty when it runs none), for the
 	// run/stop/restart commands.
 	servers: ServerRuntime[];
@@ -302,6 +307,22 @@ function globalCommands(ctx: CommandContext): Command[] {
 	return cmds;
 }
 
+function groupCommands(ctx: CommandContext): Command[] {
+	return ctx.groups.flatMap((entry, i) =>
+		entry.name === ctx.selectedGroup
+			? []
+			: [
+					{
+						id: `group:${entry.name ?? ''}`,
+						title: `Switch to ${entry.label}`,
+						keywords: ['group', 'focus', 'workspace'],
+						hint: i < 9 ? `⌘${i + 1}` : undefined,
+						run: () => ctx.pickGroup(entry.name)
+					}
+				]
+	);
+}
+
 // Jump to any other session by name — the supacode-style quick switch.
 function jumpCommands(ctx: CommandContext): Command[] {
 	return ctx.sessions
@@ -328,6 +349,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
 		...(s ? restartCommands(ctx, s) : []),
 		...(s ? scheduleCommands(ctx, s) : []),
 		...globalCommands(ctx),
+		...groupCommands(ctx),
 		...jumpCommands(ctx)
 	];
 }

@@ -10,11 +10,17 @@ struct InboxView: View {
 	@State private var path = NavigationPath()
 	@State private var errorMessage: String?
 	@State private var starting = false
+	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+
+	private var focusGroup: String? { store.selectedGroup(picked: pickedGroup) }
+
+	/// Asks stay across every group; the runs board follows the selected one.
+	private var board: [RunDigest] { store.board(inGroup: focusGroup) }
 
 	var body: some View {
 		NavigationStack(path: $path) {
 			Group {
-				if store.asks.isEmpty && store.runs.isEmpty && overseerSession == nil {
+				if store.asks.isEmpty && board.isEmpty && overseerSession == nil {
 					ContentUnavailableView {
 						Label("Nothing needs you", systemImage: "tray")
 					} actions: {
@@ -39,17 +45,17 @@ struct InboxView: View {
 								}
 							}
 						} header: {
-							if !store.asks.isEmpty && !store.runs.isEmpty { Text("Needs you") }
+							if !store.asks.isEmpty && !board.isEmpty { Text("Needs you") }
 						}
 
-						if !store.runs.isEmpty || overseerSession != nil {
-							Section("Runs") {
+						if !board.isEmpty || overseerSession != nil {
+							Section(focusGroup.map { "Runs in \($0)" } ?? "Runs") {
 								if let overseer = store.overseer, let sessionId = overseerSession {
 									NavigationLink(value: sessionId) {
 										OverseerRow(overseer: overseer)
 									}
 								}
-								ForEach(store.board) { run in
+								ForEach(board) { run in
 									NavigationLink(value: RunRoute(id: run.id)) {
 										RunRow(run: run)
 									}
@@ -73,7 +79,8 @@ struct InboxView: View {
 			}
 			.navigationTitle("Inbox")
 			.toolbar {
-				if store.runs.contains(where: { $0.status.isFinished }) {
+				// deck clears every finished run, so offer it only where all of them show.
+				if focusGroup == nil, store.runs.contains(where: { $0.status.isFinished }) {
 					ToolbarItem(placement: .primaryAction) {
 						Button("Clear finished") {
 							act { try await store.deleteFinishedRuns() }
@@ -97,6 +104,7 @@ struct InboxView: View {
 			}
 			.navigationDestination(for: String.self) { sessionId in
 				SessionDetailView(sessionId: sessionId)
+					.followsGroup(ofSession: sessionId)
 			}
 			.navigationDestination(for: RunRoute.self) { route in
 				RunView(runId: route.id) { path.append($0) }

@@ -38,6 +38,7 @@ struct SessionsView: View {
 	/// drag (folding mid-drag) clears it too.
 	@GestureState private var dragWidth: CGFloat?
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
+	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
 	@State private var models = OpenSessionModel()
 	@State private var pendingDelete: DeleteRequest?
 	@State private var pendingRename: SessionDigest?
@@ -184,6 +185,10 @@ struct SessionsView: View {
 				}
 			}
 		}
+		// Here, not on the list: some layouts don't show one, and rebuilding it
+		// must not count as opening what is already open.
+		.followsGroup(ofSession: open?.sessionId)
+		.followsGroup(ofSession: beside?.sessionId)
 		.onChange(of: hinge.bottomInset) { if wide { paneBuild += 1 } }
 		.onChange(of: wide, initial: true) { _, wide in
 			// Folding takes the pane down before the pushed session appears.
@@ -409,17 +414,35 @@ struct SessionsView: View {
 		}
 	}
 
+	private var focusGroup: String? { store.selectedGroup(picked: pickedGroup) }
+
+	/// On a phone's full-width list the title is the group switcher.
+	private var titleIsSwitcher: Bool { !wide }
+
+	/// The selected group's sessions, not hidden.
+	private var active: [SessionDigest] { store.activeSessions(inGroup: focusGroup) }
+
 	/// What the list shows: every session, or the ones whose name matches what
 	/// is typed. Names lead because most of the time you know which session you
 	/// want; what was said still matches, in a section below.
 	private var listedSessions: [SessionDigest] {
-		matching(store.activeSessions)
+		matching(active)
 	}
 
 	/// The same filter over what is hidden, so typing a name still finds it
 	/// without having to unhide it first.
 	private var listedHidden: [SessionDigest] {
-		matching(store.hiddenSessions)
+		matching(store.hiddenSessions(inGroup: focusGroup))
+	}
+
+	/// What was said, from sessions in the selected group.
+	/// shortcut: deck caps hits before this narrows them, so a group can look empty
+	/// where more exist; All groups is the way out. Scope the search on the server
+	/// if that shows up in practice.
+	private var listedHits: [SearchHit] {
+		guard focusGroup != nil else { return hits }
+		let ids = Set(GroupSwitch.sessions(store.sessions, in: focusGroup, projects: store.projects).map(\.id))
+		return hits.filter { ids.contains($0.sessionId) }
 	}
 
 	private func matching(_ list: [SessionDigest]) -> [SessionDigest] {
@@ -449,7 +472,7 @@ struct SessionsView: View {
 			// The other pane's session is skipped, or stepping would stall on it.
 			let other = twoUp ? (focusedPane == .beside ? open : beside)?.sessionId : nil
 			let ids = (isFiltering ? listedSessions
-				: SessionGrouping.ordered(store.activeSessions, by: grouping, projects: store.projects))
+				: SessionGrouping.ordered(active, by: grouping, projects: store.projects))
 				.map(\.id).filter { $0 != other }
 			if let next = SessionStepper.step(from: activeTarget?.sessionId, by: offset, in: ids) {
 				show(SessionTarget(sessionId: next))
@@ -489,7 +512,7 @@ struct SessionsView: View {
 				// Rows do their own selection rather than List(selection:) plus
 				// EditMode: that pairing leaves rows in a selectable state and
 				// swallows the tap that should open the session.
-				List(store.activeSessions) { session in
+				List(active) { session in
 					Button {
 						toggle(session.id)
 					} label: {
@@ -524,21 +547,25 @@ struct SessionsView: View {
 						// What was said, under the names, for when a phrase is all you
 						// remember.
 						Section {
-							ForEach(hits) { hit in
+							ForEach(listedHits) { hit in
 								link(to: SessionTarget(sessionId: hit.sessionId, index: hit.index)) {
 									transcriptHitRow(hit)
 								}
 							}
-							if hits.isEmpty && listedSessions.isEmpty {
+							if listedHits.isEmpty && listedSessions.isEmpty {
 								Text(searching ? "Searching…" : "Nothing matches that.")
 									.font(.subheadline)
 									.foregroundStyle(.secondary)
+								if focusGroup != nil {
+									Button("All groups") { pickedGroup = "" }
+										.accessibilityIdentifier("searchAllGroups")
+								}
 							}
 						} header: {
-							if !hits.isEmpty { Text("In what was said") }
+							if !listedHits.isEmpty { Text("In what was said") }
 						}
 					} else if grouping == .status {
-						ForEach(SessionGrouping.byStatus(store.activeSessions)) { section in
+						ForEach(SessionGrouping.byStatus(active)) { section in
 							Section {
 								ForEach(section.sessions) { row($0) }
 							} header: {
@@ -546,7 +573,7 @@ struct SessionsView: View {
 							}
 						}
 					} else {
-						ForEach(SessionGrouping.byProject(store.activeSessions, projects: store.projects)) { section in
+						ForEach(SessionGrouping.byProject(active, projects: store.projects)) { section in
 							Section(section.name) {
 								ForEach(section.subgroups) { subgroup in
 									Text(subgroup.label)
@@ -561,22 +588,37 @@ struct SessionsView: View {
 					hiddenSection
 				}
 				.listStyle(.plain)
+				.overlay {
+					if let focusGroup, !isFiltering, active.isEmpty, listedHidden.isEmpty {
+						ContentUnavailableView("No sessions in \(focusGroup)", systemImage: "list.bullet.rectangle")
+					}
+				}
 			}
 		}
 		.safeAreaInset(edge: .top, spacing: 0) {
 			VStack(spacing: 8) {
 				ServerTooOldBanner()
 				PairingBanner()
+				// A sidebar column has no room for it among the toolbar's buttons.
+				if !titleIsSwitcher, !store.groupEntries.isEmpty {
+					GroupSwitcher()
+						.frame(maxWidth: .infinity, alignment: .leading)
+						.padding(.horizontal)
+						.padding(.bottom, 4)
+				}
 			}
 		}
 		.navigationTitle("Sessions")
 		// On a short window the toolbar and the title share one row.
-		.navigationBarTitleDisplayMode(hinge.isShort ? .inline : .automatic)
+		.navigationBarTitleDisplayMode(hinge.isShort || (titleIsSwitcher && !store.groupEntries.isEmpty) ? .inline : .automatic)
 		.searchable(text: $query, prompt: "Search sessions")
 		.searchFocused($searchFocused)
 		.onChange(of: query) { _, text in runSearch(text) }
 		.refreshable { await store.refreshSessions() }
 		.toolbar {
+			if titleIsSwitcher, !store.groupEntries.isEmpty {
+				ToolbarItem(placement: .principal) { GroupSwitcher() }
+			}
 			if !isSelecting {
 				ToolbarItem(placement: .topBarTrailing) {
 					Menu {
@@ -588,7 +630,7 @@ struct SessionsView: View {
 					.accessibilityIdentifier("groupingMenu")
 				}
 			}
-			if !store.activeSessions.isEmpty && deleteProgress == nil {
+			if !active.isEmpty && deleteProgress == nil {
 				ToolbarItem(placement: .topBarTrailing) {
 					if isSelecting {
 						Button("Done") { endSelecting() }
@@ -618,11 +660,11 @@ struct SessionsView: View {
 		.safeAreaInset(edge: .bottom) {
 			if let deleteProgress {
 				progressBar(deleteProgress)
-			} else if isSelecting && !store.activeSessions.isEmpty {
+			} else if isSelecting && !active.isEmpty {
 				selectionBar
 			}
 		}
-		.onChange(of: store.activeSessions.map(\.id)) { _, ids in
+		.onChange(of: active.map(\.id)) { _, ids in
 			selection.formIntersection(ids)
 			if ids.isEmpty { endSelecting() }
 		}
@@ -631,7 +673,7 @@ struct SessionsView: View {
 				hasWorktree: request.sessions.contains { $0.worktree != nil },
 				count: request.sessions.count,
 				// Live state, so a session that starts a turn while this is open still warns.
-				sessions: request.sessions.map { picked in store.activeSessions.first { $0.id == picked.id } ?? picked }
+				sessions: request.sessions.map { picked in active.first { $0.id == picked.id } ?? picked }
 			) { deleteWorktree, deleteBranch in
 				Task { await delete(request.sessions, worktree: deleteWorktree, branch: deleteBranch) }
 			}
@@ -775,7 +817,7 @@ struct SessionsView: View {
 	private var selectionBar: some View {
 		HStack {
 			Button(allSelected ? "Deselect All" : "Select All") {
-				selection = allSelected ? [] : Set(store.activeSessions.map(\.id))
+				selection = allSelected ? [] : Set(active.map(\.id))
 			}
 			Spacer()
 			Button(role: .destructive) {
@@ -813,11 +855,11 @@ struct SessionsView: View {
 	}
 
 	private var selectedSessions: [SessionDigest] {
-		store.activeSessions.filter { selection.contains($0.id) }
+		active.filter { selection.contains($0.id) }
 	}
 
 	private var allSelected: Bool {
-		!store.activeSessions.isEmpty && selection.count == store.activeSessions.count
+		!active.isEmpty && selection.count == active.count
 	}
 
 	private func endSelecting() {

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { inGroup } from '$lib/groups';
+	import { groupSwitch } from '$lib/group-switch.svelte';
+	import GroupSwitcher from '$lib/components/GroupSwitcher.svelte';
 	import { confirmAction } from '$lib/confirm.svelte';
 	import type { RunDigest, WorkflowDef } from '$lib/workflows';
 	import {
@@ -46,6 +49,7 @@
 	let pickedPr = $state<AgentPr | null>(null);
 
 	let clearing = $state(false);
+	const shownRuns = $derived(inGroup(runs, (r) => r.projectPath, groupSwitch.projects, groupSwitch.selected));
 	const finishedCount = $derived(runs.filter((r) => r.status === 'done' || r.status === 'cancelled').length);
 
 	const groups = $derived(workflowsByCategory(workflows));
@@ -209,8 +213,10 @@
 
 <div class="mb-4 flex items-center gap-2">
 	<h1 class="text-lg font-semibold">Runs</h1>
+	<GroupSwitcher />
 	<div class="flex-1"></div>
-	{#if finishedCount > 0}
+	<!-- The server clears every finished run, so offer it only where all of them show. -->
+	{#if finishedCount > 0 && groupSwitch.selected === null}
 		<button class="btn btn-sm btn-ghost" onclick={clearFinished} disabled={clearing}>
 			<Trash2 size={16} /> Clear finished ({finishedCount})
 		</button>
@@ -315,11 +321,15 @@
 
 		{#if !loaded}
 			<p class="p-8 text-center opacity-60">Loading…</p>
-		{:else if runs.length === 0}
-			<p class="p-8 text-center text-sm opacity-60">No runs yet. Start one to walk an issue or a PR through its workflow.</p>
+		{:else if shownRuns.length === 0}
+			<p class="p-8 text-center text-sm opacity-60">
+				{groupSwitch.selected
+					? `No runs in ${groupSwitch.selected}.`
+					: 'No runs yet. Start one to walk an issue or a PR through its workflow.'}
+			</p>
 		{:else}
 			<ul class="space-y-2">
-				{#each runs as run (run.id)}
+				{#each shownRuns as run (run.id)}
 					{@const view = RUN_STATUS_VIEW[run.status]}
 					{@const muted = run.status === 'paused' || run.status === 'cancelled'}
 					<li>

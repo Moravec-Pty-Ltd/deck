@@ -138,6 +138,14 @@ function pickedOption(event) {
 
 // An option action answers in place; a plain click focuses an existing window
 // for the session if one is open, else opens it.
+// The window already shows the target, so nothing navigates: tell it, so a session
+// in another group still brings its group along.
+function focusOpenWindow(client, target) {
+	const id = /^\/s\/([^/?#]+)/.exec(target)?.[1];
+	if (id) client.postMessage({ type: 'deck:session-opened', id: decodeURIComponent(id) });
+	return client.focus();
+}
+
 self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
 	const picked = pickedOption(event);
@@ -149,7 +157,7 @@ self.addEventListener('notificationclick', (event) => {
 	event.waitUntil(
 		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
 			for (const client of clients) {
-				if (client.url.includes(target) && 'focus' in client) return client.focus();
+				if (client.url.includes(target) && 'focus' in client) return focusOpenWindow(client, target);
 			}
 			// Reusing a window only works same-origin: client.navigate rejects on a
 			// cross-origin target (a retired review session links out to its PR).
