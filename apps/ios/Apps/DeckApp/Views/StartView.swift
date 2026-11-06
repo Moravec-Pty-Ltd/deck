@@ -17,6 +17,7 @@ struct StartView: View {
 	var onSessionCreated: (String) -> Void
 
 	@Environment(DeckStore.self) private var store
+	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
 	@State private var selectedProject: DeckProject?
 	/// "Custom path…" is picked: start in the typed folder instead of a project.
 	@State private var custom = false
@@ -50,7 +51,7 @@ struct StartView: View {
 							custom = picked == nil
 							if let picked { selectedProject = picked }
 						})) {
-						ForEach(ProjectGroups.grouped(store.projects)) { entry in
+						ForEach(GroupSwitch.pickerGroups(store.projects, selected: store.selectedGroup(picked: pickedGroup))) { entry in
 							Section(entry.name) {
 								ForEach(entry.projects) { project in
 									Text(project.name).tag(Optional(project))
@@ -263,7 +264,8 @@ struct StartView: View {
 		projectName = ""
 		projectGroup = ""
 		let open = store.sessions.first { $0.id == openSessionId }
-		selectedProject = SessionProject.startDefault(openSession: open, current: selectedProject, in: store.projects)
+		selectedProject = SessionProject.startDefault(
+			openSession: open, current: selectedProject, in: store.projects, group: store.selectedGroup(picked: pickedGroup))
 	}
 
 	private func refresh(force: Bool = false) async {

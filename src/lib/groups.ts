@@ -48,6 +48,12 @@ function pathGroups(projects: Project[]): Map<string, string> {
 	return map;
 }
 
+// The directory a session belongs by: a worktree names its repo outright, wherever
+// the worktree itself sits, and everything else goes by where it runs.
+export function sessionPath(s: SessionView): string {
+	return s.worktree?.repo ?? s.cwd;
+}
+
 // Cluster sessions into per-project subgroups, most-recently-active first, with
 // a subgroup's unread sessions ahead of the rest (issue #336).
 // Shared by the ordinary grouping and by the Hidden section, so a hidden session
@@ -55,7 +61,7 @@ function pathGroups(projects: Project[]): Map<string, string> {
 function projectSubgroups(sessions: SessionView[], projects: Project[]): ProjectSubgroup[] {
 	const subMap = new Map<string, ProjectSubgroup>();
 	for (const s of sessions) {
-		const { key, label } = deriveGroup(s.cwd, projects);
+		const { key, label } = deriveGroup(sessionPath(s), projects);
 		let sub = subMap.get(key);
 		if (!sub) {
 			sub = { key, label, sessions: [], lastActiveAt: 0 };
@@ -146,4 +152,98 @@ export function existingGroupNames(projects: Project[]): string[] {
 		if (g) set.add(g);
 	}
 	return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+// One line in the group switcher. `name` is null for "All", so a project group
+// can be called anything; `count` is how many of its sessions need you.
+export interface GroupEntry {
+	name: string | null;
+	label: string;
+	count: number;
+}
+
+// The group a directory belongs to, through its project: worktrees fold back to
+// their repo, and anything outside a registered project counts as Ungrouped.
+export function groupOfPath(path: string, projects: Project[]): string {
+	return pathGroups(projects).get(deriveGroup(path, projects).key) ?? UNGROUPED;
+}
+
+// What the switcher lists: All, each group, then Ungrouped when a project or a
+// session lands there (an adhoc shell's question must have somewhere to show).
+// Empty when no project has a group, since there is nothing to switch between.
+export function groupEntries(sessions: SessionView[], projects: Project[]): GroupEntry[] {
+	const names = existingGroupNames(projects).filter((n) => n !== UNGROUPED);
+	if (names.length === 0) return [];
+	const counts = new Map<string, number>();
+	let total = 0;
+	let hasUngrouped = projects.some((p) => !p.group?.trim());
+	for (const s of sessions) {
+		const name = groupOfPath(sessionPath(s), projects);
+		if (name === UNGROUPED) hasUngrouped = true;
+		if (s.hidden || !(s.awaitingInput || s.unread)) continue;
+		counts.set(name, (counts.get(name) ?? 0) + 1);
+		total++;
+	}
+	const groups = hasUngrouped ? [...names, UNGROUPED] : names;
+	return [
+		{ name: null, label: 'All', count: total },
+		...groups.map((name) => ({ name, label: name, count: counts.get(name) ?? 0 }))
+	];
+}
+
+// The selection in force: what was picked while it still exists, else All.
+export function resolveGroup(picked: string | null, entries: GroupEntry[]): string | null {
+	return entries.some((e) => e.name === picked) ? picked : null;
+}
+
+// Whether a group other than the selected one has something waiting. All shows
+// everything, so nothing is ever elsewhere.
+export function waitingElsewhere(entries: GroupEntry[], selected: string | null): boolean {
+	return selected !== null && entries.some((e) => e.name !== null && e.name !== selected && e.count > 0);
+}
+
+// The items in the selected group, each placed by the directory `pathOf` gives.
+// Sessions, runs and schedules all narrow through here.
+export function inGroup<T>(
+	items: T[],
+	pathOf: (item: T) => string,
+	projects: Project[],
+	selected: string | null
+): T[] {
+	if (selected === null) return items;
+	return items.filter((item) => groupOfPath(pathOf(item), projects) === selected);
+}
+
+// The selection after opening a session: one in another group brings its group
+// along, so it isn't left open but missing from the list.
+export function groupAfterOpening(session: SessionView, projects: Project[], selected: string | null): string | null {
+	if (selected === null) return null;
+	return groupOfPath(sessionPath(session), projects);
+}
+
+export const OTHER_GROUPS = 'Other groups';
+
+// The new-session picker with a group selected: that group first, the rest under
+// "Other groups", Hidden still last.
+export function pickerGroups(projects: Project[], selected: string | null): ProjectGroup[] {
+	const all = groupProjects(projects);
+	if (selected === null) return all;
+	const others = all
+		.filter((g) => g.name !== selected && g.name !== HIDDEN)
+		.flatMap((g) => g.projects)
+		.sort((a, b) => a.name.localeCompare(b.name));
+	return [
+		...all.filter((g) => g.name === selected),
+		...(others.length ? [{ name: OTHER_GROUPS, projects: others }] : []),
+		...all.filter((g) => g.name === HIDDEN)
+	];
+}
+
+// The project the new-session picker lands on: `current` while it fits the
+// selected group, else the group's first project, else `current` regardless.
+export function startProject(projects: Project[], selected: string | null, current: string): string {
+	const fallback = current || (projects[0]?.path ?? '');
+	if (selected === null) return fallback;
+	const first = groupProjects(projects).find((g) => g.name === selected)?.projects ?? [];
+	return first.some((p) => p.path === current) ? current : (first[0]?.path ?? fallback);
 }

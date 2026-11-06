@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { Project, ServerState } from '$lib/types';
 	import type { SessionView } from '$lib/session-view';
-	import { groupSessions, hiddenGroup, HIDDEN, type ProjectSubgroup } from '$lib/groups';
+	import { groupSessions, hiddenGroup, inGroup, sessionPath, HIDDEN, type ProjectSubgroup } from '$lib/groups';
+	import { groupSwitch } from '$lib/group-switch.svelte';
+	import GroupSwitcher from './GroupSwitcher.svelte';
 	import { visibleSessions } from '$lib/hidden-core';
 	import { hideActions } from '$lib/hidden';
 	import { deriveGroup, relativeTime } from '$lib/time';
@@ -99,7 +101,8 @@
 
 	// Everything above the Hidden section. Hiding cuts across both views, so it is
 	// applied once here rather than inside each grouping.
-	const shown = $derived(visibleSessions(sessions));
+	const inFocus = $derived(inGroup(sessions, sessionPath, groupSwitch.projects, groupSwitch.selected));
+	const shown = $derived(visibleSessions(inFocus));
 
 	// Two-level switcher across all sessions: project-group -> per-project subgroup
 	// -> sessions, ordered per the rules in $lib/groups (issue #34).
@@ -110,7 +113,11 @@
 
 	// The one section below both views, holding whatever is hidden. Null until
 	// something is.
-	const hidden = $derived(hiddenGroup(sessions, projects));
+	const hidden = $derived(hiddenGroup(inFocus, projects));
+
+	// With one group selected its name is already in the switcher, so its header
+	// goes and its projects show open.
+	const focused = $derived(groupSwitch.selected !== null);
 
 	const hide = hideActions(
 		() => projects,
@@ -136,7 +143,7 @@
 		const above =
 			viewMode.current === 'status'
 				? flattenVisibleBuckets(buckets, (k) => statusCollapse.has(k))
-				: flattenVisibleGroups(groups, (name) => collapse.has(name));
+				: flattenVisibleGroups(groups, (name) => focused || collapse.has(name));
 		return [...above, ...flattenVisibleGroups(hidden ? [hidden] : [], (name) => collapse.has(name))];
 	}
 
@@ -302,6 +309,10 @@
 	</div>
 {/snippet}
 
+<div class="mb-2 empty:hidden">
+	<GroupSwitcher panelClass="sm:w-44" />
+</div>
+
 {#if showReviews && reviews}
 	<section class="mb-3">
 		<button
@@ -464,28 +475,30 @@
 		{/each}
 
 		{#if buckets.length === 0}
-			<p class="px-2 py-1 text-xs opacity-50">No sessions yet.</p>
+			<p class="px-2 py-1 text-xs opacity-50">{groupSwitch.selected ? `No sessions in ${groupSwitch.selected}.` : 'No sessions yet.'}</p>
 		{/if}
 	{:else}
 		{#each groups as group (group.name)}
-			{@const isOpen = collapse.has(group.name)}
+			{@const isOpen = focused || collapse.has(group.name)}
 			<div>
-				<button
-					class="flex w-full items-center gap-1 rounded-btn pl-1 pr-0 py-0.5 text-left hover:bg-base-200"
-					onclick={() => collapse.toggle(group.name)}
-					aria-expanded={isOpen}
-				>
-					{#if isOpen}
-						<ChevronDown size={13} class="shrink-0 opacity-60" />
-					{:else}
-						<ChevronRight size={13} class="shrink-0 opacity-60" />
-					{/if}
-					<span class="min-w-0 truncate text-xs font-semibold opacity-70">{group.name}</span>
-					<span class="badge badge-ghost badge-sm shrink-0">{group.sessionCount}</span>
-					<div class="flex-1"></div>
-				</button>
+				{#if !focused}
+					<button
+						class="flex w-full items-center gap-1 rounded-btn pl-1 pr-0 py-0.5 text-left hover:bg-base-200"
+						onclick={() => collapse.toggle(group.name)}
+						aria-expanded={isOpen}
+					>
+						{#if isOpen}
+							<ChevronDown size={13} class="shrink-0 opacity-60" />
+						{:else}
+							<ChevronRight size={13} class="shrink-0 opacity-60" />
+						{/if}
+						<span class="min-w-0 truncate text-xs font-semibold opacity-70">{group.name}</span>
+						<span class="badge badge-ghost badge-sm shrink-0">{group.sessionCount}</span>
+						<div class="flex-1"></div>
+					</button>
+				{/if}
 				{#if isOpen}
-					<div class="mt-1 space-y-3 pl-3">
+					<div class={focused ? 'space-y-3' : 'mt-1 space-y-3 pl-3'}>
 						{#each group.subgroups as g (g.key)}
 							{@render subgroup(g)}
 						{/each}
@@ -495,7 +508,7 @@
 		{/each}
 
 		{#if groups.length === 0}
-			<p class="px-2 py-1 text-xs opacity-50">No sessions yet.</p>
+			<p class="px-2 py-1 text-xs opacity-50">{groupSwitch.selected ? `No sessions in ${groupSwitch.selected}.` : 'No sessions yet.'}</p>
 		{/if}
 	{/if}
 

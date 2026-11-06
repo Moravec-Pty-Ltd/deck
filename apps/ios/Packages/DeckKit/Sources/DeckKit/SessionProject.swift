@@ -20,7 +20,12 @@ public enum SessionProject {
 		if let repo = session.worktree?.repo, let match = projects.first(where: { $0.path == repo }) {
 			return match
 		}
-		guard let cwd = session.cwd, !cwd.isEmpty else { return nil }
+		return session.cwd.flatMap { owning(path: $0, in: projects) }
+	}
+
+	/// The project a directory belongs to, worktrees folding back to their repo.
+	public static func owning(path cwd: String, in projects: [DeckProject]) -> DeckProject? {
+		guard !cwd.isEmpty else { return nil }
 		let base = cwd.range(of: worktreeMarker).map { String(cwd[cwd.startIndex..<$0.lowerBound]) } ?? cwd
 		// Longest wins, so a project registered inside another claims its own
 		// sessions rather than the outer one taking them.
@@ -30,13 +35,19 @@ public enum SessionProject {
 	}
 
 	/// The project Start preselects: the open session's own project, hidden or
-	/// not, else what is already picked, else the first project not hidden.
+	/// not, else what is already picked, else the first project not hidden. With
+	/// a group selected, the ones in that group come first, and then its first
+	/// project, so Start lands in the group you are looking at.
 	public static func startDefault(
-		openSession: SessionDigest?, current: DeckProject?, in projects: [DeckProject]
+		openSession: SessionDigest?, current: DeckProject?, in projects: [DeckProject], group: String? = nil
 	) -> DeckProject? {
-		openSession.flatMap { owning($0, in: projects) }
-			?? current
-			?? projects.first { $0.hidden != true } ?? projects.first
+		let opened = openSession.flatMap { owning($0, in: projects) }
+		if let group {
+			let fits = [opened, current].compactMap { $0 }.first { GroupSwitch.group(of: $0) == group }
+			let first = GroupSwitch.pickerGroups(projects, selected: group).first { $0.name == group }?.projects.first
+			if let pick = fits ?? first { return pick }
+		}
+		return opened ?? current ?? projects.first { $0.hidden != true } ?? projects.first
 	}
 
 	/// Whether the session is hidden *because of* its project, in which case

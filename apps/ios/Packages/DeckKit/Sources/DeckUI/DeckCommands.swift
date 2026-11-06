@@ -9,19 +9,26 @@ public struct DeckSceneActions {
 	public var focusSearch: () -> Void
 	public var previousSession: () -> Void
 	public var nextSession: () -> Void
+	/// The group switcher's lines, which ⌘1 to ⌘9 pick by position.
+	public var groups: [GroupSwitch.Entry]
+	public var pickGroup: (String) -> Void
 
 	public init(
 		openPalette: @escaping () -> Void,
 		newSession: @escaping () -> Void,
 		focusSearch: @escaping () -> Void,
 		previousSession: @escaping () -> Void,
-		nextSession: @escaping () -> Void
+		nextSession: @escaping () -> Void,
+		groups: [GroupSwitch.Entry],
+		pickGroup: @escaping (String) -> Void
 	) {
 		self.openPalette = openPalette
 		self.newSession = newSession
 		self.focusSearch = focusSearch
 		self.previousSession = previousSession
 		self.nextSession = nextSession
+		self.groups = groups
+		self.pickGroup = pickGroup
 	}
 }
 
@@ -100,6 +107,13 @@ public struct DeckCommands: Commands {
 			Button("Next Session") { scene?.nextSession() }
 				.keyboardShortcut("]")
 				.disabled(scene == nil)
+			if let groups = scene?.groups, !groups.isEmpty {
+				Divider()
+				ForEach(Array(groups.prefix(9).enumerated()), id: \.element.id) { index, entry in
+					Button(entry.label) { scene?.pickGroup(entry.storedValue) }
+						.keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+				}
+			}
 		}
 	}
 }

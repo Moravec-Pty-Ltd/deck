@@ -17,6 +17,7 @@
 	import { restartSession } from '$lib/session-restart';
 	import { loadSettings } from '$lib/settings-store';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import { groupSwitch } from '$lib/group-switch.svelte';
 	import { DIALOG_CLASS } from './Modal.svelte';
 	import { Search, CornerDownLeft, ChevronLeft, TriangleAlert } from '@lucide/svelte';
 
@@ -88,6 +89,9 @@
 		return {
 			session: currentSession,
 			sessions,
+			groups: groupSwitch.entries,
+			selectedGroup: groupSwitch.selected,
+			pickGroup: groupSwitch.pick,
 			servers: sessionServers,
 			goto: (url) => goto(url),
 			openUrl: (url) => window.open(url, '_blank', 'noopener,noreferrer'),

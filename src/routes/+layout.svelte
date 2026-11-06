@@ -4,11 +4,12 @@
 	import { urlBase64ToUint8Array } from '$lib/push';
 	import { watchForUpdate } from '$lib/pwa-update';
 	import { guardedFetch } from '$lib/api-guard';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import TranscriptSearch from '$lib/components/TranscriptSearch.svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
+	import { groupSwitch } from '$lib/group-switch.svelte';
 	import NavLinks from '$lib/components/NavLinks.svelte';
 	import InboxWatch from '$lib/components/InboxWatch.svelte';
 	import Popover from '$lib/components/Popover.svelte';
@@ -33,6 +34,7 @@
 	// claimed the event; Cmd+K carries no text-edit meaning, so it still opens the
 	// palette even from an input.
 	// Cmd/Ctrl+Shift+F opens transcript search from any page.
+	// Cmd/Ctrl+1 to 9 pick a line of the group switcher, under the same Ctrl rule.
 	function onWindowKeydown(e: KeyboardEvent) {
 		if (e.defaultPrevented || (!e.metaKey && !e.ctrlKey)) return;
 		if ((e.key === 'f' || e.key === 'F') && e.shiftKey) {
@@ -40,11 +42,39 @@
 			searchUi.open = true;
 			return;
 		}
+		if (/^[1-9]$/.test(e.key)) {
+			const entry = groupSwitch.entries[Number(e.key) - 1];
+			if (!entry || e.altKey || (!e.metaKey && isEditable(e.target))) return;
+			e.preventDefault();
+			groupSwitch.pick(entry.name);
+			return;
+		}
 		if (e.key !== 'k' && e.key !== 'K') return;
 		if (!e.metaKey && isEditable(e.target)) return;
 		e.preventDefault();
 		paletteOpen = !paletteOpen;
 	}
+
+	// However a session got opened (a notification, a link, the palette, a search
+	// hit), it brings its group along. Only on arriving: picking another group while
+	// a session stays open must stick, through a reload too.
+	afterNavigate(({ from, to, type }) => {
+		const id = to?.params?.id;
+		if (!id || !to?.url.pathname.startsWith('/s/') || from?.url?.pathname === to.url.pathname) return;
+		const [load] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+		if (type === 'enter' && load?.type === 'reload') return;
+		groupSwitch.opened(id);
+	});
+
+	// A notification for the session already on screen only focuses its window, so
+	// no navigation happens; the service worker says so instead.
+	$effect(() => {
+		const onMessage = (e: MessageEvent) => {
+			if (e.data?.type === 'deck:session-opened') groupSwitch.opened(e.data.id);
+		};
+		navigator.serviceWorker?.addEventListener('message', onMessage);
+		return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+	});
 
 	// The session view (/s/[id]) runs its own full-height, edge-to-edge layout
 	// (sidebar + panel flush under the header); every other route wants the body

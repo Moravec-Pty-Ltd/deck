@@ -16,6 +16,8 @@ const project = path.join(root, 'files-proj');
 const out = path.join(project, '.deck', 'out');
 fs.mkdirSync(path.join(data, 'transcripts'), { recursive: true });
 fs.mkdirSync(out, { recursive: true });
+// Registered by GroupSwitchUITests, which puts it in a group of its own.
+fs.mkdirSync(path.join(root, 'other-proj'), { recursive: true });
 
 const PIXEL_PNG = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',

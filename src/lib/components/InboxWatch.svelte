@@ -2,12 +2,15 @@
 	// Keeps the nav's inbox badge current: how many asks and blocked runs wait,
 	// recounted when the event feed reports a change that can touch the inbox.
 	// Also keeps the installed app's icon badge at the unread session count, where
-	// the browser has the Badging API. Renders nothing; mounted only where the nav
-	// shows, so the sign-in pages hold no feed open.
+	// the browser has the Badging API, and feeds the group switcher the sessions and
+	// projects it counts across. Renders nothing; mounted only where the nav shows,
+	// so the sign-in pages hold no feed open.
 	import { sessionFeed } from '$lib/session-feed.svelte';
 	import { touchesInbox, type InboxAsk } from '$lib/inbox-core';
 	import { unreadCount } from '$lib/unread-core';
-	import { api } from '$lib/workflow-view';
+	import { api, pollWhileVisible } from '$lib/workflow-view';
+	import { groupSwitch } from '$lib/group-switch.svelte';
+	import type { Project } from '$lib/types';
 
 	let { count = $bindable(0) }: { count?: number } = $props();
 
@@ -20,6 +23,19 @@
 	$effect(() => {
 		if (feed.loaded && 'setAppBadge' in navigator) navigator.setAppBadge(unreadCount(feed.sessions)).catch(() => {});
 	});
+
+	$effect(() => {
+		if (feed.loaded) groupSwitch.setSessions(feed.sessions);
+	});
+
+	$effect(() =>
+		pollWhileVisible(() => {
+			api<Project[]>('/api/projects')
+				.then((list) => groupSwitch.setProjects(list))
+				// Keep the last list: a failed read must not make every group vanish.
+				.catch(() => {});
+		}, 5000)
+	);
 
 	async function load() {
 		const n = ++generation;

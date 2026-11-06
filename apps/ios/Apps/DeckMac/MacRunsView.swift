@@ -6,16 +6,19 @@ import DeckUI
 /// and a run's phases one level down. The phone keeps these in its inbox.
 struct MacRunsView: View {
 	@Environment(DeckStore.self) private var store
+	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
 	@State private var path = NavigationPath()
 	@State private var starting = false
 	@State private var errorMessage: String?
 
+	private var shownRuns: [RunDigest] { store.board(inGroup: store.selectedGroup(picked: pickedGroup)) }
+
 	var body: some View {
 		NavigationStack(path: $path) {
 			Group {
-				if store.runs.isEmpty && store.overseer == nil {
+				if shownRuns.isEmpty && store.overseer == nil {
 					ContentUnavailableView {
-						Label("No runs", systemImage: "point.3.connected.trianglepath.dotted")
+						Label(store.selectedGroup(picked: pickedGroup).map { "No runs in \($0)" } ?? "No runs", systemImage: "point.3.connected.trianglepath.dotted")
 					} actions: {
 						Button("Start a run") { starting = true }
 					}
@@ -36,7 +39,7 @@ struct MacRunsView: View {
 			} message: {
 				Text(errorMessage ?? "")
 			}
-			.navigationDestination(for: String.self) { MacSessionDetail(sessionId: $0) }
+			.navigationDestination(for: String.self) { MacSessionDetail(sessionId: $0).followsGroup(ofSession: $0) }
 			.navigationDestination(for: RunRoute.self) { route in
 				RunView(runId: route.id) { path.append($0) }
 			}
@@ -50,7 +53,7 @@ struct MacRunsView: View {
 			if let overseer = store.overseer, let sessionId = overseer.sessionId {
 				NavigationLink(value: sessionId) { OverseerRow(overseer: overseer) }
 			}
-			ForEach(store.board) { run in
+			ForEach(shownRuns) { run in
 				NavigationLink(value: RunRoute(id: run.id)) { RunRow(run: run) }
 					.contextMenu {
 						Button("Delete Run", role: .destructive) {
@@ -63,7 +66,8 @@ struct MacRunsView: View {
 
 	@ToolbarContentBuilder
 	private var toolbar: some ToolbarContent {
-		if store.runs.contains(where: { $0.status.isFinished }) {
+		// deck clears every finished run, so offer it only where all of them show.
+		if store.selectedGroup(picked: pickedGroup) == nil, store.runs.contains(where: { $0.status.isFinished }) {
 			ToolbarItem {
 				Button("Clear Finished") {
 					act { _ = try await store.deleteFinishedRuns() }
