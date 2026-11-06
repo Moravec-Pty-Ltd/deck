@@ -6,6 +6,7 @@
 	import Markdown from './Markdown.svelte';
 	import { haptic } from '$lib/haptics';
 	import { createCopier } from '$lib/copy.svelte';
+	import { formatMessageTime } from '$lib/message-time';
 
 	// A transcript message bubble (user / assistant / live) with a copy affordance:
 	// a hover copy button on desktop, a long-press to copy on touch. Copies the raw
@@ -22,6 +23,8 @@
 	// `onread`, when given, adds a hover button that reads the message aloud.
 	// `sessionId`, when given, shows the local files the text mentions under
 	// it (image previews, download chips) once the text has finished streaming.
+	// `time` (ms), when known, shows under the bubble: the time for today's
+	// messages, date and time for older ones.
 	let {
 		text = '',
 		side,
@@ -31,7 +34,8 @@
 		streamId,
 		sessionId,
 		children,
-		onread
+		onread,
+		time = null
 	}: {
 		text?: string;
 		side: 'start' | 'end';
@@ -42,6 +46,7 @@
 		sessionId?: string;
 		children?: Snippet;
 		onread?: (text: string) => void;
+		time?: number | null;
 	} = $props();
 
 	const copyable = $derived(!!text.trim());
@@ -174,6 +179,13 @@
 			</div>
 		{/if}
 	</div>
+	{#if time !== null && !streaming}
+		<div class="chat-footer mt-0.5 text-[0.6875rem] tabular-nums opacity-50">
+			<time datetime={new Date(time).toISOString()} title={new Date(time).toLocaleString()}
+				>{formatMessageTime(time, Date.now())}</time
+			>
+		</div>
+	{/if}
 </div>
 
 <style>
