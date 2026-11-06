@@ -530,8 +530,8 @@
 						</ul>
 					</Popover>
 				</div>
-				{#if liveKind !== 'shell' && data.zedCommand}
-					<ZedButton command={data.zedCommand} />
+				{#if liveKind !== 'shell' && data.zed?.command && data.zed.url}
+					<ZedButton command={data.zed.command} url={data.zed.url} />
 				{/if}
 				{#if serverChip}
 					<RunButton {session} serverState={serverChip} onRefresh={refresh} />

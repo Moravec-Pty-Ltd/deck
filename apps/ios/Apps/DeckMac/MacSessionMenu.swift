@@ -10,8 +10,8 @@ enum MacSessionSheet: Identifiable {
 }
 
 /// The session's actions menu, as the phone's: agent and model, thinking,
-/// compact and restart, rename, changes, dev servers, schedule, its links, and
-/// delete.
+/// compact and restart, rename, changes, dev servers, schedule, Open in Zed, its
+/// links, and delete.
 struct MacSessionMenu: View {
 	let session: SessionDigest?
 	let viewModel: SessionDetailViewModel
@@ -22,6 +22,8 @@ struct MacSessionMenu: View {
 
 	@Environment(DeckStore.self) private var store
 	@Environment(\.openURL) private var openURL
+	@State private var zedInstalled = false
+	@State private var zed: ZedLink?
 
 	private var isClaude: Bool { session?.kind == "claude" }
 	private var isRunning: Bool { session?.status == .running }
@@ -42,6 +44,12 @@ struct MacSessionMenu: View {
 			Label("Session Actions", systemImage: "ellipsis.circle")
 		}
 		.accessibilityIdentifier("sessionMenu")
+		.task(id: store.supports(.zed)) { await refreshZed() }
+		// Coming back from installing Zed, turning on Remote Login, or Settings
+		// (a window of this app, so the app itself never reactivates).
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+			Task { await refreshZed() }
+		}
 	}
 
 	@ViewBuilder
@@ -93,6 +101,26 @@ struct MacSessionMenu: View {
 			Button("Files", systemImage: "folder") { sheet = .files }
 		}
 		Button("Repeat on a Schedule…", systemImage: "clock.arrow.2.circlepath") { sheet = .schedule }
+		if zedInstalled, store.supports(.zed), let zed, zed.url != nil {
+			let sshOff = zed.sshReachable == false
+			Button(sshOff ? "Open in Zed (Turn on Remote Login on the deck host)" : "Open in Zed", systemImage: "chevron.left.forwardslash.chevron.right") {
+				Task { await openInZed() }
+			}
+			.disabled(sshOff)
+		}
+	}
+
+	private func refreshZed() async {
+		zedInstalled = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "zed://")!) != nil
+		guard zedInstalled, store.supports(.zed), let client = store.client else { return }
+		if let fresh = try? await client.zedLink(sessionId: viewModel.sessionId) { zed = fresh }
+	}
+
+	/// Fetched again so a Zed SSH target changed in Settings applies straight away.
+	private func openInZed() async {
+		await refreshZed()
+		guard zed?.sshReachable != false, let link = zed?.url.flatMap(URL.init(string:)) else { return }
+		NSWorkspace.shared.open(link)
 	}
 
 	@ViewBuilder

@@ -14,11 +14,10 @@ export const load: PageLoad = async ({ params, fetch }) => {
 	const me = await agentGet<{ login: string | null }>(agentPath('user'), fetch)
 		.then((d) => d?.login ?? null)
 		.catch(() => null);
-	// The `zed ssh://…` command for this session's cwd, composed server-side (it
-	// needs the deck user + request hostname). Fetched here so the "Open in Zed"
-	// copy stays inside the click gesture. Null for a session with no cwd.
-	const zedCommand = await agentGet<{ command: string | null }>(sessionPath(params.id, 'zed'), fetch)
-		.then((d) => d?.command ?? null)
+	// The Zed link and `zed ssh://…` command for this session's cwd, composed
+	// server-side (they need the deck user + request hostname). Fetched here so the
+	// copy stays inside the click gesture. Both are null for a session with no cwd.
+	const zed = await agentGet<{ command: string | null; url: string | null }>(sessionPath(params.id, 'zed'), fetch)
 		.catch(() => null);
-	return { session, me, zedCommand };
+	return { session, me, zed };
 };

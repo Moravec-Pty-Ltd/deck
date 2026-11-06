@@ -206,6 +206,10 @@ public final class DeckClient: @unchecked Sendable {
 		try await get("/api/agent/sessions/\(sessionId)/diff")
 	}
 
+	public func zedLink(sessionId: String) async throws -> ZedLink {
+		try await get("/api/agent/sessions/\(sessionId)/zed")
+	}
+
 	// MARK: - Dev servers
 
 	/// Every session's dev-server states, from the monitor's last poll. One cheap
