@@ -11,7 +11,7 @@ struct SchedulesView: View {
 	var startFor: String?
 
 	@Environment(DeckStore.self) private var store
-	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+	@PickedGroup private var pickedGroup
 	@State private var schedules: [DeckSchedule] = []
 	@State private var loaded = false
 	@State private var loadError: String?

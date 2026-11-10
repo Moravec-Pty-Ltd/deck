@@ -38,7 +38,7 @@ struct SessionsView: View {
 	/// drag (folding mid-drag) clears it too.
 	@GestureState private var dragWidth: CGFloat?
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
-	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+	@PickedGroup private var pickedGroup
 	@State private var models = OpenSessionModel()
 	@State private var pendingDelete: DeleteRequest?
 	@State private var pendingRename: SessionDigest?

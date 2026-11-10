@@ -6,7 +6,7 @@ import DeckKit
 /// `store.groupEntries` is not empty: with no groups it has nothing to offer.
 public struct GroupSwitcher: View {
 	@Environment(DeckStore.self) private var store
-	@AppStorage(GroupSwitch.storageKey) private var picked = ""
+	@PickedGroup private var picked
 
 	public init() {}
 
@@ -50,7 +50,8 @@ public struct GroupSwitcher: View {
 private struct FollowsSessionGroup: ViewModifier {
 	let sessionId: String?
 	@Environment(DeckStore.self) private var store
-	@AppStorage(GroupSwitch.storageKey) private var picked = ""
+	@Environment(\.opensHere) private var opensHere
+	@PickedGroup private var picked
 	@State private var opening: String?
 
 	func body(content: Content) -> some View {
@@ -60,6 +61,7 @@ private struct FollowsSessionGroup: ViewModifier {
 				follow()
 			}
 			.onReceive(NotificationCenter.default.publisher(for: .deckOpenSession)) { note in
+				guard opensHere(note) else { return }
 				opening = note.object as? String
 				follow()
 			}
@@ -80,7 +82,51 @@ private struct FollowsSessionGroup: ViewModifier {
 }
 
 extension View {
+	/// Gives this window its own group: kept with the scene, so it survives a
+	/// relaunch, and starting from the last group picked in any window.
+	public func keepsGroupPerWindow() -> some View {
+		modifier(WindowGroupPick())
+	}
+
 	public func followsGroup(ofSession sessionId: String?) -> some View {
 		modifier(FollowsSessionGroup(sessionId: sessionId))
+	}
+}
+
+extension EnvironmentValues {
+	/// The window's group, from `keepsGroupPerWindow`. Nil outside one.
+	@Entry public var windowGroup: Binding<String>? = nil
+	/// Whether a `.deckOpenSession` or `.deckOpenRun` post is for this window.
+	/// Every window hears it; the Mac aims it at one.
+	@Entry public var opensHere: (Notification) -> Bool = { _ in true }
+}
+
+/// The group picked in this window, as stored under `GroupSwitch.storageKey`.
+/// Outside a `keepsGroupPerWindow` view it is the app-wide last pick.
+@propertyWrapper
+public struct PickedGroup: DynamicProperty {
+	@Environment(\.windowGroup) private var window
+	@AppStorage(GroupSwitch.storageKey) private var lastPicked = ""
+
+	public init() {}
+
+	public var wrappedValue: String {
+		get { window?.wrappedValue ?? lastPicked }
+		nonmutating set {
+			if let window { window.wrappedValue = newValue } else { lastPicked = newValue }
+		}
+	}
+}
+
+private struct WindowGroupPick: ViewModifier {
+	@SceneStorage(GroupSwitch.storageKey) private var picked: String?
+	@AppStorage(GroupSwitch.storageKey) private var lastPicked = ""
+
+	func body(content: Content) -> some View {
+		let current = picked ?? lastPicked
+		content
+			.environment(\.windowGroup, Binding(get: { current }, set: { picked = $0; lastPicked = $0 }))
+			// Pinned at once, so a window that never picks stops following the others.
+			.onAppear { if picked == nil { picked = lastPicked } }
 	}
 }

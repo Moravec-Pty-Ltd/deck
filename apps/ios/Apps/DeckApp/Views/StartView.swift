@@ -17,7 +17,7 @@ struct StartView: View {
 	var onSessionCreated: (String) -> Void
 
 	@Environment(DeckStore.self) private var store
-	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+	@PickedGroup private var pickedGroup
 	@State private var selectedProject: DeckProject?
 	/// "Custom path…" is picked: start in the typed folder instead of a project.
 	@State private var custom = false

@@ -14,6 +14,7 @@ struct DeckAppMain: App {
 	var body: some Scene {
 		WindowGroup {
 			RootView()
+				.keepsGroupPerWindow()
 				.environment(store)
 				.task {
 					PushManager.shared.configure(store: store)

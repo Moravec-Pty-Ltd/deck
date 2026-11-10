@@ -79,7 +79,7 @@ struct MainTabView: View {
 	/// What the palette picked, run once it has gone so a search field or a
 	/// sheet has somewhere to appear.
 	@State private var picked: PaletteItem?
-	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+	@PickedGroup private var pickedGroup
 
 	/// With a sidebar to hold it, the gear opens the Settings tab. A phone's
 	/// tab bar holds five; past that iOS shows four and puts the rest under
