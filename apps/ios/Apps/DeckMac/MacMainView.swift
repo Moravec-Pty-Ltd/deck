@@ -180,6 +180,13 @@ private struct MacSidebar: View {
 	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
 	@State private var placesHeight: CGFloat = 120
 	@FocusState private var focus: SidebarList?
+	@State private var pendingDelete: SidebarDelete?
+	@State private var renaming: SidebarRename?
+	@State private var compacting: Set<String> = []
+	@State private var actionError: String?
+	/// The sessions list's own selection, so ⌘- and ⇧-click can pick several
+	/// for the batch menu; one picked session drives the shared `selection`.
+	@State private var picked: Set<MacPane> = []
 
 	private enum SidebarList { case places, sessions }
 
@@ -257,7 +264,7 @@ private struct MacSidebar: View {
 	}
 
 	private var sessions: some View {
-		List(selection: $selection) {
+		List(selection: $picked) {
 			if store.serverTooOld {
 				ServerTooOldBanner()
 			}
@@ -296,8 +303,11 @@ private struct MacSidebar: View {
 			}
 		}
 		.contextMenu(forSelectionType: MacPane.self) { panes in
-			if let id = panes.first?.sessionId, panes.count == 1 {
+			let ids = panes.compactMap(\.sessionId)
+			if ids.count == 1, let id = ids.first {
 				sessionMenu(id)
+			} else if ids.count > 1 {
+				batchMenu(ids)
 			}
 		} primaryAction: { panes in
 			for id in panes.compactMap(\.sessionId) { openWindow(id: MacWindow.session, value: id) }
@@ -310,9 +320,50 @@ private struct MacSidebar: View {
 			}
 		}
 		.safeAreaInset(edge: .bottom) { MacConnectionStatus() }
+		.sheet(item: $pendingDelete) { request in
+			// Live state, so a session that starts a turn while this is open still warns.
+			let live = request.ids.compactMap { id in store.sessions.first { $0.id == id } }
+			DeleteSessionSheet(
+				hasWorktree: live.contains { $0.worktree != nil },
+				count: live.count,
+				name: request.name,
+				sessions: live
+			) { deleteWorktree, deleteBranch in
+				Task { await delete(live.map(\.id), worktree: deleteWorktree, branch: deleteBranch) }
+			}
+		}
+		.sheet(item: $renaming) { target in
+			RenameSessionSheet(current: target.title) { newTitle in
+				do {
+					let id = try await store.rename(sessionId: target.id, title: newTitle)
+					if id != target.id, selection?.sessionId == target.id { selection = .session(id) }
+					return nil
+				} catch {
+					return error.localizedDescription
+				}
+			}
+		}
+		.alert("Something went wrong", isPresented: Binding(
+			get: { actionError != nil },
+			set: { if !$0 { actionError = nil } })
+		) {
+			Button("OK", role: .cancel) {}
+		} message: {
+			Text(actionError ?? "")
+		}
 		.focused($focus, equals: .sessions)
+		.onChange(of: picked) { _, panes in
+			if panes.count == 1, let pane = panes.first, pane != selection { selection = pane }
+		}
+		.onChange(of: selection, initial: true) { _, pane in
+			if pane?.sessionId == nil {
+				picked = []
+			} else if let pane, picked != [pane] {
+				picked = [pane]
+			}
+		}
 		.onKeyPress(.upArrow) {
-			guard let id = selection?.sessionId, id == firstSession else { return .ignored }
+			guard picked.count <= 1, let id = selection?.sessionId, id == firstSession else { return .ignored }
 			selection = .start
 			focus = .places
 			return .handled
@@ -323,14 +374,96 @@ private struct MacSidebar: View {
 		SessionRow(session: session).tag(MacPane.session(session.id))
 	}
 
+	/// Open, rename and hide; then compact and the PR; delete last.
 	@ViewBuilder
 	private func sessionMenu(_ id: String) -> some View {
+		let session = store.sessions.first { $0.id == id }
+		let title = SessionDetailViewModel.title(of: session, id: id)
 		Button("Open in New Window") { openWindow(id: MacWindow.session, value: id) }
-		let hidden = store.hiddenSessions.contains { $0.id == id }
+		Button("Rename…") { renaming = SidebarRename(id: id, title: title) }
+		let hidden = session?.hidden == true
 		Button(hidden ? "Unhide" : "Hide") {
-			Task { try? await store.setHidden(sessionId: id, hidden: !hidden) }
+			run { try await store.setHidden(sessionId: id, hidden: !hidden) }
+		}
+		let context = session?.kind == "claude" ? session?.context : nil
+		let canDismissPR = session?.pr != nil && store.supports(.prDismiss)
+		if context != nil || canDismissPR { Divider() }
+		if let context {
+			Button("Compact Context (\(context.percent)%)") { compact(id) }
+				.disabled(session?.status == .running || compacting.contains(id))
+		}
+		if canDismissPR {
+			Button("Dismiss PR") { run { try await store.dismissPR(sessionId: id) } }
+		}
+		Divider()
+		Button("Delete Session…", role: .destructive) { pendingDelete = SidebarDelete(ids: [id], name: title) }
+	}
+
+	@ViewBuilder
+	private func batchMenu(_ ids: [String]) -> some View {
+		let allHidden = ids.allSatisfy { id in store.sessions.first { $0.id == id }?.hidden == true }
+		Button(allHidden ? "Unhide" : "Hide") {
+			run { for id in ids { try await store.setHidden(sessionId: id, hidden: !allHidden) } }
+		}
+		Divider()
+		Button("Delete \(ids.count) Sessions…", role: .destructive) { pendingDelete = SidebarDelete(ids: ids) }
+	}
+
+	private func compact(_ id: String) {
+		compacting.insert(id)
+		run {
+			defer { compacting.remove(id) }
+			try await store.compact(sessionId: id)
 		}
 	}
+
+	private func run(_ action: @escaping () async throws -> Void) {
+		Task {
+			do { try await action() } catch { report(error) }
+		}
+	}
+
+	/// Deletes through the store, then lets go of whatever showed a deleted
+	/// session: the detail pane, and any window of its own.
+	private func delete(_ ids: [String], worktree: Bool, branch: Bool) async {
+		do {
+			let failures = try await store.deleteSessions(sessionIds: ids, deleteWorktree: worktree, deleteBranch: branch)
+			for id in ids where failures[id] == nil {
+				if selection?.sessionId == id { selection = nil }
+				picked.remove(.session(id))
+				NotificationCenter.default.post(name: .deckSessionDeleted, object: id)
+			}
+			if let first = failures.values.sorted().first {
+				actionError = failures.count == 1 ? first : "\(failures.count) of \(ids.count) sessions couldn't be deleted. \(first)"
+			}
+		} catch {
+			report(error)
+		}
+	}
+
+	/// As the session window's: a cancelled request is not worth an alert.
+	private func report(_ error: Error) {
+		if error is CancellationError { return }
+		let nsError = error as NSError
+		if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
+		actionError = error.localizedDescription
+	}
+}
+
+private struct SidebarDelete: Identifiable {
+	let id = UUID()
+	let ids: [String]
+	var name: String?
+}
+
+private struct SidebarRename: Identifiable {
+	let id: String
+	let title: String
+}
+
+extension Notification.Name {
+	/// A session the main window deleted, so its own window closes too.
+	static let deckSessionDeleted = Notification.Name("deck.sessionDeleted")
 }
 
 /// The connection line under the sidebar, shown only when it is not live.
