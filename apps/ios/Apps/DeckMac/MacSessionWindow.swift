@@ -35,7 +35,7 @@ struct MacSessionWindow: View {
 			if appearsActive { MacFrontSession.id = id ?? sessionId }
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .deckSessionDeleted)) { note in
-			if note.object as? String == current ?? sessionId { dismiss() }
+			if note.object as? String == (current ?? sessionId) { dismiss() }
 		}
 		.onDisappear {
 			if MacFrontSession.id == current ?? sessionId { MacFrontSession.id = nil }
