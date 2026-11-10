@@ -10,7 +10,7 @@ struct InboxView: View {
 	@State private var path = NavigationPath()
 	@State private var errorMessage: String?
 	@State private var starting = false
-	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+	@PickedGroup private var pickedGroup
 
 	private var focusGroup: String? { store.selectedGroup(picked: pickedGroup) }
 

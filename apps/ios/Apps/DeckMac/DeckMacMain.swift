@@ -17,7 +17,7 @@ struct DeckMacMain: App {
 		WindowGroup(id: MacWindow.main) {
 			MacRootView()
 				.environment(store)
-				.macMainWindow()
+				.keepsGroupPerWindow()
 				.frame(minWidth: 760, minHeight: 480)
 				.task { store.start() }
 		}
@@ -80,12 +80,17 @@ struct MacCommands: Commands {
 
 struct MacRootView: View {
 	@Environment(DeckStore.self) private var store
+	@State private var window = MacWindowRef()
 
 	var body: some View {
-		if store.isSignedIn {
-			MacMainView().modifier(PairingPrompt())
-		} else {
-			MacSignInView()
+		Group {
+			if store.isSignedIn {
+				MacMainView().modifier(PairingPrompt())
+			} else {
+				MacSignInView()
+			}
 		}
+		.macMainWindow(window)
+		.environment(\.opensHere) { [window] in MacOpener.target(of: $0) === window.window }
 	}
 }

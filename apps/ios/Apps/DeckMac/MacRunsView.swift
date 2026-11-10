@@ -6,7 +6,7 @@ import DeckUI
 /// and a run's phases one level down. The phone keeps these in its inbox.
 struct MacRunsView: View {
 	@Environment(DeckStore.self) private var store
-	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+	@PickedGroup private var pickedGroup
 	@State private var path = NavigationPath()
 	@State private var starting = false
 	@State private var errorMessage: String?

@@ -23,13 +23,14 @@ struct MacMainView: View {
 	/// The session this window showed before Start, which Start defaults to.
 	@State private var lastSessionId: String?
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
-	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+	@PickedGroup private var pickedGroup
 	@State private var query = ""
 	@State private var deepLinkRunId: String?
 	@State private var showPalette = false
 	@State private var picked: PaletteItem?
 	@State private var showReviews = false
 	@FocusState private var searchFocused: Bool
+	@Environment(\.opensHere) private var opensHere
 
 	var body: some View {
 		NavigationSplitView {
@@ -68,10 +69,10 @@ struct MacMainView: View {
 			if pane != .start { lastSessionId = pane?.sessionId }
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .deckOpenSession)) { note in
-			if let id = note.object as? String { selection = .session(id) }
+			if opensHere(note), let id = note.object as? String { selection = .session(id) }
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .deckOpenRun)) { note in
-			guard let id = note.object as? String else { return }
+			guard opensHere(note), let id = note.object as? String else { return }
 			deepLinkRunId = id
 			selection = .inbox
 		}
@@ -177,7 +178,7 @@ private struct MacSidebar: View {
 	@Binding var query: String
 	let listed: [SessionDigest]
 	@AppStorage(SessionGrouping.storageKey) private var grouping: SessionGrouping.Mode = .project
-	@AppStorage(GroupSwitch.storageKey) private var pickedGroup = ""
+	@PickedGroup private var pickedGroup
 	@State private var placesHeight: CGFloat = 120
 	@FocusState private var focus: SidebarList?
 

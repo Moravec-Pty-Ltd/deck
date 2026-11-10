@@ -18,18 +18,38 @@ struct MacOpener {
 		return tracked.allObjects.filter { $0.isVisible || $0.isMiniaturized }
 	}
 
+	/// The frontmost main window, else any open one.
+	static func frontMain() -> NSWindow? {
+		let open = mainWindows()
+		return NSApp.orderedWindows.first(where: open.contains) ?? open.first
+	}
+
+	private static let windowKey = "window"
+
+	/// The main window an open post is for: the one it names, else the
+	/// frontmost (a button in a window's own view, which is in front).
+	static func target(of note: Notification) -> NSWindow? {
+		note.userInfo?[windowKey] as? NSWindow ?? frontMain()
+	}
+
+	private static func post(_ name: Notification.Name, _ id: String, to window: NSWindow?) {
+		NotificationCenter.default.post(name: name, object: id, userInfo: window.map { [windowKey: $0] })
+	}
+
 	let openWindow: OpenWindowAction
 
 	/// Focuses a main window, or opens one when none is left. openWindow on a
 	/// plain WindowGroup always adds a window, so it is only used for the second.
-	func showMain() {
+	@discardableResult
+	func showMain() -> NSWindow? {
 		NSApp.activate()
-		guard let window = Self.mainWindows().first else {
+		guard let window = Self.frontMain() else {
 			openWindow(id: MacWindow.main)
-			return
+			return nil
 		}
 		if window.isMiniaturized { window.deminiaturize(nil) }
 		window.makeKeyAndOrderFront(nil)
+		return window
 	}
 
 	/// Selects the session in the main window, or with none open gives it a
@@ -40,16 +60,14 @@ struct MacOpener {
 			openWindow(id: MacWindow.session, value: id)
 			return
 		}
-		showMain()
-		NotificationCenter.default.post(name: .deckOpenSession, object: id)
+		Self.post(.deckOpenSession, id, to: showMain())
 	}
 
 	/// Shows the run in the main window's inbox; with none open, its phase
 	/// session's window when it has one.
 	func open(run id: String, phaseSession: String?) {
 		if !Self.mainWindows().isEmpty {
-			showMain()
-			NotificationCenter.default.post(name: .deckOpenRun, object: id)
+			Self.post(.deckOpenRun, id, to: showMain())
 		} else if let phaseSession {
 			open(session: phaseSession)
 		} else {
@@ -59,20 +77,39 @@ struct MacOpener {
 }
 
 extension View {
-	/// Marks this view's window as a main window for MacOpener.
-	func macMainWindow() -> some View {
-		background(MainWindowTracker())
+	/// Marks this view's window as a main window for MacOpener, noting it in `ref`.
+	func macMainWindow(_ ref: MacWindowRef) -> some View {
+		background(MainWindowTracker(ref: ref))
 	}
 }
 
+/// A main window, held weakly so the window's own view state doesn't keep it alive.
+final class MacWindowRef {
+	weak var window: NSWindow?
+}
+
 private struct MainWindowTracker: NSViewRepresentable {
-	func makeNSView(context: Context) -> NSView { TrackingView() }
+	let ref: MacWindowRef
+
+	func makeNSView(context: Context) -> NSView { TrackingView(ref: ref) }
 	func updateNSView(_ nsView: NSView, context: Context) {}
 
 	private final class TrackingView: NSView {
+		let ref: MacWindowRef
+
+		init(ref: MacWindowRef) {
+			self.ref = ref
+			super.init(frame: .zero)
+		}
+
+		required init?(coder: NSCoder) { nil }
+
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
-			if let window { MacOpener.track(window) }
+			if let window {
+				ref.window = window
+				MacOpener.track(window)
+			}
 		}
 	}
 }
