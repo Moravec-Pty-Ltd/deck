@@ -683,6 +683,12 @@ const FINDINGS_CONTRACT = [
 ].join('\n');
 
 const PHASE_NOTE = 'This session is one phase of a deck workflow run. Another phase does the next step; stop when yours is done.';
+// Tests run once per round, in the verify step, so the shared test machine
+// is not busy re-testing the same code from every phase (issue #408).
+const EDIT_TEST_NOTE =
+	'Do not run the full test suite or a whole backend or frontend suite: the Tests step runs them next. To check your work, run at most a type check and the single test file you changed.';
+const REVIEW_TEST_NOTE =
+	'Run no tests: the Tests step already ran them and they passed. Do not start background jobs, and never end your turn while waiting on one.';
 
 function issueRef(run: WorkflowRun): string {
 	return run.issue?.url || run.issue?.id || run.title;
@@ -703,8 +709,9 @@ function implementPrompt(run: WorkflowRun, step: WorkflowStep, ctx: PromptContex
 		PHASE_NOTE,
 		issue,
 		issue
-			? 'Run the skill as far as tests passing and no further: implement what the issue above asks for, add tests, get them green.'
-			: 'Run the skill as far as tests passing and no further: read the issue, implement, add tests, get them green.',
+			? 'Run the skill as far as writing tests and no further: implement what the issue above asks for and add tests.'
+			: 'Run the skill as far as writing tests and no further: read the issue, implement, and add tests.',
+		EDIT_TEST_NOTE,
 		'You are already on the run\'s branch and worktree; do not create another. Do not commit, do not run the review loop, and do not open a PR.'
 	];
 }
@@ -726,6 +733,7 @@ function reviewPrompt(run: WorkflowRun, step: WorkflowStep, ctx: PromptContext):
 		skillLine(step, ''),
 		PHASE_NOTE,
 		'You did not write this code. Do not edit anything; return findings only.',
+		REVIEW_TEST_NOTE,
 		`The change is for ${issueRef(run)}; judge it against that issue's acceptance criteria.`,
 		reviewScope(run, ctx),
 		FINDINGS_CONTRACT
@@ -757,7 +765,8 @@ function fixPrompt(run: WorkflowRun, step: WorkflowStep): string[] {
 		PHASE_NOTE,
 		...task,
 		...earlier,
-		'Treat a suggested fix as a hypothesis: re-derive it from the defect, apply it at the narrowest scope, and keep what each finding\'s `keep` names. Get the tests green. Do not commit and do not run a review.',
+		'Treat a suggested fix as a hypothesis: re-derive it from the defect, apply it at the narrowest scope, and keep what each finding\'s `keep` names. Do not commit and do not run a review.',
+		EDIT_TEST_NOTE,
 		'If a finding asks you to undo something an earlier round demanded, do not apply it. List each one in a fenced ```json block: {"disagreements":["finding vs earlier finding, verbatim"]}.'
 	];
 }
@@ -767,6 +776,7 @@ function arbiterPrompt(run: WorkflowRun, step: WorkflowStep): string[] {
 		skillLine(step, issueRef(run)),
 		PHASE_NOTE,
 		'Two review rounds disagree. Rule which invariant wins and why, then apply the ruling in the working tree. Do not commit.',
+		EDIT_TEST_NOTE,
 		run.disagreement ?? ''
 	];
 }
@@ -777,7 +787,8 @@ function closerPrompt(run: WorkflowRun, step: WorkflowStep): string[] {
 		PHASE_NOTE,
 		`These blockers are still standing after ${run.round} review rounds:`,
 		asJson(run.findings.filter((f) => f.severity === 'blocker')),
-		'Either produce the correct fix in the working tree (tests green, no commit), or rule them invalid.',
+		'Either produce the correct fix in the working tree (no commit), or rule them invalid.',
+		EDIT_TEST_NOTE,
 		'End with a fenced ```json block: {"dismissed": true or false, "reason": "why"}.'
 	];
 }

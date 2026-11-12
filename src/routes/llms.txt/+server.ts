@@ -830,6 +830,16 @@ fresh agent session per phase, all in the run's worktree. Phases invoke skills
 computed (an exit code, a review finding's severity, or a \`gh\` query), never
 judged by a model. A run survives a deck restart. One run per worktree.
 
+Tests run once per round, in the verify step (the project's own \`test\`
+script, so a project whose default test run is a fast changed-only mode gets
+that). Implement, fix, arbiter and closer phases are told to check their work
+with at most a type check and the single test file they changed; the review
+phase runs no tests and reads verify's result instead. The verify command is
+stopped after 20 minutes of running time. Time spent queued for a shared test
+slot does not count: verify sets \`DECK_VERIFY_WAIT_FILE\` to a path, and a
+queueing wrapper creates that file while it waits and removes it once its turn
+comes, which pauses the clock.
+
 ### GET /api/agent/workflows
 
 \`{ "workflows": [<definition>], "problems": ["..."] }\`. Built-ins (\`dev\`,
