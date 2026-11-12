@@ -26,6 +26,7 @@ struct ServerSettingsView: View {
 				ProgressView()
 			}
 		}
+		.formStyle(.grouped)
 		.navigationTitle("deck server")
 		.task {
 			guard store.supports(.settings), model == nil, let client = store.client else { return }
