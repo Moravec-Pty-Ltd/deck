@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import { error, json } from '@sveltejs/kit';
 import type { DeckSession } from '$lib/types';
 import { MAX_PATHS_PER_MESSAGE, byteRange } from '$lib/files-core';
+import { MAX_EDIT_BYTES } from '$lib/file-edit-core';
+import { viewerFor } from '$lib/file-browser-core';
 import { parseTranscriptRange } from '$lib/transcript-range-core';
 import { objectBody, sessionOr404 } from './http';
 import { readTranscriptRange } from './transcript';
 import { readImage } from './images';
-import { fileHeaders, resolveSessionFile, statSessionFiles } from './files';
+import { fileHeaders, resolveSessionFile, saveSessionFile, sha256Hex, statSessionFiles } from './files';
 import { isGitRepo, worktreeDiff, worktreeDiffMeta } from './git';
 import { listSessionDir } from './file-browser';
 
@@ -80,7 +82,27 @@ export async function serveFileRoute({ params, url, request }: SessionEvent): Pr
 			headers: { ...headers, 'content-range': `bytes ${range.start}-${range.end}/${file.size}` }
 		});
 	}
-	return new Response(new Uint8Array(fs.readFileSync(file.absolute)), { headers });
+	const bytes = fs.readFileSync(file.absolute);
+	// The editor sends this back as `expected` so a save can tell the file moved on.
+	const viewer = viewerFor(file.name);
+	if ((viewer === 'text' || viewer === 'markdown') && bytes.length <= MAX_EDIT_BYTES) {
+		headers['x-content-sha256'] = sha256Hex(bytes);
+	}
+	return new Response(new Uint8Array(bytes), { headers });
+}
+
+// Save an edited text file: PUT { path, text, expected } where `expected` is the
+// X-Content-Sha256 the read returned. Same resolution and confinement as the
+// read (files.ts); 409 when the file changed since, 413 when over 1 MB.
+export async function saveFileRoute({ params, request }: SessionEvent): Promise<Response> {
+	const session = await sessionOr404(params.id!);
+	const body = await objectBody(request);
+	if (typeof body.path !== 'string' || typeof body.text !== 'string' || typeof body.expected !== 'string') {
+		error(400, 'path, text and expected are required');
+	}
+	const result = saveSessionFile(session, body.path, body.text, body.expected);
+	if (!result.ok) error(result.status, result.message);
+	return json({ sha256: result.sha256, size: result.size });
 }
 
 // One folder of the session's Files tab: GET ?path=<relative to the session's

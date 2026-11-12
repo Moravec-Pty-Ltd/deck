@@ -15,6 +15,8 @@
 		Folder,
 		Image as ImageIcon,
 		KeyRound,
+		LoaderCircle,
+		Pencil,
 		RefreshCw,
 		WrapText,
 		ExternalLink
@@ -54,6 +56,12 @@
 	let open = $state<DirEntry | null>(null);
 	let text = $state<string | null>(null);
 	let textError = $state('');
+	// sha256 of the text as loaded: a save sends it back so a file that changed on disk is not overwritten.
+	let textHash = $state('');
+	let editing = $state(false);
+	let draft = $state('');
+	let saving = $state(false);
+	let saveError = $state('');
 	let revealed = $state(false);
 	let showSource = $state(false);
 	let wrap = $state(true);
@@ -89,6 +97,8 @@
 	async function loadText(entry: DirEntry, absolute: string) {
 		text = null;
 		textError = '';
+		textHash = '';
+		editing = false;
 		if (entry.size > MAX_TEXT_PREVIEW_BYTES) {
 			textError = `Too large to preview (${formatBytes(entry.size)}).`;
 			return;
@@ -101,9 +111,43 @@
 			}
 			const body = await res.text();
 			if (looksBinary(body)) textError = 'This is not a text file.';
-			else text = body;
+			else {
+				text = body;
+				textHash = res.headers.get('x-content-sha256') ?? '';
+			}
 		} catch {
 			textError = 'could not reach deck';
+		}
+	}
+
+	function startEdit() {
+		draft = text ?? '';
+		saveError = '';
+		editing = true;
+	}
+
+	async function save() {
+		if (!open || saving) return;
+		saving = true;
+		saveError = '';
+		try {
+			const res = await fetch(`${base}/files`, {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ path: openPath, text: draft, expected: textHash })
+			});
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				saveError = body.message ?? 'could not save';
+				return;
+			}
+			text = draft;
+			textHash = body.sha256;
+			editing = false;
+		} catch {
+			saveError = 'could not reach deck';
+		} finally {
+			saving = false;
 		}
 	}
 
@@ -120,6 +164,8 @@
 		showSource = false;
 		text = null;
 		textError = '';
+		textHash = '';
+		editing = false;
 	}
 
 	function goTo(rel: string) {
@@ -214,12 +260,12 @@
 					<span>·</span>
 					<span>{when(open.mtimeMs)}</span>
 					<div class="flex-1"></div>
-					{#if viewer === 'markdown' && text !== null}
+					{#if viewer === 'markdown' && text !== null && !editing}
 						<button class="btn btn-ghost btn-xs" onclick={() => (showSource = !showSource)}>
 							{showSource ? 'Rendered' : 'Source'}
 						</button>
 					{/if}
-					{#if (viewer === 'text' || showSource) && text !== null}
+					{#if (viewer === 'text' || showSource) && text !== null && !editing}
 						<button
 							class="btn btn-ghost btn-xs gap-1 {wrap ? 'btn-active' : ''}"
 							onclick={() => (wrap = !wrap)}
@@ -227,6 +273,9 @@
 						>
 							<WrapText size={14} /> wrap
 						</button>
+					{/if}
+					{#if (viewer === 'text' || viewer === 'markdown') && text !== null && textHash && !editing}
+						<button class="btn btn-ghost btn-xs gap-1" onclick={startEdit}><Pencil size={14} /> Edit</button>
 					{/if}
 					{#if viewer === 'pdf'}
 						<a class="btn btn-ghost btn-xs gap-1" href={fileUrl(session.id, openPath)} target="_blank" rel="noopener">
@@ -240,6 +289,26 @@
 						<KeyRound size={28} class="opacity-50" />
 						<p>This file may contain passwords or keys.</p>
 						<button class="btn btn-sm" onclick={() => (revealed = true)}>Show contents</button>
+					</div>
+				{:else if editing}
+					<div class="flex flex-col gap-3">
+						{#if saveError}
+							<div role="alert" class="alert alert-error alert-soft text-sm">{saveError}</div>
+						{/if}
+						<textarea
+							bind:value={draft}
+							class="textarea h-[60vh] w-full font-mono text-sm"
+							spellcheck="false"
+							autocapitalize="off"
+							{...{ autocorrect: 'off' }}
+							aria-label="Edit {open.name}"
+						></textarea>
+						<div class="flex gap-2">
+							<button class="btn btn-primary btn-sm gap-1" onclick={save} disabled={saving}>
+								{#if saving}<LoaderCircle size={14} class="animate-spin" />{/if} Save
+							</button>
+							<button class="btn btn-ghost btn-sm" onclick={() => (editing = false)} disabled={saving}>Cancel</button>
+						</div>
 					</div>
 				{:else if viewer === 'image'}
 					<button class="block w-full cursor-zoom-in" onclick={() => (zoomed = true)} aria-label="View {open.name} full size">

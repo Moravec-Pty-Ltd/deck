@@ -19,7 +19,7 @@ fs.writeFileSync(path.join(outside, 'secret.png'), 'nope');
 fs.symlinkSync(path.join(outside, 'secret.png'), path.join(projRoot, 'link.png'));
 fs.writeFileSync(path.join(dataDir, 'projects.json'), JSON.stringify([{ name: 'p', path: projRoot }]));
 
-const { fileHeaders, resolveSessionFile, statSessionFiles, MAX_FILE_BYTES } = await import('./files');
+const { fileHeaders, resolveSessionFile, saveSessionFile, sha256Hex, statSessionFiles, MAX_FILE_BYTES } = await import('./files');
 
 afterAll(() => {
 	vi.restoreAllMocks();
@@ -112,5 +112,48 @@ describe('fileHeaders', () => {
 			"default-src 'none'; sandbox"
 		);
 		expect(fileHeaders({ ...file, mime: 'application/pdf' }, false)['content-security-policy']).toBeUndefined();
+	});
+});
+
+describe('saveSessionFile', () => {
+	const env = path.join(projRoot, '.env');
+	const reset = (text: string) => {
+		fs.writeFileSync(env, text, { mode: 0o600 });
+		fs.chmodSync(env, 0o600);
+	};
+
+	it('replaces the text atomically and keeps mode 0600', () => {
+		reset('A=1\n');
+		const res = saveSessionFile(session, env, 'A=2\n', sha256Hex('A=1\n'));
+		expect(res).toEqual({ ok: true, sha256: sha256Hex('A=2\n'), size: 4 });
+		expect(fs.readFileSync(env, 'utf8')).toBe('A=2\n');
+		expect(fs.statSync(env).mode & 0o777).toBe(0o600);
+		expect(fs.readdirSync(projRoot).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+	});
+
+	it('answers 409 for a stale hash and leaves the file alone', () => {
+		reset('A=1\n');
+		expect(saveSessionFile(session, env, 'A=2\n', sha256Hex('old'))).toMatchObject({ ok: false, status: 409 });
+		expect(fs.readFileSync(env, 'utf8')).toBe('A=1\n');
+	});
+
+	it('refuses paths outside the project and missing files', () => {
+		const stray = path.join(outside, 'stray.txt');
+		fs.writeFileSync(stray, 'x');
+		expect(saveSessionFile(session, stray, 'y', sha256Hex('x'))).toMatchObject({ ok: false, status: 404 });
+		expect(saveSessionFile(session, path.join(projRoot, 'nope.txt'), 'y', '')).toMatchObject({ ok: false, status: 404 });
+		expect(fs.readFileSync(stray, 'utf8')).toBe('x');
+	});
+
+	it('refuses binary and oversized files and oversized text', () => {
+		const bin = path.join(projRoot, 'blob.txt');
+		fs.writeFileSync(bin, 'a\0b');
+		expect(saveSessionFile(session, bin, 'y', sha256Hex('a\0b'))).toMatchObject({ ok: false, status: 400 });
+		expect(saveSessionFile(session, path.join(projRoot, 'shots', 'a.png'), 'y', '')).toMatchObject({ ok: false, status: 400 });
+		const big = path.join(projRoot, 'big.txt');
+		fs.writeFileSync(big, 'x'.repeat(1024 * 1024 + 1));
+		expect(saveSessionFile(session, big, 'y', '')).toMatchObject({ ok: false, status: 413 });
+		reset('A=1\n');
+		expect(saveSessionFile(session, env, 'x'.repeat(1024 * 1024 + 1), sha256Hex('A=1\n'))).toMatchObject({ ok: false, status: 413 });
 	});
 });
