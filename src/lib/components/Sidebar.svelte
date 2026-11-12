@@ -28,7 +28,8 @@
 		type RecentError,
 		type ReviewDecision
 	} from '$lib/morabot-core';
-	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Columns2, Timer, CheckCheck } from '@lucide/svelte';
+	import { Plus, Terminal, Bot, GitBranch, GitPullRequest, GitMerge, Ticket, FolderGit2, FolderTree, Activity, Trash2, ChevronRight, ChevronDown, ScanEye, CircleCheck, CircleX, MessageSquare, CloudOff, Search, Eye, EyeOff, Columns2, Timer, CheckCheck, Ellipsis } from '@lucide/svelte';
+	import Popover from './Popover.svelte';
 	import { searchUi } from '$lib/search-ui.svelte';
 
 	// Maps the pure icon-pick (session-icon.ts) onto lucide components: shape says
@@ -153,6 +154,12 @@
 	function onDeleteRow(s: SessionView) {
 		onDelete(s, s.id === currentId ? pickNeighbor(visibleOrder(), s.id) : undefined);
 	}
+
+	// A row menu pick closes its menu: the row stays put, so nothing else would.
+	function pick(e: MouseEvent, action: () => void) {
+		(e.currentTarget as HTMLElement).closest('details')?.removeAttribute('open');
+		action();
+	}
 </script>
 
 {#snippet sessionRow(s: SessionView)}
@@ -205,19 +212,9 @@
 				/>
 			{/if}
 		</a>
-		<!-- Only once the sidebar is widened: at its default width the chip would squeeze the title away. -->
-		<AccountChip session={s} class="hidden max-w-24 @[18rem]:inline-flex" />
-		<IssueChip issues={s.issues ?? []} class="hidden @[18rem]:inline-flex" />
-		{#if s.kind !== 'shell' && s.worktree}
-			<button
-				class="btn btn-ghost btn-xs"
-				onclick={() => onShellHere(s)}
-				aria-label={`Shell in ${s.worktree?.branch}`}
-				title="Shell in this worktree"
-			>
-				<Terminal size={12} />
-			</button>
-		{/if}
+		<!-- Only on a wide sidebar: below that the chip would squeeze the title away. -->
+		<AccountChip session={s} class="hidden max-w-24 @[24rem]:inline-flex" />
+		<IssueChip issues={s.issues ?? []} class="hidden @[24rem]:inline-flex" />
 		{#if proj && projectPaths.has(proj.key)}
 			<button
 				class="btn btn-ghost btn-xs"
@@ -238,38 +235,30 @@
 				<Columns2 size={12} />
 			</button>
 		{/if}
-		{#if !s.hidden}
-			<button
-				class="btn btn-ghost btn-xs"
-				onclick={() => hide.toggleSession(s)}
-				aria-label={`Hide ${s.title}`}
-				title="Hide this session"
-			>
-				<EyeOff size={12} />
-			</button>
-		{:else if !hide.projectHides(s)}
-			<button
-				class="btn btn-ghost btn-xs"
-				onclick={() => hide.toggleSession(s)}
-				aria-label={`Unhide ${s.title}`}
-				title="Unhide this session"
-			>
-				<Eye size={12} />
-			</button>
-		{/if}
-		<button
-			class="btn btn-ghost btn-xs"
-			onclick={() => onDeleteRow(s)}
-			disabled={deletingIds?.has(s.id)}
-			aria-label={`Remove ${s.title}`}
-			title="Remove session"
+		<!-- Shell, hide and remove share one menu so the title keeps the row's width. -->
+		<Popover
+			summaryClass="btn btn-ghost btn-xs"
+			summaryTitle="Session actions"
+			summaryLabel={`Actions for ${s.title}`}
+			panelClass="w-52 p-1"
 		>
-			{#if deletingIds?.has(s.id)}
-				<span class="loading loading-spinner loading-xs"></span>
-			{:else}
-				<Trash2 size={12} />
-			{/if}
-		</button>
+			{#snippet trigger()}<Ellipsis size={12} />{/snippet}
+			<ul class="menu menu-sm w-full p-0">
+				{#if s.kind !== 'shell' && s.worktree}
+					<li><button onclick={(e) => pick(e, () => onShellHere(s))}><Terminal size={13} />Shell in this worktree</button></li>
+				{/if}
+				{#if !s.hidden}
+					<li><button onclick={(e) => pick(e, () => hide.toggleSession(s))}><EyeOff size={13} />Hide</button></li>
+				{:else if !hide.projectHides(s)}
+					<li><button onclick={(e) => pick(e, () => hide.toggleSession(s))}><Eye size={13} />Unhide</button></li>
+				{/if}
+				<li>
+					<button class="text-error" onclick={(e) => pick(e, () => onDeleteRow(s))} disabled={deletingIds?.has(s.id)}>
+						{#if deletingIds?.has(s.id)}<span class="loading loading-spinner loading-xs"></span>{:else}<Trash2 size={13} />{/if}Remove
+					</button>
+				</li>
+			</ul>
+		</Popover>
 	</li>
 {/snippet}
 
