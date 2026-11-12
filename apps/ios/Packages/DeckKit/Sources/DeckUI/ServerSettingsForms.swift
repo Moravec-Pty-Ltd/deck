@@ -71,12 +71,12 @@ public struct ServerSpeechSection: View {
 
 	public var body: some View {
 		Section {
-			TextField("Speech URL (TTS)", text: optionalText($model.speech.ttsUrl))
+			TextField("Speech URL", text: optionalText($model.speech.ttsUrl), prompt: Text("Speech URL (TTS)"))
 				.urlEntry()
 				.accessibilityIdentifier("serverSpeechTTS")
-			TextField("Transcription URL (STT)", text: optionalText($model.speech.sttUrl))
+			TextField("Transcription URL", text: optionalText($model.speech.sttUrl), prompt: Text("Transcription URL (STT)"))
 				.urlEntry()
-			TextField("Streaming transcription URL (optional)", text: optionalText($model.speech.streamUrl))
+			TextField("Streaming URL", text: optionalText($model.speech.streamUrl), prompt: Text("Streaming transcription URL (optional)"))
 				.urlEntry()
 			if model.voices.isEmpty {
 				TextField("Voice", text: optionalText($model.speech.voice))
@@ -144,7 +144,7 @@ public struct ServerOperatorSection: View {
 				Text("From the URL").tag(OperatorProvider?.none)
 				ForEach(OperatorProvider.allCases, id: \.self) { Text($0.label).tag(OperatorProvider?.some($0)) }
 			}
-			TextField("Key file on the server (optional)", text: $model.operatorKeyFile)
+			TextField("Key file", text: $model.operatorKeyFile, prompt: Text("Key file on the server (optional)"))
 				.plainEntry()
 			keyRows
 			SaveRow(model: model, block: .operator, title: "Save watch operator") { await model.saveOperator() }
@@ -168,7 +168,7 @@ public struct ServerOperatorSection: View {
 				.disabled(model.busy != nil)
 				.accessibilityIdentifier("serverOperatorKeyRemove")
 		} else {
-			SecureField(model.hasApiKey ? "New API key" : "API key (optional)", text: $model.newApiKey)
+			SecureField("API key", text: $model.newApiKey, prompt: Text(model.hasApiKey ? "New API key" : "API key (optional)"))
 				.plainEntry()
 				.accessibilityIdentifier("serverOperatorKey")
 			if model.replacingKey {
@@ -190,7 +190,7 @@ public struct ServerZedSection: View {
 
 	public var body: some View {
 		Section {
-			TextField("user@host[:port]", text: $model.zedSshTarget)
+			TextField("SSH target", text: $model.zedSshTarget, prompt: Text("user@host[:port]"))
 				.plainEntry()
 				.accessibilityIdentifier("serverZedTarget")
 			SaveRow(model: model, block: .zed, title: "Save SSH target") { await model.saveZed() }

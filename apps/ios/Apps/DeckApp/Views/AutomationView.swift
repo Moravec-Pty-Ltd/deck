@@ -43,6 +43,7 @@ struct ProjectAutomationView: View {
 				}
 			}
 		}
+		.formStyle(.grouped)
 		.navigationTitle(project.name)
 		.deckInlineNavigationTitle()
 		.toolbar {

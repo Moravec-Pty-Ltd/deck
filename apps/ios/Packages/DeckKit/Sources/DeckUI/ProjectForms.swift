@@ -173,6 +173,7 @@ public struct ProjectEditorForm<Extra: View>: View {
 				}
 			}
 		}
+		.formStyle(.grouped)
 		.navigationTitle(store.projectDetails[project.path]?.name ?? project.name)
 		.deckInlineNavigationTitle()
 		.toolbar {
@@ -217,16 +218,18 @@ public struct ProjectEditorForm<Extra: View>: View {
 			}
 		}
 		Section {
-			TextField("Default first prompt (optional)", text: $draft.template, axis: .vertical)
+			TextField("Default first prompt", text: $draft.template, prompt: Text("Default first prompt (optional)"), axis: .vertical)
 				.lineLimit(3...12)
+				.deckFullWidthField()
 		} header: {
 			Text("Work sessions")
 		} footer: {
 			Text("Placeholders: [title] [branch-name] [base-branch] [cwd] [issue_id] [issue_url] [issue_title] [issue_body] [issue_comments]")
 		}
 		Section {
-			TextField("Review first prompt (optional)", text: $draft.reviewPrompt, axis: .vertical)
+			TextField("Review first prompt", text: $draft.reviewPrompt, prompt: Text("Review first prompt (optional)"), axis: .vertical)
 				.lineLimit(3...12)
+				.deckFullWidthField()
 		} header: {
 			Text("Review sessions")
 		} footer: {
