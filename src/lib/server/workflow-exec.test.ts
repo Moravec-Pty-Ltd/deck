@@ -106,6 +106,16 @@ describe('runVerify', () => {
 		await new Promise((r) => setTimeout(r, 50));
 		expect(() => process.kill(pid, 0)).toThrow();
 	});
+	it('stops the command once its running time passes the timeout', async () => {
+		const result = await runVerify(repo, 'sleep 30', undefined, 200);
+		expect(result.code).not.toBe(0);
+	});
+
+	it('pauses the timeout while the command says it is waiting in a queue', async () => {
+		// Waits 600 ms behind the wait file, then runs for 100 ms: only the 100 ms count.
+		const queued = 'touch "$DECK_VERIFY_WAIT_FILE"; sleep 0.6; rm "$DECK_VERIFY_WAIT_FILE"; sleep 0.1; echo done';
+		expect(await runVerify(repo, queued, undefined, 400)).toEqual({ code: 0, output: 'done\n' });
+	});
 });
 
 describe('pushState', () => {
