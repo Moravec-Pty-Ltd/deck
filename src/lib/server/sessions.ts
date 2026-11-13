@@ -26,7 +26,8 @@ import { agentTurnRunning, agentStop } from './agents/dispatch';
 import { hasPendingAsk } from './ask';
 import { stopSessionServers } from './devservers';
 import { SERVER_TMUX_PREFIX } from './devservers-core';
-import { removeWorktree } from './git';
+import { removeWorktree, type Repo } from './git';
+import { remoteProject, remoteRepo, sessionConnection } from './remote';
 import { pickShipName } from './names';
 import { DEMO, demoSessions, demoSession } from './demo';
 import { publishAgentEvent } from './agent-feed';
@@ -199,10 +200,12 @@ export async function createSession(input: {
 	effort?: DeckSession['effort'];
 	permissionMode?: DeckSession['permissionMode'];
 	account?: string;
-	command?: string;
+	// A function when the command needs the session's id (a remote shell's tmux).
+	command?: string | ((id: string) => Promise<string>);
 	worktree?: { repo: string; branch: string; createdBranch: boolean; base?: string };
 	issues?: SessionIssue[];
 	pr?: SessionPR;
+	remote?: DeckSession['remote'];
 }): Promise<DeckSession> {
 	const id = newId(input.kind);
 	const now = Date.now();
@@ -224,6 +227,7 @@ export async function createSession(input: {
 		status: 'idle',
 		managed: true,
 		worktree: input.worktree,
+		remote: input.remote,
 		issues: input.issues?.length ? input.issues : undefined,
 		// Seeded in Review mode so the header PR chip lights up immediately; the
 		// background sync (server/pr.ts) hydrates its live status on the next tick.
@@ -241,7 +245,8 @@ export async function createSession(input: {
 		}
 	} else {
 		session.tmuxName = tmuxNameFor(id);
-		await createTmuxSession(session.tmuxName, input.cwd, input.command);
+		const command = typeof input.command === 'function' ? await input.command(id) : input.command;
+		await createTmuxSession(session.tmuxName, input.cwd, command);
 	}
 
 	saveSession(session);
@@ -260,13 +265,21 @@ async function teardownSession(stored: DeckSession): Promise<void> {
 	}
 }
 
+// A remote session's worktree belongs to its project's checkout on the host.
+function remoteRepoOf(stored: DeckSession): Repo | undefined {
+	const project = remoteProject(stored.cwd);
+	return project ? remoteRepo(sessionConnection(stored), project.remote.path) : undefined;
+}
+
 async function removeSessionWorktree(
 	stored: DeckSession,
 	opts: { deleteWorktree?: boolean; deleteBranch?: boolean }
 ): Promise<void> {
 	if (!opts.deleteWorktree || !stored.worktree) return;
 	try {
-		await removeWorktree(stored.worktree.repo, stored.cwd, {
+		const repo = stored.remote ? remoteRepoOf(stored) : stored.worktree.repo;
+		if (!repo) return;
+		await removeWorktree(repo, stored.remote?.path ?? stored.cwd, {
 			deleteBranch: !!opts.deleteBranch && ownsWorktreeBranch(stored.worktree, stored.pr),
 			branch: stored.worktree.branch
 		});

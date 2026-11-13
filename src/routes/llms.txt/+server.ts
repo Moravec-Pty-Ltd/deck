@@ -242,7 +242,7 @@ unregistered path.
 you send change: \`name\`, \`group\`, \`template\`, \`reviewPrompt\`,
 \`lastBase\`, \`account\` (strings; a blank clears, a non-string is a 400;
 \`account\` must name an account from \`GET /api/agent/accounts\`, blank means
-Default), \`dev\` and
+Default), \`dev\`, \`remote\` (see Remote projects) and
 \`automation\` (validated; a bad shape is a 400 naming the problem). \`hidden\`
 has its own route, sources theirs, and the remembered model picks are written
 by session creates, so those are ignored here. Returns the updated record; 404
@@ -1144,6 +1144,43 @@ unregistered \`projectPath\`.
 
 Remove a source. Its key goes from the keyring too, unless another source still
 uses it. Returns \`{ "ok": true }\`; 404 on an unregistered project.
+
+## Remote projects
+
+A project with \`remote\` set (\`PATCH /api/agent/projects/config\` with
+\`"remote": { "target": "user@host[:port]", "path": "/path/on/host", "auth": <auth> }\`,
+or \`null\` to clear) runs its claude sessions on that host over SSH. \`auth\`
+is \`{ "kind": "default" }\` (the deck host's own ssh config),
+\`{ "kind": "key", "identityFile": "~/.ssh/<key>" }\` (a file inside the deck
+host's \`~/.ssh\`) or \`{ "kind": "password" }\`. A remote project starts only
+\`claude\` and \`shell\` sessions; its sessions carry
+\`remote: { target, path, worktreeError? }\`. They have no deck tools, so
+questions, watches, file uploads, dev servers, automation, schedules and editor
+links are off.
+
+### GET /api/agent/projects/remote?path=<path>
+
+\`{ "secretSaved": bool, "hostKey": "default" | "trusted" | "unknown" }\`.
+404 when the project has no remote.
+
+### PUT /api/agent/projects/remote/secret
+
+\`{ "path", "secret" }\` saves the password or key passphrase in the secret
+store. It is never returned. Returns \`{ "secretSaved": true }\`.
+
+### DELETE /api/agent/projects/remote/secret?path=<path>
+
+Removes it. Returns \`{ "secretSaved": false }\`.
+
+### GET /api/agent/projects/remote/host-key?path=<path>
+
+Scans the host: \`{ "keys": [{ "type", "fingerprint" }] }\`; 502 when it can't.
+
+### POST /api/agent/projects/remote/host-key
+
+\`{ "path", "fingerprints": [...] }\` trusts the host's keys when a fresh scan
+shows exactly those fingerprints (409 otherwise). Returns
+\`{ "hostKey": "trusted" }\`.
 
 ## Dev servers
 

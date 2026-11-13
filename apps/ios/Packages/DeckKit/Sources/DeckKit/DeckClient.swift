@@ -156,6 +156,41 @@ public final class DeckClient: @unchecked Sendable {
 		return try decoder.decode(ProjectDetail.self, from: data)
 	}
 
+	/// Set a project's remote host, or clear it with nil.
+	public func setRemote(path: String, remote: ProjectRemote?) async throws -> ProjectDetail {
+		var value: Any = NSNull()
+		if let remote {
+			let encoded = try JSONEncoder().encode(remote)
+			value = try JSONSerialization.jsonObject(with: encoded)
+		}
+		let data = try await requestData("PATCH", "/api/agent/projects/config", body: ["path": path, "remote": value])
+		return try decoder.decode(ProjectDetail.self, from: data)
+	}
+
+	public func remoteStatus(path: String) async throws -> RemoteStatus {
+		try await get("/api/agent/projects/remote", query: [URLQueryItem(name: "path", value: path)])
+	}
+
+	/// Store the password, or the key passphrase; the server never returns it.
+	public func putRemoteSecret(path: String, secret: String) async throws {
+		_ = try await requestData("PUT", "/api/agent/projects/remote/secret", body: ["path": path, "secret": secret])
+	}
+
+	public func deleteRemoteSecret(path: String) async throws {
+		_ = try await requestData("DELETE", "/api/agent/projects/remote/secret", query: [URLQueryItem(name: "path", value: path)])
+	}
+
+	/// The host keys the remote presents, to be shown before they are trusted.
+	public func scanHostKey(path: String) async throws -> [HostKeyFingerprint] {
+		struct Reply: Decodable { let keys: [HostKeyFingerprint] }
+		let reply: Reply = try await get("/api/agent/projects/remote/host-key", query: [URLQueryItem(name: "path", value: path)])
+		return reply.keys
+	}
+
+	public func acceptHostKey(path: String, fingerprints: [String]) async throws {
+		_ = try await requestData("POST", "/api/agent/projects/remote/host-key", body: ["path": path, "fingerprints": fingerprints])
+	}
+
 	/// Folder suggestions for a path being typed, `~`-collapsed.
 	public func completePath(_ partial: String) async throws -> [String] {
 		try await get("/api/agent/fs/complete", query: [URLQueryItem(name: "q", value: partial)])

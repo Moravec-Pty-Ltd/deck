@@ -18,6 +18,8 @@ type RouteEvent = { params: Partial<Record<string, string>>; url: URL };
 async function sessionEditors({ params, url }: RouteEvent) {
 	const session = getStoredSession(params.id ?? '');
 	if (!session) error(404, 'session not found');
+	// The checkout is on another host; an editor link here would open the local anchor.
+	if (session.remote) return { editors: [], sshReachable: null };
 	const override = readSettings().zedSshTarget;
 	const editors = composeEditorLinks({ cwd: session.cwd, host: url.hostname, user: os.userInfo().username, override });
 	return { editors, sshReachable: editors.length > 0 && !override?.trim() ? await probePort(22) : null };

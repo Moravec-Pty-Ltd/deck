@@ -243,6 +243,7 @@ public struct SessionDigest: Codable, Hashable, Identifiable, Sendable {
 	public var effort: String?
 	/// The Claude account it was created with; absent means Default.
 	public let account: String?
+	public var remote: SessionRemote?
 	public let worktree: SessionWorktree?
 	public let issues: [DeckIssue]?
 	public var pr: SessionPR?
@@ -723,11 +724,15 @@ public struct ProjectDetail: Codable, Sendable {
 	public let dev: DevConfig?
 	/// The Claude account its new sessions use; absent means the built-in Default.
 	public let account: String?
+	/// Set when its claude sessions run on a remote host over SSH.
+	public let remote: ProjectRemote?
 
 	public init(
 		path: String, name: String?, group: String?, template: String? = nil, reviewPrompt: String? = nil,
-		hidden: Bool? = nil, automation: ProjectAutomation?, dev: DevConfig? = nil, account: String? = nil
+		hidden: Bool? = nil, automation: ProjectAutomation?, dev: DevConfig? = nil, account: String? = nil,
+		remote: ProjectRemote? = nil
 	) {
+		self.remote = remote
 		self.account = account
 		self.path = path
 		self.name = name
@@ -738,6 +743,72 @@ public struct ProjectDetail: Codable, Sendable {
 		self.automation = automation
 		self.dev = dev
 	}
+}
+
+public enum RemoteAuth: Hashable, Sendable {
+	case `default`
+	case key(identityFile: String)
+	case password
+}
+
+extension RemoteAuth: Codable {
+	private enum CodingKeys: String, CodingKey { case kind, identityFile }
+
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		switch try c.decode(String.self, forKey: .kind) {
+		case "key": self = .key(identityFile: try c.decode(String.self, forKey: .identityFile))
+		case "password": self = .password
+		default: self = .default
+		}
+	}
+
+	public func encode(to encoder: Encoder) throws {
+		var c = encoder.container(keyedBy: CodingKeys.self)
+		switch self {
+		case .default: try c.encode("default", forKey: .kind)
+		case .key(let file):
+			try c.encode("key", forKey: .kind)
+			try c.encode(file, forKey: .identityFile)
+		case .password: try c.encode("password", forKey: .kind)
+		}
+	}
+}
+
+/// A project's remote host: `target` is `user@host[:port]`, `path` the checkout on it.
+public struct ProjectRemote: Codable, Hashable, Sendable {
+	public var target: String
+	public var path: String
+	public var auth: RemoteAuth
+
+	public init(target: String, path: String, auth: RemoteAuth = .default) {
+		self.target = target
+		self.path = path
+		self.auth = auth
+	}
+}
+
+/// Where a session runs when its project is remote; `worktreeError` says why a
+/// requested worktree fell back to the checkout.
+public struct SessionRemote: Codable, Hashable, Sendable {
+	public let target: String
+	public let path: String
+	public let worktreeError: String?
+}
+
+public enum RemoteHostKey: String, Codable, Sendable {
+	case `default`, trusted, unknown
+}
+
+/// GET /api/agent/projects/remote. The secret itself is never returned.
+public struct RemoteStatus: Codable, Sendable {
+	public let secretSaved: Bool
+	public let hostKey: RemoteHostKey
+}
+
+public struct HostKeyFingerprint: Codable, Hashable, Sendable {
+	public let type: String
+	public let fingerprint: String
 }
 
 /// A Claude account (GET /api/agent/accounts). The built-in Default is not listed.

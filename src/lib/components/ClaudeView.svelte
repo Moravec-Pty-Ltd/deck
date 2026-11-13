@@ -723,6 +723,10 @@
 			if (isInlineImage(f.type)) addImage(f);
 			else others.push(f);
 		}
+		if (session.remote && others.length) {
+			uploadError = 'File attachments are off for remote sessions. Images still work.';
+			return;
+		}
 		const { admitted, errors } = admitUploads(uploads.length, others);
 		uploads = [...uploads, ...admitted];
 		uploadError = errors.join('. ');
@@ -1266,14 +1270,16 @@
 					class="hidden"
 					onchange={onPick}
 				/>
-				<button
-					class="btn btn-ghost btn-square"
-					onclick={() => fileInput?.click()}
-					aria-label="Attach files"
-					title="Attach files"
-				>
-					<Paperclip size={16} />
-				</button>
+				{#if !session.remote}
+					<button
+						class="btn btn-ghost btn-square"
+						onclick={() => fileInput?.click()}
+						aria-label="Attach files"
+						title="Attach files"
+					>
+						<Paperclip size={16} />
+					</button>
+				{/if}
 
 				<SkillPicker
 					bind:this={skillPicker}

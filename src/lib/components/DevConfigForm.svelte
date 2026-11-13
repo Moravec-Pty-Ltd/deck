@@ -132,6 +132,9 @@
 				<div class="alert alert-error py-1 text-xs">{saver.errorMsg}</div>
 			{/if}
 
+			{#if project.remote}
+				<p class="text-[11px] text-warning">Dev servers are off for remote projects: they cannot run on the remote host.</p>
+			{/if}
 			<p class="text-[11px] opacity-50">
 				Steps and the run command can use
 				<code class="font-mono">$DECK_WORKTREE</code> (session worktree) and
