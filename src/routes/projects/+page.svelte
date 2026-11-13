@@ -6,6 +6,8 @@
 	import { SESSION_PLACEHOLDERS, REVIEW_PLACEHOLDERS } from '$lib/placeholders';
 	import IssueSources from '$lib/components/IssueSources.svelte';
 	import DevConfigForm from '$lib/components/DevConfigForm.svelte';
+	import RemoteHostForm from '$lib/components/RemoteHostForm.svelte';
+	import { REMOTE_OFF_NOTE } from '$lib/remote-core';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
 	import AutomationAgentForm from '$lib/components/AutomationAgentForm.svelte';
 	import { fromRow, toRow, type AgentRow } from '$lib/automation-form-core';
@@ -274,15 +276,16 @@
 									{/if}
 									<div class="mt-2">
 										<span class="text-xs font-medium opacity-70">Automation</span>
+										{#if p.remote}<p class="mt-1 text-xs opacity-60">{REMOTE_OFF_NOTE}</p>{/if}
 										<label class="mt-1 flex cursor-pointer items-center gap-2 text-sm">
-											<input type="checkbox" class="toggle toggle-sm" bind:checked={p.automation.work} />
+											<input type="checkbox" class="toggle toggle-sm" disabled={!!p.remote} bind:checked={p.automation.work} />
 											<span>Auto-start work on assigned issues</span>
 										</label>
 										{#if p.automation.work && !p.automation.workflows}
 											<AutomationAgentForm bind:agent={p.automation.workAgent} {settings} lane="work" />
 										{/if}
 										<label class="mt-2 flex cursor-pointer items-center gap-2 text-sm">
-											<input type="checkbox" class="toggle toggle-sm" bind:checked={p.automation.review} />
+											<input type="checkbox" class="toggle toggle-sm" disabled={!!p.remote} bind:checked={p.automation.review} />
 											<span>Auto-start review on requested PRs</span>
 										</label>
 										{#if p.automation.review && !p.automation.workflows}
@@ -309,6 +312,7 @@
 										<button class="btn btn-sm btn-primary" onclick={() => save(p)}>Save</button>
 									</div>
 									<IssueSources project={p} onchanged={load} />
+									<RemoteHostForm project={p} onchanged={load} />
 									<DevConfigForm project={p} onchanged={load} />
 								</div>
 							{/if}

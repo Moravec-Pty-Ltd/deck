@@ -9,6 +9,9 @@ import { readImage } from './images';
 import { fileHeaders, resolveSessionFile, statSessionFiles } from './files';
 import { isGitRepo, worktreeDiff, worktreeDiffMeta } from './git';
 import { listSessionDir } from './file-browser';
+import { listRemoteDir, readRemoteFile } from './remote-files';
+import { remoteRepo, sessionConnection } from './remote';
+import type { Repo } from './git';
 
 // Read-side per-session handlers, each shared verbatim by a browser route under
 // /api/sessions/[id] and its agent API twin under /api/agent/sessions/[id], so
@@ -58,6 +61,7 @@ export async function statFilesRoute({ params, request }: SessionEvent): Promise
 
 export async function serveFileRoute({ params, url, request }: SessionEvent): Promise<Response> {
 	const session = await sessionOr404(params.id!);
+	if (session.remote) return serveRemoteFile(session, url);
 	const file = resolveSessionFile(session, url.searchParams.get('path') ?? '');
 	if (!file) error(404, 'file not found');
 	const headers = fileHeaders(file, url.searchParams.get('download') === '1');
@@ -83,11 +87,20 @@ export async function serveFileRoute({ params, url, request }: SessionEvent): Pr
 	return new Response(new Uint8Array(fs.readFileSync(file.absolute)), { headers });
 }
 
+// A remote session's file, read whole over ssh: no byte ranges.
+async function serveRemoteFile(session: DeckSession, url: URL): Promise<Response> {
+	const read = await readRemoteFile(session, url.searchParams.get('path') ?? '');
+	if (!read) error(404, 'file not found');
+	const { etag: _etag, 'accept-ranges': _ranges, ...headers } = fileHeaders(read.file, url.searchParams.get('download') === '1');
+	return new Response(new Uint8Array(read.data), { headers });
+}
+
 // One folder of the session's Files tab: GET ?path=<relative to the session's
 // folder>. The files themselves are served by serveFileRoute (same confinement).
 export async function sessionDirRoute({ params, url }: Pick<SessionEvent, 'params' | 'url'>): Promise<Response> {
 	const session = await sessionOr404(params.id!);
-	const result = listSessionDir(session, url.searchParams.get('path') ?? '');
+	const rel = url.searchParams.get('path') ?? '';
+	const result = session.remote ? await listRemoteDir(session, rel) : listSessionDir(session, rel);
 	if (!result.ok) error(result.status, result.message);
 	return json(result.listing);
 }
@@ -96,7 +109,7 @@ export async function sessionDirRoute({ params, url }: Pick<SessionEvent, 'param
 // cwd (never a request-supplied path), so this can't reach outside the directory
 // the session already runs in. `metaOnly` returns just the summary for the badge.
 async function diffResponse(session: DeckSession, metaOnly: boolean) {
-	const cwd = session.cwd;
+	const cwd: Repo = session.remote ? remoteRepo(sessionConnection(session), session.remote.path) : session.cwd;
 	const base = session.worktree?.base;
 	if (!(await isGitRepo(cwd))) return { git: false };
 	if (metaOnly) return { git: true, meta: await worktreeDiffMeta(cwd, base) };

@@ -924,6 +924,43 @@ final class ParityTests: XCTestCase {
 		XCTAssertNil(none.subagents)
 	}
 
+	func testRemoteFieldsDecodeAndEncodeTheServerShapes() async throws {
+		let key = #"{"path":"/path/to/project","remote":{"target":"dev@example.com:2222","path":"/srv/app","auth":{"kind":"key","identityFile":"~/.ssh/id_ed25519"}}}"#
+		let detail = try JSONDecoder().decode(ProjectDetail.self, from: Data(key.utf8))
+		XCTAssertEqual(detail.remote, ProjectRemote(target: "dev@example.com:2222", path: "/srv/app", auth: .key(identityFile: "~/.ssh/id_ed25519")))
+		for (json, auth) in [(#"{"kind":"default"}"#, RemoteAuth.default), (#"{"kind":"password"}"#, .password)] {
+			let body = #"{"path":"/p","remote":{"target":"a@b","path":"/x","auth":\#(json)}}"#
+			XCTAssertEqual(try JSONDecoder().decode(ProjectDetail.self, from: Data(body.utf8)).remote?.auth, auth)
+		}
+		XCTAssertNil(try JSONDecoder().decode(ProjectDetail.self, from: Data(#"{"path":"/p"}"#.utf8)).remote)
+		let session = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle","remote":{"target":"dev@example.com","path":"/srv/app-worktrees/x","worktreeError":"not a git repo"}}"#.utf8))
+		XCTAssertEqual(session.remote?.path, "/srv/app-worktrees/x")
+		XCTAssertEqual(session.remote?.worktreeError, "not a git repo")
+
+		var sent = await requests(reply: #"{"path":"/p"}"#) { _ = try await $0.setRemote(path: "/p", remote: detail.remote) }
+		assertShape(sent, "PATCH", "/api/agent/projects/config", keys: ["path", "remote"])
+		let remote = (sent.first?.json as? [String: Any])?["remote"] as? [String: Any]
+		XCTAssertEqual((remote?["auth"] as? [String: String])?["identityFile"], "~/.ssh/id_ed25519")
+		sent = await requests(reply: #"{"path":"/p"}"#) { _ = try await $0.setRemote(path: "/p", remote: nil) }
+		XCTAssertTrue((sent.first?.json as? [String: Any])?["remote"] is NSNull, "nil clears it")
+
+		var status: RemoteStatus?
+		sent = await requests(reply: #"{"secretSaved":true,"hostKey":"unknown"}"#) { status = try await $0.remoteStatus(path: "/p") }
+		assertShape(sent, "GET", "/api/agent/projects/remote", query: "path=/p")
+		XCTAssertEqual(status?.hostKey, .unknown)
+		XCTAssertEqual(status?.secretSaved, true)
+		sent = await requests { try await $0.putRemoteSecret(path: "/p", secret: "s") }
+		assertShape(sent, "PUT", "/api/agent/projects/remote/secret", keys: ["path", "secret"])
+		sent = await requests { try await $0.deleteRemoteSecret(path: "/p") }
+		assertShape(sent, "DELETE", "/api/agent/projects/remote/secret", query: "path=/p")
+		var keys: [HostKeyFingerprint] = []
+		sent = await requests(reply: #"{"keys":[{"type":"ssh-ed25519","fingerprint":"SHA256:abc"}]}"#) { keys = try await $0.scanHostKey(path: "/p") }
+		assertShape(sent, "GET", "/api/agent/projects/remote/host-key", query: "path=/p")
+		XCTAssertEqual(keys.first?.fingerprint, "SHA256:abc")
+		sent = await requests(reply: #"{"hostKey":"trusted"}"#) { try await $0.acceptHostKey(path: "/p", fingerprints: ["SHA256:abc"]) }
+		assertShape(sent, "POST", "/api/agent/projects/remote/host-key", keys: ["fingerprints", "path"])
+	}
+
 	func testAccountsDecodeOnProjectsSessionsAndTheAccountsRoute() async throws {
 		let detail = try JSONDecoder().decode(ProjectDetail.self, from: Data(#"{"path":"/path/to/project","account":"work"}"#.utf8))
 		XCTAssertEqual(detail.account, "work")

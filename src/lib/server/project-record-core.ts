@@ -1,6 +1,7 @@
 import type { Project } from '$lib/types';
 import { parseDevConfig } from './devservers-core';
 import { parseAutomation } from './automation-core';
+import { parseProjectRemote } from '$lib/remote-core';
 
 // Pure build of a stored project record from a register (POST) or config edit
 // (PATCH) body, shared by project-record.ts. Every field carries the existing
@@ -60,6 +61,7 @@ export function buildProjectRecord(
 		sources: existing.sources,
 		dev: body.dev === undefined ? existing.dev : parseDevConfig(body.dev),
 		automation:
-			body.automation === undefined ? existing.automation : parseAutomation(body.automation, existing.automation)
+			body.automation === undefined ? existing.automation : parseAutomation(body.automation, existing.automation),
+		remote: parseProjectRemote(body.remote, existing.remote)
 	};
 }

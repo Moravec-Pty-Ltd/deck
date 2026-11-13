@@ -71,6 +71,8 @@ export function fileHeaders(file: ServedFile, download: boolean): Record<string,
 
 export function statSessionFiles(session: DeckSession, mentions: string[]): FileInfo[] {
 	const files: FileInfo[] = [];
+	// A remote session's mentions name files on its host; the Files tab reads those.
+	if (session.remote) return files;
 	for (const mention of mentions) {
 		const file = resolveSessionFile(session, mention);
 		if (file) files.push({ path: file.path, name: file.name, size: file.size, mime: file.mime, image: file.image });

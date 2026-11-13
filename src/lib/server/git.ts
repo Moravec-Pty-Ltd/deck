@@ -8,10 +8,25 @@ import { worktreeDirName } from './branch-core';
 import type { DiffFile } from '$lib/diff';
 import type { WorktreeFix } from '$lib/worktree-conflict';
 import { type DiffStats, joinDiffFiles, diffStats, baseRefCandidates } from './diff-core';
+import { shellJoin, shellQuote } from '$lib/remote-core';
 
 const exec = promisify(execFile);
 
-async function git(repo: string, ...args: string[]): Promise<string> {
+// A repo on this machine, or a checkout on a remote project's host (issue
+// #410), where the same git commands run over ssh.
+// `run` executes a shell script on the host (see remote.ts remoteRepo).
+export interface RemoteRepo {
+	run: (script: string, opts?: { maxBuffer?: number }) => Promise<string>;
+	path: string;
+}
+export type Repo = string | RemoteRepo;
+
+const repoPath = (repo: Repo) => (typeof repo === 'string' ? repo : repo.path);
+// The same host, another directory on it.
+const atPath = (repo: Repo, dir: string): Repo => (typeof repo === 'string' ? dir : { ...repo, path: dir });
+
+async function git(repo: Repo, ...args: string[]): Promise<string> {
+	if (typeof repo !== 'string') return gitBig(repo, undefined, ...args);
 	const { stdout } = await exec('git', ['-C', repo, ...args]);
 	return stdout;
 }
@@ -20,12 +35,17 @@ async function git(repo: string, ...args: string[]): Promise<string> {
 // execFile's 1 MB default; raise the buffer so the patch isn't cut mid-stream.
 const DIFF_MAX_BUFFER = 64 * 1024 * 1024;
 
-async function gitBig(repo: string, env: NodeJS.ProcessEnv, ...args: string[]): Promise<string> {
-	const { stdout } = await exec('git', ['-C', repo, ...args], { env, maxBuffer: DIFF_MAX_BUFFER });
+// `env` holds only the variables to add (GIT_INDEX_FILE for the diff).
+async function gitBig(repo: Repo, env: Record<string, string> | undefined, ...args: string[]): Promise<string> {
+	if (typeof repo !== 'string') {
+		const vars = Object.entries(env ?? {}).map(([k, v]) => `${k}=${shellQuote(v)} `).join('');
+		return repo.run(`${vars}${shellJoin(['git', '-C', repo.path, ...args])}`, { maxBuffer: DIFF_MAX_BUFFER });
+	}
+	const { stdout } = await exec('git', ['-C', repo, ...args], { env: { ...process.env, ...env }, maxBuffer: DIFF_MAX_BUFFER });
 	return stdout;
 }
 
-export async function isGitRepo(dir: string): Promise<boolean> {
+export async function isGitRepo(dir: Repo): Promise<boolean> {
 	try {
 		await git(dir, 'rev-parse', '--git-dir');
 		return true;
@@ -34,7 +54,7 @@ export async function isGitRepo(dir: string): Promise<boolean> {
 	}
 }
 
-export async function listBranches(repo: string): Promise<string[]> {
+export async function listBranches(repo: Repo): Promise<string[]> {
 	const out = await git(repo, 'branch', '-a', '--format', '%(refname:short)');
 	const branches = out
 		.trim()
@@ -53,7 +73,7 @@ export interface WorktreeEntry {
 
 // Existing worktrees for a repo, parsed from `git worktree list --porcelain`.
 // The first entry git reports is the main working tree (the repo itself).
-export async function listWorktrees(repo: string): Promise<WorktreeEntry[]> {
+export async function listWorktrees(repo: Repo): Promise<WorktreeEntry[]> {
 	let out: string;
 	try {
 		out = await git(repo, 'worktree', 'list', '--porcelain');
@@ -99,7 +119,7 @@ export function worktreeAddArgs(
 }
 
 // The branch a worktree dir is checked out on, or '' when detached/unreadable.
-async function checkedOutBranch(dir: string): Promise<string> {
+async function checkedOutBranch(dir: Repo): Promise<string> {
 	try {
 		const branch = (await git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')).trim();
 		return branch === 'HEAD' ? '' : branch;
@@ -113,7 +133,7 @@ async function checkedOutBranch(dir: string): Promise<string> {
 // the dir already existed (an older worktree for the same name, before branch
 // slugifying), so the caller stores what it gets and the record stays true.
 export async function createWorktree(
-	repo: string,
+	repo: Repo,
 	branch: string,
 	opts: { newBranch?: boolean; base?: string } = {}
 ): Promise<{ dir: string; branch: string }> {
@@ -125,13 +145,20 @@ export async function createWorktree(
 	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);
 	if (opts.base !== undefined && !isFlagSafe(opts.base))
 		throw new Error(`unsafe base branch: ${opts.base}`);
-	const worktrees = path.join(path.dirname(repo), `${path.basename(repo)}-worktrees`);
-	const dir = path.join(worktrees, worktreeDirName(branch));
-	if (!dir.startsWith(worktrees + path.sep)) throw new Error(`unsafe branch name: ${branch}`);
-	if (fs.existsSync(dir)) return { dir, branch: (await checkedOutBranch(dir)) || branch };
-	fs.mkdirSync(path.dirname(dir), { recursive: true });
+	const root = repoPath(repo);
+	const worktrees = path.posix.join(path.posix.dirname(root), `${path.posix.basename(root)}-worktrees`);
+	const dir = path.posix.join(worktrees, worktreeDirName(branch));
+	if (!dir.startsWith(worktrees + '/')) throw new Error(`unsafe branch name: ${branch}`);
+	if (await dirExists(repo, dir)) return { dir, branch: (await checkedOutBranch(atPath(repo, dir))) || branch };
+	// git makes the missing parents itself on a remote host.
+	if (typeof repo === 'string') fs.mkdirSync(path.dirname(dir), { recursive: true });
 	await git(repo, ...worktreeAddArgs(dir, branch, opts));
 	return { dir, branch };
+}
+
+async function dirExists(repo: Repo, dir: string): Promise<boolean> {
+	if (typeof repo === 'string') return fs.existsSync(dir);
+	return repo.run(`test -d ${shellQuote(dir)} && echo y || true`).then((out) => out.trim() === 'y');
 }
 
 // Clear what an earlier session left behind, so the same branch can be used
@@ -141,7 +168,7 @@ export async function createWorktree(
 //
 // Both are best effort: if git has nothing to prune or no branch to delete, the
 // caller's retry is what reports the real problem.
-export async function clearWorktreeBranch(repo: string, branch: string, fix: WorktreeFix): Promise<void> {
+export async function clearWorktreeBranch(repo: Repo, branch: string, fix: WorktreeFix): Promise<void> {
 	if (!isFlagSafe(branch)) throw new Error(`unsafe branch name: ${branch}`);
 	await git(repo, 'worktree', 'prune').catch(() => {});
 	if (fix === 'recreate') await git(repo, 'branch', '-D', '--', branch).catch(() => {});
@@ -157,7 +184,7 @@ export async function clearWorktreeBranch(repo: string, branch: string, fix: Wor
 // ref (`created: false` means a pre-existing ref was reused), so the caller can
 // record whether deck owns the branch for later cleanup.
 export async function fetchPullRef(
-	repo: string,
+	repo: Repo,
 	prNumber: number
 ): Promise<{ branch: string; created: boolean }> {
 	// Safe integer only: rejects scientific-notation / oversized coercions so a
@@ -266,7 +293,7 @@ interface DiffBase {
 	baseResolved: boolean;
 }
 
-async function refExists(repo: string, ref: string): Promise<boolean> {
+async function refExists(repo: Repo, ref: string): Promise<boolean> {
 	try {
 		await git(repo, 'rev-parse', '--verify', '--quiet', ref);
 		return true;
@@ -276,7 +303,7 @@ async function refExists(repo: string, ref: string): Promise<boolean> {
 }
 
 // origin/HEAD resolved to the branch it points at (e.g. origin/main), or null.
-async function originHeadRef(repo: string): Promise<string | null> {
+async function originHeadRef(repo: Repo): Promise<string | null> {
 	try {
 		const ref = (await git(repo, 'rev-parse', '--abbrev-ref', 'origin/HEAD')).trim();
 		return ref && ref !== 'origin/HEAD' ? ref : null;
@@ -286,7 +313,7 @@ async function originHeadRef(repo: string): Promise<string | null> {
 }
 
 // First of origin/HEAD -> main -> master that resolves, else null.
-async function defaultBranchRef(repo: string): Promise<string | null> {
+async function defaultBranchRef(repo: Repo): Promise<string | null> {
 	const head = await originHeadRef(repo);
 	if (head) return head;
 	for (const ref of ['main', 'master']) {
@@ -295,7 +322,7 @@ async function defaultBranchRef(repo: string): Promise<string | null> {
 	return null;
 }
 
-async function mergeBaseOf(repo: string, ref: string): Promise<string | null> {
+async function mergeBaseOf(repo: Repo, ref: string): Promise<string | null> {
 	try {
 		return (await git(repo, 'merge-base', ref, 'HEAD')).trim() || null;
 	} catch {
@@ -308,7 +335,7 @@ async function mergeBaseOf(repo: string, ref: string): Promise<string | null> {
 // remote-then-local order (baseRefCandidates) so the diff matches the PR even
 // when local <base> has drifted behind origin/<base>; the base-less default
 // prefers the remote default via origin/HEAD, falling back to local main/master.
-async function pickBase(repo: string, base: string | undefined): Promise<DiffBase | null> {
+async function pickBase(repo: Repo, base: string | undefined): Promise<DiffBase | null> {
 	const candidates = base
 		? baseRefCandidates(base)
 		: [await defaultBranchRef(repo)].filter((ref): ref is string => ref !== null);
@@ -322,7 +349,7 @@ async function pickBase(repo: string, base: string | undefined): Promise<DiffBas
 // Resolve the commit the diff is taken against: the merge-base of the
 // persisted/default base and HEAD, falling back to HEAD (working-tree-only)
 // when there's no usable base or no shared history.
-async function resolveDiffBase(repo: string, base: string | undefined): Promise<DiffBase> {
+async function resolveDiffBase(repo: Repo, base: string | undefined): Promise<DiffBase> {
 	const picked = await pickBase(repo, base);
 	if (picked) return picked;
 	const head = (await git(repo, 'rev-parse', 'HEAD')).trim();
@@ -330,54 +357,71 @@ async function resolveDiffBase(repo: string, base: string | undefined): Promise<
 }
 
 // Untracked, non-ignored files (paths relative to repo), NUL-split.
-async function untrackedFiles(repo: string): Promise<string[]> {
-	const out = await gitBig(repo, process.env, 'ls-files', '--others', '--exclude-standard', '-z');
+async function untrackedFiles(repo: Repo): Promise<string[]> {
+	const out = await gitBig(repo, undefined, 'ls-files', '--others', '--exclude-standard', '-z');
 	return out.split('\0').filter(Boolean);
 }
 
-async function realIndexPath(repo: string): Promise<string | null> {
+async function realIndexPath(repo: Repo): Promise<string | null> {
 	try {
 		const p = (await git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'index')).trim();
-		return p && fs.existsSync(p) ? p : null;
+		return p && (typeof repo !== 'string' || fs.existsSync(p)) ? p : null;
 	} catch {
 		return null;
 	}
 }
 
 interface DiffEnv {
-	env: NodeJS.ProcessEnv;
+	env: Record<string, string> | undefined;
 	cleanup: () => void;
 }
 
+const NO_ENV: DiffEnv = { env: undefined, cleanup: () => {} };
+
 // Batch the pathspecs so a worktree with thousands of untracked files (e.g. an
 // un-ignored node_modules) can't blow past ARG_MAX and lose them all at once.
-async function addIntentToAdd(repo: string, env: NodeJS.ProcessEnv, paths: string[]): Promise<void> {
+async function addIntentToAdd(repo: Repo, env: Record<string, string>, paths: string[]): Promise<void> {
 	const BATCH = 500;
 	for (let i = 0; i < paths.length; i += BATCH) {
 		await gitBig(repo, env, 'add', '--intent-to-add', '--', ...paths.slice(i, i + BATCH));
 	}
 }
 
+// A copy of the real index in a temp dir on the repo's own host.
+async function copyIndex(repo: Repo, realIndex: string): Promise<{ index: string; cleanup: () => void }> {
+	if (typeof repo === 'string') {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-diff-'));
+		fs.copyFileSync(realIndex, path.join(dir, 'index'));
+		return { index: path.join(dir, 'index'), cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+	}
+	const dir = (await repo.run(`d=$(mktemp -d) && cp ${shellQuote(realIndex)} "$d/index" && echo "$d"`)).trim();
+	const cleanup = () => void repo.run(`rm -rf ${shellQuote(dir)}`).catch(() => {});
+	return { index: `${dir}/index`, cleanup };
+}
+
 // A throwaway index seeded from the repo's real index, with the untracked files
 // marked intent-to-add so `git diff` surfaces them as new-file additions. The
 // real index is never touched; cleanup removes the temp copy.
-async function untrackedIndexEnv(repo: string, untracked: string[]): Promise<DiffEnv> {
+async function untrackedIndexEnv(repo: Repo, untracked: string[]): Promise<DiffEnv> {
 	const realIndex = await realIndexPath(repo);
-	if (!realIndex) return { env: process.env, cleanup: () => {} };
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-diff-'));
-	fs.copyFileSync(realIndex, path.join(dir, 'index'));
-	const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') };
-	const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+	if (!realIndex) return NO_ENV;
+	let copy: { index: string; cleanup: () => void };
+	try {
+		copy = await copyIndex(repo, realIndex);
+	} catch {
+		return NO_ENV;
+	}
+	const env = { GIT_INDEX_FILE: copy.index };
 	try {
 		await addIntentToAdd(repo, env, untracked);
 	} catch {
 		// odd/unreadable untracked paths: fall back to a tracked-only diff
 	}
-	return { env, cleanup };
+	return { env, cleanup: copy.cleanup };
 }
 
-async function diffEnv(repo: string, untracked: string[]): Promise<DiffEnv> {
-	if (untracked.length === 0) return { env: process.env, cleanup: () => {} };
+async function diffEnv(repo: Repo, untracked: string[]): Promise<DiffEnv> {
+	if (untracked.length === 0) return NO_ENV;
 	return untrackedIndexEnv(repo, untracked);
 }
 
@@ -385,7 +429,7 @@ interface DiffContext extends DiffEnv {
 	base: DiffBase;
 }
 
-async function diffContext(repo: string, base: string | undefined): Promise<DiffContext> {
+async function diffContext(repo: Repo, base: string | undefined): Promise<DiffContext> {
 	const resolved = await resolveDiffBase(repo, base);
 	const untracked = await untrackedFiles(repo);
 	const { env, cleanup } = await diffEnv(repo, untracked);
@@ -424,7 +468,7 @@ const NAME_STAT_FLAGS = [...DIFF_FLAGS, '-M', '-z'];
 // The per-file breakdown: status letters from `--name-status`, per-file counts
 // from `--numstat`, joined on the new path. Reuses the caller's diff env so
 // untracked (intent-to-add) files still surface as additions.
-async function diffFiles(cwd: string, env: NodeJS.ProcessEnv, mb: string): Promise<DiffFile[]> {
+async function diffFiles(cwd: Repo, env: Record<string, string> | undefined, mb: string): Promise<DiffFile[]> {
 	const nameStatus = await gitBig(cwd, env, 'diff', ...NAME_STAT_FLAGS, '--name-status', mb, '--');
 	const numstat = await gitBig(cwd, env, 'diff', ...NAME_STAT_FLAGS, '--numstat', mb, '--');
 	return joinDiffFiles(nameStatus, numstat);
@@ -434,7 +478,7 @@ async function diffFiles(cwd: string, env: NodeJS.ProcessEnv, mb: string): Promi
 // staged + unstaged + untracked. `base` is the persisted worktree base; when
 // absent or unusable it resolves to the default-branch merge-base, then to HEAD
 // (working-tree-only) with baseResolved=false so the UI can explain the fallback.
-export async function worktreeDiff(cwd: string, base?: string): Promise<WorktreeDiff> {
+export async function worktreeDiff(cwd: Repo, base?: string): Promise<WorktreeDiff> {
 	const ctx = await diffContext(cwd, base);
 	try {
 		const mb = ctx.base.mergeBase;
@@ -449,7 +493,7 @@ export async function worktreeDiff(cwd: string, base?: string): Promise<Worktree
 
 // Just the summary (file count + base resolution) for the tab badge, skipping
 // the patch build. Still resolves untracked so the count matches the full diff.
-export async function worktreeDiffMeta(cwd: string, base?: string): Promise<WorktreeDiffMeta> {
+export async function worktreeDiffMeta(cwd: Repo, base?: string): Promise<WorktreeDiffMeta> {
 	const ctx = await diffContext(cwd, base);
 	try {
 		const files = await diffFiles(cwd, ctx.env, ctx.base.mergeBase);
@@ -460,7 +504,7 @@ export async function worktreeDiffMeta(cwd: string, base?: string): Promise<Work
 }
 
 export async function removeWorktree(
-	repo: string,
+	repo: Repo,
 	worktreeDir: string,
 	opts: { deleteBranch?: boolean; branch?: string } = {}
 ) {

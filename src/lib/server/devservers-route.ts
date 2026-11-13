@@ -11,6 +11,7 @@ import {
 } from './devservers';
 import { parseStepIndex } from './devservers-core';
 import { sessionOr404 } from './http';
+import { getStoredSession } from './store';
 
 // Dev-server handlers, each shared verbatim by a browser route and its agent
 // API twin. Every action targets the session's own worktree, resolved
@@ -32,6 +33,7 @@ export function serverStatesRoute(): Response {
 // Configured dev servers with live status for one session's worktree.
 export async function sessionServersRoute({ params }: Pick<ServerEvent, 'params'>): Promise<Response> {
 	const session = await sessionOr404(params.id!);
+	if (session.remote) return json({ servers: [] });
 	return json({ servers: await listServers(session.id) });
 }
 
@@ -69,6 +71,7 @@ function resolveCall(body: { action?: unknown; step?: unknown; label?: unknown }
 export async function serverActionRoute({ params, request }: Omit<ServerEvent, 'url'>): Promise<Response> {
 	const body = await request.json().catch(() => ({}));
 	const call = resolveCall(body ?? {}, params.id!, params.name!);
+	if (getStoredSession(params.id!)?.remote) error(400, 'dev servers are off for remote sessions');
 	try {
 		return json(await call());
 	} catch (e) {

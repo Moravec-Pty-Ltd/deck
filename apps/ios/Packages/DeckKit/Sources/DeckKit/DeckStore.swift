@@ -258,6 +258,12 @@ public final class DeckStore {
 		try await stored(client.saveDevConfig(path: path, dev: dev))
 	}
 
+	/// Set a project's remote host, or clear it with nil.
+	public func setRemote(path: String, remote: ProjectRemote?) async throws {
+		guard let client else { throw DeckError.notConfigured }
+		try await stored(client.setRemote(path: path, remote: remote))
+	}
+
 	/// Unregister a project; its folder and sessions are left alone.
 	public func removeProject(path: String) async throws {
 		guard let client else { throw DeckError.notConfigured }

@@ -119,6 +119,12 @@ export interface DeckSession {
 	// default (no --effort flag); mirrors `model`.
 	effort?: DeckEffort;
 	permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default' | 'plan';
+	// Set when the session runs on its project's remote host (issue #410), fixed
+	// at creation so `--resume` always returns to the host that holds the
+	// conversation. `path` is the remote working directory (the checkout or a
+	// worktree beside it); `cwd` stays the local project path. `worktreeError`
+	// says why a requested worktree fell back to the checkout itself.
+	remote?: { target: string; path: string; worktreeError?: string };
 	// shell
 	tmuxName?: string;
 	managed?: boolean;
@@ -293,6 +299,20 @@ export interface Project {
 		workAgent?: AutomationAgent;
 		reviewAgent?: AutomationAgent;
 	};
+	// Run this project's claude sessions on another host over SSH (issue #410).
+	// `path` is the checkout on that host; the project's own `path` stays the
+	// local key. The password or key passphrase lives in the secret store, never
+	// here (see server/remote.ts).
+	remote?: ProjectRemote;
+}
+
+export type RemoteAuth = { kind: 'default' } | { kind: 'key'; identityFile: string } | { kind: 'password' };
+
+export interface ProjectRemote {
+	// user@host[:port]
+	target: string;
+	path: string;
+	auth: RemoteAuth;
 }
 
 // A port a dev server listens on. `primary` marks which one the preview link
