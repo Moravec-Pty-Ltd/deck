@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { DeckSession, Project, ProjectRemote } from '$lib/types';
+import { agentBinaryArch, detectFromVersion, type AgentDetection } from '$lib/agent-protocol';
 import {
+	AGENT_INSTALL_SCRIPT,
+	agentScript,
 	claudeScript,
 	destination,
 	killScript,
@@ -16,11 +19,12 @@ import {
 	type SshTarget
 } from '$lib/remote-core';
 import { dataDir } from './config';
-import { listProjects } from './store';
+import { getStoredSession, listProjects, updateSession } from './store';
 import { projectForPath } from './confine';
 import { deleteSecret, readSecret, setSecret } from './secrets';
 import { resolveSecretsFile } from './secrets-file';
 import { spawnAgent } from './agents/spawn';
+import { agentClaude } from './remote-agent';
 
 // Running a project's sessions on another host over SSH (issue #410). Every
 // ssh call goes through one ControlMaster socket per host, so the stored
@@ -104,7 +108,7 @@ export function sessionConnection(session: DeckSession): RemoteConn {
 }
 
 interface RunOptions {
-	input?: string;
+	input?: string | Buffer;
 	maxBuffer?: number;
 	timeout?: number;
 }
@@ -151,24 +155,104 @@ export function remoteRepo(conn: RemoteConn, path: string) {
 // it, or the late kill would find and end the new claude.
 const pendingKills = new Map<string, Promise<unknown>>();
 
-// Start claude on the session's host with stdio over `ssh -T`.
-export async function spawnRemoteClaude(session: DeckSession, args: string[]): Promise<ChildProcess> {
+// --- the deck agent (issue #411) ---------------------------------------------
+
+// Per connection, briefly: a session start asks once, not once per message.
+const DETECT_TTL_MS = 60_000;
+const detections = new Map<string, { at: number; found: AgentDetection }>();
+
+// Whether the host has a deck agent this deck can talk to. A connection that
+// fails throws, with ssh's reason: that is no evidence the agent is missing.
+async function detectAgent(conn: RemoteConn): Promise<AgentDetection> {
+	const key = conn.args.join(' ');
+	const hit = detections.get(key);
+	if (hit && Date.now() - hit.at < DETECT_TTL_MS) return hit.found;
+	let found: AgentDetection;
+	try {
+		found = detectFromVersion(await runRemote(conn, agentScript(['--version']), { timeout: 15_000 }));
+	} catch (e) {
+		const code = (e as { code?: unknown }).code;
+		if (typeof code !== 'number' || code === 255) throw e;
+		// 127: none here. Anything else ran and failed: a build for another machine.
+		found = code === 127 ? detectFromVersion(null) : { mode: 'bare', note: `The deck agent on this host failed to start (exit ${code}), so the session runs over bare SSH. It may be built for another machine; reinstall it.` };
+	}
+	detections.set(key, { at: Date.now(), found });
+	return found;
+}
+
+// Record the mode on the session, for its banner.
+function recordMode(session: DeckSession, found: AgentDetection) {
+	const remote = session.remote!;
+	const note = found.mode === 'bare' ? found.note : undefined;
+	if (remote.mode === found.mode && remote.agentNote === note) return;
+	updateSession(session.id, { remote: { ...remote, mode: found.mode, agentNote: note } });
+}
+
+// Where `pnpm build:agent` puts the binaries.
+const agentBuildDir = path.resolve('dist');
+
+// Copy the agent binary for the host's machine to ~/.local/bin/deck-agent.
+export async function installAgent(projectPath: string, remote: ProjectRemote): Promise<AgentDetection> {
+	const conn = connectionFor(projectPath, remote);
+	const uname = await runRemote(conn, 'uname -sm', { timeout: 30_000 });
+	const arch = agentBinaryArch(uname);
+	if (!arch) throw new Error(`no deck agent build runs on ${uname.trim()}; it needs Linux on x86_64 or arm64`);
+	const file = path.join(agentBuildDir, `deck-agent-linux-${arch}`);
+	if (!fs.existsSync(file)) throw new Error(`${file} is missing: build it with pnpm build:agent on the deck host`);
+	await runRemote(conn, AGENT_INSTALL_SCRIPT, { input: fs.readFileSync(file), timeout: 600_000 });
+	detections.delete(conn.args.join(' '));
+	return detectAgent(conn);
+}
+
+// Start claude on the session's host: through the deck agent when the host has
+// one that speaks this deck's protocol, else with stdio over `ssh -T`.
+// `argsFor(agent)` gives claude's arguments for that mode.
+export async function spawnRemoteClaude(session: DeckSession, argsFor: (agent: boolean) => string[]): Promise<ChildProcess> {
 	await pendingKills.get(session.id);
 	const conn = sessionConnection(session);
-	const script = claudeScript({ id: session.id, path: session.remote!.path, args });
+	const found = await detectAgent(conn);
+	// Before recordMode, which updates this same cached record.
+	const wasAgent = session.remote!.mode === 'agent';
+	recordMode(session, found);
+	if (found.mode === 'agent') {
+		// A bare claude left by a dropped connection would share the conversation.
+		if (!wasAgent) await runRemote(conn, killScript(session.id), { timeout: 30_000 }).catch(() => {});
+		return agentClaude(session.id, conn, { path: session.remote!.path, args: argsFor(true) });
+	}
+	// An agent that can't be used may still hold a claude on this conversation.
+	if (found.note) await runRemote(conn, agentScript(['stop', session.id]), { timeout: 30_000 }).catch(() => {});
+	const script = claudeScript({ id: session.id, path: session.remote!.path, args: argsFor(false) });
 	return spawnAgent('ssh', ['-T', ...conn.args, remoteCommand(script)], { env: conn.env, stdio: ['pipe', 'pipe', 'pipe'] });
 }
 
-// End the session's claude on the host by pid; killing the local ssh alone can
-// leave it running.
-export function killRemoteClaude(session: DeckSession) {
+// Run a script against the session's host after any stop still in flight,
+// so a late kill can't find and end a claude started after it.
+function afterPendingKill(session: DeckSession, script: string) {
+	let conn: RemoteConn;
+	try {
+		conn = sessionConnection(session);
+	} catch (e) {
+		return console.error(`[deck] remote stop failed for ${session.id}: ${(e as Error).message}`);
+	}
 	const kill = Promise.resolve(pendingKills.get(session.id))
-		.then(() => runRemote(sessionConnection(session), killScript(session.id), { timeout: 30_000 }))
+		.then(() => runRemote(conn, script, { timeout: 30_000 }))
 		.catch((e: Error) => console.error(`[deck] remote stop failed for ${session.id}: ${e.message}`))
 		.finally(() => {
 			if (pendingKills.get(session.id) === kill) pendingKills.delete(session.id);
 		});
 	pendingKills.set(session.id, kill);
+}
+
+// End the session's claude on the host; killing the local ssh alone can leave
+// it running. The agent owns its claude and ends it; bare mode kills by pid.
+export function killRemoteClaude(session: DeckSession) {
+	const agent = getStoredSession(session.id)?.remote?.mode === 'agent';
+	afterPendingKill(session, agent ? agentScript(['stop', session.id]) : killScript(session.id));
+}
+
+// A deleted agent session: end its claude and remove its files on the host.
+export function forgetRemoteAgent(session: DeckSession) {
+	afterPendingKill(session, agentScript(['forget', session.id]));
 }
 
 // The local tmux pane command for a remote project's shell session: a tmux on

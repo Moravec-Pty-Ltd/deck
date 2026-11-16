@@ -119,6 +119,18 @@ The nav at the top (a bottom bar on a phone) reaches every page: Sessions, Inbox
 - **Inbox** collects everything waiting on you: questions sessions have asked, and workflow runs blocked on a decision. Answer each one in place, with the same option buttons as the session view; the nav shows how many are waiting.
 - **Settings** holds what applies to the whole deck server rather than to one project: the theme (saved per browser), the voice servers, the watch operator's model, auto-compact, installing deck's skill into each coding agent, signing in another device (the QR code and access requests) and the SSH target for **Open in Zed** and **Open in VS Code**. **Projects** keeps per-project setup: paths, templates, issue sources, dev servers and automation.
 
+## Remote hosts and the deck agent
+
+A project can run its claude sessions on another host over SSH (set **Remote** on the project). With nothing but `claude`, `git` and `tmux` on the host, sessions run in bare mode: a dropped connection stops the turn, and questions and watches are off. Install the optional deck agent on the host and deck uses it instead: the turn keeps running through a dropped connection and deck replays what it missed, questions and watches work, and Stop ends claude on the host directly. The session banner says which mode is on.
+
+The agent is one binary with no runtime needed on the host, built from deck's own TypeScript with [bun](https://bun.sh) (only a build tool here; deck itself runs on Node):
+
+```sh
+pnpm build:agent    # dist/deck-agent-linux-x64 and dist/deck-agent-linux-arm64
+```
+
+Then use **Install deck agent** on a remote session's banner, which copies the build for the host's machine to `~/.local/bin/deck-agent` (Linux with glibc, x86_64 or arm64). The agent never listens on the network: deck reaches it through `ssh <host> deck-agent serve`. When its protocol doesn't match this deck's, sessions fall back to bare mode and the banner offers **Update deck agent**.
+
 ## Remote access (Tailscale)
 
 Bind loopback and front it with a Tailscale Service, so the tailnet is the access boundary and deck gets its own name (`https://deck.<tailnet>.ts.net`):

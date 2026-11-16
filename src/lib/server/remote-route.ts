@@ -3,6 +3,7 @@ import { objectBody } from './http';
 import { parseFingerprints, parseSecret } from '$lib/remote-core';
 import {
 	acceptHostKeys,
+	installAgent,
 	hostKeyStatus,
 	readRemoteSecret,
 	remoteProject,
@@ -59,4 +60,15 @@ export async function acceptHostKeyRoute({ request }: { request: Request }): Pro
 	const accepted = await acceptHostKeys(project.remote, fingerprints).catch((e: Error) => error(502, e.message));
 	if (!accepted) error(409, "the host's keys no longer match the ones you checked: check again");
 	return json({ hostKey: 'trusted' });
+}
+
+// Copy the deck agent to the host (issue #411). Its next claude start uses it.
+export async function installAgentRoute({ request }: { request: Request }): Promise<Response> {
+	const body = await objectBody(request);
+	const project = projectOr4xx(body.path);
+	try {
+		return json(await installAgent(project.path, project.remote));
+	} catch (e) {
+		error(502, e instanceof Error ? e.message : 'could not install the deck agent');
+	}
 }

@@ -8,6 +8,8 @@ import type { Watch, WatchResult } from '$lib/watches';
 import { agentTurnRunning } from './agents/dispatch';
 import { agentEnv } from './agents/env';
 import { resolveWithinProjects } from './confine';
+import { runRemote, sessionConnection } from './remote';
+import { shellQuote } from '$lib/remote-core';
 import { getSession } from './sessions';
 import { sendAgentMessage } from './send-agent-message';
 import { CHECK_TIMEOUT_MS, OUTPUT_CAP, bringForward, checkAllowed, CHECK_NOT_ALLOWED, isDue, tail, waitsForReview, wakeMessage } from './watch-core';
@@ -58,10 +60,31 @@ function runCheck(command: string, cwd: string, env: NodeJS.ProcessEnv, limitMs 
 	});
 }
 
+// A remote session's check runs in its folder on the host, over its connection.
+async function remoteCheck(command: string, session: DeckSession): Promise<WatchResult> {
+	// Its own shell, so a check that calls `exit` still reports its code, under
+	// the host's `timeout` where there is one: ending the ssh alone leaves it running.
+	const secs = Math.ceil(CHECK_TIMEOUT_MS / 1000);
+	const check = shellQuote(`cd -- ${shellQuote(session.remote!.path)} && ${command}\n`);
+	const script = `t=; command -v timeout >/dev/null 2>&1 && t="timeout ${secs}"; $t sh -c ${check} 2>&1; echo "${EXIT_MARK}$?"`;
+	try {
+		const out = await runRemote(sessionConnection(session), script, { timeout: CHECK_TIMEOUT_MS + 5000 });
+		const at = out.lastIndexOf(EXIT_MARK);
+		if (at < 0) return { exitCode: null, output: tail(out) };
+		const exitCode = Number(out.slice(at + EXIT_MARK.length));
+		// timeout's own code for a check it stopped.
+		return { exitCode, output: tail(out.slice(0, at)), ...(exitCode === 124 ? { timedOut: true } : {}) };
+	} catch (e) {
+		return { exitCode: null, output: (e as Error).message };
+	}
+}
+const EXIT_MARK = 'deck-check-exit:';
+
 async function check(watch: Watch, session: DeckSession): Promise<WatchResult | undefined> {
 	if (!watch.command) return undefined;
 	// Asked again at fire time: the session's permission mode can change after the watch is set.
 	if (!checkAllowed(session)) return { exitCode: null, output: `not run: ${CHECK_NOT_ALLOWED}` };
+	if (session.remote) return remoteCheck(watch.command, session);
 	const cwd = resolveWithinProjects(session.cwd);
 	if (!cwd) return { exitCode: null, output: "not run: the session's directory is outside deck's registered projects" };
 	return runCheck(watch.command, cwd, agentEnv(session.id, cwd));

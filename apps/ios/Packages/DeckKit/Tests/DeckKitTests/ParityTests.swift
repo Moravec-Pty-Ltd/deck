@@ -936,6 +936,10 @@ final class ParityTests: XCTestCase {
 		let session = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle","remote":{"target":"dev@example.com","path":"/srv/app-worktrees/x","worktreeError":"not a git repo"}}"#.utf8))
 		XCTAssertEqual(session.remote?.path, "/srv/app-worktrees/x")
 		XCTAssertEqual(session.remote?.worktreeError, "not a git repo")
+		XCTAssertNil(session.remote?.mode)
+		let agent = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle","remote":{"target":"dev@example.com","path":"/srv/app","mode":"bare","agentNote":"update it"}}"#.utf8))
+		XCTAssertEqual(agent.remote?.mode, "bare")
+		XCTAssertEqual(agent.remote?.agentNote, "update it")
 
 		var sent = await requests(reply: #"{"path":"/p"}"#) { _ = try await $0.setRemote(path: "/p", remote: detail.remote) }
 		assertShape(sent, "PATCH", "/api/agent/projects/config", keys: ["path", "remote"])

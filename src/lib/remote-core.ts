@@ -136,8 +136,8 @@ function endClaude(grace: number): string {
 	return `if ${killIfClaude('-TERM')}; then i=0; while [ $i -lt ${grace} ] && kill -0 "$p" 2>/dev/null; do sleep 1; i=$((i+1)); done; ${killIfClaude('-KILL')}; fi`;
 }
 
-const NO_CLAUDE_MARK = 'deck: claude not found';
-const NO_PATH_MARK = 'deck: remote path not found';
+export const NO_CLAUDE_MARK = 'deck: claude not found';
+export const NO_PATH_MARK = 'deck: remote path not found';
 
 // Start claude on the host. The shell records its pid and then execs claude,
 // so the pid file names claude itself and Stop can kill it by pid. A claude
@@ -169,6 +169,26 @@ export function killScript(id: string, graceSeconds = 3): string {
 		'exit 0'
 	].join('\n');
 }
+
+// Run the deck agent on the host with these arguments: the copy deck installs
+// in ~/.local/bin first (a plain ssh command often lacks it on PATH), then any
+// other on PATH. Exits 127 when there is none.
+export function agentScript(args: string[]): string {
+	return [
+		'a="$HOME/.local/bin/deck-agent"',
+		'[ -x "$a" ] || a=$(command -v deck-agent 2>/dev/null) || exit 127',
+		`exec "$a" ${shellJoin(args)}`
+	].join('\n');
+}
+
+// Write the agent binary from stdin to ~/.local/bin/deck-agent, replacing an
+// older one only once the new one is whole.
+export const AGENT_INSTALL_SCRIPT = [
+	'd="$HOME/.local/bin"',
+	'mkdir -p "$d" || exit 1',
+	'cat > "$d/deck-agent.new" || exit 1',
+	'chmod 755 "$d/deck-agent.new" && mv -f "$d/deck-agent.new" "$d/deck-agent"'
+].join('\n');
 
 // A reason for a failed or dropped connection, from ssh's stderr and exit code,
 // or undefined when it doesn't look like ssh's doing. ssh exits 255 for its own
@@ -227,3 +247,6 @@ export const REMOTE_SETUP_PROMPT =
 // What remote sessions can't do, said once where the feature would be.
 export const REMOTE_OFF_NOTE =
 	'Remote sessions cannot reach deck, so questions, watches, file attachments, dev servers, automation runs and Open in editor are off.';
+
+// The same with the deck agent on the host, which relays questions and watches.
+export const REMOTE_AGENT_OFF_NOTE = 'File attachments, dev servers, automation runs and Open in editor are off for remote sessions.';
