@@ -40,7 +40,7 @@ function fakeChild() {
 	const child = Object.assign(new EventEmitter(), {
 		stdout: new EventEmitter(),
 		stderr: new EventEmitter(),
-		stdin: { write: vi.fn() },
+		stdin: { write: vi.fn(), on: vi.fn() },
 		exitCode: null,
 		signalCode: null,
 		killed: false,

@@ -1,7 +1,8 @@
-import { error } from '@sveltejs/kit';
-import { AGENT_KINDS, isAgentKind, type AgentKind, type DeckEffort, type DeckSession, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
+import { error, isHttpError } from '@sveltejs/kit';
+import { AGENT_KINDS, isAgentKind, type ProjectRemote, type AgentKind, type DeckEffort, type DeckSession, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
 import { createSession } from './sessions';
-import { clearWorktreeBranch, createWorktree, fetchPullRef, isGitRepo } from './git';
+import { clearWorktreeBranch, createWorktree, fetchPullRef, isGitRepo, type Repo } from './git';
+import { connectionFor, remoteProject, remoteRepo, remoteShellCommand } from './remote';
 import { isFlagSafe } from './agents/args';
 import { agentAvailability } from './agents/available';
 import { slugifyBranch } from './branch-core';
@@ -196,7 +197,16 @@ async function makeWorktree(
 	// `repo` (canonical) drives the git/fs work; `worktree.repo` keeps the original
 	// cwd so downstream project matching (projectForSession compares p.path by
 	// string, and project paths are stored un-canonicalized) still resolves.
-	const repo = await assertWorktreeCwd(cwd);
+	return makeWorktreeIn(cwd, await assertWorktreeCwd(cwd), wt);
+}
+
+// `cwd` is the project as the store knows it; `repo` is where git runs (a
+// remote project's checkout, over ssh).
+async function makeWorktreeIn(
+	cwd: string,
+	repo: Repo,
+	wt: WorktreeReq
+): Promise<{ cwd: string; worktree: Worktree }> {
 	if (wt.fromPr !== undefined) return makePrWorktree(cwd, repo, wt);
 	assertRefsSafe(wt);
 	const requested = effectiveBranch(wt);
@@ -213,7 +223,7 @@ async function makeWorktree(
 // Only one retry, and only for a conflict we recognise: if the same thing fails
 // twice the second failure is the honest one to report.
 async function addWorktree(
-	repo: string,
+	repo: Repo,
 	branch: string,
 	wt: WorktreeReq,
 	base: string | undefined
@@ -243,7 +253,7 @@ async function addWorktree(
 // Fetch the PR head into a local pr/<n> branch, surfacing a fetch failure as a
 // 400. `created` reports whether deck fetched the ref (vs reused one another
 // review session already holds), so ownership is recorded truthfully.
-async function fetchPrBranch(cwd: string, number: number): Promise<{ branch: string; created: boolean }> {
+async function fetchPrBranch(cwd: Repo, number: number): Promise<{ branch: string; created: boolean }> {
 	try {
 		return await fetchPullRef(cwd, number);
 	} catch (e) {
@@ -256,7 +266,7 @@ async function fetchPrBranch(cwd: string, number: number): Promise<{ branch: str
 // diff (base...head) with no extra work.
 async function makePrWorktree(
 	cwd: string,
-	repo: string,
+	repo: Repo,
 	wt: WorktreeReq
 ): Promise<{ cwd: string; worktree: Worktree }> {
 	const number = toPrNumber(wt.fromPr);
@@ -288,6 +298,53 @@ async function resolveWorktree(
 // their body/title/images are fetched server-side first (best-effort) so the
 // prompt starts grounded; context that could not be fetched is noted on the
 // transcript before the turn. Fire-and-forget: the fetch must not delay the 201.
+interface RemotePlan {
+	remote?: DeckSession['remote'];
+	worktree?: Worktree;
+	branch: string;
+	command?: (id: string) => Promise<string>;
+}
+
+// A remote project's session (issue #410): claude over ssh, or a shell on a
+// tmux on the host. Other agents need tools on this machine. A worktree that
+// can't be made (a read-only checkout, no repo yet) falls back to the checkout
+// and says so; a branch conflict still asks, like a local one, and a failed
+// connection is an error with its reason. Null for a local project.
+async function planRemote(startCwd: string, kind: SessionKind, wt: WorktreeReq | undefined): Promise<RemotePlan | null> {
+	const project = remoteProject(projectForPath(startCwd));
+	if (!project) return null;
+	if (kind !== 'claude' && kind !== 'shell') error(400, 'a remote project runs claude and shell sessions only');
+	const { remote } = project;
+	const checkout = { target: remote.target, path: remote.path };
+	if (kind === 'shell') {
+		const command = (id: string) => remoteShellCommand(project.path, remote, id).catch((e: Error) => error(502, e.message));
+		return { remote: checkout, branch: '', command };
+	}
+	if (!worktreeRequested(wt)) return { remote: checkout, branch: '' };
+	return planRemoteWorktree(project.path, remote, wt!);
+}
+
+async function planRemoteWorktree(projectPath: string, remote: ProjectRemote, wt: WorktreeReq): Promise<RemotePlan> {
+	const checkout = { target: remote.target, path: remote.path };
+	let repo: Repo;
+	try {
+		repo = remoteRepo(connectionFor(projectPath, remote), remote.path);
+	} catch (e) {
+		error(400, (e as Error).message);
+	}
+	try {
+		await repo.run('true'); // a failed connection throws here, not as "no repo"
+		if (!(await isGitRepo(repo))) throw new Error(`${remote.path} is not a git repository yet`);
+		const made = await makeWorktreeIn(projectPath, repo, wt);
+		return { remote: { ...checkout, path: made.cwd }, worktree: made.worktree, branch: made.worktree.branch };
+	} catch (e) {
+		if (isHttpError(e)) throw e;
+		// ssh exits 255 for its own failures; anything else was git's.
+		if ((e as { code?: unknown }).code === 255) error(502, (e as Error).message);
+		return { remote: { ...checkout, worktreeError: e instanceof Error ? e.message : String(e) }, branch: '' };
+	}
+}
+
 async function maybeDispatch(
 	session: Awaited<ReturnType<typeof createSession>>,
 	kind: SessionKind,
@@ -371,12 +428,15 @@ export async function createSessionFromRequest(
 	}
 	commitStartFolder(folder);
 	const startCwd = folder.cwd;
-	const account = isAgentKind(kind) ? projectAccount(startCwd) : undefined;
-	if (kind === 'claude') {
+	const remotePlan = await planRemote(startCwd, kind, body.worktree as WorktreeReq | undefined);
+	const account = isAgentKind(kind) && !remotePlan ? projectAccount(startCwd) : undefined;
+	if (kind === 'claude' && !remotePlan) {
 		const problem = await accountProblem(account);
 		if (problem) error(400, problem);
 	}
-	const { cwd, worktree, branch } = await resolveWorktree(startCwd, body as { worktree?: WorktreeReq });
+	const { cwd, worktree, branch } = remotePlan
+		? { cwd: startCwd, worktree: remotePlan.worktree, branch: remotePlan.branch }
+		: await resolveWorktree(startCwd, body as { worktree?: WorktreeReq });
 	const picked = parseIssues(body);
 	const pr = parsePr(body.pr);
 
@@ -389,8 +449,9 @@ export async function createSessionFromRequest(
 		effort: effortLevel,
 		permissionMode,
 		account,
-		command,
+		command: remotePlan?.command ?? command,
 		worktree,
+		remote: remotePlan?.remote,
 		issues: picked.map((p) => ({ ...p.issue, ...(p.sourceId ? { sourceId: p.sourceId } : {}) })),
 		pr
 	});

@@ -57,6 +57,7 @@ async function sendToSession(schedule: Schedule, id: string): Promise<string> {
 	const session = await getSession(id);
 	if (!session) throw new BrokenTarget('the session this schedule sends to no longer exists');
 	if (!isAgentKind(session.kind)) throw new BrokenTarget('the session this schedule sends to is a terminal, not an agent');
+	if (session.remote) throw new BrokenTarget('schedules are off for remote sessions');
 	// `expand` so a scheduled prompt can use the same [tokens] a quick message
 	// does, against the session it is going to.
 	await sendAgentMessage(session, { text: schedule.prompt, expand: true });
@@ -67,6 +68,7 @@ async function sendToSession(schedule: Schedule, id: string): Promise<string> {
 // automation lane does. `remember: false` for the same reason: a schedule
 // running on a cheap local model must not become the manual picker's default.
 async function spawnSession(schedule: Schedule): Promise<string> {
+	if (projectFor(schedule.cwd!).remote) throw new BrokenTarget('schedules are off for remote projects');
 	const session = await createSessionFromRequest(createBody(schedule, projectFor(schedule.cwd!)), {
 		remember: false
 	});

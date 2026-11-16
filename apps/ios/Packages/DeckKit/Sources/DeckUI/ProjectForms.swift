@@ -207,6 +207,7 @@ public struct ProjectEditorForm<Extra: View>: View {
 			}
 			NavigationLink("Dev servers") { DevConfigEditor(project: project) }
 		}
+		ProjectRemoteSection(project: project)
 		Section {
 			Picker("Claude account", selection: $draft.account) {
 				Text("Default").tag("")
@@ -460,6 +461,207 @@ public struct GroupField: View {
 				}
 				.accessibilityLabel("Existing groups")
 			}
+		}
+	}
+}
+
+/// A project's remote host: where its claude sessions run over SSH. Saves
+/// itself, apart from the form's Save, because the secret and host key calls
+/// need the stored record.
+struct ProjectRemoteSection: View {
+	private enum AuthKind: String, CaseIterable {
+		case ssh, key, password
+		var label: String {
+			switch self {
+			case .ssh: "Default ssh config"
+			case .key: "Key file"
+			case .password: "Password"
+			}
+		}
+	}
+
+	let project: DeckProject
+	@Environment(DeckStore.self) private var store
+	@State private var enabled = false
+	@State private var target = ""
+	@State private var remotePath = ""
+	@State private var authKind = AuthKind.ssh
+	@State private var identityFile = ""
+	@State private var saved: ProjectRemote?
+	@State private var status: RemoteStatus?
+	@State private var newSecret = ""
+	@State private var replacing = false
+	@State private var fingerprints: [HostKeyFingerprint] = []
+	@State private var busy = false
+	@State private var message: String?
+	@State private var loaded = false
+
+	private var draft: ProjectRemote? {
+		guard enabled else { return nil }
+		let auth: RemoteAuth = switch authKind {
+		case .ssh: .default
+		case .key: .key(identityFile: identityFile.trimmingCharacters(in: .whitespaces))
+		case .password: .password
+		}
+		return ProjectRemote(
+			target: target.trimmingCharacters(in: .whitespaces),
+			path: remotePath.trimmingCharacters(in: .whitespaces), auth: auth)
+	}
+
+	private var valid: Bool {
+		guard let draft else { return true }
+		if case .key(let file) = draft.auth, file.isEmpty { return false }
+		return !draft.target.isEmpty && draft.path.hasPrefix("/")
+	}
+
+	private var secretLabel: String { authKind == .password ? "Password" : "Key passphrase (optional)" }
+
+	var body: some View {
+		Section {
+			Toggle("Run on a remote host", isOn: $enabled)
+				.accessibilityIdentifier("projectRemoteToggle")
+			if enabled {
+				TextField("Target", text: $target, prompt: Text(verbatim: "user@host[:port]"))
+					.deckPlainInput()
+				TextField("Remote path", text: $remotePath, prompt: Text(verbatim: "/path/to/project"))
+					.deckPlainInput()
+					.font(.body.monospaced())
+				Picker("Authentication", selection: $authKind) {
+					ForEach(AuthKind.allCases, id: \.self) { Text($0.label).tag($0) }
+				}
+				if authKind == .key {
+					TextField("Identity file", text: $identityFile, prompt: Text(verbatim: "~/.ssh/id_ed25519"))
+						.deckPlainInput()
+						.font(.body.monospaced())
+				}
+				if authKind != .ssh, saved != nil { secretRows }
+				if saved != nil { hostKeyRows }
+			}
+			if let message {
+				Text(message).foregroundStyle(.red).font(.footnote)
+			}
+			if draft != saved {
+				Button(busy ? "Saving…" : "Save remote host") { Task { await save() } }
+					.disabled(busy || !valid)
+			}
+		} header: {
+			Text("Remote host")
+		} footer: {
+			Text("New claude sessions run on the host over SSH. The key file is read on the deck server and must be inside its ~/.ssh. Passwords and passphrases stay on the server.")
+		}
+		.task { await load() }
+		.onChange(of: authKind) { newSecret = ""; replacing = false }
+	}
+
+	@ViewBuilder private var secretRows: some View {
+		if status?.secretSaved == true && !replacing {
+			LabeledContent(authKind == .password ? "Password" : "Key passphrase") {
+				Text("Saved").foregroundStyle(.secondary)
+			}
+			Button("Replace") { replacing = true }.disabled(busy)
+			Button("Remove", role: .destructive) { Task { await removeSecret() } }.disabled(busy)
+		} else {
+			SecureField(secretLabel, text: $newSecret, prompt: Text(secretLabel))
+				.deckPlainInput()
+			if !newSecret.isEmpty {
+				Button("Save \(authKind == .password ? "password" : "passphrase")") { Task { await saveSecret() } }
+					.disabled(busy)
+			}
+			if replacing {
+				Button("Keep the saved one") { newSecret = ""; replacing = false }
+			}
+		}
+	}
+
+	@ViewBuilder private var hostKeyRows: some View {
+		LabeledContent("Host key") {
+			switch status?.hostKey {
+			case .trusted: Text("Trusted").foregroundStyle(.secondary)
+			case .unknown: Text("Not trusted yet").foregroundStyle(.orange)
+			default: Text("From ssh config").foregroundStyle(.secondary)
+			}
+		}
+		Button("Check host key") { Task { await scan() } }.disabled(busy)
+		ForEach(fingerprints, id: \.self) { key in
+			VStack(alignment: .leading, spacing: 2) {
+				Text(key.type).font(.caption)
+				Text(key.fingerprint).font(.caption.monospaced()).textSelection(.enabled)
+			}
+		}
+		if !fingerprints.isEmpty {
+			Button("Accept") { Task { await accept() } }.disabled(busy)
+		}
+	}
+
+	private func apply(_ remote: ProjectRemote?) {
+		saved = remote
+		enabled = remote != nil
+		guard let remote else { return }
+		target = remote.target
+		remotePath = remote.path
+		switch remote.auth {
+		case .default: authKind = .ssh
+		case .key(let file):
+			authKind = .key
+			identityFile = file
+		case .password: authKind = .password
+		}
+	}
+
+	private func load() async {
+		guard !loaded else { return }
+		loaded = true
+		if store.projectDetails[project.path] == nil { await store.refreshProjectDetails() }
+		apply(store.projectDetails[project.path]?.remote)
+		await refreshStatus()
+	}
+
+	private func refreshStatus() async {
+		guard saved != nil else { status = nil; return }
+		status = try? await store.client?.remoteStatus(path: project.path)
+	}
+
+	private func run(_ work: () async throws -> Void) async {
+		busy = true
+		message = nil
+		do { try await work() } catch { message = DeckError.message(for: error) }
+		busy = false
+	}
+
+	private func save() async {
+		await run {
+			try await store.setRemote(path: project.path, remote: draft)
+			saved = draft
+			fingerprints = []
+			await refreshStatus()
+		}
+	}
+
+	private func saveSecret() async {
+		await run {
+			try await store.client?.putRemoteSecret(path: project.path, secret: newSecret)
+			newSecret = ""
+			replacing = false
+			await refreshStatus()
+		}
+	}
+
+	private func removeSecret() async {
+		await run {
+			try await store.client?.deleteRemoteSecret(path: project.path)
+			await refreshStatus()
+		}
+	}
+
+	private func scan() async {
+		await run { fingerprints = try await store.client?.scanHostKey(path: project.path) ?? [] }
+	}
+
+	private func accept() async {
+		await run {
+			try await store.client?.acceptHostKey(path: project.path, fingerprints: fingerprints.map(\.fingerprint))
+			fingerprints = []
+			await refreshStatus()
 		}
 	}
 }

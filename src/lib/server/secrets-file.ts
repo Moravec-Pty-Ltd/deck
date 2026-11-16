@@ -17,12 +17,13 @@ function realOrResolved(p: string): string {
 // The path an apiKeyFile setting names, if it sits inside ~/.secrets/ once ~ is
 // expanded and symlinks are followed; otherwise null. Anything wider would let
 // whoever can change settings have deck read an arbitrary file and send its
-// first line to a model endpoint as a bearer token.
-export function resolveSecretsFile(file: string): string | null {
+// first line to a model endpoint as a bearer token. `folder` widens the same
+// rule to another home folder (~/.ssh for a remote project's key file).
+export function resolveSecretsFile(file: string, folder = '.secrets'): string | null {
 	const home = os.homedir();
 	const expanded = file.replace(/^~(?=$|\/)/, home);
 	if (!path.isAbsolute(expanded)) return null;
-	const dir = realOrResolved(path.join(home, '.secrets'));
+	const dir = realOrResolved(path.join(home, folder));
 	const real = realOrResolved(path.resolve(expanded));
 	return real.startsWith(dir + path.sep) ? real : null;
 }

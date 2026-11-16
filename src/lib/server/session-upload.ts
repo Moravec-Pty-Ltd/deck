@@ -49,6 +49,8 @@ export async function uploadToSession(event: {
 	request: Request;
 }): Promise<Response> {
 	const session = await sessionOr404(event.params.id!);
+	// The files would land on this machine, out of reach of a remote session.
+	if (session.remote) error(400, 'file attachments are off for remote sessions');
 	const body = await objectBody(event.request);
 	const files = parseFiles(body.files);
 	// The send below would refuse these images; refuse them before any file is

@@ -21,6 +21,7 @@
 	import ModelMenu from '$lib/components/ModelMenu.svelte';
 	import EffortMenu from '$lib/components/EffortMenu.svelte';
 	import EditorButton from '$lib/components/EditorButton.svelte';
+	import RemoteBanner from '$lib/components/RemoteBanner.svelte';
 	import SessionTitle from '$lib/components/SessionTitle.svelte';
 	import { shortPath } from '$lib/time';
 	import { ISSUE_BADGE, shortIssueId } from '$lib/issues';
@@ -166,7 +167,7 @@
 	let reviews = $state<ReviewsPayload | null>(null);
 	const myServers = $derived(serverStates[session.id] ?? []);
 	const serverChip = $derived(aggregateState(myServers));
-	const hasServers = $derived(myServers.length > 0);
+	const hasServers = $derived(myServers.length > 0 && !session.remote);
 	// The tab row, or at phone width the View menu.
 	const views = $derived([
 		...(liveKind === 'shell'
@@ -530,7 +531,7 @@
 						</ul>
 					</Popover>
 				</div>
-				{#if liveKind !== 'shell'}
+				{#if liveKind !== 'shell' && !session.remote}
 					{#each data.editors as editor (editor.scheme)}
 						<EditorButton {editor} />
 					{/each}
@@ -551,6 +552,8 @@
 				{/if}
 			</div>
 		</div>
+
+		<RemoteBanner {session} canSetup={liveKind === 'claude'} />
 
 		<div class="join mb-2 shrink-0 self-start max-sm:hidden">
 			{#each views as view (view.id)}

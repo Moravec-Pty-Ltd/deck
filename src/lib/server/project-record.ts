@@ -9,6 +9,7 @@ import { isPickerAllowed, projectForPath } from './confine';
 import { objectBody } from './http';
 import { accountExists } from './accounts';
 import { buildProjectRecord, homeRegistrationRefusal } from './project-record-core';
+import { IDENTITY_FILE_RULE, removeRemoteSecret, resolveIdentityFile } from './remote';
 
 // Project registration and config handlers. Register and remove are shared
 // verbatim by the browser's /api/projects and its agent API twin, so the two
@@ -44,7 +45,16 @@ function build(body: Record<string, unknown>, dir: string, existing?: Project): 
 	if (body.account !== undefined && project.account && !accountExists(project.account)) {
 		error(400, `no account named ${project.account}`);
 	}
+	const refusal = remoteRefusal(project, body.remote !== undefined);
+	if (refusal) error(400, refusal);
 	return project;
+}
+
+function remoteRefusal({ remote, automation }: Project, changed: boolean): string | null {
+	if (changed && remote?.auth.kind === 'key' && !resolveIdentityFile(remote.auth.identityFile)) return IDENTITY_FILE_RULE;
+	// Automation spawns sessions that expect deck's tools, which a remote host can't reach.
+	if (remote && (automation?.work || automation?.review)) return 'automation is off for remote projects';
+	return null;
 }
 
 // A new project's stored path: canonical, so a symlink can't later be swapped
@@ -155,9 +165,19 @@ export function folderStateRoute({ url }: Pick<ProjectEvent, 'url'>): Response {
 	return json({ state: base === dir ? 'existing' : 'new', registrable, ...(project ? { project } : {}) });
 }
 
+// A remote project's password or passphrase goes with its remote setting.
+function forgetSecret(projectPath: string) {
+	try {
+		removeRemoteSecret(projectPath);
+	} catch (e) {
+		console.error(`[deck] could not remove the ssh secret for ${projectPath}:`, e);
+	}
+}
+
 export function removeProjectRoute({ url }: Pick<ProjectEvent, 'url'>): Response {
 	const dir = url.searchParams.get('path');
 	if (!dir) error(400, 'path required');
+	if (findProject(dir)?.remote) forgetSecret(dir);
 	removeProject(dir);
 	return json({ ok: true });
 }
@@ -180,6 +200,10 @@ export async function patchProjectConfigRoute({ request }: Pick<ProjectEvent, 'r
 	if (!existing) error(404, 'project not found');
 	const project = build(body, existing.path, existing);
 	addProject(project);
+	// A saved secret belongs to one host and one login: it must not be sent to a
+	// new host, or come back as another key's passphrase or as a password.
+	const [was, now] = [existing.remote, project.remote];
+	if (was && (was.target !== now?.target || JSON.stringify(was.auth) !== JSON.stringify(now.auth))) forgetSecret(existing.path);
 	return json(project);
 }
 

@@ -262,7 +262,12 @@
 	const titleRequired = $derived(isAgentKind(kind) && !reviewMode && !splitIssues);
 	const finalCwd = $derived(worktreeMode === 'existing' ? existingWorktreeDir : effectiveCwd);
 
-	const shownKinds = $derived(KIND_OPTIONS.filter((k) => kindShown(k.id, availability)));
+	// A remote project only runs claude and shell sessions.
+	const shownKinds = $derived(
+		KIND_OPTIONS.filter(
+			(k) => kindShown(k.id, availability) && (!selectedProject?.remote || k.id === 'claude' || k.id === 'shell')
+		)
+	);
 
 	// If detection hides the currently selected kind (the 'claude' default, a
 	// preset's kind, or the prior pick), re-point to the first shown option so the
@@ -800,6 +805,9 @@
 			</button>
 		{/each}
 	</div>
+	{#if selectedProject?.remote}
+		<p class="-mt-2 mb-3 text-xs opacity-70">Runs on {selectedProject.remote.target}</p>
+	{/if}
 
 	<fieldset class="fieldset">
 		<legend class="fieldset-legend">Project</legend>

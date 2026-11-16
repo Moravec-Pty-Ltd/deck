@@ -21,6 +21,8 @@ import { AGENT_BINARIES } from './agents/binaries';
 import { spawnAgent } from './agents/spawn';
 import { resultEvent } from './agents/events';
 import { lastPrLink } from '../pr';
+import { killRemoteClaude, spawnRemoteClaude } from './remote';
+import { sshFailure } from '$lib/remote-core';
 import type { DeckSession } from '$lib/types';
 
 // Reading the stored transcript (snapshot tail + lazy back-scroll ranges) lives
@@ -44,8 +46,14 @@ const FILES_PROMPT =
 const WATCH_PROMPT =
 	'To wait for CI, a review, a deploy or some time, call `mcp__deck__watch` with a delay (`in: "10m"`) and, optionally, a quick check `command` (e.g. `gh pr checks 42`), then end your turn instead of sleeping or looping in the shell. A check command is only accepted when this session skips permission prompts; otherwise set the watch without one and check yourself when it fires. deck runs the check when the time comes and sends the result back to you; if it is not ready yet, set a new watch. `mcp__deck__watches` lists yours and `mcp__deck__unwatch` cancels one.';
 
+// A remote session can't reach deck's MCP server, so it asks in plain text.
+const REMOTE_PROMPT =
+	'This session runs on a remote host that cannot reach deck. To ask the user a question, write it in your reply and end your turn; the AskUserQuestion tool is disabled here.';
+
 interface Proc {
 	child: ChildProcess;
+	// A remote one (session.remote) runs over ssh: stopping it also kills claude on the host.
+	session: DeckSession;
 	running: boolean;
 	buf: string;
 	stderrTail: string;
@@ -249,6 +257,11 @@ function claudeArgs(id: string, session: DeckSession): string[] {
 		args.push('--permission-mode', session.permissionMode ?? 'acceptEdits');
 	}
 
+	// A remote host can't reach deck (issue #410): no MCP tools, no deck prompts.
+	if (session.remote) {
+		args.push('--disallowedTools', 'AskUserQuestion', '--append-system-prompt', REMOTE_PROMPT);
+		return args;
+	}
 	// Replace the built-in question tool with deck's blocking MCP one, and allow
 	// it through without a permission prompt (which headless mode can't answer).
 	args.push(
@@ -258,6 +271,20 @@ function claudeArgs(id: string, session: DeckSession): string[] {
 		'--mcp-config', JSON.stringify({ mcpServers: { deck: { type: 'http', url: mcpUrl(id) } } })
 	);
 	return args;
+}
+
+async function spawnClaude(id: string, session: DeckSession, profileEnv?: Record<string, string>): Promise<ChildProcess> {
+	// A profile's env points at backends on this machine, out of the host's reach.
+	if (session.remote) return spawnRemoteClaude(session, claudeArgs(id, session));
+	await ensureMcp(); // the MCP server must be listening before the process spawns
+	// Throws when the session's account can't run, which reports as a crash
+	// with the reason instead of starting under the default login.
+	const account = await sessionAccountEnv(session.account);
+	return spawnAgent(AGENT_BINARIES.claude, claudeArgs(id, session), {
+		cwd: session.cwd,
+		env: agentEnv(id, session.cwd, sessionEnv(account, profileEnv)),
+		stdio: ['pipe', 'pipe', 'pipe']
+	});
 }
 
 // A failed spawn never registers a proc, so the session errors here instead of
@@ -270,21 +297,13 @@ async function startProcess(id: string, token: object): Promise<Proc | undefined
 	let child: ChildProcess | undefined;
 	let failure: Error | undefined;
 	try {
-		await ensureMcp(); // the MCP server must be listening before the process spawns
-		// Throws when the session's account can't run, which reports as a crash
-		// with the reason instead of starting under the default login.
-		const account = await sessionAccountEnv(session.account);
-		child = await spawnAgent(AGENT_BINARIES.claude, claudeArgs(id, session), {
-			cwd: session.cwd,
-			env: agentEnv(id, session.cwd, sessionEnv(account, profile?.env)),
-			stdio: ['pipe', 'pipe', 'pipe']
-		});
+		child = await spawnClaude(id, session, profile?.env);
 	} catch (err) {
 		failure = err as Error;
 	}
 	// Stopped while it started (Stop, or the session is being deleted).
 	if (starting.get(id)?.token !== token) {
-		if (child) killHard(child);
+		if (child) killHard(child, session);
 		return undefined;
 	}
 	if (!child) {
@@ -292,7 +311,10 @@ async function startProcess(id: string, token: object): Promise<Proc | undefined
 		reportCrash(id, failure!.message);
 		return undefined;
 	}
-	const proc: Proc = { child, running: false, buf: '', stderrTail: '', reqSeq: 0, backgroundTasks: 0 };
+	const proc: Proc = { child, session, running: false, buf: '', stderrTail: '', reqSeq: 0, backgroundTasks: 0 };
+	// A child that dies before reading (a refused ssh login) fails the write with
+	// EPIPE; the exit handler reports why.
+	child.stdin!.on('error', () => {});
 	// A new process has no subagents yet: any the transcript still shows running
 	// were lost with a process deck never saw end (a server restart).
 	endSubagents(id);
@@ -330,10 +352,17 @@ async function startProcess(id: string, token: object): Promise<Proc | undefined
 		rejectAsk(id, 'process exited');
 		if (!proc.running) return;
 		if (code === 0) setStatus(id, 'idle');
-		else reportCrash(id, proc.stderrTail.trim() || `claude exited with code ${code}`);
+		else reportCrash(id, exitReason(proc, code));
 	});
 
 	return proc;
+}
+
+function exitReason(proc: Proc, code: number | null): string {
+	const tail = proc.stderrTail.trim();
+	const target = proc.session.remote?.target;
+	const ssh = target && sshFailure(tail, code, target);
+	return ssh || tail || `claude exited with code ${code}`;
 }
 
 // Tear an idle process down after IDLE_MS, but not while background work it
@@ -348,7 +377,10 @@ function scheduleIdleTeardown(id: string, proc: Proc, ms = IDLE_MS) {
 			idleSince: proc.idleSince ?? Date.now(),
 			now: Date.now()
 		});
-		if (decision.action === 'kill') proc.child.kill('SIGTERM');
+		if (decision.action === 'kill') {
+			proc.child.kill('SIGTERM');
+			if (proc.session.remote) killRemoteClaude(proc.session);
+		}
 		else if (decision.action === 'wait') scheduleIdleTeardown(id, proc, decision.ms);
 	}, ms);
 }
@@ -565,7 +597,7 @@ export function stopProcess(id: string) {
 	procs.delete(id);
 	endSubagents(id);
 	rejectAsk(id, 'process stopped');
-	killHard(proc.child);
+	killHard(proc.child, proc.session);
 }
 
 // The process is gone, and its subagents with it, without the task events that
@@ -576,7 +608,8 @@ function endSubagents(id: string) {
 	else syncSubagents(id);
 }
 
-function killHard(child: ChildProcess) {
+function killHard(child: ChildProcess, session: DeckSession) {
+	if (session.remote) killRemoteClaude(session);
 	child.kill('SIGTERM');
 	setTimeout(() => {
 		if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
