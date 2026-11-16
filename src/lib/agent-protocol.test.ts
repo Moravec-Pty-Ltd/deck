@@ -21,6 +21,7 @@ describe('parseAgentLine', () => {
 	it('reads entries and ready, and drops anything else', () => {
 		expect(parseAgentLine('{"t":"ready","got":3}')).toEqual({ t: 'ready', got: 3 });
 		expect(parseAgentLine('{"t":"ready"}')).toEqual({ t: 'ready', got: 0 });
+		expect(parseAgentLine('{"t":"ack","got":4}')).toEqual({ t: 'ack', got: 4 });
 		expect(parseAgentLine('{"run":"r","seq":2,"t":"out","line":"{}"}')).toEqual({ run: 'r', seq: 2, t: 'out', line: '{}' });
 		expect(parseAgentLine('{"run":"r","seq":2,"t":"bogus"}')).toBeNull();
 		expect(parseAgentLine('{"t":"out","line":"{}"}')).toBeNull();

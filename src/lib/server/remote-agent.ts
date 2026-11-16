@@ -59,8 +59,6 @@ class AgentLink extends EventEmitter {
 	private ready = false;
 	private everReady = false;
 	// Sent but not yet known to be stored on the host, resent after a drop.
-	// shortcut: only a reconnect confirms, so a link that never drops keeps
-	// every message until claude idles out; add a periodic ack if that bites.
 	private unacked: { n: number; line: string }[] = [];
 	private nextN = 1;
 	private readonly linkId = randomUUID().slice(0, 8);
@@ -131,6 +129,7 @@ class AgentLink extends EventEmitter {
 		const msg = parseAgentLine(line);
 		if (!msg || this.finished) return;
 		if (msg.t === 'ready') return this.attached(msg.got);
+		if (msg.t === 'ack') return void (this.unacked = this.unacked.filter((m) => m.n > msg.got));
 		this.cursor = { run: msg.run, seq: msg.seq };
 		if (persistsCursor(msg)) writeCursor(this.id, this.cursor);
 		this.deliver(msg);

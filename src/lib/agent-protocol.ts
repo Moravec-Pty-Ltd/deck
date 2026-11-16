@@ -15,14 +15,14 @@ export type DeckToAgent = { t: 'start'; path: string; args: string[] } | (DeckMe
 // agent -> deck. Every line the session's claude produced carries the run it
 // belongs to and its place in that run, so a reconnect asks for what follows.
 // `ready` is serve's own, once it is attached: `got` is the highest message
-// number it holds from this link.
+// number it holds from this link. `ack` confirms each one it stores after.
 export type AgentEvent =
 	| { t: 'out'; line: string }
 	| { t: 'err'; text: string }
 	| { t: 'mcp'; msg: unknown }
 	| { t: 'exit'; code: number | null };
 export type AgentEntry = AgentCursor & AgentEvent;
-export type AgentToDeck = AgentEntry | { t: 'ready'; got: number };
+export type AgentToDeck = AgentEntry | { t: 'ready'; got: number } | { t: 'ack'; got: number };
 
 export interface AgentCursor {
 	run: string;
@@ -55,7 +55,7 @@ export function parseAgentLine(line: string): AgentToDeck | null {
 	if (!line.startsWith('{')) return null;
 	try {
 		const msg = JSON.parse(line) as { t?: string; run?: unknown; seq?: unknown; got?: unknown };
-		if (msg.t === 'ready') return { t: 'ready', got: typeof msg.got === 'number' ? msg.got : 0 };
+		if (msg.t === 'ready' || msg.t === 'ack') return { t: msg.t, got: typeof msg.got === 'number' ? msg.got : 0 } as AgentToDeck;
 		if (typeof msg.run !== 'string' || typeof msg.seq !== 'number') return null;
 		return ['out', 'err', 'mcp', 'exit'].includes(msg.t!) ? (msg as AgentEntry) : null;
 	} catch {

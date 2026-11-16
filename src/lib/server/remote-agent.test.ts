@@ -114,6 +114,8 @@ describe.skipIf(!hasBun)('AgentLink with the deck agent', () => {
 		expect(resolveAsk('s_ask', 'Blue')).toBe(true);
 		await vi.waitFor(() => expect(lines.some((l) => l.includes('"result"'))).toBe(true), { timeout: 20_000 });
 		expect(lines.join('\n')).toContain('Blue');
+		// Each message the host stored was acknowledged, so none waits for a resend.
+		expect((link as unknown as { unacked: unknown[] }).unacked).toEqual([]);
 		const exit = stopped(link);
 		link.kill();
 		execFileSync(path.join(bin, 'deck-agent'), ['stop', 's_ask'], { env: conn.env });

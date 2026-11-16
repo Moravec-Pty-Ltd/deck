@@ -206,6 +206,7 @@ async function relayInput(next: () => Promise<string>, file: string, link: strin
 		} catch {
 			process.exit(0);
 		}
+		write(JSON.stringify({ t: 'ack', got }));
 	}
 }
 
