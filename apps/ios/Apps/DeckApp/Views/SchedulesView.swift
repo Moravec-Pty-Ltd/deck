@@ -18,6 +18,7 @@ struct SchedulesView: View {
 	@State private var editing: ScheduleEdit?
 	@State private var busyId: String?
 	@State private var started = false
+	@State private var pendingDelete: DeckSchedule?
 
 	private var focusGroup: String? { store.selectedGroup(picked: pickedGroup) }
 
@@ -32,8 +33,10 @@ struct SchedulesView: View {
 					Text(loadError).font(.footnote).foregroundStyle(.red)
 				}
 			}
-			ForEach(shown) { schedule in
-				Section {
+			// One section for every row: a section per row, filled in after the
+			// list first draws, leaves only each row's first line on the Mac.
+			Section {
+				ForEach(shown) { schedule in
 					row(schedule)
 				}
 			}
@@ -69,6 +72,14 @@ struct SchedulesView: View {
 				editing = ScheduleEdit(draft: ScheduleDraft(sessionId: startFor))
 			}
 		}
+		.confirmationDialog(
+			"Delete \(pendingDelete?.title ?? "this schedule")?",
+			isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+			titleVisibility: .visible,
+			presenting: pendingDelete
+		) { schedule in
+			Button("Delete", role: .destructive) { remove(schedule) }
+		}
 		.sheet(item: $editing) { edit in
 			ScheduleFormView(scheduleId: edit.scheduleId, draft: edit.draft) {
 				Task { await load() }
@@ -78,6 +89,68 @@ struct SchedulesView: View {
 
 	@ViewBuilder
 	private func row(_ schedule: DeckSchedule) -> some View {
+		VStack(alignment: .leading, spacing: 6) {
+			// The toggle sits beside the tappable part, not inside it, so pausing
+			// never opens the editor.
+			HStack(alignment: .top, spacing: 8) {
+				summary(schedule)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.contentShape(Rectangle())
+					.onTapGesture { edit(schedule) }
+					.accessibilityAction(named: "Edit") { edit(schedule) }
+				Toggle("", isOn: Binding(get: { schedule.enabled }, set: { on in toggle(schedule, on) }))
+					.labelsHidden()
+					.disabled(busyId == schedule.id)
+					.accessibilityLabel(schedule.enabled ? "Pause \(schedule.title)" : "Resume \(schedule.title)")
+			}
+
+			HStack(spacing: 16) {
+				Button {
+					runNow(schedule)
+				} label: {
+					Label("Run now", systemImage: "play.fill").font(.caption)
+				}
+				.disabled(busyId == schedule.id)
+
+				if let sessionId = schedule.lastSessionId {
+					Button {
+						openLastRun(sessionId)
+					} label: {
+						Label("Last run", systemImage: "arrow.up.right.square").font(.caption)
+					}
+				}
+			}
+			.buttonStyle(.borderless)
+			.padding(.top, 2)
+		}
+		.padding(.vertical, 2)
+		.opacity(schedule.enabled ? 1 : 0.6)
+		.contextMenu {
+			Button("Edit", systemImage: "pencil") { edit(schedule) }
+			Button("Run now", systemImage: "play.fill") { runNow(schedule) }
+				.disabled(busyId == schedule.id)
+			Button(schedule.enabled ? "Pause" : "Resume", systemImage: schedule.enabled ? "pause" : "play") {
+				toggle(schedule, !schedule.enabled)
+			}
+			.disabled(busyId == schedule.id)
+			if let sessionId = schedule.lastSessionId {
+				Button("Open last run", systemImage: "arrow.up.right.square") { openLastRun(sessionId) }
+			}
+			Divider()
+			Button("Delete…", systemImage: "trash", role: .destructive) { pendingDelete = schedule }
+				.disabled(busyId == schedule.id)
+		}
+		.swipeActions(edge: .trailing) {
+			Button(role: .destructive) {
+				remove(schedule)
+			} label: {
+				Label("Delete", systemImage: "trash")
+			}
+		}
+	}
+
+	@ViewBuilder
+	private func summary(_ schedule: DeckSchedule) -> some View {
 		VStack(alignment: .leading, spacing: 6) {
 			HStack(spacing: 8) {
 				Text(schedule.title)
@@ -92,10 +165,6 @@ struct SchedulesView: View {
 						.background(tone(outcome).opacity(0.18), in: Capsule())
 						.foregroundStyle(tone(outcome))
 				}
-				Toggle("", isOn: Binding(get: { schedule.enabled }, set: { on in toggle(schedule, on) }))
-					.labelsHidden()
-					.disabled(busyId == schedule.id)
-					.accessibilityLabel(schedule.enabled ? "Pause \(schedule.title)" : "Resume \(schedule.title)")
 			}
 
 			HStack(spacing: 6) {
@@ -129,40 +198,6 @@ struct SchedulesView: View {
 				Text("Last ran \(ScheduleFormat.ago(last))")
 					.font(.caption2)
 					.foregroundStyle(.secondary)
-			}
-
-			HStack(spacing: 16) {
-				Button {
-					runNow(schedule)
-				} label: {
-					Label("Run now", systemImage: "play.fill").font(.caption)
-				}
-				.disabled(busyId == schedule.id)
-
-				Button {
-					editing = ScheduleEdit(scheduleId: schedule.id, draft: ScheduleDraft(editing: schedule))
-				} label: {
-					Label("Edit", systemImage: "pencil").font(.caption)
-				}
-
-				if let sessionId = schedule.lastSessionId {
-					Button {
-						NotificationCenter.default.post(name: .deckOpenSession, object: sessionId)
-					} label: {
-						Label("Last run", systemImage: "arrow.up.right.square").font(.caption)
-					}
-				}
-			}
-			.buttonStyle(.borderless)
-			.padding(.top, 2)
-		}
-		.padding(.vertical, 2)
-		.opacity(schedule.enabled ? 1 : 0.6)
-		.swipeActions(edge: .trailing) {
-			Button(role: .destructive) {
-				remove(schedule)
-			} label: {
-				Label("Delete", systemImage: "trash")
 			}
 		}
 	}
@@ -209,6 +244,14 @@ struct SchedulesView: View {
 
 	private func toggle(_ schedule: DeckSchedule, _ on: Bool) {
 		act(schedule) { try await $0.setScheduleEnabled(id: schedule.id, enabled: on) }
+	}
+
+	private func edit(_ schedule: DeckSchedule) {
+		editing = ScheduleEdit(scheduleId: schedule.id, draft: ScheduleDraft(editing: schedule))
+	}
+
+	private func openLastRun(_ sessionId: String) {
+		NotificationCenter.default.post(name: .deckOpenSession, object: sessionId)
 	}
 
 	private func runNow(_ schedule: DeckSchedule) {

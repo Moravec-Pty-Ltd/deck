@@ -66,14 +66,15 @@ final class SchedulesUITests: XCTestCase {
 		let patch = server.patches.first { $0.path.hasSuffix("/api/agent/schedules/sch_spawn") }
 		XCTAssertEqual(patch?.body["enabled"] as? Bool, false)
 		XCTAssertEqual(patch?.body.count, 1, "the body carried more than the flag: \(patch?.body ?? [:])")
+		XCTAssertFalse(app.navigationBars["Edit schedule"].waitForExistence(timeout: 2), "the toggle should not open the editor")
 	}
 
 	/// The form opens on the shape the schedule already is, rather than
 	/// defaulting back to a fresh session and quietly changing its target.
-	func testEditingOpensOnTheScheduleAsItStands() {
-		let edit = app.buttons.matching(NSPredicate(format: "label == 'Edit'")).element(boundBy: 0)
-		XCTAssertTrue(edit.waitForExistence(timeout: 20), "\(app.debugDescription.prefix(4000))")
-		edit.tap()
+	func testTappingARowOpensItsEditor() {
+		let row = app.staticTexts["Morning sweep"]
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "\(app.debugDescription.prefix(4000))")
+		row.tap()
 		XCTAssertTrue(
 			app.navigationBars["Edit schedule"].waitForExistence(timeout: 10),
 			"the form should open\n\(app.debugDescription.prefix(3000))")
@@ -81,6 +82,22 @@ final class SchedulesUITests: XCTestCase {
 		// project shape and its expression.
 		XCTAssertTrue(app.textFields["scheduleCron"].waitForExistence(timeout: 5))
 		XCTAssertEqual(app.textFields["scheduleCron"].value as? String, "0 9 * * mon-fri")
+	}
+
+	func testLongPressOffersTheRowActions() {
+		let row = app.staticTexts["Morning sweep"]
+		XCTAssertTrue(row.waitForExistence(timeout: 20), "\(app.debugDescription.prefix(4000))")
+		row.press(forDuration: 1.2)
+		for action in ["Edit", "Run now", "Pause", "Open last run", "Delete…"] {
+			XCTAssertTrue(
+				app.buttons[action].waitForExistence(timeout: 5),
+				"the menu should offer \(action)\n\(app.debugDescription.prefix(3000))")
+		}
+		app.buttons["Delete…"].tap()
+		XCTAssertTrue(
+			app.staticTexts["Delete Morning sweep?"].waitForExistence(timeout: 5),
+			"deleting from the menu should ask first\n\(app.debugDescription.prefix(3000))")
+		XCTAssertTrue(server.deletes.isEmpty, "nothing should be deleted before confirming")
 	}
 
 	// MARK: Harness
