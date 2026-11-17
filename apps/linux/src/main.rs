@@ -427,13 +427,18 @@ async fn save_settings(app: AppHandle, window: WebviewWindow, server: String, sh
 	let next = Settings { server: Some(url.to_string()), shortcut: shortcut.clone() };
 	store_settings(&app, &next)?;
 	let shell = app.state::<Shell>();
-	let changed = {
+	let (changed, had_server) = {
 		let mut current = shell.settings.lock().unwrap();
-		let changed = current.server != next.server;
+		let before = current.server.clone();
 		*current = next;
-		changed
+		(before != current.server, before.is_some())
 	};
 	let _ = if autostart { app.autolaunch().enable() } else { app.autolaunch().disable() };
+	// A granted origin can't be revoked, so a switch from one server to another
+	// restarts the shell, which then grants only the new one.
+	if changed && had_server {
+		app.restart();
+	}
 	apply_shortcut(&app, shortcut.as_deref()).await;
 	if changed || main_window(&app).is_some_and(|w| w.url().is_ok_and(|u| u.scheme() == "tauri")) {
 		allow_server(&app, &url);
