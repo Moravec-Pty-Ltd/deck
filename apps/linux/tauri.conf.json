@@ -1,0 +1,44 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "deck",
+	"mainBinaryName": "deck",
+	"version": "0.1.0",
+	"identifier": "tech.moravec.deck",
+	"build": {
+		"frontendDist": "ui"
+	},
+	"app": {
+		"windows": [],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": ["appimage", "deb"],
+		"category": "Development",
+		"shortDescription": "Drive Claude Code sessions from one window",
+		"icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
+		"createUpdaterArtifacts": true,
+		"linux": {
+			"appimage": {
+				"bundleMediaFramework": true
+			},
+			"deb": {
+				"desktopTemplate": "deck.desktop",
+				"depends": ["gstreamer1.0-plugins-good", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"]
+			}
+		}
+	},
+	"plugins": {
+		"deep-link": {
+			"desktop": {
+				"schemes": ["deck"]
+			}
+		},
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFFNEM4OTI4M0NEODBFQzgKUldUSUR0ZzhLSWxNSGk1WG1QL3FJYjNPV2o4UFhPSkovZlpFWnJkZ2M5alo2ZVFPNXprSFpnNnMK",
+			"endpoints": ["https://github.com/Moravec-Pty-Ltd/deck/releases/latest/download/latest.json"]
+		}
+	}
+}

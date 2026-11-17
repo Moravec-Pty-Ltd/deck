@@ -1,0 +1,80 @@
+# Builds the Linux desktop shell (apps/linux) as an AppImage and a deb. A run
+# from the Actions tab keeps them as artifacts; pushing a linux-v* tag also
+# publishes a release, whose latest.json is what the AppImage's updater reads.
+name: Linux shell
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['linux-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/linux
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check the tag
+        if: startsWith(github.ref, 'refs/tags/linux-v')
+        env:
+          TAG: ${{ github.ref_name }}
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          version=$(jq -r .version tauri.conf.json)
+          [ "$TAG" = "linux-v$version" ] || { echo "tag $TAG does not match the tauri.conf.json version $version"; exit 1; }
+          [ "$HAS_KEY" = true ] || { echo "a release needs the TAURI_SIGNING_PRIVATE_KEY secret"; exit 1; }
+
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio
+
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: apps/linux
+
+      - run: cargo test --locked
+
+      - name: Build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # Without the signing key there is no update signature; the bundles still build.
+          extra=()
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || extra=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+          npx --yes @tauri-apps/cli@2.12.5 build --bundles appimage deb "${extra[@]}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deck-linux
+          path: |
+            apps/linux/target/release/bundle/appimage/*.AppImage
+            apps/linux/target/release/bundle/appimage/*.AppImage.sig
+            apps/linux/target/release/bundle/deb/*.deb
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/linux-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(jq -r .version tauri.conf.json)
+          image=$(ls target/release/bundle/appimage/*.AppImage)
+          name=$(basename "$image")
+          jq -n \
+            --arg version "$version" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg sig "$(cat "$image.sig")" \
+            --arg url "https://github.com/${{ github.repository }}/releases/download/$TAG/$name" \
+            '{version: $version, pub_date: $date, platforms: {"linux-x86_64": {signature: $sig, url: $url}}}' > latest.json
+          gh release create "$TAG" --latest --title "deck for Linux ${TAG#linux-v}" --notes "AppImage (updates itself) and deb." \
+            "$image" "$image.sig" target/release/bundle/deb/*.deb latest.json

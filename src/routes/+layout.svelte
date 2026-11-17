@@ -12,6 +12,7 @@
 	import { groupSwitch } from '$lib/group-switch.svelte';
 	import NavLinks from '$lib/components/NavLinks.svelte';
 	import InboxWatch from '$lib/components/InboxWatch.svelte';
+	import { onShellOpen } from '$lib/shell';
 	import Popover from '$lib/components/Popover.svelte';
 	import { badgeText, isContained, isSessionPage, showsNav } from '$lib/nav-core';
 	import { nextTheme, themeOption } from '$lib/theme-core';
@@ -65,6 +66,8 @@
 		if (type === 'enter' && load?.type === 'reload') return;
 		groupSwitch.opened(id);
 	});
+
+	$effect(() => onShellOpen((href) => goto(href)));
 
 	// A notification for the session already on screen only focuses its window, so
 	// no navigation happens; the service worker says so instead.

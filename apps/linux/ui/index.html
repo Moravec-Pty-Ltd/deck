@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title>deck</title>
+		<style>
+			body { font: 15px/1.5 system-ui, sans-serif; max-width: 30rem; margin: 2.5rem auto; padding: 0 1.25rem; }
+			h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+			label { display: block; margin-top: 1.25rem; font-weight: 600; }
+			input[type='text'], input[type='url'] { display: block; width: 100%; box-sizing: border-box; margin-top: 0.35rem; padding: 0.5rem 0.6rem; font: inherit; border: 1px solid #8886; border-radius: 6px; background: transparent; color: inherit; }
+			.check { display: flex; gap: 0.5rem; align-items: center; font-weight: 400; }
+			.hint { margin: 0.35rem 0 0; font-size: 0.85rem; opacity: 0.75; }
+			.note { margin-top: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 6px; background: #f59e0b22; font-size: 0.9rem; }
+			.error { color: #dc2626; }
+			button { margin-top: 1.5rem; padding: 0.5rem 1.25rem; font: inherit; font-weight: 600; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+			code { font-size: 0.9em; }
+		</style>
+	</head>
+	<body>
+		<h1>deck</h1>
+		<p class="hint">Connect to your deck server. You sign in on the next page.</p>
+		<form id="form">
+			<label for="server">Server address</label>
+			<input id="server" type="url" required placeholder="http://deck.example:4818" />
+			<label for="shortcut">Show or hide shortcut</label>
+			<input id="shortcut" type="text" placeholder="Ctrl+Alt+D" />
+			<p class="hint">
+				Optional. On Wayland your desktop may ask you to confirm it. You can also bind
+				<code>deck --toggle</code> to a key in your desktop's keyboard settings.
+			</p>
+			<p id="note" class="note" hidden></p>
+			<label class="check"><input id="autostart" type="checkbox" /> Start deck when you log in</label>
+			<p id="error" class="error" hidden></p>
+			<button type="submit">Save</button>
+		</form>
+		<script>
+			const invoke = window.__TAURI_INTERNALS__.invoke;
+			const $ = (id) => document.getElementById(id);
+			function showNote(text) {
+				$('note').textContent = text;
+				$('note').hidden = !text;
+			}
+			invoke('get_settings').then((s) => {
+				$('server').value = s.server ?? '';
+				$('shortcut').value = s.shortcut ?? '';
+				$('autostart').checked = s.autostart;
+				showNote(s.shortcutNote);
+			});
+			$('form').addEventListener('submit', async (e) => {
+				e.preventDefault();
+				$('error').hidden = true;
+				try {
+					const note = await invoke('save_settings', {
+						server: $('server').value,
+						shortcut: $('shortcut').value,
+						autostart: $('autostart').checked
+					});
+					showNote(note);
+				} catch (err) {
+					$('error').textContent = String(err);
+					$('error').hidden = false;
+				}
+			});
+		</script>
+	</body>
+</html>
