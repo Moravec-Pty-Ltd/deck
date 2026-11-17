@@ -6,7 +6,7 @@ import os
 
 /// File-level rather than a static member: the event-loop callbacks log from
 /// off the main actor, and a member of a @MainActor type cannot be read there.
-private let log = Logger(subsystem: "tech.moravec.deck", category: "browser")
+let log = Logger(subsystem: "tech.moravec.deck", category: "browser")
 
 /// A loopback SOCKS5 listener for WKWebView to point at, carrying each
 /// connection to the deck machine over its own WebSocket to deck's

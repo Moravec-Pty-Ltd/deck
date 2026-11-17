@@ -1,4 +1,5 @@
 import Foundation
+import os
 import NIOCore
 
 /// Minimal SOCKS5 server: no authentication, CONNECT only. On CONNECT it opens
@@ -259,7 +260,10 @@ final class WebSocketBridge: NSObject, ChannelDuplexHandler, URLSessionWebSocket
 		task.receive { result in
 			self.eventLoop.execute {
 				guard let context = self.context else { return }
-				guard case .success(.data(let data)) = result else { return self.close() }
+				guard case .success(.data(let data)) = result else {
+					log.info("tunnel stream ended: \(String(describing: result), privacy: .public)")
+					return self.close()
+				}
 				context.writeAndFlush(self.wrapOutboundOut(context.channel.allocator.buffer(bytes: data)))
 					.whenSuccess { self.receive() }
 			}
