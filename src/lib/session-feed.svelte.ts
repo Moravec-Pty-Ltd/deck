@@ -7,6 +7,7 @@ import {
 	type FeedResponse,
 	type FeedState
 } from '$lib/session-feed-core';
+import { inShell } from '$lib/shell';
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {
@@ -61,7 +62,9 @@ class SessionFeed {
 	async #loop() {
 		while (this.#running) {
 			const ctrl = (this.#ctrl = new AbortController());
-			if (document.hidden) await delay(2 ** 31 - 1, ctrl.signal);
+			// The Linux shell hides to its tray and still owes the tray count and
+			// notifications, so it keeps the feed open.
+			if (document.hidden && !inShell) await delay(2 ** 31 - 1, ctrl.signal);
 			else await this.#step(ctrl.signal);
 		}
 	}

@@ -59,6 +59,14 @@ which are read from tmux rather than from `~/.deck`.
 Don't `git pull` the live checkout to try a change: vite reloads the modules
 under the running server. Test in the worktree on its own port instead.
 
+## Linux shell (`apps/linux`)
+
+A Tauri v2 window onto the deck server, with a tray, notifications and Open in
+Zed. It loads the web app from the server and never bundles it; the web side of
+its bridge is `src/lib/shell.ts`, a no-op in a normal browser. See
+[apps/linux/README.md](apps/linux/README.md). Linux is its only
+target; the `Linux shell` workflow builds the AppImage and deb.
+
 ## Native apps (`apps/ios`)
 
 SwiftUI clients for iPhone, iPad, Apple Watch and Mac, sharing the

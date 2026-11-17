@@ -3,13 +3,15 @@
 	// recounted when the event feed reports a change that can touch the inbox.
 	// Also keeps the installed app's icon badge at the unread session count, where
 	// the browser has the Badging API, and feeds the group switcher the sessions and
-	// projects it counts across. Renders nothing; mounted only where the nav shows,
+	// projects it counts across, and the Linux shell its tray and notifications
+	// (src/lib/shell.ts). Renders nothing; mounted only where the nav shows,
 	// so the sign-in pages hold no feed open.
 	import { sessionFeed } from '$lib/session-feed.svelte';
 	import { touchesInbox, type InboxAsk } from '$lib/inbox-core';
 	import { unreadCount } from '$lib/unread-core';
 	import { api, pollWhileVisible } from '$lib/workflow-view';
 	import { groupSwitch } from '$lib/group-switch.svelte';
+	import { syncShell } from '$lib/shell';
 	import type { Project } from '$lib/types';
 
 	let { count = $bindable(0) }: { count?: number } = $props();
@@ -41,7 +43,9 @@
 		const n = ++generation;
 		try {
 			const asks = await api<InboxAsk[]>('/api/agent/asks');
-			if (n === generation) count = asks.length;
+			if (n !== generation) return;
+			count = asks.length;
+			syncShell(asks, feed.sessions);
 		} catch {
 			// Keep the last count: a failed read is not an empty inbox.
 		}

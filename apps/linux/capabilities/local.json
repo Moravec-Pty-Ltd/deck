@@ -1,0 +1,7 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "local",
+	"description": "The bundled settings page.",
+	"windows": ["main", "settings"],
+	"permissions": ["core:webview:allow-set-webview-zoom", "allow-get-settings", "allow-save-settings"]
+}
