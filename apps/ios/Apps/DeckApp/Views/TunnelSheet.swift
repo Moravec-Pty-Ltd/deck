@@ -2,65 +2,27 @@ import DeckBrowser
 import DeckUI
 import SwiftUI
 
-/// How to reach the deck machine's SSH server, which is what makes its
-/// localhost reachable from here.
-///
-/// Asked for rather than inferred: deck's own origin gives the host, but
-/// nothing in deck knows the SSH user or password, and they are not deck's to
-/// know. The host is prefilled from the deck origin because that is the machine
-/// the dev servers are on. The Mac target compiles this file by path.
+/// Where the tunnel to the deck machine's localhost stands. Nothing to fill
+/// in: it rides on the deck sign-in. The Mac target compiles this file by path.
 struct TunnelSheet: View {
-	@Bindable var model: BrowserModel
+	var model: BrowserModel
 	@Environment(\.dismiss) private var dismiss
 
 	var body: some View {
 		DeckFormSheet("Tunnel", width: 460) {
 			Form {
-				Section("Deck machine") {
-					TextField("Host", text: $model.settings.host)
-						#if os(iOS)
-						.textInputAutocapitalization(.never)
-						#endif
-						.autocorrectionDisabled()
-					TextField("Port", value: $model.settings.port, format: .number)
-					TextField("User", text: $model.settings.username)
-						#if os(iOS)
-						.textInputAutocapitalization(.never)
-						#endif
-						.autocorrectionDisabled()
-					SecureField("Password", text: $model.password)
-				}
-
 				Section {
-					Toggle("Connect automatically", isOn: $model.settings.autoConnect)
-				} footer: {
-					Text(
-						"""
-						Needs sshd running on that machine with TCP forwarding allowed. \
-						The local port is picked automatically and shown below; only this \
-						app ever connects to it.
-						""")
-				}
-
-				Section("Status") {
 					LabeledContent("Tunnel", value: model.status)
 					if !model.lastForward.isEmpty {
 						LabeledContent("Last request", value: model.lastForward)
 							.font(.caption.monospaced())
 					}
+				} footer: {
+					Text("Each request goes through deck, signed in as this app. Only this app connects to the local port.")
 				}
 
 				Section {
-					if model.isConnected {
-						Button("Disconnect") { model.disconnect() }
-					} else {
-						Button("Connect") { model.connect() }
-					}
-					// The only way past a host-key mismatch, and deliberately a
-					// separate deliberate action rather than a button on the error.
-					Button("Forget this machine's host key", role: .destructive) {
-						model.forgetHostKey()
-					}
+					Button("Reconnect") { model.connect() }
 				}
 			}
 			.formStyle(.grouped)

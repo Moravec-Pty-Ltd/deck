@@ -3,6 +3,7 @@ import DeckKit
 import Foundation
 import Network
 import Observation
+import Security
 import WebKit
 
 /// The dev browser: tabs for the dev servers running on the deck machine, and
@@ -23,8 +24,6 @@ public final class BrowserModel {
 	/// something rather than merely being up.
 	public private(set) var lastForward = ""
 
-	public var settings: TunnelSettings
-	public var password: String
 	/// Deck, and so its dev servers, are on this machine: pages load straight
 	/// from loopback and the tunnel is never used.
 	public let isDirect: Bool
@@ -34,24 +33,16 @@ public final class BrowserModel {
 	public private(set) var revision = 0
 
 	let tunnel: DevTunnel
+	private let config: DevTunnel.Config?
 	private var runtimes: [String: BrowserTabRuntime] = [:]
-	private let defaults: UserDefaults
 
-	/// The user wants the tunnel up, so a drop should be retried. Cleared by an
-	/// explicit disconnect and by an auth failure, which retrying cannot fix.
-	private var wantConnected = false
-	private var reconnectAttempt = 0
-	private var reconnectTask: Task<Void, Never>?
-
-	public init(deckOrigin: URL?, defaults: UserDefaults = .standard) {
-		self.defaults = defaults
-		self.settings = TunnelSettings.load(from: defaults).defaulting(toHostOf: deckOrigin)
-		self.password = TunnelSecret.load()
-		// The app's one tunnel, not one of our own: tabs are per session, but the
-		// SSH connection and its loopback port are per machine, and a second one
-		// cannot bind a port the first is holding.
-		self.tunnel = DevTunnel.shared
-		self.isDirect = LoopbackHost.isDirect(deckOrigin: deckOrigin)
+	/// `sessionId` routes the tunnel through that session's host when it runs
+	/// on a remote one; nil is the deck machine itself.
+	public init(credentials: Credentials?, sessionId: String? = nil) {
+		_ = Self.forgetSSHTunnel
+		self.config = credentials.map { DevTunnel.Config(credentials: $0, sessionId: sessionId) }
+		self.tunnel = DevTunnel.shared(for: sessionId)
+		self.isDirect = LoopbackHost.isDirect(deckOrigin: credentials?.baseURL)
 		if isDirect {
 			status = "Direct: deck runs on this machine"
 			return
@@ -61,6 +52,20 @@ public final class BrowserModel {
 		// yet, so they will be built against this state rather than rebuilt.
 		adopt(tunnel.status)
 	}
+
+	/// What the SSH tunnel this replaced left behind: its settings, its trusted
+	/// host keys and the password in the keychain. Once per launch, and a no-op
+	/// once they are gone.
+	private static let forgetSSHTunnel: Void = {
+		UserDefaults.standard.removeObject(forKey: "deck.browser.tunnel")
+		UserDefaults.standard.removeObject(forKey: "deck.browser.knownHosts")
+		SecItemDelete(
+			[
+				kSecClass as String: kSecClassGenericPassword,
+				kSecAttrService as String: "tech.moravec.deck.browser",
+				kSecAttrAccount as String: "ssh-password"
+			] as CFDictionary)
+	}()
 
 	// MARK: Tabs
 
@@ -148,75 +153,29 @@ public final class BrowserModel {
 
 	// MARK: Tunnel
 
-	public var isConnected: Bool {
-		if case .connected = tunnelState { return true }
-		return false
+	public var isConnected: Bool { proxyPort != nil }
+
+	private var proxyPort: Int? {
+		if case .connected(let localPort) = tunnelState { return localPort }
+		return nil
 	}
 
 	private var proxy: ProxyConfiguration? {
-		guard case .connected(let localPort) = tunnelState,
-			let port = NWEndpoint.Port(rawValue: UInt16(localPort))
+		guard let localPort = proxyPort, let port = NWEndpoint.Port(rawValue: UInt16(localPort))
 		else { return nil }
-		return ProxyConfiguration(socksv5Proxy: .hostPort(host: "127.0.0.1", port: port))
+		// Only the sentinel goes through deck. A dev page's CDN scripts and fonts
+		// load directly, since the tunnel refuses anything but loopback.
+		var config = ProxyConfiguration(socksv5Proxy: .hostPort(host: "127.0.0.1", port: port))
+		config.matchDomains = [LoopbackHost.sentinel]
+		return config
 	}
 
+	/// Bring the listener up, or rebind it. Called on open and on every return
+	/// to the foreground, since iOS reclaims listening sockets while suspended.
 	public func connect() {
-		guard !isDirect else { return }
-		guard let config = config() else {
-			status = "Fill in the host, user and password first"
-			return
-		}
-		// Tapping Connect while one is already in flight would queue a second
-		// attempt behind it rather than doing anything useful.
+		guard !isDirect, let config else { return }
 		if case .connecting = tunnelState { return }
-		settings.save(to: defaults)
-		TunnelSecret.save(password)
-		wantConnected = true
-		reconnectAttempt = 0
-		reconnectTask?.cancel()
 		Task { await tunnel.start(config) }
-	}
-
-	public func disconnect() {
-		wantConnected = false
-		reconnectTask?.cancel()
-		reconnectTask = nil
-		Task { await tunnel.stop() }
-	}
-
-	/// iOS suspends sockets in the background, so coming back to the foreground
-	/// usually means the tunnel needs re-establishing.
-	public func reconnectIfNeeded() {
-		guard !isDirect, wantConnected, settings.autoConnect else { return }
-		switch tunnelState {
-		case .connected, .connecting: return
-		default: break
-		}
-		reconnectAttempt = 0
-		reconnectTask?.cancel()
-		if let config = config() { Task { await tunnel.start(config) } }
-	}
-
-	/// Accept the machine's current host key, then reconnect. The way out of a
-	/// mismatch you know the reason for, like a rebuilt machine.
-	public func forgetHostKey() {
-		guard let config = config() else { return }
-		tunnel.forgetHostKey(config)
-		connect()
-	}
-
-	/// Bring the tunnel up on open when it has worked before, so the browser is
-	/// usable without visiting a form first.
-	public func connectIfConfigured() {
-		guard !isDirect, settings.autoConnect, config() != nil else { return }
-		switch tunnelState {
-		case .connected, .connecting: return
-		default: connect()
-		}
-	}
-
-	private func config() -> DevTunnel.Config? {
-		DevTunnel.Config(settings: settings, password: password)
 	}
 
 	private func wire() {
@@ -228,62 +187,29 @@ public final class BrowserModel {
 	}
 
 	/// Take on a tunnel state without acting on it. Used at init to inherit a
-	/// tunnel that is already up, where scheduling a retry or rebuilding tabs
-	/// that do not exist yet would be wrong.
+	/// tunnel that is already up, where rebuilding tabs that do not exist yet
+	/// would be wrong.
 	private func adopt(_ state: DevTunnel.Status) {
 		tunnelState = state
 		switch state {
 		case .idle: status = "Not connected"
 		case .connecting: status = "Connecting"
-		case .connected(let port):
-			status = "Tunnel on 127.0.0.1:\(port)"
-			// Inheriting a live tunnel means inheriting the intent to keep it up.
-			wantConnected = true
+		case .connected(let port): status = "Tunnel on 127.0.0.1:\(port)"
 		case .failed(let reason): status = reason
 		}
 	}
 
 	private func apply(_ state: DevTunnel.Status) {
-		let was = proxy
+		let was = proxyPort
 		adopt(state)
-		switch state {
-		case .connected:
-			reconnectAttempt = 0
-			reconnectTask?.cancel()
-		case .failed(let reason):
-			scheduleReconnect(after: reason)
-		default:
-			break
-		}
-		// Only a proxy change costs a rebuild. Going from connecting to failed
-		// leaves it nil both times and must not reload every tab.
-		if (was == nil) != (proxy == nil) { rebuildTabs() }
+		// Only a proxy change costs a rebuild. A rebind onto the same port, or
+		// going from connecting to failed, must not reload every tab.
+		if was != proxyPort { rebuildTabs() }
 	}
 
 	private func rebuildTabs() {
 		let tunnelled = proxy != nil
 		for runtime in runtimes.values { runtime.rebuild(proxy: proxy, tunnelled: tunnelled) }
-	}
-
-	/// Back off on an unexpected drop. An auth or host-key failure stops
-	/// retrying: both need something fixed first, and hammering would only
-	/// repeat the rejection.
-	private func scheduleReconnect(after reason: String) {
-		guard wantConnected, settings.autoConnect else { return }
-		let lower = reason.lowercased()
-		if lower.contains("authentication") || lower.contains("password") || lower.contains("host key") {
-			wantConnected = false
-			return
-		}
-		let delays = [2, 5, 10, 20, 30]
-		let delay = delays[min(reconnectAttempt, delays.count - 1)]
-		reconnectAttempt += 1
-		reconnectTask?.cancel()
-		reconnectTask = Task { [weak self] in
-			try? await Task.sleep(for: .seconds(delay))
-			guard let self, !Task.isCancelled, self.wantConnected else { return }
-			if let config = self.config() { await self.tunnel.start(config) }
-		}
 	}
 }
 #endif

@@ -34,7 +34,7 @@ targets:
         product: DeckUI
       - package: DeckKit
         product: DeckIntents
-      # The dev browser. Only the app has one, and it carries SwiftNIO SSH.
+      # The dev browser. Only the app has one, and it carries SwiftNIO.
       - package: DeckKit
         product: DeckBrowser
       # Downloaded on-device models. Only the app runs one, and it carries MLX.

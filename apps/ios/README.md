@@ -23,7 +23,7 @@ Siri drives the same actions through App Intents.
     instruction, answer, attention check, send prompt, status, stop)
   - the operator's on-device brain (`OperatorBrain`, `OperatorTools`): Apple's
     model driving deck's agent API
-  - `DeckBrowser`: the dev browser (tabs, loopback addresses, the SSH tunnel and
+  - `DeckBrowser`: the dev browser (tabs, loopback addresses, the tunnel and
     its SOCKS5 listener). A separate product so SwiftNIO stays out of `DeckKit`,
     which the watch app and the extensions link
   - `DeckLocalModel`: the operator's downloaded models (the shortlist, the
@@ -324,29 +324,34 @@ nothing. The app browses them itself instead: the **Browser** tab, the globe in
 a session's toolbar, or a server's preview address.
 
 The tab shows every running server across all sessions, since the tunnel reaches
-the machine rather than a session; from a session it shows that session's. It
+the machine rather than a session; from a session it shows that session's, and
+tunnels to that session's host when it runs on a remote one. It
 took Settings' place in the tab bar, which is now a gear on Sessions: five is
 the most iOS shows before burying the sixth under "More".
 
 It opens a tab per declared port, named from the dev config's labels, with the
 primary one in front and a dot showing whether the port is answering yet. `+`
-adds a tab for any address. Reaching them needs the tunnel, under the lock
-button or the status strip: host, port, user and password for ssh on the deck
-machine, which needs `AllowTcpForwarding` on. The host is prefilled from the
-deck origin, since that is the machine the servers are on.
+adds a tab for any address. Reaching them needs the tunnel, which rides on the
+deck sign-in: there is nothing to set up, and the lock button or the status
+strip shows where it stands.
 
 The local SOCKS port is chosen by the kernel rather than asked for. A fixed
 number clashes: the prototype this came from is on the same phone, defaults to
-1080 and connects on launch, so deck asking for 1080 too simply lost.
+1080 and connects on launch, so deck asking for 1080 too simply lost. iOS
+reclaims the listener while the app is suspended, so it is rebound on the way
+back to the foreground, onto the same port, and no tab reloads.
 
 Dev servers speak plain http, and the loopback sentinel is an ordinary hostname
 to App Transport Security rather than an exempt loopback address, so the app
 sets `NSAllowsArbitraryLoadsInWebContent`. Scoped to web content on purpose: the
 API traffic URLSession carries stays under ATS.
 
-The tunnel is an in-process `ssh -D`: SwiftNIO SSH opens the connection, a
-loopback SOCKS5 listener takes the web view's requests, and a
-`ProxyConfiguration` on the web view's data store points at it. A proxy rather
+The tunnel is an in-process `ssh -D` without the ssh: a loopback SOCKS5
+listener takes the web view's requests, a `ProxyConfiguration` on the web
+view's data store points at it, and each connection becomes its own WebSocket
+to deck's `/api/tunnel?port=<n>` with the deck token, carrying raw bytes. With
+no long-lived connection there is nothing to lose when the network changes.
+Only loopback targets are carried; anything else gets a SOCKS refusal. A proxy rather
 than one published origin per port, because the point is that undeclared ports
 work too: a page on 5173 that fetches 3000 is a request nothing could have
 enumerated in advance.
@@ -354,9 +359,9 @@ enumerated in advance.
 Two things to know when it misbehaves. Loopback URLs are rewritten to
 `deck.localhost` on the way in, because WKWebView refuses to proxy a literal
 `localhost` and bypasses it to this device; the address bar hides the rewrite,
-so a URL that looks right can still be the wrong host underneath. And the
-machine's SSH host key is trusted on first use, so a rebuilt machine fails with
-both fingerprints until you forget it in the tunnel sheet.
+so a URL that looks right can still be the wrong host underneath. And a refused
+request shows on the status strip with deck's answer (401 for a bad token, 404
+for a session deck no longer knows).
 
 On the Mac the browser is its own window (Window > Browser, Shift-Command-B)
 with the same tabs, address bar and tunnel sheet. Deck may run on that very
@@ -365,12 +370,13 @@ loopback (`localhost`, `127.0.0.1`, `::1`) the dev servers are local, so pages
 load directly and the lock button is gone. `LoopbackHost.isDirect` decides it;
 a tailnet name or a LAN address still means another machine and the tunnel.
 
-Testing the tunnel end to end needs an SSH server, so that test skips without
-one. Any server with password auth and forwarding will do:
+Testing the tunnel end to end needs a deck on this machine, so that test skips
+without one. A throwaway one will do (see "Running a second server beside a
+live one" in AGENTS.md):
 
 ```sh
-cd Packages/DeckKit && DECK_TUNNEL_HOST=127.0.0.1 DECK_TUNNEL_PORT=2222 \
-  DECK_TUNNEL_USER=dev DECK_TUNNEL_PASSWORD=devpass swift test
+cd Packages/DeckKit && DECK_TUNNEL_URL=http://127.0.0.1:4819 \
+  DECK_TUNNEL_TOKEN=test swift test --filter DevTunnelTests
 ```
 
 It asserts the forward was opened as well as the body coming back: the target

@@ -14,11 +14,10 @@ let package = Package(
 		.library(name: "DeckLocalModel", targets: ["DeckLocalModel"])
 	],
 	dependencies: [
-		// Only DeckBrowser links these. They stay out of DeckKit so the watch app
+		// Only DeckBrowser links this. It stays out of DeckKit so the watch app
 		// and the widget and share extensions don't carry SwiftNIO for a feature
 		// none of them has.
 		.package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
-		.package(url: "https://github.com/apple/swift-nio-ssh.git", from: "0.13.0"),
 		// Only DeckLocalModel links this, for the same reason: MLX is a large
 		// Metal/C++ build and nothing but the iOS app runs a model.
 		.package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "3.32.3"),
@@ -37,9 +36,7 @@ let package = Package(
 			dependencies: [
 				"DeckKit",
 				.product(name: "NIOCore", package: "swift-nio"),
-				.product(name: "NIOPosix", package: "swift-nio"),
-				.product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
-				.product(name: "NIOSSH", package: "swift-nio-ssh")
+				.product(name: "NIOPosix", package: "swift-nio")
 			]
 		),
 		.target(

@@ -80,7 +80,7 @@ The [`claude` CLI](https://docs.claude.com/en/docs/claude-code) is the same inst
 ```sh
 pnpm install
 pnpm build
-PORT=4818 BODY_SIZE_LIMIT=4M node --env-file=.env build/index.js
+PORT=4818 BODY_SIZE_LIMIT=4M node --env-file=.env server.js
 ```
 
 On first request deck prints an access URL with a token, and stores the token in `~/.deck/token`. Open `http://<host>:4818/?token=<token>` once and a year-long cookie is set.
@@ -106,7 +106,7 @@ Dev server: `pnpm dev`.
 | `DECK_MORABOT_STATUS` | unset | Absolute path to morabot's `status.json` (enables the morabot integration, review verdicts, and notifications). |
 | `DECK_SECRETS_FILE` | unset | Set to `1` to store issue-source API keys in `~/.deck/secrets.json` (**plaintext**, mode `0600`) instead of the OS keyring. See [Issue-source API keys](#issue-source-api-keys). |
 
-**Configuration**: Variables are loaded from a `.env` file in the repo root by `vite dev` (dev server) and via `node --env-file=.env build/index.js` (production). Explicit environment variables (set inline or exported) always take precedence over `.env` values.
+**Configuration**: Variables are loaded from a `.env` file in the repo root by `vite dev` (dev server) and via `node --env-file=.env server.js` (production). Explicit environment variables (set inline or exported) always take precedence over `.env` values.
 
 ## Native apps
 
@@ -137,7 +137,7 @@ Bind loopback and front it with a Tailscale Service, so the tailnet is the acces
 
 ```sh
 tailscale serve --service=svc:deck --https=443 http://127.0.0.1:4818
-HOST=127.0.0.1 PORT=4818 DECK_NO_AUTH=1 DECK_BASE_URL=https://deck.<tailnet>.ts.net BODY_SIZE_LIMIT=4M node --env-file=.env build/index.js
+HOST=127.0.0.1 PORT=4818 DECK_NO_AUTH=1 DECK_BASE_URL=https://deck.<tailnet>.ts.net BODY_SIZE_LIMIT=4M node --env-file=.env server.js
 ```
 
 Define the `deck` service in the Tailscale admin console first. Its serve config persists across reboots, and because a service has its own address it never holds port 4818 on the machine, so deck always gets the port it asks for. Set `DECK_BASE_URL` to the service's URL so sign-in QR codes, push links and `/llms.txt` point at it.

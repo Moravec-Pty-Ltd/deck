@@ -79,4 +79,13 @@ final class LoopbackHostTests: XCTestCase {
 			LoopbackHost.display("http://deck.localhost:5173/settings"),
 			"http://localhost:5173/settings")
 	}
+
+	func testTheTunnelOnlyCarriesLoopbackTargets() {
+		for host in ["deck.localhost", "localhost", "LOCALHOST", "127.0.0.1", "::1", "[::1]", "0000:0000:0000:0000:0000:0000:0000:0001"] {
+			XCTAssertTrue(LoopbackHost.isTunnelTarget(host), host)
+		}
+		for host in ["example.org", "10.0.0.1", "127.0.0.2", "localhost.example.org", "evil.localhost", "0.0.0.0", ""] {
+			XCTAssertFalse(LoopbackHost.isTunnelTarget(host), host)
+		}
+	}
 }
