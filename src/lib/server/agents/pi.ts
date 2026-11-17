@@ -18,7 +18,12 @@ type AnyObj = Record<string, any>;
 // pi runs per turn: `pi -p --mode json --session <file> -- <message>`. The session
 // file (under the deck data dir) carries history across turns. Verified event
 // shape: session / agent_start / turn_start / message_start|update|end /
-// turn_end. Streaming deltas arrive on message_update.assistantMessageEvent.
+// turn_end / agent_end. Streaming deltas arrive on message_update.assistantMessageEvent.
+// A pi "turn" is one assistant step, so turn_end fires per tool call; the prompt
+// ends at agent_end, which is where the one result footer goes (unless pi says it
+// will retry the run, which then ends at a later agent_end).
+const promptCost = new WeakMap<TurnContext, number>();
+
 export const piDriver: AgentDriver = {
 	kind: 'pi',
 
@@ -61,9 +66,15 @@ export const piDriver: AgentDriver = {
 					if (id) ctx.append(toolResultEvent(String(id), tr.result ?? tr.content ?? tr.output ?? ''));
 				}
 				const cost = line.message?.usage?.cost?.total;
-				ctx.append(resultEvent({ cost: typeof cost === 'number' ? cost : undefined }));
+				if (typeof cost === 'number') promptCost.set(ctx, (promptCost.get(ctx) ?? 0) + cost);
 				return;
 			}
+
+			case 'agent_end':
+				if (line.willRetry === true) return;
+				ctx.append(resultEvent({ cost: promptCost.get(ctx) }));
+				promptCost.delete(ctx);
+				return;
 
 			case 'error':
 			case 'agent_error':
