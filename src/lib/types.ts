@@ -123,8 +123,10 @@ export interface DeckSession {
 	// at creation so `--resume` always returns to the host that holds the
 	// conversation. `path` is the remote working directory (the checkout or a
 	// worktree beside it); `cwd` stays the local project path. `worktreeError`
-	// says why a requested worktree fell back to the checkout itself.
-	remote?: { target: string; path: string; worktreeError?: string };
+	// says why a requested worktree fell back to the checkout itself. `mode`
+	// is how its claude last started: through the deck agent on the host
+	// (issue #411) or bare ssh; `agentNote` says why an agent there went unused.
+	remote?: { target: string; path: string; worktreeError?: string; mode?: 'agent' | 'bare'; agentNote?: string };
 	// shell
 	tmuxName?: string;
 	managed?: boolean;

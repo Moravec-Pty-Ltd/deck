@@ -108,7 +108,7 @@ function registerWatchTools(server: McpServer, deckId: string): void {
 	);
 }
 
-function buildServer(deckId: string): McpServer {
+export function buildServer(deckId: string): McpServer {
 	const server = new McpServer({ name: 'deck', version: '1.0.0' });
 	server.registerTool(
 		'ask',

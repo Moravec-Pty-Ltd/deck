@@ -789,11 +789,15 @@ public struct ProjectRemote: Codable, Hashable, Sendable {
 }
 
 /// Where a session runs when its project is remote; `worktreeError` says why a
-/// requested worktree fell back to the checkout.
+/// requested worktree fell back to the checkout. `mode` is "agent" (the deck
+/// agent on the host) or "bare" (plain ssh), and `agentNote` why an agent there
+/// went unused.
 public struct SessionRemote: Codable, Hashable, Sendable {
 	public let target: String
 	public let path: String
 	public let worktreeError: String?
+	public let mode: String?
+	public let agentNote: String?
 }
 
 public enum RemoteHostKey: String, Codable, Sendable {

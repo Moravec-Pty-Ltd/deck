@@ -27,7 +27,8 @@ import { hasPendingAsk } from './ask';
 import { stopSessionServers } from './devservers';
 import { SERVER_TMUX_PREFIX } from './devservers-core';
 import { removeWorktree, type Repo } from './git';
-import { remoteProject, remoteRepo, sessionConnection } from './remote';
+import { forgetRemoteAgent, remoteProject, remoteRepo, sessionConnection } from './remote';
+import { removeAgentCursor } from './remote-agent';
 import { pickShipName } from './names';
 import { DEMO, demoSessions, demoSession } from './demo';
 import { publishAgentEvent } from './agent-feed';
@@ -259,6 +260,12 @@ export async function createSession(input: {
 async function teardownSession(stored: DeckSession): Promise<void> {
 	if (isAgentKind(stored.kind)) {
 		agentStop(stored.id);
+		// The agent's claude outlives deck: end it even when no process here knows
+		// it, and clear its files on the host.
+		if (stored.remote?.mode === 'agent') {
+			forgetRemoteAgent(stored);
+			removeAgentCursor(stored.id);
+		}
 		await stopSessionServers(stored.id).catch(() => {});
 	} else if (stored.tmuxName && (await hasTmuxSession(stored.tmuxName))) {
 		await killTmuxSession(stored.tmuxName);

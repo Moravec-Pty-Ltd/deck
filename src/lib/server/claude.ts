@@ -232,7 +232,8 @@ function reportCrash(id: string, text: string) {
 	});
 }
 
-function claudeArgs(id: string, session: DeckSession): string[] {
+// `agent`: a remote session through the deck agent, which supplies --mcp-config.
+function claudeArgs(id: string, session: DeckSession, agent = false): string[] {
 	const args = [
 		'--input-format', 'stream-json',
 		'--output-format', 'stream-json',
@@ -258,7 +259,7 @@ function claudeArgs(id: string, session: DeckSession): string[] {
 	}
 
 	// A remote host can't reach deck (issue #410): no MCP tools, no deck prompts.
-	if (session.remote) {
+	if (session.remote && !agent) {
 		args.push('--disallowedTools', 'AskUserQuestion', '--append-system-prompt', REMOTE_PROMPT);
 		return args;
 	}
@@ -266,7 +267,11 @@ function claudeArgs(id: string, session: DeckSession): string[] {
 	// it through without a permission prompt (which headless mode can't answer).
 	args.push(
 		'--disallowedTools', 'AskUserQuestion',
-		'--allowedTools', 'mcp__deck__ask,mcp__deck__watch,mcp__deck__watches,mcp__deck__unwatch',
+		'--allowedTools', 'mcp__deck__ask,mcp__deck__watch,mcp__deck__watches,mcp__deck__unwatch'
+	);
+	// Files written on the host don't reach deck's .deck/out.
+	if (agent) return [...args, '--append-system-prompt', `${ASK_PROMPT}\n\n${WATCH_PROMPT}`];
+	args.push(
 		'--append-system-prompt', `${ASK_PROMPT}\n\n${FILES_PROMPT}\n\n${WATCH_PROMPT}`,
 		'--mcp-config', JSON.stringify({ mcpServers: { deck: { type: 'http', url: mcpUrl(id) } } })
 	);
@@ -275,7 +280,7 @@ function claudeArgs(id: string, session: DeckSession): string[] {
 
 async function spawnClaude(id: string, session: DeckSession, profileEnv?: Record<string, string>): Promise<ChildProcess> {
 	// A profile's env points at backends on this machine, out of the host's reach.
-	if (session.remote) return spawnRemoteClaude(session, claudeArgs(id, session));
+	if (session.remote) return spawnRemoteClaude(session, (agent) => claudeArgs(id, session, agent));
 	await ensureMcp(); // the MCP server must be listening before the process spawns
 	// Throws when the session's account can't run, which reports as a crash
 	// with the reason instead of starting under the default login.
@@ -362,7 +367,7 @@ function exitReason(proc: Proc, code: number | null): string {
 	const tail = proc.stderrTail.trim();
 	const target = proc.session.remote?.target;
 	const ssh = target && sshFailure(tail, code, target);
-	return ssh || tail || `claude exited with code ${code}`;
+	return ssh || tail || (code === null ? 'claude was ended from outside deck' : `claude exited with code ${code}`);
 }
 
 // Tear an idle process down after IDLE_MS, but not while background work it

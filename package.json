@@ -17,7 +17,8 @@
 		"test": "vitest run",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"test:e2e": "playwright test"
+		"test:e2e": "playwright test",
+		"build:agent": "bun build --compile --target=bun-linux-x64 src/agent/deck-agent.ts --outfile dist/deck-agent-linux-x64 && bun build --compile --target=bun-linux-arm64 src/agent/deck-agent.ts --outfile dist/deck-agent-linux-arm64"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.64.1",

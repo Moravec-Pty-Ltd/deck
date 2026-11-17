@@ -1154,9 +1154,13 @@ is \`{ "kind": "default" }\` (the deck host's own ssh config),
 \`{ "kind": "key", "identityFile": "~/.ssh/<key>" }\` (a file inside the deck
 host's \`~/.ssh\`) or \`{ "kind": "password" }\`. A remote project starts only
 \`claude\` and \`shell\` sessions; its sessions carry
-\`remote: { target, path, worktreeError? }\`. They have no deck tools, so
-questions, watches, file uploads, dev servers, automation, schedules and editor
-links are off.
+\`remote: { target, path, worktreeError?, mode?, agentNote? }\`. With the deck
+agent on the host (\`mode: "agent"\`, see below) a turn survives a dropped
+connection and questions and watches work. Without it (\`mode: "bare"\`) they
+have no deck tools, so questions and watches are off; \`agentNote\` says why
+an agent on the host went unused (a protocol mismatch). Either way file
+uploads, dev servers, automation, schedules and editor links are off. \`mode\`
+is set when claude starts.
 
 ### GET /api/agent/projects/remote?path=<path>
 
@@ -1181,6 +1185,14 @@ Scans the host: \`{ "keys": [{ "type", "fingerprint" }] }\`; 502 when it can't.
 \`{ "path", "fingerprints": [...] }\` trusts the host's keys when a fresh scan
 shows exactly those fingerprints (409 otherwise). Returns
 \`{ "hostKey": "trusted" }\`.
+
+### POST /api/agent/projects/remote/agent
+
+\`{ "path" }\` copies the deck agent built for the host (Linux x86_64 or arm64,
+from \`pnpm build:agent\`) to \`~/.local/bin/deck-agent\` there, and returns
+what the host now offers: \`{ "mode": "agent" }\` or
+\`{ "mode": "bare", "note"? }\`. A session's next claude start uses it. 502
+with the reason when it can't.
 
 ## Dev servers
 

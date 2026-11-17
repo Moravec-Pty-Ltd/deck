@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+	AGENT_INSTALL_SCRIPT,
+	agentScript,
 	claudeScript,
 	killScript,
 	parseProjectRemote,
@@ -208,5 +210,25 @@ describe('parseSecret and parseFingerprints', () => {
 		for (const bad of ['', 'a\nb', 42, undefined, 'x'.repeat(4097)]) expect(parseSecret(bad)).toBeNull();
 		expect(parseFingerprints(['SHA256:a', 1, null])).toEqual(['SHA256:a']);
 		expect(parseFingerprints('SHA256:a')).toEqual([]);
+	});
+});
+
+describe('the deck agent scripts', () => {
+	const home = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-agent-script-'));
+	const onPath = path.join(home, 'path');
+	fs.mkdirSync(onPath);
+	const env = { HOME: home, PATH: `${onPath}:/usr/bin:/bin` };
+	const run = (script: string, input?: string) => execFileSync('/bin/sh', ['-c', script], { env, input, encoding: 'utf8' });
+
+	it('exits 127 when the host has no agent', () => {
+		expect(() => run(agentScript(['--version']))).toThrow(expect.objectContaining({ status: 127 }));
+	});
+
+	it('installs the agent into ~/.local/bin and prefers it to one on PATH', () => {
+		fs.writeFileSync(path.join(onPath, 'deck-agent'), '#!/bin/sh\necho path\n', { mode: 0o755 });
+		expect(run(agentScript(['x']))).toBe('path\n');
+		run(AGENT_INSTALL_SCRIPT, '#!/bin/sh\nprintf "%s|" "$@"\n');
+		expect(run(agentScript(['serve', "it's", 'a b']))).toBe("serve|it's|a b|");
+		expect(fs.existsSync(path.join(home, '.local/bin/deck-agent.new'))).toBe(false);
 	});
 });
