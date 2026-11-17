@@ -50,6 +50,14 @@ public enum LoopbackHost {
 		bare(host) == sentinel ? "localhost" : host
 	}
 
+	/// The SOCKS targets the tunnel carries. Deck only ever connects to its own
+	/// loopback, so anything else would silently land on the wrong machine. The
+	/// long IPv6 spelling is how the SOCKS handler writes out `::1`.
+	public static func isTunnelTarget(_ host: String) -> Bool {
+		let host = bare(host)
+		return host == sentinel || all.contains(host) || host == "0000:0000:0000:0000:0000:0000:0000:0001"
+	}
+
 	/// Turn address-bar text into a URL to load.
 	///
 	/// `tunnelled` says whether the proxy is up. When it is, a loopback host

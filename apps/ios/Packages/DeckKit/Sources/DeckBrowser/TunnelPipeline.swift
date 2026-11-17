@@ -1,243 +1,11 @@
 import Foundation
-import NIOConcurrencyHelpers
+import os
 import NIOCore
-import NIOSSH
-
-// The SSH and SOCKS5 plumbing. Adapted from Apple's swift-nio-ssh client
-// example, which does one static `-L` forward; here the SOCKS5 handshake names
-// the target per connection, which is a dynamic `-D` forward. The glue and
-// wrapper handlers are that example's, unchanged.
-
-enum TunnelError: Error, CustomStringConvertible {
-	case invalidChannelType
-	case invalidData
-	case passwordAuthUnsupported
-	case authFailed
-	case handshakeTimeout
-	case hostKeyChanged(expected: String, got: String)
-
-	var description: String {
-		switch self {
-		case .invalidChannelType: return "invalid channel type"
-		case .invalidData: return "invalid channel data"
-		case .passwordAuthUnsupported: return "the server rejected password auth"
-		case .authFailed: return "authentication failed (check the username and password)"
-		case .handshakeTimeout: return "timed out during the SSH handshake"
-		case .hostKeyChanged(let expected, let got):
-			return """
-				the host key changed: expected \(expected), got \(got). Either the machine was \
-				rebuilt or something else is answering. Forget the host in settings to accept the new key.
-				"""
-		}
-	}
-}
-
-/// Reports "connected" only once SSH authentication actually succeeds, rather
-/// than when the TCP connection opens. Also fails readiness if the connection
-/// drops, errors, or is rejected before that.
-///
-/// Unchecked because the tunnel hands it to `@Sendable` closures. Every path
-/// into it, the channel handler methods, the scheduled timeout, and the two
-/// delegate rejections, runs on this connection's single event loop, which is
-/// what serialises `done`.
-final class AuthEventHandler: ChannelInboundHandler, @unchecked Sendable {
-	typealias InboundIn = Any
-	private let promise: EventLoopPromise<Void>
-	private var done = false
-
-	init(_ promise: EventLoopPromise<Void>) { self.promise = promise }
-
-	private func finish(_ result: Result<Void, Error>) {
-		guard !done else { return }
-		done = true
-		promise.completeWith(result)
-	}
-
-	func timeOut() { finish(.failure(TunnelError.handshakeTimeout)) }
-
-	/// Called by the auth and host-key delegates so the real reason wins over
-	/// the generic connection-closed one that follows it.
-	func reject(_ error: Error) { finish(.failure(error)) }
-
-	func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-		if event is UserAuthSuccessEvent { finish(.success(())) }
-		context.fireUserInboundEventTriggered(event)
-	}
-
-	func channelInactive(context: ChannelHandlerContext) {
-		finish(.failure(TunnelError.authFailed))
-		context.fireChannelInactive()
-	}
-
-	func errorCaught(context: ChannelHandlerContext, error: Error) {
-		finish(.failure(error))
-		context.fireErrorCaught(error)
-	}
-}
-
-/// Non-interactive password auth. Offers the password once; a second ask means
-/// it was rejected, so it gives up rather than looping.
-final class PasswordAuthDelegate: NIOSSHClientUserAuthenticationDelegate, Sendable {
-	private let username: String
-	private let password: String
-	private let offered = NIOLockedValueBox(false)
-	private let onGaveUp: @Sendable () -> Void
-
-	init(username: String, password: String, onGaveUp: @escaping @Sendable () -> Void) {
-		self.username = username
-		self.password = password
-		self.onGaveUp = onGaveUp
-	}
-
-	func nextAuthenticationType(
-		availableMethods: NIOSSHAvailableUserAuthenticationMethods,
-		nextChallengePromise: EventLoopPromise<NIOSSHUserAuthenticationOffer?>
-	) {
-		guard availableMethods.contains(.password) else {
-			nextChallengePromise.fail(TunnelError.passwordAuthUnsupported)
-			return
-		}
-		let alreadyTried = offered.withLockedValue { tried -> Bool in
-			if tried { return true }
-			tried = true
-			return false
-		}
-		if alreadyTried {
-			nextChallengePromise.succeed(nil)
-			onGaveUp()
-			return
-		}
-		nextChallengePromise.succeed(
-			NIOSSHUserAuthenticationOffer(
-				username: username,
-				serviceName: "",
-				offer: .password(.init(password: password))
-			))
-	}
-}
-
-/// Trust on first use. Records the key the first time and refuses a different
-/// one after that. See KnownHosts for why there is no way to override it here.
-final class TofuHostKeyDelegate: NIOSSHClientServerAuthenticationDelegate, Sendable {
-	private let knownHosts: KnownHosts
-	private let host: String
-	private let port: Int
-	private let onReject: @Sendable (Error) -> Void
-
-	init(knownHosts: KnownHosts, host: String, port: Int, onReject: @escaping @Sendable (Error) -> Void) {
-		self.knownHosts = knownHosts
-		self.host = host
-		self.port = port
-		self.onReject = onReject
-	}
-
-	func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
-		let fingerprint = KnownHosts.fingerprint(ofOpenSSHKey: String(openSSHPublicKey: hostKey))
-		switch knownHosts.verify(host: host, port: port, fingerprint: fingerprint) {
-		case .trusted, .learned:
-			validationCompletePromise.succeed(())
-		case .changed(let expected, let got):
-			let error = TunnelError.hostKeyChanged(expected: expected, got: got)
-			onReject(error)
-			validationCompletePromise.fail(error)
-		}
-	}
-}
-
-/// Bridges two channels: each side writes what it reads into its partner.
-final class GlueHandler {
-	private var partner: GlueHandler?
-	private var context: ChannelHandlerContext?
-	private var pendingRead = false
-	private init() {}
-
-	static func matchedPair() -> (GlueHandler, GlueHandler) {
-		let first = GlueHandler()
-		let second = GlueHandler()
-		first.partner = second
-		second.partner = first
-		return (first, second)
-	}
-
-	private func partnerWrite(_ data: NIOAny) { context?.write(data, promise: nil) }
-	private func partnerFlush() { context?.flush() }
-	private func partnerWriteEOF() { context?.close(mode: .output, promise: nil) }
-	private func partnerCloseFull() { context?.close(promise: nil) }
-	private func partnerBecameWritable() {
-		if pendingRead {
-			pendingRead = false
-			context?.read()
-		}
-	}
-	private var partnerWritable: Bool { context?.channel.isWritable ?? false }
-}
-
-extension GlueHandler: ChannelDuplexHandler {
-	typealias InboundIn = NIOAny
-	typealias OutboundIn = NIOAny
-	typealias OutboundOut = NIOAny
-
-	func handlerAdded(context: ChannelHandlerContext) {
-		self.context = context
-		if context.channel.isWritable { partner?.partnerBecameWritable() }
-	}
-	func handlerRemoved(context: ChannelHandlerContext) {
-		self.context = nil
-		partner = nil
-	}
-	func channelRead(context: ChannelHandlerContext, data: NIOAny) { partner?.partnerWrite(data) }
-	func channelReadComplete(context: ChannelHandlerContext) { partner?.partnerFlush() }
-	func channelInactive(context: ChannelHandlerContext) { partner?.partnerCloseFull() }
-	func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-		if let event = event as? ChannelEvent, case .inputClosed = event {
-			partner?.partnerWriteEOF()
-		}
-	}
-	func errorCaught(context: ChannelHandlerContext, error: Error) { partner?.partnerCloseFull() }
-	func channelWritabilityChanged(context: ChannelHandlerContext) {
-		if context.channel.isWritable { partner?.partnerBecameWritable() }
-	}
-	func read(context: ChannelHandlerContext) {
-		if let partner, partner.partnerWritable {
-			context.read()
-		} else {
-			pendingRead = true
-		}
-	}
-}
-
-/// Wraps and unwraps raw bytes as SSHChannelData on an SSH child channel.
-final class SSHWrapperHandler: ChannelDuplexHandler {
-	typealias InboundIn = SSHChannelData
-	typealias InboundOut = ByteBuffer
-	typealias OutboundIn = ByteBuffer
-	typealias OutboundOut = SSHChannelData
-
-	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-		let data = unwrapInboundIn(data)
-		guard case .channel = data.type, case .byteBuffer(let buffer) = data.data else {
-			context.fireErrorCaught(TunnelError.invalidData)
-			return
-		}
-		context.fireChannelRead(wrapInboundOut(buffer))
-	}
-
-	func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
-		let buffer = unwrapOutboundIn(data)
-		context.write(wrapOutboundOut(SSHChannelData(type: .channel, data: .byteBuffer(buffer))), promise: promise)
-	}
-}
-
-final class CloseOnErrorHandler: ChannelInboundHandler {
-	typealias InboundIn = Any
-	func errorCaught(context: ChannelHandlerContext, error: Error) {
-		context.close(promise: nil)
-	}
-}
 
 /// Minimal SOCKS5 server: no authentication, CONNECT only. On CONNECT it opens
-/// an SSH direct-tcpip channel to the requested target and glues the two
-/// together, so WKWebView's request comes out on the deck machine.
+/// a WebSocket to deck's `/api/tunnel` for the requested port and hands the
+/// connection to a `WebSocketBridge`, so WKWebView's request comes out on the
+/// deck machine.
 final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 	typealias InboundIn = ByteBuffer
 	typealias OutboundOut = ByteBuffer
@@ -245,16 +13,17 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 	private enum State { case greeting, request, piping }
 	private var state: State = .greeting
 	private var buffer: ByteBuffer?
-	private let sshChannel: Channel
+	private var bridge: WebSocketBridge?
+	private let config: DevTunnel.Config
 	private let onForward: @Sendable (String, Int) -> Void
 	private let onForwardError: @Sendable (String) -> Void
 
 	init(
-		sshChannel: Channel,
+		config: DevTunnel.Config,
 		onForward: @escaping @Sendable (String, Int) -> Void,
 		onForwardError: @escaping @Sendable (String) -> Void
 	) {
-		self.sshChannel = sshChannel
+		self.config = config
 		self.onForward = onForward
 		self.onForwardError = onForwardError
 	}
@@ -267,6 +36,12 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 		var incoming = unwrapInboundIn(data)
 		if buffer == nil { buffer = incoming } else { buffer!.writeBuffer(&incoming) }
 		advance(context: context)
+	}
+
+	/// The web view gave up before deck answered.
+	func channelInactive(context: ChannelHandlerContext) {
+		bridge?.cancel()
+		context.fireChannelInactive()
 	}
 
 	private func advance(context: ChannelHandlerContext) {
@@ -326,8 +101,7 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 				.joined(separator: ":")
 			index = 20
 		default:
-			sendReply(context: context, success: false)
-			context.close(promise: nil)
+			refuse(context.channel, 0x01)
 			return
 		}
 
@@ -336,92 +110,165 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 		buffer = buf
 
 		guard command == 0x01 else { // CONNECT only
-			sendReply(context: context, success: false)
-			context.close(promise: nil)
+			refuse(context.channel, 0x01)
+			return
+		}
+		guard LoopbackHost.isTunnelTarget(host), let request = config.request(port: port) else {
+			onForwardError("\(host):\(port) is not on the deck machine")
+			refuse(context.channel, 0x02) // not allowed by ruleset
 			return
 		}
 
 		state = .piping
-		openForward(context: context, host: LoopbackHost.target(host), port: port)
+		openForward(context: context, request: request, host: LoopbackHost.target(host), port: port)
 	}
 
-	/// The one seam in the whole tunnel: everything above decides *what* to
-	/// connect to, this decides *how*. Swapping SSH for a relay on deck's own
-	/// token is a change to this function and nothing else.
-	private func openForward(context: ChannelHandlerContext, host: String, port: Int) {
+	private func openForward(context: ChannelHandlerContext, request: URLRequest, host: String, port: Int) {
 		onForward(host, port)
 		let inbound = context.channel
-		let eventLoop = context.eventLoop
-
-		let sshHandler: NIOSSHHandler
-		do {
-			sshHandler = try sshChannel.pipeline.syncOperations.handler(type: NIOSSHHandler.self)
-		} catch {
-			sendReply(context: context, success: false)
-			context.close(promise: nil)
-			return
-		}
-
-		let originator = inbound.remoteAddress ?? (try? SocketAddress(ipAddress: "127.0.0.1", port: 0))
-		guard let originator else {
-			sendReply(context: context, success: false)
-			context.close(promise: nil)
-			return
-		}
-		let directTCPIP = SSHChannelType.DirectTCPIP(
-			targetHost: host,
-			targetPort: port,
-			originatorAddress: originator
-		)
-
-		let (ours, theirs) = GlueHandler.matchedPair()
-		let promise = eventLoop.makePromise(of: Channel.self)
-
-		sshHandler.createChannel(promise, channelType: .directTCPIP(directTCPIP)) { childChannel, channelType in
-			guard case .directTCPIP = channelType else {
-				return childChannel.eventLoop.makeFailedFuture(TunnelError.invalidChannelType)
-			}
-			return childChannel.eventLoop.makeCompletedFuture {
-				let sync = childChannel.pipeline.syncOperations
-				try sync.addHandler(SSHWrapperHandler())
-				try sync.addHandler(ours)
-				try sync.addHandler(CloseOnErrorHandler())
-			}
-		}
-
-		promise.futureResult.whenComplete { [weak self] result in
+		let bridge = WebSocketBridge(request: request, eventLoop: context.eventLoop)
+		self.bridge = bridge
+		bridge.open { [weak self] failure in
 			guard let self else { return }
-			switch result {
-			case .success:
-				do {
-					try inbound.pipeline.syncOperations.addHandler(theirs)
-				} catch {
-					inbound.close(promise: nil)
-					return
-				}
-				self.sendReply(channel: inbound, success: true)
-				inbound.pipeline.removeHandler(self).whenComplete { _ in }
-			case .failure(let error):
-				// Usually AllowTcpForwarding off on the server, or nothing
-				// listening on that port.
-				self.onForwardError("\(host):\(port) — \(error)")
-				self.sendReply(channel: inbound, success: false)
+			if let failure {
+				self.onForwardError("\(host):\(port): \(failure)")
+				self.refuse(inbound, 0x01)
+				return
+			}
+			guard inbound.isActive else { return bridge.cancel() }
+			self.reply(inbound, 0x00)
+			do {
+				try inbound.pipeline.syncOperations.addHandler(bridge)
+			} catch {
+				bridge.cancel()
 				inbound.close(promise: nil)
+				return
+			}
+			inbound.pipeline.removeHandler(self, promise: nil)
+		}
+	}
+
+	private func refuse(_ channel: Channel, _ code: UInt8) {
+		reply(channel, code)
+		channel.close(promise: nil)
+	}
+
+	private func reply(_ channel: Channel, _ code: UInt8) {
+		var reply = channel.allocator.buffer(capacity: 10)
+		reply.writeBytes([0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+		channel.writeAndFlush(reply, promise: nil)
+	}
+}
+
+/// One proxied connection: the web view's socket on one side, a WebSocket to
+/// deck on the other, raw TCP bytes as binary messages both ways.
+///
+/// Ordered and backpressured: reads from the web view are held while a send is
+/// outstanding, and the next WebSocket message is only asked for once the last
+/// one has been written. URLSession calls back on its own queue, so every
+/// callback hops to the event loop before touching state, which is what makes
+/// the unchecked Sendable hold.
+final class WebSocketBridge: NSObject, ChannelDuplexHandler, URLSessionWebSocketDelegate, @unchecked Sendable {
+	typealias InboundIn = ByteBuffer
+	typealias OutboundIn = ByteBuffer
+	typealias OutboundOut = ByteBuffer
+
+	private static let session = URLSession(configuration: .ephemeral)
+
+	private let task: URLSessionWebSocketTask
+	private let eventLoop: EventLoop
+	private var whenSettled: ((String?) -> Void)?
+	private var context: ChannelHandlerContext?
+	private var sending = 0
+	private var readHeld = false
+
+	init(request: URLRequest, eventLoop: EventLoop) {
+		task = Self.session.webSocketTask(with: request)
+		self.eventLoop = eventLoop
+		super.init()
+	}
+
+	/// `settled` runs on the event loop once: nil when the WebSocket is open,
+	/// or the reason it never opened.
+	func open(_ settled: @escaping (String?) -> Void) {
+		whenSettled = settled
+		// The default 1 MB would fail any larger chunk deck forwards.
+		task.maximumMessageSize = 16 << 20
+		task.delegate = self
+		task.resume()
+	}
+
+	func cancel() { task.cancel(with: .normalClosure, reason: nil) }
+
+	private func settle(_ reason: String?) {
+		eventLoop.execute {
+			let settled = self.whenSettled
+			self.whenSettled = nil
+			settled?(reason)
+		}
+	}
+
+	func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+		settle(nil)
+	}
+
+	/// Only matters before the open: a refused upgrade, where the status (401,
+	/// 404) says more than the error.
+	func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+		let status = (task.response as? HTTPURLResponse)?.statusCode
+		settle(status.map { "deck answered \($0)" } ?? error?.localizedDescription ?? "closed")
+	}
+
+	func handlerAdded(context: ChannelHandlerContext) {
+		self.context = context
+		receive()
+	}
+
+	func handlerRemoved(context: ChannelHandlerContext) {
+		self.context = nil
+	}
+
+	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+		let bytes = Data(unwrapInboundIn(data).readableBytesView)
+		sending += 1
+		task.send(.data(bytes)) { error in
+			self.eventLoop.execute {
+				self.sending -= 1
+				if error != nil { return self.close() }
+				if self.sending == 0, self.readHeld {
+					self.readHeld = false
+					self.context?.read()
+				}
 			}
 		}
 	}
 
-	private func sendReply(context: ChannelHandlerContext, success: Bool) {
-		context.writeAndFlush(wrapOutboundOut(Self.reply(context.channel.allocator, success)), promise: nil)
+	func read(context: ChannelHandlerContext) {
+		if sending > 0 { readHeld = true } else { context.read() }
 	}
 
-	private func sendReply(channel: Channel, success: Bool) {
-		channel.writeAndFlush(Self.reply(channel.allocator, success), promise: nil)
+	func channelInactive(context: ChannelHandlerContext) {
+		cancel()
+		context.fireChannelInactive()
 	}
 
-	private static func reply(_ allocator: ByteBufferAllocator, _ success: Bool) -> ByteBuffer {
-		var reply = allocator.buffer(capacity: 10)
-		reply.writeBytes([0x05, success ? 0x00 : 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
-		return reply
+	func errorCaught(context: ChannelHandlerContext, error: Error) {
+		context.close(promise: nil)
 	}
+
+	private func receive() {
+		task.receive { result in
+			self.eventLoop.execute {
+				guard let context = self.context else { return }
+				guard case .success(.data(let data)) = result else {
+					log.info("tunnel stream ended: \(String(describing: result), privacy: .public)")
+					return self.close()
+				}
+				context.writeAndFlush(self.wrapOutboundOut(context.channel.allocator.buffer(bytes: data)))
+					.whenSuccess { self.receive() }
+			}
+		}
+	}
+
+	private func close() { context?.close(promise: nil) }
 }

@@ -84,8 +84,26 @@ function tailscaleServe(): Plugin | false {
 	};
 }
 
+// The dev browser's /api/tunnel WebSocket (src/lib/server/tunnel.ts). Loaded
+// through vite's SSR graph, the same module instance SvelteKit uses.
+function tunnelUpgrade(): Plugin {
+	return {
+		name: 'deck-tunnel',
+		apply: 'serve',
+		configureServer(server) {
+			server.httpServer?.on('upgrade', (req, socket, head) => {
+				if (!req.url?.startsWith('/api/tunnel')) return;
+				server
+					.ssrLoadModule('/src/lib/server/tunnel.ts')
+					.then(() => (globalThis as { __deckTunnel?: (...a: unknown[]) => boolean }).__deckTunnel?.(req, socket, head) || socket.destroy())
+					.catch(() => socket.destroy());
+			});
+		}
+	};
+}
+
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit(), tailscaleServe()],
+	plugins: [tailwindcss(), sveltekit(), tailscaleServe(), tunnelUpgrade()],
 	server: {
 		allowedHosts: ['.ts.net'],
 		port: PORT,

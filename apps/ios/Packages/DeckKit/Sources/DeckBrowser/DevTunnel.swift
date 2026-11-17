@@ -1,15 +1,16 @@
+import DeckKit
 import Foundation
 import NIOCore
 import NIOPosix
-import NIOSSH
 import os
 
 /// File-level rather than a static member: the event-loop callbacks log from
 /// off the main actor, and a member of a @MainActor type cannot be read there.
-private let log = Logger(subsystem: "tech.moravec.deck", category: "browser")
+let log = Logger(subsystem: "tech.moravec.deck", category: "browser")
 
-/// Opens an SSH connection to the deck machine and exposes a loopback SOCKS5
-/// listener for WKWebView to point at.
+/// A loopback SOCKS5 listener for WKWebView to point at, carrying each
+/// connection to the deck machine over its own WebSocket to deck's
+/// `/api/tunnel`, signed in with the deck token.
 ///
 /// This is the in-process equivalent of `ssh -D <port>`: no helper binary, no
 /// separate process, and the SOCKS handshake names the target per connection so
@@ -17,34 +18,44 @@ private let log = Logger(subsystem: "tech.moravec.deck", category: "browser")
 /// whole reason the proxy sits on this side rather than publishing one origin
 /// per port from deck: a page on 5173 that asks for 3000 just works.
 ///
-/// Main-actor isolated, so the channels and the stop flag have a single owner.
+/// There is no long-lived connection to lose: each proxied connection dials
+/// fresh, so a network change only breaks what was in flight.
+///
+/// Main-actor isolated, so the listener and its status have a single owner.
 /// The socket work still happens on the event loop; the awaits here only resume
 /// back on main, and the NIO callbacks hop to it.
 @MainActor
 public final class DevTunnel {
 	public struct Config: Equatable, Sendable {
-		public var host: String
-		public var port: Int
-		public var username: String
-		public var password: String
+		public var credentials: Credentials
+		/// Routes through that session's host when it runs on a remote one. Nil
+		/// is the deck machine itself.
+		public var sessionId: String?
+		/// The loopback port the SOCKS5 listener binds, or 0 to take any free
+		/// one. 0 by default: only this app ever connects to it, and a fixed
+		/// number is a clash waiting to happen.
 		public var localPort: Int
 
-		public init(host: String, port: Int, username: String, password: String, localPort: Int) {
-			self.host = host
-			self.port = port
-			self.username = username
-			self.password = password
+		public init(credentials: Credentials, sessionId: String? = nil, localPort: Int = 0) {
+			self.credentials = credentials
+			self.sessionId = sessionId
 			self.localPort = localPort
 		}
 
-		public init?(settings: TunnelSettings, password: String) {
-			guard settings.isComplete else { return nil }
-			self.init(
-				host: settings.host.trimmingCharacters(in: .whitespaces),
-				port: settings.port,
-				username: settings.username.trimmingCharacters(in: .whitespaces),
-				password: password,
-				localPort: settings.localPort)
+		/// The WebSocket upgrade for one proxied connection to `port`.
+		func request(port: Int) -> URLRequest? {
+			guard var components = URLComponents(url: credentials.baseURL, resolvingAgainstBaseURL: false) else {
+				return nil
+			}
+			components.scheme = components.scheme == "https" ? "wss" : "ws"
+			components.path = "/api/tunnel"
+			components.queryItems =
+				[URLQueryItem(name: "port", value: String(port))]
+				+ (sessionId.map { [URLQueryItem(name: "session", value: $0)] } ?? [])
+			guard let url = components.url else { return nil }
+			var request = URLRequest(url: url)
+			request.setValue("Bearer \(credentials.token)", forHTTPHeaderField: "Authorization")
+			return request
 		}
 	}
 
@@ -55,33 +66,43 @@ public final class DevTunnel {
 		case failed(String)
 	}
 
-	/// The app's tunnel. One SSH connection to one machine, holding one loopback
-	/// port, so it belongs to the app rather than to whichever screen asked for
-	/// it. A tunnel per browser view meant leaving the browser and coming back
-	/// built a second one, which could not bind the port the first still held.
-	public static let shared = DevTunnel()
+	/// The app's tunnels, one per route: a session on a remote host reaches that
+	/// host, so its browser cannot share the machine-wide listener. A tunnel per
+	/// browser view instead meant leaving the browser and coming back built a
+	/// second one, which could not bind the port the first still held.
+	///
+	/// shortcut: one listener per session browsed, kept for the app's lifetime;
+	/// prune them if that ever adds up.
+	public static func shared(for sessionId: String?) -> DevTunnel {
+		if let tunnel = tunnels[sessionId ?? ""] { return tunnel }
+		let tunnel = DevTunnel()
+		tunnels[sessionId ?? ""] = tunnel
+		return tunnel
+	}
+
+	private static var tunnels: [String: DevTunnel] = [:]
 
 	/// One event loop for the app's lifetime. A group per tunnel would leak a
 	/// thread every time the browser is opened, and shutting one down from
 	/// `deinit` risks doing it from its own loop.
 	private static let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
-	private let knownHosts: KnownHosts
-	private var sshChannel: Channel?
-	private var socksChannel: Channel?
+	private var listener: Channel?
+	private var boundConfig: Config?
+	/// The port last bound, asked for again on every rebind so the web views'
+	/// proxy configuration stays valid and no tab has to be rebuilt.
+	private var lastPort: Int?
 
 	/// Where the tunnel currently stands, so a screen arriving after the fact
-	/// can show it rather than starting from "not connected" and reconnecting an
-	/// already-live tunnel.
+	/// can show it rather than starting from "not connected".
 	public private(set) var status: Status = .idle
 
 	/// Whatever start or stop is already running. Being main-actor isolated only
 	/// stops the two bodies interleaving between statements, not across their
-	/// awaits, and there are several: auto-connect on open, a tap on Connect, a
-	/// return to the foreground and a backoff retry can all land together. Two
-	/// overlapping starts both find no listener to close, because neither has
-	/// assigned one yet, and then both bind the same port. The second one gets
-	/// EADDRINUSE.
+	/// awaits: opening the browser, a return to the foreground and a dropped
+	/// listener can all land together. Two overlapping starts both find no
+	/// listener to close, because neither has assigned one yet, and then both
+	/// bind the same port. The second one gets EADDRINUSE.
 	private var inFlight: Task<Void, Never>?
 
 	public var onStatus: ((Status) -> Void)?
@@ -89,17 +110,15 @@ public final class DevTunnel {
 	public var onForward: ((String, Int) -> Void)?
 	public var onForwardError: ((String) -> Void)?
 
-	public init(knownHosts: KnownHosts = KnownHosts()) {
-		self.knownHosts = knownHosts
-	}
+	public init() {}
 
 	public func start(_ config: Config) async {
-		await serialised { await self.connect(config) }
+		await serialised { await self.bind(config) }
 	}
 
 	public func stop() async {
 		await serialised {
-			await self.closeChannels()
+			await self.closeListener()
 			self.report(.idle)
 		}
 	}
@@ -115,128 +134,82 @@ public final class DevTunnel {
 		await task.value
 	}
 
-	private func connect(_ config: Config) async {
-		// Clean slate first, or the SOCKS listener's old bind fails the new one
-		// with "address already in use".
-		await closeChannels()
-		report(.connecting)
-
+	/// Rebind unless the listener is still up for this config. iOS reclaims
+	/// listening sockets while suspended; one still alive is left alone, so a
+	/// reload tapped on return to the foreground never lands in a rebind gap.
+	private func bind(_ config: Config) async {
+		if let listener, listener.isActive, boundConfig == config { return }
+		await closeListener()
+		if case .connected = status {} else { report(.connecting) }
+		let preferred = lastPort ?? config.localPort
 		do {
-			let authPromise = Self.group.next().makePromise(of: Void.self)
-			let authHandler = AuthEventHandler(authPromise)
-			let auth = PasswordAuthDelegate(
-				username: config.username,
-				password: config.password,
-				onGaveUp: { authHandler.reject(TunnelError.authFailed) })
-			let hostKeys = TofuHostKeyDelegate(
-				knownHosts: knownHosts,
-				host: config.host,
-				port: config.port,
-				onReject: { authHandler.reject($0) })
-
-			// Bounded, so an unreachable or firewalled host fails visibly rather
-			// than hanging on the default TCP timeout.
-			let ssh = try await ClientBootstrap(group: Self.group)
-				.connectTimeout(.seconds(12))
-				.channelInitializer { channel in
-					channel.eventLoop.makeCompletedFuture {
-						let handler = NIOSSHHandler(
-							role: .client(.init(userAuthDelegate: auth, serverAuthDelegate: hostKeys)),
-							allocator: channel.allocator,
-							inboundChildChannelInitializer: nil)
-						try channel.pipeline.syncOperations.addHandler(handler)
-						try channel.pipeline.syncOperations.addHandler(authHandler)
-						try channel.pipeline.syncOperations.addHandler(CloseOnErrorHandler())
-					}
-				}
-				.connect(host: config.host, port: config.port)
-				.get()
-			sshChannel = ssh
-
-			// TCP being up is not the tunnel being up. Wait for authentication.
-			let timeout = ssh.eventLoop.scheduleTask(in: .seconds(15)) { authHandler.timeOut() }
-			authPromise.futureResult.whenComplete { _ in timeout.cancel() }
-			try await authPromise.futureResult.get()
-
-			// Called from the event loop, so each one hops to main rather than
-			// touching the callbacks where it stands.
-			let forwarded: @Sendable (String, Int) -> Void = { [weak self] host, port in
-				Task { @MainActor in self?.onForward?(host, port) }
+			let server: Channel
+			do {
+				server = try await listen(config, port: preferred)
+			} catch where preferred != config.localPort {
+				server = try await listen(config, port: config.localPort)
 			}
-			let refused: @Sendable (String) -> Void = { [weak self] reason in
-				log.error("forward refused: \(reason, privacy: .public)")
-				Task { @MainActor in self?.onForwardError?(reason) }
-			}
-
-			let server = try await ServerBootstrap(group: Self.group)
-				.serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-				.childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
-				.childChannelInitializer { inbound in
-					inbound.eventLoop.makeCompletedFuture {
-						try inbound.pipeline.syncOperations.addHandler(
-							SOCKS5Handler(sshChannel: ssh, onForward: forwarded, onForwardError: refused))
-					}
-				}
-				.bind(host: "127.0.0.1", port: config.localPort)
-				.get()
-			socksChannel = server
-			// The port we got, not the one we asked for. With 0 the kernel picks,
-			// and even with a number the only truth is what the socket bound.
-			let bound = server.localAddress?.port ?? config.localPort
+			listener = server
+			boundConfig = config
+			// The port we got, not the one we asked for. With 0 the kernel picks.
+			let bound = server.localAddress?.port ?? preferred
+			lastPort = bound
 			log.info("SOCKS5 listening on 127.0.0.1:\(bound, privacy: .public)")
 			report(.connected(localPort: bound))
 
-			// Once we are up, a drop is a failure rather than a clean stop. Free
-			// the listener with it so the next attempt can rebind the port.
-			//
-			// Identity, not a flag: this fires after a hop to the main actor, so
-			// a flag set during a deliberate teardown has already been cleared by
-			// the start that replaced us, and every restart would report a drop
-			// it caused itself. If this is no longer the live connection, its
-			// closing is expected and nobody needs telling.
-			ssh.closeFuture.whenComplete { [weak self] _ in
+			// Identity, not a flag: this fires after a hop to the main actor, by
+			// when a deliberate rebind has already replaced the listener.
+			server.closeFuture.whenComplete { [weak self] _ in
 				Task { @MainActor in
-					guard let self, self.sshChannel === ssh else { return }
-					self.socksChannel?.close(promise: nil)
-					self.socksChannel = nil
-					self.sshChannel = nil
-					self.report(.failed("connection dropped"))
+					guard let self, self.listener === server else { return }
+					self.listener = nil
+					await self.start(config)
 				}
 			}
 		} catch {
-			let reason = Self.readable(error, config: config)
-			log.error("connect failed: \(reason, privacy: .public)")
-			// Tear down without reporting idle, so the reason stays on screen.
-			await closeChannels()
+			let reason = Self.readable(error, port: preferred)
+			log.error("listen failed: \(reason, privacy: .public)")
 			report(.failed(reason))
 		}
 	}
 
+	private func listen(_ config: Config, port: Int) async throws -> Channel {
+		// Called from the event loop, so each one hops to main rather than
+		// touching the callbacks where it stands.
+		let forwarded: @Sendable (String, Int) -> Void = { [weak self] host, port in
+			Task { @MainActor in self?.onForward?(host, port) }
+		}
+		let refused: @Sendable (String) -> Void = { [weak self] reason in
+			log.error("forward refused: \(reason, privacy: .public)")
+			Task { @MainActor in self?.onForwardError?(reason) }
+		}
+		return try await ServerBootstrap(group: Self.group)
+			.serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+			.childChannelInitializer { inbound in
+				inbound.eventLoop.makeCompletedFuture {
+					try inbound.pipeline.syncOperations.addHandler(
+						SOCKS5Handler(config: config, onForward: forwarded, onForwardError: refused))
+				}
+			}
+			.bind(host: "127.0.0.1", port: port)
+			.get()
+	}
+
 	/// NIO reports a taken port as `bind(descriptor:ptr:bytes:): Address already
 	/// in use (errno: 48)`, which says nothing about which port or what to do.
-	private static func readable(_ error: Error, config: Config) -> String {
-		if let tunnel = error as? TunnelError { return tunnel.description }
+	private static func readable(_ error: Error, port: Int) -> String {
 		if let io = error as? IOError, io.errnoCode == EADDRINUSE {
-			return "local port \(config.localPort) is taken. Pick another one."
+			return "local port \(port) is taken"
 		}
 		return "\(error)"
 	}
 
-	/// Accept the machine's current host key next time. The way out of a
-	/// mismatch whose cause you know.
-	public func forgetHostKey(_ config: Config) {
-		knownHosts.forget(host: config.host, port: config.port)
-	}
-
-	/// Forget the channels before closing them, so the drop handler sees it is
-	/// no longer the live connection and stays quiet.
-	private func closeChannels() async {
-		let socks = socksChannel
-		let ssh = sshChannel
-		socksChannel = nil
-		sshChannel = nil
-		try? await socks?.close().get()
-		try? await ssh?.close().get()
+	/// Forget the listener before closing it, so the close handler sees it is
+	/// no longer the live one and stays quiet.
+	private func closeListener() async {
+		let server = listener
+		listener = nil
+		try? await server?.close().get()
 	}
 
 	private func report(_ status: Status) {

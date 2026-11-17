@@ -3,12 +3,12 @@ import DeckKit
 import SwiftUI
 
 /// The dev browser in its own window: a tab per dev-server port across every
-/// session, an address bar, and the SSH tunnel to the deck machine. When deck
+/// session, an address bar, and the tunnel through deck to its machine. When deck
 /// runs on this Mac there is no tunnel; pages load straight from loopback.
 struct MacBrowserView: View {
 	@Environment(DeckStore.self) private var store
 	@State private var model: BrowserModel?
-	@State private var modelOrigin: URL?
+	@State private var modelCredentials: Credentials?
 	@State private var address = ""
 	@State private var showingTunnel = false
 
@@ -24,7 +24,7 @@ struct MacBrowserView: View {
 		}
 		.frame(minWidth: 640, minHeight: 420)
 		.navigationTitle("Browser")
-		.task(id: store.client?.credentials.baseURL) { await begin() }
+		.task(id: store.client?.credentials) { await begin() }
 		.sheet(isPresented: $showingTunnel) {
 			if let model {
 				TunnelSheet(model: model)
@@ -138,7 +138,7 @@ struct MacBrowserView: View {
 				.multilineTextAlignment(.center)
 				.foregroundStyle(.secondary)
 			if !model.isConnected, !model.isDirect {
-				Button("Set Up the Tunnel") { showingTunnel = true }
+				Button("Reconnect") { model.connect() }
 					.buttonStyle(.borderedProminent)
 			} else {
 				Button("Try Again") { model.reload(tab) }
@@ -166,13 +166,13 @@ struct MacBrowserView: View {
 	}
 
 	private func begin() async {
-		guard let origin = store.client?.credentials.baseURL else { return }
+		guard let credentials = store.client?.credentials else { return }
 		// Signing in to another deck can change whether it is on this machine.
-		if model == nil || modelOrigin != origin {
-			model = BrowserModel(deckOrigin: origin)
-			modelOrigin = origin
+		if model == nil || modelCredentials != credentials {
+			model = BrowserModel(credentials: credentials)
+			modelCredentials = credentials
 			address = ""
-			model?.connectIfConfigured()
+			model?.connect()
 		}
 		while !Task.isCancelled {
 			if let servers = await BrowserServers.current(store: store, sessionId: nil) {

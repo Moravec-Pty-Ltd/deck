@@ -7,7 +7,7 @@ import WebKit
 /// A browser for the dev servers running on the deck machine.
 ///
 /// The machine deck runs on is never this one, so `http://localhost:5173` means
-/// nothing here. Every load goes through an SSH tunnel to that machine instead,
+/// nothing here. Every load goes through deck to that machine instead,
 /// which is why this is a web view of our own rather than a link out to Safari:
 /// only a web view we configure can be pointed at a proxy.
 ///
@@ -16,7 +16,8 @@ import WebKit
 struct BrowserView: View {
 	/// Whose dev servers to show, or nil for every session's. The tunnel reaches
 	/// the whole machine, so a browser opened from the tab bar is not about one
-	/// session; one opened from a session is.
+	/// session; one opened from a session is, and tunnels to that session's
+	/// host when it runs on a remote one.
 	var sessionId: String?
 	/// An address to land on, from a server's preview link. Nil opens on whatever
 	/// the dev config says is primary.
@@ -44,9 +45,9 @@ struct BrowserView: View {
 		.navigationBarTitleDisplayMode(.inline)
 		.task { await begin() }
 		.onChange(of: scenePhase) { _, phase in
-			// iOS suspends sockets in the background, so the tunnel is usually
-			// dead by the time you come back to it.
-			if phase == .active { model?.reconnectIfNeeded() }
+			// iOS reclaims listening sockets in the background, so rebind on
+			// the way back.
+			if phase == .active { model?.connect() }
 		}
 		.toolbar {
 			if isModal {
@@ -135,7 +136,7 @@ struct BrowserView: View {
 						.multilineTextAlignment(.center)
 						.foregroundStyle(.secondary)
 					if !model.isConnected, !model.isDirect {
-						Button("Set up the tunnel") { showingTunnel = true }
+						Button("Reconnect") { model.connect() }
 							.buttonStyle(.borderedProminent)
 					} else {
 						Button("Try again") { model.reload(tab) }
@@ -230,8 +231,8 @@ struct BrowserView: View {
 
 	private func begin() async {
 		if model == nil {
-			model = BrowserModel(deckOrigin: store.client?.credentials.baseURL)
-			model?.connectIfConfigured()
+			model = BrowserModel(credentials: store.client?.credentials, sessionId: sessionId)
+			model?.connect()
 		}
 		await poll()
 	}
