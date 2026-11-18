@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="color-scheme" content="light dark" />
+		<title>Dev browser</title>
+		<style>
+			:root { --line: #8884; --hover: #8882; --active: #8883; }
+			* { box-sizing: border-box; }
+			html, body { margin: 0; height: 100%; overflow: hidden; }
+			body { font: 13px/1.3 system-ui, sans-serif; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); user-select: none; }
+			#tabs { display: flex; gap: 2px; padding: 6px 6px 0; overflow-x: auto; scrollbar-width: none; }
+			.tab { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 14rem; padding: 0 4px 0 10px; height: 30px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+			.tab:hover { background: var(--hover); }
+			.tab[aria-selected='true'] { background: var(--active); border-color: var(--line); }
+			.tab.idle .name { opacity: 0.5; }
+			.name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+			#bar { display: flex; align-items: center; gap: 4px; padding: 6px; }
+			button.icon { width: 30px; height: 30px; flex: none; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; display: grid; place-items: center; padding: 0; }
+			.tab button.icon { width: 22px; height: 22px; }
+			button.icon:hover { background: var(--hover); }
+			button.icon:disabled { opacity: 0.35; cursor: default; background: none; }
+			.i { width: 16px; height: 16px; background: currentColor; mask: var(--src) center / contain no-repeat; }
+			.tab .i { width: 13px; height: 13px; }
+			#address { flex: 1; min-width: 0; height: 30px; padding: 0 10px; font: inherit; color: inherit; background: var(--hover); border: 1px solid transparent; border-radius: 6px; user-select: text; }
+			#address:focus { outline: none; border-color: #2563eb; background: transparent; }
+			#note { display: none; padding: 0 10px; color: #dc2626; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+			#note.shown { display: block; }
+		</style>
+	</head>
+	<body>
+		<div id="tabs" role="tablist" aria-label="Tabs">
+			<button id="new" class="icon" title="New tab" aria-label="New tab"><span class="i" style="--src: url(icons/plus.svg)"></span></button>
+		</div>
+		<div id="bar">
+			<button id="back" class="icon" title="Back" aria-label="Back"><span class="i" style="--src: url(icons/arrow-left.svg)"></span></button>
+			<button id="forward" class="icon" title="Forward" aria-label="Forward"><span class="i" style="--src: url(icons/arrow-right.svg)"></span></button>
+			<button id="reload" class="icon" title="Reload" aria-label="Reload"><span class="i" style="--src: url(icons/rotate-cw.svg)"></span></button>
+			<input id="address" type="text" spellcheck="false" autocomplete="off" placeholder="localhost:5173" aria-label="Address" />
+			<span id="note" role="status"></span>
+		</div>
+		<script>
+			// The tab list lives here; the shell (browser.rs) owns a webview per tab
+			// and calls onPage and openTab as pages change or ask for a new tab.
+			const invoke = window.__TAURI_INTERNALS__.invoke;
+			const $ = (id) => document.getElementById(id);
+			// { id, title, url, port?, listening, loaded }. A tab with a port comes from
+			// a dev server and follows it; one without was opened by hand.
+			let tabs = [];
+			let active = null;
+			let next = 0;
+
+			const current = () => tabs.find((t) => t.id === active);
+			// Resolves false (and shows why) when the shell refused.
+			const tab = (cmd, t, address) =>
+				invoke('browser_tab', { tab: t.id, action: cmd, address }).then(
+					() => true,
+					(e) => (note(e), false)
+				);
+
+			function note(text) {
+				$('note').textContent = text ? String(text) : '';
+				$('note').classList.toggle('shown', !!text);
+			}
+
+			function render() {
+				for (const el of [...document.querySelectorAll('.tab')]) el.remove();
+				for (const t of tabs) {
+					const el = document.createElement('div');
+					el.className = 'tab' + (t.listening === false ? ' idle' : '');
+					el.setAttribute('role', 'tab');
+					el.setAttribute('aria-selected', String(t.id === active));
+					el.title = t.url || t.title;
+					const name = document.createElement('span');
+					name.className = 'name';
+					name.textContent = t.title;
+					const close = document.createElement('button');
+					close.className = 'icon';
+					close.title = close.ariaLabel = 'Close tab';
+					close.innerHTML = '<span class="i" style="--src: url(icons/x.svg)"></span>';
+					close.onclick = (e) => {
+						e.stopPropagation();
+						closeTab(t);
+					};
+					el.append(name, close);
+					el.onclick = () => select(t);
+					$('tabs').insertBefore(el, $('new'));
+				}
+				const t = current();
+				if (document.activeElement !== $('address')) $('address').value = t?.url ?? '';
+				for (const id of ['back', 'forward', 'reload']) $(id).disabled = !t?.loaded;
+			}
+
+			async function go(t, address) {
+				const was = { loaded: t.loaded, url: t.url, active };
+				Object.assign(t, { loaded: true, url: address });
+				active = t.id;
+				render();
+				if (await tab('open', t, address)) return note('');
+				Object.assign(t, { loaded: was.loaded, url: was.url });
+				active = was.active;
+				render();
+			}
+
+			function select(t) {
+				if (!t.loaded) return go(t, t.url);
+				active = t.id;
+				render();
+				tab('show', t);
+			}
+
+			function closeTab(t) {
+				const i = tabs.indexOf(t);
+				tabs.splice(i, 1);
+				if (t.loaded) tab('close', t);
+				if (active === t.id) {
+					const neighbour = tabs[i] ?? tabs[i - 1];
+					active = null;
+					if (neighbour) return select(neighbour);
+					$('address').focus();
+				}
+				render();
+			}
+
+			function blank() {
+				const t = { id: `t${next++}`, title: 'New tab', url: '', listening: true };
+				tabs.push(t);
+				active = t.id;
+				render();
+				$('address').focus();
+				return t;
+			}
+
+			// From the shell: a page asked for a new window.
+			window.openTab = (url) => {
+				const t = { id: `t${next++}`, title: url, url, listening: true };
+				tabs.push(t);
+				go(t, url);
+			};
+
+			window.onPage = ({ tab: id, url, title }) => {
+				const t = tabs.find((t) => t.id === id);
+				if (!t) return;
+				if (url && url !== 'about:blank') t.url = url;
+				t.title = title || t.url.replace(/^https?:\/\//, '').replace(/\/$/, '') || t.title;
+				render();
+			};
+
+			// Server tabs follow the dev servers: a new port gets a tab, and a gone one
+			// loses it unless it was opened (then it greys, for a restart to bring back).
+			async function refresh() {
+				let fresh;
+				try {
+					fresh = await invoke('browser_servers');
+				} catch (e) {
+					return note(e);
+				}
+				note('');
+				for (const t of tabs.filter((t) => t.port && !fresh.some((f) => f.port === t.port))) {
+					if (t.loaded) t.listening = false;
+					else tabs.splice(tabs.indexOf(t), 1);
+				}
+				const derived = fresh.map((f) => {
+					const t = tabs.find((t) => t.port === f.port);
+					if (!t) return { id: `p${f.port}`, title: f.title, url: f.url, port: f.port, listening: f.listening };
+					t.listening = f.listening;
+					if (!t.loaded) t.title = f.title;
+					return t;
+				});
+				tabs = [...derived, ...tabs.filter((t) => !derived.includes(t))];
+				render();
+			}
+
+			$('new').onclick = blank;
+			$('back').onclick = () => current() && tab('back', current());
+			$('forward').onclick = () => current() && tab('forward', current());
+			$('reload').onclick = () => current() && tab('reload', current());
+			$('address').addEventListener('keydown', (e) => {
+				if (e.key === 'Escape') {
+					$('address').value = current()?.url ?? '';
+					$('address').select();
+				}
+				if (e.key !== 'Enter' || !$('address').value.trim()) return;
+				go(current() ?? blank(), $('address').value.trim());
+				$('address').blur();
+			});
+			// Select it all on the first click, as a browser does; the click's own
+			// mouseup would otherwise drop the selection.
+			let focusing = false;
+			$('address').addEventListener('focus', () => {
+				$('address').select();
+				focusing = true;
+			});
+			$('address').addEventListener('mouseup', (e) => {
+				if (focusing) e.preventDefault();
+				focusing = false;
+			});
+			addEventListener('keydown', (e) => {
+				if (e.ctrlKey && e.key === 'l') {
+					e.preventDefault();
+					$('address').focus();
+				}
+				if (e.ctrlKey && e.key === 't') {
+					e.preventDefault();
+					blank();
+				}
+				if ((e.ctrlKey && e.key === 'r') || e.key === 'F5') {
+					e.preventDefault();
+					current()?.loaded && tab('reload', current());
+				}
+			});
+
+			refresh().then(() => {
+				if (tabs[0]) select(tabs[0]);
+				else blank();
+			});
+			setInterval(refresh, 5000);
+		</script>
+	</body>
+</html>
