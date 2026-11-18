@@ -14,6 +14,7 @@
 	import { modelLabel } from '$lib/models';
 	import { effortLabel } from '$lib/effort';
 	import MessageBubble from './MessageBubble.svelte';
+	import { eventTime } from '$lib/message-time';
 	import Markdown from './Markdown.svelte';
 	import ToolCall from './ToolCall.svelte';
 	import ToolRun from './ToolRun.svelte';
@@ -965,6 +966,7 @@
 				markdown
 				bubbleClass="bg-base-100 text-base-content"
 				sessionId={session.id}
+				time={eventTime(event)}
 				onread={voiceAvailable ? (t) => void voice.readAloud(t) : undefined}
 			/>
 		{:else if block.type === 'thinking'}
@@ -998,7 +1000,13 @@
 			</ToolCall>
 		{/if}
 	{:else if event.type === 'deck.user'}
-		<MessageBubble side="end" text={event.text ?? ''} bubbleClass="bg-base-300 text-base-content" sessionId={session.id}>
+		<MessageBubble
+			side="end"
+			text={event.text ?? ''}
+			bubbleClass="bg-base-300 text-base-content"
+			sessionId={session.id}
+			time={eventTime(event)}
+		>
 			{#if event.images?.length}
 				<div class="mb-2 flex flex-wrap gap-2">
 					{#each event.images as img, k (k)}
