@@ -22,6 +22,12 @@ export function openEditor(command: string): void {
 	void ipc?.invoke('open_editor', { command }).catch(() => {});
 }
 
+// The shell's dev browser on a session's dev servers (on its host, for a remote
+// session). A shell from before the dev browser refuses the call.
+export function openDevBrowser(session: string): void {
+	void ipc?.invoke('open_dev_browser', { session }).catch(() => {});
+}
+
 // Hands the shell what the nav's inbox badge counts: the tray shows the count
 // and lists the rows, and a new ask raises a notification tagged with its
 // session or run, so the shell replaces rather than stacks them. The first load

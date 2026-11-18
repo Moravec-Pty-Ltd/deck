@@ -3,7 +3,7 @@
 A thin Tauri v2 shell around the deck web app. It opens your deck server in a
 window and adds what a browser tab can't: a tray icon with the count of what
 needs you, native notifications, Open in Zed, `deck://` links, one window per
-app, and a global show/hide shortcut. The UI is the web app the server serves,
+app, a global show/hide shortcut, and a dev browser. The UI is the web app the server serves,
 so a server update needs no new shell.
 
 ## Install
@@ -16,6 +16,12 @@ you install a newer one.
 On first launch, enter the server address (the one you open deck at in a
 browser, for example `https://deck.example.ts.net`), then sign in as usual.
 Settings (server, shortcut, start at login) are in the tray menu.
+
+The dev browser opens from a session's header (Dev browser) or the tray. It
+has a tab for each running dev server of the session (from the tray, of every
+session; deck lists none for a remote session, so type its address), and
+`localhost` in it means the deck machine, or a remote session's host: it loads through deck's tunnel, signed in with the shell's own deck
+sign-in, so there is nothing to set up.
 
 `deck --toggle` shows or hides the window. On GNOME without the global
 shortcuts portal, bind that command to a key in the keyboard settings.
@@ -46,9 +52,12 @@ release in the repo, so other release lines must not take that spot.
 
 - `src/main.rs`: the window, tray, commands, and plugins.
 - `src/core.rs`: the decisions (deck links, where a navigation goes, the Zed
-  command check), unit-tested.
+  command check, the dev browser's addresses and tabs), unit-tested.
+- `src/browser.rs` and `ui/browser.html`: the dev browser window, its toolbar
+  and a webview per tab.
+- `src/tunnel.rs`: the dev browser's proxy (below).
 - `src/linux.rs`: WebKitGTK settings, notifications, and the XDG portals.
-- `ui/index.html`: the settings page.
+- `ui/index.html`: the settings page. `ui/icons`: Lucide icons for the toolbar.
 - `src/lib/shell.ts` in the web app: the bridge, a no-op in a normal browser.
 
 The deck page gets shell commands through a capability granted at run time to
@@ -56,6 +65,14 @@ the configured server's origin only. That includes reading an image off the
 clipboard on paste and, over https or localhost, the microphone, so use an
 https address (tailnet or `tailscale serve`) unless the network path is yours.
 Pages on other origins open in the default browser. A deck page opened in a new tab (a file, say) gets a window of its own.
+
+The dev browser's webviews use a SOCKS5 proxy the shell runs on loopback, with
+a random password only they are given. A loopback host goes over one WebSocket
+to the server's `/api/tunnel` per connection, with the deck token (read from
+the main window's sign-in cookie) in a header; every other host, a CDN say, is
+connected to directly. Unlike WKWebView on Apple, WebKitGTK proxies a literal
+`localhost`, so pages keep the origin a dev server's CORS settings expect. The
+browser keeps its own cookies and storage, apart from deck's.
 
 ## WebKitGTK compared with Chromium
 

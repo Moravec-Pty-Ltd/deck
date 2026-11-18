@@ -52,6 +52,37 @@ pub fn tune_webview(window: &WebviewWindow) {
 	});
 }
 
+// A window's webviews share a vertical box on Linux (Tauri ignores their
+// bounds there), each taking an equal share. The dev browser's toolbar keeps its
+// height, and the one tab shown fills the rest: hidden ones take no space.
+pub fn pin_height(webview: &tauri::Webview, height: i32) {
+	let _ = webview.with_webview(move |webview| {
+		use gtk::prelude::{BoxExt, Cast, WidgetExt};
+		let view = webview.inner();
+		if let Some(parent) = view.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) {
+			parent.set_child_packing(&view, false, false, 0, gtk::PackType::Start);
+		}
+		view.set_size_request(-1, height);
+	});
+}
+
+// Sends a dev browser tab through its proxy (tunnel.rs) and reports its address
+// and title as they change, pushState included. wry's own proxy setting would
+// drop the proxy's password. The tab's WebKit context is its window's alone.
+pub fn browse_through(webview: &tauri::Webview, proxy: String, report: impl Fn(String, String) + Send + 'static) {
+	let _ = webview.with_webview(move |webview| {
+		use webkit2gtk::{NetworkProxyMode, NetworkProxySettings, WebViewExt, WebsiteDataManagerExt};
+		let view = webview.inner();
+		if let Some(manager) = view.website_data_manager() {
+			manager.set_network_proxy_settings(NetworkProxyMode::Custom, Some(&mut NetworkProxySettings::new(Some(&proxy), &[])));
+		}
+		let report = std::rc::Rc::new(move |v: &webkit2gtk::WebView| report(v.uri().unwrap_or_default().into(), v.title().unwrap_or_default().into()));
+		let on_title = report.clone();
+		view.connect_uri_notify(move |v| report(v));
+		view.connect_title_notify(move |v| on_title(v));
+	});
+}
+
 // The page reads a drop once: dropped_files takes it (GTK also fills it while
 // a drag only hovers), and each file can be served once.
 static SERVING: Mutex<Vec<Option<std::path::PathBuf>>> = Mutex::new(Vec::new());
@@ -124,7 +155,7 @@ fn apply_scheme(app: &AppHandle, scheme: ColorScheme) {
 		ColorScheme::PreferLight => Some(Theme::Light),
 		ColorScheme::NoPreference => None,
 	};
-	for window in app.webview_windows().values() {
+	for window in app.windows().values() {
 		let _ = window.set_theme(theme);
 	}
 }

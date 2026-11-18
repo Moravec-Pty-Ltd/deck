@@ -32,7 +32,8 @@
 	import { goto } from '$app/navigation';
 	import { resolveBeside } from '$lib/beside-core';
 	import { markRead } from '$lib/mark-read';
-	import { Menu, X, Ticket, Check, ChevronDown } from '@lucide/svelte';
+	import { Menu, X, Ticket, Check, ChevronDown, AppWindow } from '@lucide/svelte';
+	import { inShell, openDevBrowser } from '$lib/shell';
 	import Popover from '$lib/components/Popover.svelte';
 	import { onMount } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
@@ -535,6 +536,11 @@
 					{#each data.editors as editor (editor.scheme)}
 						<EditorButton {editor} />
 					{/each}
+				{/if}
+				{#if inShell}
+					<button class="btn btn-outline btn-xs header-chip gap-1" onclick={() => openDevBrowser(session.id)} title="Open this session's dev servers in the dev browser" aria-label="Dev browser">
+						<AppWindow size={12} /><span class="hidden sm:inline">Dev browser</span>
+					</button>
 				{/if}
 				{#if serverChip}
 					<RunButton {session} serverState={serverChip} onRefresh={refresh} />

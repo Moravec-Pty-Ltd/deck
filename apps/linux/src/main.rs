@@ -3,7 +3,9 @@
 // links, a global shortcut). It never bundles the web app, so a server update
 // needs no new shell. The web side of the bridge is src/lib/shell.ts.
 
+mod browser;
 mod core;
+mod tunnel;
 #[cfg(target_os = "linux")]
 mod linux;
 
@@ -39,6 +41,7 @@ const SERVER_PERMISSIONS: &[&str] = &[
 	"allow-clipboard-image",
 	"allow-dropped-files",
 	"allow-dropped-file",
+	"allow-open-dev-browser",
 ];
 // Runs in every page. WebKitGTK has no reload key of its own (zoom keys come
 // from zoom_hotkeys_enabled). It also hands the page a pasted image as an empty
@@ -348,6 +351,7 @@ fn tray_menu(app: &AppHandle, attention: &[Attention]) -> tauri::Result<Menu<tau
 	menu.append(&PredefinedMenuItem::separator(app)?)?;
 	menu.append(&MenuItem::with_id(app, "new", "Start a session", true, None::<&str>)?)?;
 	menu.append(&MenuItem::with_id(app, "inbox", "Inbox", true, None::<&str>)?)?;
+	menu.append(&MenuItem::with_id(app, "browser", "Dev browser", true, None::<&str>)?)?;
 	menu.append(&PredefinedMenuItem::separator(app)?)?;
 	menu.append(&MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?)?;
 	menu.append(&MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?)?;
@@ -360,6 +364,14 @@ fn on_menu(app: &AppHandle, id: &str) {
 		"new" => open_path(app, "/?new=1"),
 		"inbox" => open_path(app, "/inbox"),
 		"settings" => open_settings(app),
+		"browser" => {
+			let app = app.clone();
+			tauri::async_runtime::spawn(async move {
+				if let Err(e) = browser::open(app.clone(), None).await {
+					tell(&app, e);
+				}
+			});
+		}
 		"quit" => {
 			let _ = app.save_window_state(StateFlags::all() - StateFlags::VISIBLE);
 			app.exit(0)
@@ -533,6 +545,16 @@ async fn dropped_file(index: usize) -> Result<tauri::ipc::Response, String> {
 	std::fs::read(path).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
 }
 
+// The dev browser on a session's servers, from the deck page's session header.
+#[tauri::command]
+async fn open_dev_browser(app: AppHandle, session: String) -> Result<(), String> {
+	let opened = browser::open(app.clone(), Some(session)).await;
+	if let Err(e) = &opened {
+		tell(&app, e.clone());
+	}
+	opened
+}
+
 // The AppImage updates itself from GitHub releases; a deb updates through apt.
 async fn check_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
 	let Some(update) = app.updater()?.check().await? else { return Ok(()) };
@@ -584,8 +606,10 @@ fn main() {
 		.plugin(tauri_plugin_dialog::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())
 		.manage(Shell::default())
-		.invoke_handler(tauri::generate_handler![get_settings, save_settings, editor_available, open_editor, set_attention, notify, clipboard_image, dropped_files, dropped_file])
+		.invoke_handler(tauri::generate_handler![get_settings, save_settings, editor_available, open_editor, set_attention, notify, clipboard_image, dropped_files, dropped_file, open_dev_browser, browser::browser_servers, browser::browser_tab])
 		.setup(|app| {
+			// reqwest and the tunnel's TLS use the process's crypto provider.
+			let _ = rustls::crypto::ring::default_provider().install_default();
 			let handle = app.handle().clone();
 			if let Some(scratch) = scratch_dir(&handle) {
 				let _ = std::fs::remove_dir_all(scratch);
