@@ -291,6 +291,15 @@ describe('advance: the dev loop', () => {
 });
 
 describe('phase prompts', () => {
+	it('leaves the test suite to the verify step (#408)', () => {
+		const run = devRun();
+		expect(phasePrompt(run, stepById(run, 'implement')!)).toContain('the Tests step runs them next');
+		toReview(run);
+		expect(phasePrompt(run, stepById(run, 'review')!)).toContain('Run no tests');
+		step(run, review([blocker()]));
+		expect(phasePrompt(run, stepById(run, 'fix')!)).toContain('the single test file you changed');
+	});
+
 	it('never hands a review phase the answers or the handoff note', () => {
 		const run = devRun();
 		toReview(run);

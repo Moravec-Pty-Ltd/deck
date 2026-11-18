@@ -3,6 +3,7 @@
 // inside a registered project or its worktrees (confine.ts); a run whose cwd
 // has left that set gets an error, not a command.
 import { execFile, spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,6 +16,7 @@ import type { PushState, WorkflowRun } from '$lib/workflows';
 const exec = promisify(execFile);
 const GH_TIMEOUT_MS = 30_000;
 const VERIFY_TIMEOUT_MS = 20 * 60_000;
+const VERIFY_TICK_MS = 1000;
 const OUTPUT_TAIL = 4000;
 
 function confined(cwd: string): string {
@@ -124,19 +126,39 @@ function killGroup(pid: number | undefined): void {
 
 // Run the verify command; the gate is its exit code. CI=1 keeps test runners out
 // of watch mode. An abort or the timeout stops every process it started.
-export function runVerify(cwd: string, command: string, signal?: AbortSignal): Promise<{ code: number; output: string }> {
-	const child = spawn('sh', ['-c', command], { cwd: confined(cwd), env: { ...process.env, CI: '1' }, detached: true });
+//
+// The timeout counts only time the command is running, not time it spends queued
+// for a shared resource (a test slot other runs hold). A queueing wrapper says it
+// is waiting by creating the file named in DECK_VERIFY_WAIT_FILE and removes it
+// once its turn comes; the clock is paused while that file exists.
+export function runVerify(
+	cwd: string,
+	command: string,
+	signal?: AbortSignal,
+	timeoutMs = VERIFY_TIMEOUT_MS
+): Promise<{ code: number; output: string }> {
+	const waitFile = path.join(os.tmpdir(), `deck-verify-wait-${process.pid}-${crypto.randomUUID()}`);
+	const env = { ...process.env, CI: '1', DECK_VERIFY_WAIT_FILE: waitFile };
+	const child = spawn('sh', ['-c', command], { cwd: confined(cwd), env, detached: true });
 	let output = '';
 	const collect = (chunk: Buffer) => (output = (output + chunk.toString()).slice(-OUTPUT_TAIL));
 	child.stdout.on('data', collect);
 	child.stderr.on('data', collect);
 	const stop = () => killGroup(child.pid);
-	const timer = setTimeout(stop, VERIFY_TIMEOUT_MS);
+	let ran = 0;
+	let last = Date.now();
+	const clock = setInterval(() => {
+		const now = Date.now();
+		if (!fs.existsSync(waitFile)) ran += now - last;
+		last = now;
+		if (ran >= timeoutMs) stop();
+	}, Math.min(VERIFY_TICK_MS, timeoutMs / 4));
 	signal?.addEventListener('abort', stop, { once: true });
 	return new Promise((resolve) => {
 		child.on('error', (e) => collect(Buffer.from(e.message)));
 		child.on('close', (code) => {
-			clearTimeout(timer);
+			clearInterval(clock);
+			fs.rmSync(waitFile, { force: true });
 			signal?.removeEventListener('abort', stop);
 			resolve({ code: code ?? 1, output: output || 'command failed' });
 		});
