@@ -232,6 +232,33 @@ pub fn xdg_trigger(accelerator: &str) -> Option<String> {
 	Some(format!("{}+{key}", out.join("+")).trim_start_matches('+').to_string())
 }
 
+// The update dialog for this run: one at a time, and a version put off with "Later"
+// is not offered again until the next start.
+#[derive(Default)]
+pub struct UpdatePrompt {
+	open: bool,
+	declined: Option<String>,
+}
+
+impl UpdatePrompt {
+	// Claims the dialog for `version`; false when one is up or the user put it off.
+	pub fn offer(&mut self, version: &str) -> bool {
+		if self.open || self.declined.as_deref() == Some(version) {
+			return false;
+		}
+		self.open = true;
+		true
+	}
+
+	// The dialog is gone; `later` is the version the user put off, if they did.
+	pub fn close(&mut self, later: Option<&str>) {
+		self.open = false;
+		if let Some(version) = later {
+			self.declined = Some(version.to_string());
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -381,5 +408,18 @@ mod tests {
 		assert_eq!(xdg_trigger("F12").as_deref(), Some("F12"));
 		assert_eq!(xdg_trigger("Hyper+D"), None);
 		assert_eq!(xdg_trigger("Ctrl+"), None);
+	}
+
+	#[test]
+	fn update_prompt_shows_one_dialog_and_honours_later() {
+		let mut prompt = UpdatePrompt::default();
+		assert!(prompt.offer("0.1.2"));
+		assert!(!prompt.offer("0.1.2"), "a second check must not stack a dialog");
+		assert!(!prompt.offer("0.1.3"), "nor for a newer version while one is up");
+		prompt.close(Some("0.1.2"));
+		assert!(!prompt.offer("0.1.2"), "Later holds for the run");
+		assert!(prompt.offer("0.1.3"), "a newer release is offered");
+		prompt.close(None);
+		assert!(prompt.offer("0.1.3"), "a failed install offers it again");
 	}
 }

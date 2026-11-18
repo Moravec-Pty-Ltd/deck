@@ -26,7 +26,7 @@ use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
-use crate::core::{classify, deck_link_path, find_zed, is_app_path, parse_server, zed_arg, Nav};
+use crate::core::{classify, deck_link_path, find_zed, is_app_path, parse_server, zed_arg, Nav, UpdatePrompt};
 
 const MAIN: &str = "main";
 const SETTINGS_PAGE: &str = "index.html";
@@ -92,6 +92,7 @@ struct Shell {
 	shortcut_note: Mutex<String>,
 	// Where the window was hidden: some window managers place it anew on show.
 	hidden_at: Mutex<Option<tauri::PhysicalPosition<i32>>>,
+	update: Mutex<UpdatePrompt>,
 }
 
 fn settings_file(app: &AppHandle) -> Option<PathBuf> {
@@ -555,23 +556,35 @@ async fn open_dev_browser(app: AppHandle, session: String) -> Result<(), String>
 	opened
 }
 
-// The AppImage updates itself from GitHub releases; a deb updates through apt.
+// The AppImage updates itself from GitHub releases; a deb updates through apt. A shell
+// hidden to the tray can run for days, so this runs at start and every UPDATE_EVERY.
+const UPDATE_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+
 async fn check_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
 	let Some(update) = app.updater()?.check().await? else { return Ok(()) };
 	let version = update.version.clone();
+	if !app.state::<Shell>().update.lock().unwrap().offer(&version) {
+		return Ok(());
+	}
 	let handle = app.clone();
 	app.dialog()
 		.message(format!("deck {version} is available. Install it and restart?"))
 		.title("Update deck")
 		.buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Update".into(), "Later".into()))
 		.show(move |yes| {
-			if yes {
-				tauri::async_runtime::spawn(async move {
-					if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
-						handle.restart();
-					}
-				});
+			if !yes {
+				handle.state::<Shell>().update.lock().unwrap().close(Some(&version));
+				return;
 			}
+			tauri::async_runtime::spawn(async move {
+				match update.download_and_install(|_, _| {}, || {}).await {
+					Ok(()) => handle.restart(),
+					Err(e) => {
+						eprintln!("deck: update install failed: {e}");
+						handle.state::<Shell>().update.lock().unwrap().close(None);
+					}
+				}
+			});
 		});
 	Ok(())
 }
@@ -649,8 +662,11 @@ fn main() {
 			if std::env::var_os("APPIMAGE").is_some() {
 				let app = handle.clone();
 				tauri::async_runtime::spawn(async move {
-					if let Err(e) = check_update(app).await {
-						eprintln!("deck: update check failed: {e}");
+					loop {
+						if let Err(e) = check_update(app.clone()).await {
+							eprintln!("deck: update check failed: {e}");
+						}
+						tokio::time::sleep(UPDATE_EVERY).await;
 					}
 				});
 			}
