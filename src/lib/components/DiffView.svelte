@@ -3,7 +3,8 @@
 	import type { DeckSession } from '$lib/types';
 	import type { DiffFile, DiffFileStatus } from '$lib/diff';
 	import { RefreshCw, Columns2, Rows2 } from '@lucide/svelte';
-	import { agentGet, sessionPath } from '$lib/agent-api';
+	import { agentRequest, sessionPath } from '$lib/agent-api';
+	import { estimateHeight, startsCollapsed } from '$lib/diff-view-core';
 
 	let {
 		session,
@@ -37,30 +38,38 @@
 	// in the browser. It's loaded lazily (dynamic import in onMount) to keep it
 	// out of the SSR bundle and off the initial page load until Changes is opened.
 	type Diffs = typeof import('@pierre/diffs');
+	type FileDiffMetadata = import('@pierre/diffs').FileDiffMetadata;
 	let diffs: Diffs | null = null;
-	// Only cleanUp() is needed across renders; structural typing avoids the
-	// FileDiff<undefined> vs FileDiff<unknown> generic-variance friction.
-	let instances: { cleanUp(): void }[] = [];
-	// The rendered @pierre/diffs mount per file path, so a summary row can scroll to
-	// its diff block. Rebuilt on every render(); a path with no mount (a
-	// truncated-out file) just no-ops on click.
-	let fileMounts = new Map<string, HTMLElement>();
 
-	let container = $state<HTMLDivElement>();
+	// The patch is parsed once per load, but a file's FileDiff (Shiki plus a
+	// shadow root) only exists while its block is near the viewport. Drawing a
+	// big branch's every file at once froze and crashed the tab.
+	type Block = { key: string; path: string; split: number; unified: number; changed: number; collapsed: boolean };
+	let blocks = $state.raw<Block[]>([]);
+	let parsed: FileDiffMetadata[] = [];
+	let slots: HTMLElement[] = [];
+	// Only cleanUp() is needed; structural typing avoids the FileDiff generic-variance friction.
+	const mounted = new Map<number, { host: HTMLElement; inst: { cleanUp(): void } }>();
+	let io: IntersectionObserver | undefined;
+	let generation = 0; // fresh block keys per load, so every slot is rebuilt
+	const expanded = new Set<string>(); // paths opened with "Show diff", kept across reloads
+
+	let scroller = $state<HTMLDivElement>();
 	let ready = $state(false); // the lazy @pierre/diffs import has resolved
 	let loading = $state(true);
+	let slow = $state(false); // a load has run past SLOW_MS: offer Cancel
 	let errMsg = $state<string | null>(null);
 	let meta = $state<Meta | null>(null);
-	let patch = $state('');
-	let shownFiles = $state(0);
 
 	const LAYOUT_KEY = 'deck-diff-layout';
+	const SLOW_MS = 2000;
+	const NEAR_PX = 1200; // draw within this distance of the viewport, tear down beyond it
 	let layout = $state<'split' | 'stacked'>(initialLayout());
 	let isDark = $state(true);
 
 	let observer: MutationObserver | undefined;
 	let prevStatus = ''; // last seen liveStatus, for the running -> idle edge
-	let token = 0; // bumps on each load so stale responses are dropped
+	let ctrl: AbortController | null = null; // the in-flight load
 
 	function initialLayout(): 'split' | 'stacked' {
 		if (typeof localStorage !== 'undefined') {
@@ -78,91 +87,184 @@
 		return (document.documentElement.dataset.theme || 'dark') === 'dark';
 	}
 
-	function teardown() {
-		for (const inst of instances) {
-			try {
-				inst.cleanUp();
-			} catch {
-				// ignore: tearing down a half-rendered instance is best-effort
+	function mount(i: number) {
+		const slot = slots[i];
+		if (!diffs || !slot || mounted.has(i) || blocks[i]?.collapsed) return;
+		const host = document.createElement('div');
+		host.className = 'diff-file';
+		slot.appendChild(host);
+		const inst = new diffs.FileDiff({
+			theme: { dark: 'github-dark', light: 'github-light' },
+			themeType: isDark ? 'dark' : 'light',
+			diffStyle: layout === 'split' ? 'split' : 'unified',
+			overflow: 'wrap',
+			diffIndicators: 'bars',
+			expandUnchanged: false,
+			collapsedContextThreshold: 5,
+			hunkSeparators: 'simple',
+			// The first draw can wait on Shiki; hold the placeholder height until then.
+			onPostRender: (_node, _inst, phase) => {
+				if (phase === 'mount') slot.style.minHeight = '';
 			}
-		}
-		instances = [];
-		fileMounts.clear();
-		if (container) container.innerHTML = '';
+		});
+		inst.render({ fileDiff: parsed[i], containerWrapper: host });
+		mounted.set(i, { host, inst });
 	}
 
-	function render() {
-		if (!diffs || !container) return;
-		teardown();
+	function unmount(i: number) {
+		const m = mounted.get(i);
+		if (!m) return;
+		// Hold the drawn height so the content below doesn't jump.
+		const slot = slots[i];
+		if (slot) slot.style.minHeight = `${slot.offsetHeight}px`;
+		try {
+			m.inst.cleanUp();
+		} catch {
+			// ignore: tearing down a half-rendered instance is best-effort
+		}
+		m.host.remove();
+		mounted.delete(i);
+	}
+
+	function unmountAll() {
+		for (const i of [...mounted.keys()]) unmount(i);
+	}
+
+	// In order, so each target ends in the state of its last record.
+	function onIntersect(entries: IntersectionObserverEntry[]) {
+		for (const e of entries) {
+			const i = Number((e.target as HTMLElement).dataset.i);
+			if (slots[i] !== e.target) continue; // queued before a reload replaced the slot
+			if (e.isIntersecting) mount(i);
+			else unmount(i);
+		}
+	}
+
+	function placeholder(i: number) {
+		const b = blocks[i];
+		if (slots[i] && !b.collapsed) slots[i].style.minHeight = `${estimateHeight(layout === 'split' ? b.split : b.unified)}px`;
+	}
+
+	// Svelte action on each file's block: size its placeholder and watch it.
+	function slot(el: HTMLElement, i: number) {
+		slots[i] = el;
+		placeholder(i);
+		io?.observe(el);
+		return {
+			destroy() {
+				io?.unobserve(el);
+				if (slots[i] !== el) return;
+				unmount(i);
+				delete slots[i];
+			}
+		};
+	}
+
+	function render(patch: string) {
+		if (!diffs) return;
 		const files = diffs.parsePatchFiles(patch).flatMap((p) => p.files);
-		shownFiles = files.length;
-		for (const fileDiff of files) {
-			const mount = document.createElement('div');
-			mount.className = 'diff-file';
-			container.appendChild(mount);
-			fileMounts.set(fileDiff.name, mount);
-			const inst = new diffs.FileDiff({
-				theme: { dark: 'github-dark', light: 'github-light' },
-				themeType: isDark ? 'dark' : 'light',
-				diffStyle: layout === 'split' ? 'split' : 'unified',
-				overflow: 'wrap',
-				diffIndicators: 'bars',
-				expandUnchanged: false,
-				collapsedContextThreshold: 5,
-				hunkSeparators: 'simple'
-			});
-			inst.render({ fileDiff, containerWrapper: mount });
-			instances.push(inst);
-		}
+		unmountAll();
+		parsed = files;
+		const gen = ++generation;
+		// Keyed by index: git can write two sections for one path (a typechange).
+		blocks = parsed.map((f, i) => {
+			const changed = f.hunks.reduce((n, h) => n + h.additionLines + h.deletionLines, 0);
+			return {
+				key: `${gen}:${i}`,
+				path: f.name,
+				split: f.splitLineCount,
+				unified: f.unifiedLineCount,
+				changed,
+				collapsed: !expanded.has(f.name) && startsCollapsed(f.name, changed)
+			};
+		});
 	}
 
-	// Scroll a summary row's diff block into view. No-op if that file's diff isn't
-	// mounted (e.g. it was dropped by the size cap).
+	function expand(i: number) {
+		expanded.add(blocks[i].path);
+		blocks = blocks.map((b, j) => (j === i ? { ...b, collapsed: false } : b));
+		placeholder(i);
+		mount(i);
+	}
+
+	// Scroll a summary row's diff block into view and draw it. Instant, not smooth:
+	// a smooth scroll would draw every file it passes. No-op for a file dropped by
+	// the size cap.
 	function jumpTo(path: string) {
-		fileMounts.get(path)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		const i = blocks.findIndex((b) => b.path === path);
+		const el = slots[i];
+		if (!el) return;
+		mount(i);
+		el.scrollIntoView({ block: 'start' });
+		// Files drawn above it on arrival can shift it; settle once they have.
+		requestAnimationFrame(() => requestAnimationFrame(() => el.scrollIntoView({ block: 'start' })));
 	}
 
 	async function load() {
-		const my = ++token;
+		ctrl?.abort();
+		const c = new AbortController();
+		ctrl = c;
 		loading = true;
+		slow = false;
 		errMsg = null;
+		const timer = setTimeout(() => {
+			if (ctrl === c) slow = true;
+		}, SLOW_MS);
+		const url = sessionPath(session.id, 'diff');
+		let done = false;
+		// The summary alone is small and quick: show the size before the patch lands.
+		// Only when nothing is drawn yet, so it never disagrees with the files shown.
+		if (blocks.length === 0) {
+			agentRequest<{ git: boolean; meta?: Meta }>(`${url}?meta=1`, { signal: c.signal })
+				.then((d) => {
+					if (ctrl === c && !done && d.meta) meta = d.meta;
+				})
+				.catch(() => {});
+		}
 		try {
-			const data = await agentGet<{ git: boolean; meta?: typeof meta; patch?: string }>(sessionPath(session.id, 'diff'));
-			if (my !== token) return;
+			const data = await agentRequest<{ git: boolean; meta?: Meta; patch?: string }>(url, {
+				signal: c.signal
+			});
+			if (ctrl !== c) return;
+			done = true;
 			if (!data.git) {
 				meta = null;
-				patch = '';
-				shownFiles = 0;
-				teardown();
+				render('');
 				onCount?.(null);
 				return;
 			}
 			meta = data.meta ?? null;
-			patch = data.patch ?? '';
 			onCount?.(meta?.fileCount ?? 0);
-			render();
+			render(data.patch ?? '');
 		} catch (e) {
-			if (my !== token) return;
-			errMsg = e instanceof Error ? e.message : "Couldn't load diff";
+			if (ctrl !== c) return;
+			errMsg = c.signal.aborted ? 'Load cancelled.' : (e as Error)?.message || "Couldn't load diff";
 		} finally {
-			// On a stale response (unmount or a newer load) leave loading as-is so
-			// we don't clobber the live load; the winning load owns the flag.
-			if (my === token) loading = false;
+			clearTimeout(timer);
+			// A superseded load leaves the flags to the live one.
+			if (ctrl === c) {
+				ctrl = null;
+				loading = false;
+				slow = false;
+			}
 		}
 	}
 
-	// A layout/theme change just re-renders the current patch. Skip it while a
-	// load is in flight (or before the import lands): that load's own render()
-	// already picks up the latest layout/theme, so rendering here would only
-	// flash the previous patch.
+	// A layout/theme change redraws only the files on screen.
 	function rerender() {
-		if (ready && !loading) render();
+		if (!ready) return;
+		for (const i of [...mounted.keys()]) {
+			unmount(i);
+			mount(i);
+		}
 	}
 
 	function setLayout(next: 'split' | 'stacked') {
 		if (layout === next) return;
 		layout = next;
 		if (typeof localStorage !== 'undefined') localStorage.setItem(LAYOUT_KEY, next);
+		// Undrawn files were sized for the old layout.
+		for (let i = 0; i < blocks.length; i++) if (!mounted.has(i)) placeholder(i);
 		rerender();
 	}
 
@@ -188,6 +290,7 @@
 			attributes: true,
 			attributeFilter: ['data-theme']
 		});
+		io = new IntersectionObserver(onIntersect, { root: scroller, rootMargin: `${NEAR_PX}px 0px` });
 		let cancelled = false;
 		import('@pierre/diffs')
 			.then((m) => {
@@ -206,9 +309,11 @@
 	});
 
 	onDestroy(() => {
-		token++; // invalidate any in-flight load
+		ctrl?.abort();
+		ctrl = null;
 		observer?.disconnect();
-		teardown();
+		io?.disconnect();
+		unmountAll();
 	});
 
 	const empty = $derived(!!meta && meta.fileCount === 0);
@@ -251,6 +356,9 @@
 				<Rows2 size={14} />
 			</button>
 		</div>
+		{#if slow}
+			<button class="btn btn-ghost btn-sm shrink-0" onclick={() => ctrl?.abort()}>Cancel</button>
+		{/if}
 		<button
 			class="btn btn-ghost btn-sm shrink-0"
 			onclick={() => load()}
@@ -269,15 +377,15 @@
 	{/if}
 	{#if meta?.truncated}
 		<div class="alert alert-warning mb-2 py-2 text-xs">
-			Diff too large. All {meta.fileCount} files are listed below; showing the first {shownFiles}
-			{shownFiles === 1 ? 'diff' : 'diffs'}, the rest were omitted.
+			Diff too large. All {meta.fileCount} files are listed below; showing the first {blocks.length}
+			{blocks.length === 1 ? 'diff' : 'diffs'}, the rest were omitted.
 		</div>
 	{/if}
 	{#if errMsg}
 		<div class="alert alert-error mb-2 py-2 text-sm break-words">{errMsg}</div>
 	{/if}
 
-	<div class="min-h-0 flex-1 overflow-y-auto">
+	<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto">
 		{#if loading && !meta}
 			<div class="flex h-full items-center justify-center">
 				<span class="loading loading-spinner loading-md opacity-50"></span>
@@ -322,6 +430,23 @@
 				{/each}
 			</ul>
 		{/if}
-		<div bind:this={container} class="space-y-3" class:hidden={empty}></div>
+		{#if loading && meta && blocks.length === 0}
+			<div class="flex items-center gap-2 py-2 text-xs opacity-60">
+				<span class="loading loading-spinner loading-xs"></span> Loading diffs…
+			</div>
+		{/if}
+		<div class="space-y-3" class:hidden={empty}>
+			{#each blocks as block, i (block.key)}
+				<div use:slot={i} data-i={i} class="rounded bg-base-200/40">
+					{#if block.collapsed}
+						<div class="flex items-center gap-2 px-3 py-2 text-xs">
+							<span class="min-w-0 flex-1 truncate font-mono">{block.path}</span>
+							<span class="shrink-0 opacity-60">{block.changed.toLocaleString()} changed lines</span>
+							<button type="button" class="btn btn-xs shrink-0" onclick={() => expand(i)}>Show diff</button>
+						</div>
+					{/if}
+				</div>
+			{/each}
+		</div>
 	</div>
 </div>

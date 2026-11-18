@@ -29,6 +29,7 @@ export type AgentRequest = {
 	body?: unknown;
 	// SvelteKit's load-scoped fetch, or a stub in tests.
 	fetch?: typeof fetch;
+	signal?: AbortSignal;
 };
 
 async function errorMessage(res: Response): Promise<string> {
@@ -40,7 +41,7 @@ async function errorMessage(res: Response): Promise<string> {
 // One request against an absolute /api/agent path. Resolves with the parsed JSON
 // body (undefined when there is none); rejects with AgentApiError on a non-2xx.
 export async function agentRequest<T = unknown>(url: string, opts: AgentRequest = {}): Promise<T> {
-	const init: RequestInit = { method: opts.method ?? 'GET' };
+	const init: RequestInit = { method: opts.method ?? 'GET', signal: opts.signal };
 	if (opts.body !== undefined) {
 		init.headers = { 'content-type': 'application/json' };
 		init.body = JSON.stringify(opts.body);
