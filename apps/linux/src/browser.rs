@@ -107,16 +107,10 @@ pub async fn browser_servers(webview: Webview) -> Result<Vec<ServerTab>, String>
 		None => {
 			// Sorted, so the tabs keep their order from one poll to the next.
 			let states: BTreeMap<String, Vec<String>> = serde_json::from_value(get("/api/agent/servers".into()).await?).map_err(|e| e.to_string())?;
-			let mut all = Vec::new();
-			for (id, states) in states {
-				// A session that ends between the two calls just has no tabs.
-				if states.iter().any(|s| is_previewable(s)) {
-					if let Ok(Ok(servers)) = get(format!("/api/agent/sessions/{id}/servers")).await.map(list) {
-						all.extend(servers);
-					}
-				}
-			}
-			all
+			let live = states.iter().filter(|(_, states)| states.iter().any(|s| is_previewable(s)));
+			let fetched = futures_util::future::join_all(live.map(|(id, _)| get(format!("/api/agent/sessions/{id}/servers")))).await;
+			// A session that ends between the two calls just has no tabs.
+			fetched.into_iter().filter_map(|r| r.ok().and_then(|v| list(v).ok())).flatten().collect()
 		}
 	};
 	Ok(server_tabs(&servers))
