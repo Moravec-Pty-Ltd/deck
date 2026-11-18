@@ -3,10 +3,13 @@
 	import { findFilePaths, formatBytes, isVideoMime, type FileInfo } from '$lib/files-core';
 	import { fileUrl, statFiles } from '$lib/file-stat';
 	import Lightbox from './Lightbox.svelte';
+	import FileReader from './FileReader.svelte';
+	import { viewerFor } from '$lib/file-browser-core';
 
 	// The local files a message mentions, under its text: images as previews
 	// that open full size (with the message's other images alongside), videos
-	// as players, other files as chips that open or download. Only files deck can serve show up;
+	// as players, other files as chips: text, code and Markdown open in a reader
+	// over the session, anything else opens in the browser or downloads. Only files deck can serve show up;
 	// a mention of something missing or outside the projects stays plain text.
 	let { text, sessionId }: { text: string; sessionId: string } = $props();
 
@@ -31,6 +34,8 @@
 	const images = $derived(files.filter((f) => f.image));
 	const videos = $derived(files.filter((f) => isVideoMime(f.mime)));
 	const others = $derived(files.filter((f) => !f.image && !isVideoMime(f.mime)));
+	const readable = (f: FileInfo) => ['markdown', 'text'].includes(viewerFor(f.name));
+	let reading = $state<FileInfo | null>(null);
 	let galleryOpen = $state(false);
 	let galleryIndex = $state(0);
 	const gallery = $derived(
@@ -71,19 +76,36 @@
 			></video>
 		{/each}
 		{#each others as f (f.path)}
-			<a
-				href={fileUrl(sessionId, f.path)}
-				target="_blank"
-				rel="noopener noreferrer"
-				class="badge badge-ghost h-auto gap-1.5 px-2 py-1 text-xs no-underline"
-				title={f.path}
-			>
-				<FileText size={14} />
-				<span class="max-w-48 truncate">{f.name}</span>
-				<span class="opacity-60">{formatBytes(f.size)}</span>
-			</a>
+			{#if readable(f)}
+				<button
+					type="button"
+					class="badge badge-ghost h-auto cursor-pointer gap-1.5 px-2 py-1 text-xs"
+					onclick={() => (reading = f)}
+					title={f.path}
+				>
+					<FileText size={14} />
+					<span class="max-w-48 truncate">{f.name}</span>
+					<span class="opacity-60">{formatBytes(f.size)}</span>
+				</button>
+			{:else}
+				<a
+					href={fileUrl(sessionId, f.path)}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="badge badge-ghost h-auto gap-1.5 px-2 py-1 text-xs no-underline"
+					title={f.path}
+				>
+					<FileText size={14} />
+					<span class="max-w-48 truncate">{f.name}</span>
+					<span class="opacity-60">{formatBytes(f.size)}</span>
+				</a>
+			{/if}
 		{/each}
 	</div>
+{/if}
+
+{#if reading}
+	<FileReader {sessionId} file={reading} onclose={() => (reading = null)} />
 {/if}
 
 {#if galleryOpen && gallery.length}

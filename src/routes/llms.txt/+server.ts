@@ -493,7 +493,15 @@ else is silently absent. Up to 20 paths are checked per call.
 
 Serve one of those files, inline (or as an attachment with \`download=1\`), with
 an \`etag\` (send \`If-None-Match\` for a 304). 404 for a path outside the
-registered projects or a missing file.
+registered projects or a missing file. Text files up to 1 MB also carry
+\`x-content-sha256\`.
+
+### PUT /api/agent/sessions/{id}/files
+
+\`{ "path", "text", "expected" }\` — replace an existing text file (atomic,
+mode kept). \`expected\` is the \`x-content-sha256\` from the GET; 409 if the file
+changed since, 413 over 1 MB, 400 for non-text, 404 outside the projects.
+Returns \`{ "sha256", "size" }\`.
 
 ### GET /api/agent/sessions/{id}/dir?path=<relative>
 

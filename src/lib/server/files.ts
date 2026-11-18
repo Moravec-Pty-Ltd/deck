@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import type { DeckSession } from '$lib/types';
 import { basename, isImagePath, mimeFor, scriptable, type FileInfo } from '$lib/files-core';
+import { MAX_EDIT_BYTES, checkEdit } from '$lib/file-edit-core';
 import { resolveWithinProjects } from './confine';
 
 // Files a session's messages mention, served back to the clients for previews
@@ -56,9 +58,16 @@ export function resolveSessionFile(session: DeckSession, mention: string): Serve
 // change under the same path. A scriptable document (SVG, HTML) is sandboxed
 // so opened as a page it cannot run under deck's origin and cookie; <img> is
 // unaffected and other types stay plain so the browser's PDF viewer works.
+// Text is labelled UTF-8: without a charset a browser opening the file falls
+// back to a legacy single-byte encoding and garbles every accented letter.
+function contentType(mime: string): string {
+	const textual = mime.startsWith('text/') || mime === 'application/json' || mime.endsWith('xml');
+	return textual ? `${mime}; charset=utf-8` : mime;
+}
+
 export function fileHeaders(file: ServedFile, download: boolean): Record<string, string> {
 	const headers: Record<string, string> = {
-		'content-type': file.mime,
+		'content-type': contentType(file.mime),
 		'cache-control': 'private, no-cache',
 		'x-content-type-options': 'nosniff',
 		'accept-ranges': 'bytes',
@@ -78,4 +87,50 @@ export function statSessionFiles(session: DeckSession, mentions: string[]): File
 		if (file) files.push({ path: file.path, name: file.name, size: file.size, mime: file.mime, image: file.image });
 	}
 	return files;
+}
+
+export function sha256Hex(data: Buffer | string): string {
+	return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+export type SaveResult = { ok: true; sha256: string; size: number } | { ok: false; status: number; message: string };
+
+// Replace an existing text file's content. Resolved and confined exactly like a
+// read; refused when the file changed since `expected` (the sha256 the editor
+// loaded). Written to a temp file beside the original, fsynced and renamed over
+// it, with the original's mode kept. Contents are never logged.
+export function saveSessionFile(session: DeckSession, mention: string, text: string, expected: string): SaveResult {
+	const file = resolveSessionFile(session, mention);
+	if (!file) return { ok: false, status: 404, message: 'file not found' };
+	const newBytes = Buffer.byteLength(text);
+	if (file.size > MAX_EDIT_BYTES || newBytes > MAX_EDIT_BYTES) {
+		return { ok: false, status: 413, message: 'file too large to edit (limit 1 MB)' };
+	}
+	const current = fs.readFileSync(file.absolute);
+	const check = checkEdit({
+		name: file.name,
+		currentSize: current.length,
+		currentHead: current.subarray(0, 8192).toString('utf8'),
+		currentHash: sha256Hex(current),
+		newBytes,
+		expected
+	});
+	if (!check.ok) return check;
+	const mode = fs.statSync(file.absolute).mode & 0o7777;
+	const tmp = path.join(path.dirname(file.absolute), `.${file.name}.deck-${process.pid}-${Date.now()}.tmp`);
+	let fd: number | null = null;
+	try {
+		fd = fs.openSync(tmp, 'wx', 0o600);
+		fs.writeSync(fd, text);
+		fs.fchmodSync(fd, mode);
+		fs.fsyncSync(fd);
+		fs.closeSync(fd);
+		fd = null;
+		fs.renameSync(tmp, file.absolute);
+	} catch {
+		if (fd !== null) fs.closeSync(fd);
+		fs.rmSync(tmp, { force: true });
+		return { ok: false, status: 500, message: 'could not write the file' };
+	}
+	return { ok: true, sha256: sha256Hex(text), size: newBytes };
 }
