@@ -98,3 +98,104 @@ public enum LoopbackHost {
 		absolute.replacingOccurrences(of: sentinel, with: "localhost")
 	}
 }
+
+/// Makes a tunnelled request reach the dev server as if the browser had used
+/// `localhost`. The page really is `http://deck.localhost:<port>`, so WebKit
+/// sends that as `Host`, `Origin` and `Referer`, and auth or CSRF checks that
+/// compare against `http://localhost:<port>` refuse it ("invalid origin").
+///
+/// Only the first request head on a connection is rewritten. Every other
+/// request gets `Connection: close`, so the browser opens a fresh connection,
+/// with its own head, for the next one; that saves parsing bodies and chunked
+/// encoding to find where a kept-alive connection's next request starts.
+/// WebSocket upgrades (hot reload) keep their `Connection: Upgrade`.
+struct RequestHeadRewriter {
+	private var pending = Data()
+	private var done = false
+
+	init() {}
+
+	/// The bytes to forward now: nothing while the head is still arriving, then
+	/// the rewritten head plus whatever followed it, then everything as is.
+	mutating func feed(_ bytes: Data) -> Data {
+		guard !done else { return bytes }
+		pending.append(bytes)
+		guard let out = Self.rewrite(pending) else { return Data() }
+		done = true
+		pending = Data()
+		return out
+	}
+
+	/// A head this long without its blank line is not a browser's.
+	static let maxHead = 64 << 10
+
+	/// The rewritten bytes, or nil while the head is incomplete. Anything that
+	/// is not an HTTP/1 request (a TLS handshake for an https dev server) comes
+	/// back unchanged.
+	static func rewrite(_ data: Data) -> Data? {
+		guard let first = data.first else { return nil }
+		guard (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(first) else { return data }
+		if let lineEnd = data.range(of: Data("\r\n".utf8)), !isRequestLine(data[..<lineEnd.lowerBound]) {
+			return data
+		}
+		guard let end = data.range(of: Data("\r\n\r\n".utf8)) else {
+			return data.count > maxHead ? data : nil
+		}
+		// Latin-1 maps every byte to one character and back, so header bytes that
+		// are not ASCII survive untouched.
+		let lines = latin1(data[..<end.lowerBound]).components(separatedBy: "\r\n")
+		let upgrade = lines.contains { line in
+			header(line).map { $0.name == "upgrade" && $0.value.lowercased().contains("websocket") } ?? false
+		}
+		let host = lines.lazy.compactMap(header).first { $0.name == "host" }?.value.lowercased()
+		var out = [lines[0]]
+		for line in lines.dropFirst() {
+			guard let (name, value) = header(line) else { out.append(line); continue }
+			let original = line[..<line.firstIndex(of: ":")!]
+			switch name {
+			case "host": out.append("\(original): \(unstand(value))")
+			// A cross-origin request keeps the page's real origin: servers echo it
+			// back as Access-Control-Allow-Origin, and WebKit checks that against
+			// `deck.localhost`, so rewriting it would fail CORS.
+			case "origin" where value.lowercased() == "http://\(host ?? "")":
+				out.append("\(original): \(unstandURL(value))")
+			case "referer": out.append("\(original): \(unstandURL(value))")
+			case "connection" where !upgrade: continue
+			default: out.append(line)
+			}
+		}
+		if !upgrade { out.append("Connection: close") }
+		var result = out.joined(separator: "\r\n").data(using: .isoLatin1)!
+		result.append(data[end.lowerBound...])
+		return result
+	}
+
+	private static func isRequestLine(_ bytes: Data) -> Bool {
+		let parts = latin1(bytes).split(separator: " ", omittingEmptySubsequences: false)
+		return parts.count == 3 && parts[0].allSatisfy { $0.isASCII && $0.isUppercase } && parts[2].hasPrefix("HTTP/1.")
+	}
+
+	private static func latin1(_ bytes: Data) -> String {
+		String(data: bytes, encoding: .isoLatin1) ?? ""
+	}
+
+	private static func header(_ line: String) -> (name: String, value: String)? {
+		guard let colon = line.firstIndex(of: ":") else { return nil }
+		return (line[..<colon].lowercased(), line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces))
+	}
+
+	/// `deck.localhost[:port]...` to `localhost[:port]...`, and nothing else:
+	/// `deck.localhostile` is a different host.
+	private static func unstand(_ value: some StringProtocol) -> String {
+		let sentinel = LoopbackHost.sentinel
+		guard value.lowercased().hasPrefix(sentinel) else { return String(value) }
+		let rest = value.dropFirst(sentinel.count)
+		guard rest.first.map({ ":/?#".contains($0) }) ?? true else { return String(value) }
+		return "localhost" + rest
+	}
+
+	private static func unstandURL(_ value: String) -> String {
+		guard let scheme = value.range(of: "://") else { return value }
+		return value[..<scheme.upperBound] + unstand(value[scheme.upperBound...])
+	}
+}

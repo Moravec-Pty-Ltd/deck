@@ -120,13 +120,16 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 		}
 
 		state = .piping
-		openForward(context: context, request: request, host: LoopbackHost.target(host), port: port)
+		// Only the stand-in needs its request head rewritten; a literal loopback
+		// target already carries `localhost` (or an IP) in its headers.
+		let standIn = host.lowercased() == LoopbackHost.sentinel
+		openForward(context: context, request: request, host: LoopbackHost.target(host), port: port, rewriteHead: standIn)
 	}
 
-	private func openForward(context: ChannelHandlerContext, request: URLRequest, host: String, port: Int) {
+	private func openForward(context: ChannelHandlerContext, request: URLRequest, host: String, port: Int, rewriteHead: Bool) {
 		onForward(host, port)
 		let inbound = context.channel
-		let bridge = WebSocketBridge(request: request, eventLoop: context.eventLoop)
+		let bridge = WebSocketBridge(request: request, eventLoop: context.eventLoop, rewriteHead: rewriteHead)
 		self.bridge = bridge
 		bridge.open { [weak self] failure in
 			guard let self else { return }
@@ -181,10 +184,12 @@ final class WebSocketBridge: NSObject, ChannelDuplexHandler, URLSessionWebSocket
 	private var context: ChannelHandlerContext?
 	private var sending = 0
 	private var readHeld = false
+	private var head: RequestHeadRewriter?
 
-	init(request: URLRequest, eventLoop: EventLoop) {
+	init(request: URLRequest, eventLoop: EventLoop, rewriteHead: Bool) {
 		task = Self.session.webSocketTask(with: request)
 		self.eventLoop = eventLoop
+		head = rewriteHead ? RequestHeadRewriter() : nil
 		super.init()
 	}
 
@@ -229,7 +234,11 @@ final class WebSocketBridge: NSObject, ChannelDuplexHandler, URLSessionWebSocket
 	}
 
 	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-		let bytes = Data(unwrapInboundIn(data).readableBytesView)
+		var bytes = Data(unwrapInboundIn(data).readableBytesView)
+		if head != nil {
+			bytes = head!.feed(bytes)
+			if bytes.isEmpty { return }
+		}
 		sending += 1
 		task.send(.data(bytes)) { error in
 			self.eventLoop.execute {

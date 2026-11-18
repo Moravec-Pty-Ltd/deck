@@ -48,8 +48,14 @@ final class DevTunnelTests: XCTestCase {
 
 		// Through the sentinel on purpose: it has to be mapped back to
 		// localhost, which is the whole point of the rewrite.
-		let body = try await Self.get("http://\(LoopbackHost.sentinel):\(target.port)/", throughSOCKS: localPort)
+		let page = "http://\(LoopbackHost.sentinel):\(target.port)"
+		let body = try await Self.get("\(page)/", throughSOCKS: localPort, origin: page)
 		XCTAssertEqual(body, "tunnelled")
+		// The dev server sees localhost, which is what its Origin checks expect.
+		let head = target.received.lowercased()
+		XCTAssertTrue(head.contains("host: localhost:\(target.port)\r\n"), head)
+		XCTAssertTrue(head.contains("origin: http://localhost:\(target.port)\r\n"), head)
+		XCTAssertTrue(head.contains("connection: close\r\n"), head)
 		XCTAssertEqual(forwards.map(\.host), ["localhost"])
 		XCTAssertEqual(forwards.map(\.port), [Int(target.port)])
 		XCTAssertEqual(refusals, [])
@@ -140,7 +146,7 @@ final class DevTunnelTests: XCTestCase {
 
 	/// A GET through a SOCKS5 proxy. URLSession does the handshake, so this
 	/// exercises the listener the way WebKit will.
-	private static func get(_ url: String, throughSOCKS port: Int) async throws -> String {
+	private static func get(_ url: String, throughSOCKS port: Int, origin: String? = nil) async throws -> String {
 		let configuration = URLSessionConfiguration.ephemeral
 		configuration.connectionProxyDictionary = [
 			kCFStreamPropertySOCKSProxyHost as String: "127.0.0.1",
@@ -149,7 +155,9 @@ final class DevTunnelTests: XCTestCase {
 		]
 		configuration.timeoutIntervalForRequest = 20
 		let session = URLSession(configuration: configuration)
-		let (data, _) = try await session.data(from: URL(string: url)!)
+		var request = URLRequest(url: URL(string: url)!)
+		request.setValue(origin, forHTTPHeaderField: "Origin")
+		let (data, _) = try await session.data(for: request)
 		return String(decoding: data, as: UTF8.self)
 	}
 }
@@ -160,6 +168,9 @@ private final class EchoingHTTPServer: @unchecked Sendable {
 	private let queue = DispatchQueue(label: "tunnel-test-target")
 	private let body: String
 	private(set) var port: UInt16 = 0
+	private var lastHead = ""
+	/// The last request head as it arrived.
+	var received: String { queue.sync { lastHead } }
 
 	init(body: String) throws {
 		self.body = body
@@ -184,8 +195,9 @@ private final class EchoingHTTPServer: @unchecked Sendable {
 	func stop() { listener.cancel() }
 
 	private func answer(_ connection: NWConnection) {
-		connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] _, _, _, _ in
+		connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, _ in
 			guard let self else { return }
+			self.lastHead = String(decoding: data ?? Data(), as: UTF8.self)
 			let response = """
 				HTTP/1.1 200 OK\r
 				Content-Type: text/plain\r
