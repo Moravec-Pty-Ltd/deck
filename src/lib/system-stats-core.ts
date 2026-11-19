@@ -119,8 +119,8 @@ export function scaleRates(values: number[], peak: number, floor = 100_000): num
 // The same line closed down to the baseline, for a filled sparkline.
 export function sparkArea(values: number[], w: number, h: number): string {
 	if (!values.length) return '';
-	const line = sparkPoints(values, w, h);
-	return `${line.split(' ')[0].split(',')[0]},${h} ${line} ${w},${h}`;
+	const start = w - (values.length - 1) * (w / (HISTORY - 1));
+	return `${start.toFixed(1)},${h} ${sparkPoints(values, w, h)} ${w},${h}`;
 }
 
 // Under 70% reads as normal, then a warning, then an error from 90%.
