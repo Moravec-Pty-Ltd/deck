@@ -171,6 +171,7 @@
 
 <div
 	class="fixed inset-0 z-50 flex flex-col bg-black/90 text-white select-none"
+	style="padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)"
 	role="dialog"
 	aria-modal="true"
 	aria-label={current.name}

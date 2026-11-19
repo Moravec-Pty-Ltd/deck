@@ -32,9 +32,13 @@
 	import { goto } from '$app/navigation';
 	import { resolveBeside } from '$lib/beside-core';
 	import { markRead } from '$lib/mark-read';
-	import { Menu, X, Ticket, Check, ChevronDown, AppWindow } from '@lucide/svelte';
+	import { Menu, X, Ticket, Check, ChevronDown, AppWindow, Bell, BellRing, BellOff } from '@lucide/svelte';
 	import { inShell, openDevBrowser } from '$lib/shell';
 	import Popover from '$lib/components/Popover.svelte';
+	import NavLinks from '$lib/components/NavLinks.svelte';
+	import { THEMES } from '$lib/theme-core';
+	import { THEME_ICONS, themeUi } from '$lib/theme.svelte';
+	import { appChrome } from '$lib/app-chrome.svelte';
 	import { onMount } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { agentGet, sessionPath } from '$lib/agent-api';
@@ -455,7 +459,7 @@
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="flex h-full min-w-0 flex-1 flex-col px-2 pt-2 {beside && activePane === 'main' ? 'lg:ring-1 lg:ring-inset lg:ring-primary/30' : ''}"
+		class="flex h-full min-w-0 flex-1 flex-col px-2 pt-1 roomy:pt-2 {beside && activePane === 'main' ? 'lg:ring-1 lg:ring-inset lg:ring-primary/30' : ''}"
 		onfocusin={() => (activePane = 'main')}
 	>
 		{#if del.error}
@@ -470,7 +474,7 @@
 				</button>
 			</div>
 		{/if}
-		<div class="mb-2 flex flex-wrap items-center gap-2">
+		<div class="mb-1 flex items-center gap-2 roomy:mb-2 roomy:flex-wrap">
 			<button
 				class="fold-hide btn btn-ghost btn-sm shrink-0 lg:hidden"
 				onclick={() => (sidebarOpen = true)}
@@ -514,11 +518,11 @@
 				{/if}
 				{#if !prOnFlatHalf}{@render prMenu()}{/if}
 				<AccountChip {session} class="header-chip max-w-40" />
-				<span class="hidden truncate text-xs opacity-60 sm:inline">{shortPath(session.cwd)}</span>
+				<span class="hidden truncate text-xs opacity-60 roomy:inline">{shortPath(session.cwd)}</span>
 			</div>
 			<div class="flex items-center gap-2">
 				<!-- Phone width: the views live in this menu instead of the tab row. -->
-				<div class="sm:hidden">
+				<div class="roomy:hidden">
 					<Popover bind:open={viewMenuOpen} summaryClass="btn btn-ghost btn-sm gap-1" summaryLabel="View: {views.find((v) => v.id === tab)?.label ?? ''}" summaryTitle="View" panelClass="p-2">
 						{#snippet trigger()}{views.find((v) => v.id === tab)?.label ?? 'View'}<ChevronDown size={14} />{/snippet}
 						<ul class="menu menu-sm w-full p-0">
@@ -530,12 +534,41 @@
 								</button></li>
 							{/each}
 						</ul>
+						<!-- The app bar is hidden here on a phone, so its controls live on in this menu. -->
+						<div class="divider my-1"></div>
+						<div class="join w-full" role="group" aria-label="Theme">
+							{#each THEMES as t (t.id)}
+								{@const Icon = THEME_ICONS[t.id]}
+								<button
+									class="btn join-item btn-sm flex-1 {themeUi.current === t.id ? 'btn-active' : 'btn-ghost'}"
+									onclick={() => themeUi.set(t.id)}
+									aria-pressed={themeUi.current === t.id}
+									aria-label="{t.label} theme"
+									title={t.label}
+								>
+									<Icon size={14} />
+								</button>
+							{/each}
+						</div>
+						{#if appChrome.pushSupported}
+							<ul class="menu menu-sm w-full p-0 pt-1">
+								<li><button onclick={appChrome.togglePush} disabled={appChrome.pushBusy || appChrome.pushDenied}>
+									{#if appChrome.pushDenied}<BellOff size={14} /> Notifications blocked
+									{:else if appChrome.subscribed}<BellRing size={14} /> Notifications on
+									{:else}<Bell size={14} /> Notifications off{/if}
+								</button></li>
+							</ul>
+						{/if}
+						<div class="divider my-1"></div>
+						<NavLinks variant="menu" inboxCount={appChrome.inboxCount} onnavigate={() => (viewMenuOpen = false)} />
 					</Popover>
 				</div>
 				{#if liveKind !== 'shell' && !session.remote}
-					{#each data.editors as editor (editor.scheme)}
-						<EditorButton {editor} />
-					{/each}
+					<span class="hidden roomy:contents">
+						{#each data.editors as editor (editor.scheme)}
+							<EditorButton {editor} />
+						{/each}
+					</span>
 				{/if}
 				{#if inShell}
 					<button class="btn btn-outline btn-xs header-chip gap-1" onclick={() => openDevBrowser(session.id)} title="Open this session's dev servers in the dev browser" aria-label="Dev browser">
@@ -546,11 +579,11 @@
 					<RunButton {session} serverState={serverChip} onRefresh={refresh} />
 					<!-- Status lives in RunButton's collapsed dropdown on mobile (issue #123),
 					     so the standalone chip is sm+ only. -->
-					<span class="hidden sm:contents"><ServerChip state={serverChip} count={myServers.length} /></span>
+					<span class="hidden roomy:contents"><ServerChip state={serverChip} count={myServers.length} /></span>
 				{/if}
 				{#if liveKind === 'claude' && session.permissionMode === 'bypassPermissions'}
 					<span
-						class="badge badge-outline badge-sm header-chip hidden shrink-0 sm:inline-flex"
+						class="badge badge-outline badge-sm header-chip hidden shrink-0 roomy:inline-flex"
 						title="yolo (bypassPermissions)"
 					>
 						yolo
@@ -561,7 +594,7 @@
 
 		<RemoteBanner {session} canSetup={liveKind === 'claude'} />
 
-		<div class="join mb-2 shrink-0 self-start max-sm:hidden">
+		<div class="join mb-2 shrink-0 self-start compact:hidden">
 			{#each views as view (view.id)}
 				<button
 					class="btn join-item btn-sm gap-1 {tab === view.id ? 'btn-active' : 'btn-ghost'}"
@@ -646,8 +679,12 @@
 			onclick={() => (sidebarOpen = false)}
 			aria-label="Close sessions"
 		></button>
+		<!-- The drawer sits at the screen's edge, so on a phone it keeps clear of a
+		     notch or Dynamic Island itself (the page's own safe-area padding can't
+		     reach a fixed layer). -->
 		<div
-			class="absolute inset-y-0 left-0 w-72 max-w-[80%] overflow-y-auto border-r border-base-300 bg-base-100 p-3"
+			class="absolute inset-y-0 left-0 w-[22rem] max-w-[90%] overflow-y-auto border-r border-base-300 bg-base-100 p-3"
+			style="padding-left: max(0.75rem, env(safe-area-inset-left)); padding-top: max(0.75rem, env(safe-area-inset-top)); padding-bottom: max(0.75rem, env(safe-area-inset-bottom))"
 		>
 			<div class="mb-2 flex justify-end">
 				<button class="btn btn-ghost btn-sm" onclick={() => (sidebarOpen = false)} aria-label="Close">

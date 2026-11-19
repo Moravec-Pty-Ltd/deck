@@ -9,7 +9,7 @@
 		formatCostSummary,
 		type CostSummary
 	} from '$lib/session-cost-core';
-	import { emptyContext, foldContext, type ContextUsage } from '$lib/context-core';
+	import { contextPercent, emptyContext, foldContext, type ContextUsage } from '$lib/context-core';
 	import ContextMeter from './ContextMeter.svelte';
 	import { modelLabel } from '$lib/models';
 	import { effortLabel } from '$lib/effort';
@@ -26,7 +26,7 @@
 	import VoiceBar from './VoiceBar.svelte';
 	import { VoiceSession } from '$lib/voice.svelte';
 	import { agentGet, agentPost, sessionPath } from '$lib/agent-api';
-	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight, AudioLines, FileText } from '@lucide/svelte';
+	import { Send, Square, ChevronDown, ArrowDown, Paperclip, X, ArrowLeftRight, AudioLines, FileText, SlidersHorizontal } from '@lucide/svelte';
 	import { admitUploads, formatBytes, isInlineImage } from '$lib/upload-core';
 	import {
 		isCrossSession,
@@ -111,6 +111,10 @@
 	// stands on the top segment and the open question moves down to the flat one
 	// with the composer, as the iPhone app does. Never matches elsewhere.
 	const tabletop = new MediaQuery('(vertical-viewport-segments: 2)', false);
+	// On a phone, upright or on its side (the compact variant in layout.css), the
+	// composer is one row that grows with the draft, with the agent controls
+	// folded behind one button.
+	const phone = new MediaQuery('(max-width: 39.99rem), (max-height: 29.99rem)', false);
 	// The open question: the latest top-level ask, unanswered, with no turn end
 	// after it, while the server still holds it open (an aborted ask leaves
 	// neither an answer nor always a result behind).
@@ -820,6 +824,27 @@
 
 	let skillPicker = $state<SkillPicker>();
 	let composerInput = $state<HTMLTextAreaElement>();
+	let composerFocused = $state(false);
+	let controlsOpen = $state(false);
+
+	// On a phone the box starts at one line and grows with the draft to about a
+	// third of the screen; while you read further up it folds back to one line.
+	$effect(() => {
+		void input;
+		const el = composerInput;
+		if (!el) return;
+		if (!phone.current) {
+			el.style.height = '';
+			el.style.overflowY = '';
+			return;
+		}
+		el.style.height = 'auto';
+		const folded = !atBottom && !composerFocused;
+		el.style.overflowY = folded ? 'hidden' : '';
+		if (folded || !input) return;
+		el.style.height = `${Math.min(el.scrollHeight + 2, Math.round(window.innerHeight * 0.35))}px`;
+		maybeScroll();
+	});
 	// Set when the message's leading /command came from the skill list, so the
 	// send asks the server to resolve it against this machine's skills.
 	let skillChosen = $state(false);
@@ -1125,7 +1150,7 @@
 
 	{#if !atBottom}
 		<button
-			class="fold-jump btn btn-circle btn-sm absolute bottom-28 left-1/2 -translate-x-1/2 border border-base-300"
+			class="fold-jump btn btn-circle btn-sm absolute bottom-16 left-1/2 roomy:bottom-28 -translate-x-1/2 border border-base-300"
 			onclick={forceScroll}
 			aria-label="Jump to latest"
 		>
@@ -1152,10 +1177,11 @@
 	{/if}
 
 	{#if cost.results > 0 || context.used > 0}
+		{@const filling = context.window > 0 && contextPercent(context) >= 66}
 		<!-- Running session total and how full the context window is, pinned above
 		     the composer so they stay in view regardless of scroll (per-turn footers
 		     still render inline above). -->
-		<div class="-mx-2 flex items-center justify-center gap-3 border-t border-base-300 px-3 py-1 text-xs opacity-60">
+		<div class="-mx-2 items-center justify-center gap-3 border-t border-base-300 px-3 py-1 text-xs opacity-60 {filling ? 'flex' : 'hidden roomy:flex'}">
 			{#if cost.results > 0}
 				<span class="truncate">{formatCostSummary(cost)}</span>
 			{/if}
@@ -1200,7 +1226,7 @@
 
 	<!-- -mx-2 cancels the session pane's side padding so the composer and its
 	     top border run edge to edge. -->
-	<div class="relative -mx-2 border-t border-base-300 bg-base-100 p-2 sm:p-3">
+	<div class="relative -mx-2 border-t border-base-300 bg-base-100 p-2 roomy:p-3">
 		{#if crossSession}
 			<div class="mb-2 flex items-center gap-1 text-xs opacity-70">
 				<ArrowLeftRight size={12} />
@@ -1244,24 +1270,29 @@
 		{#if uploadError}
 			<p class="mb-2 text-xs text-error" role="alert">{uploadError}</p>
 		{/if}
-		<div class="rounded-box border border-base-300 bg-base-100 focus-within:border-primary focus-within:outline-2 focus-within:outline-primary/40">
+		<div class="flex flex-wrap items-end rounded-box border border-base-300 bg-base-100 focus-within:border-primary focus-within:outline-2 focus-within:outline-primary/40 roomy:block">
 		<textarea
 			bind:this={composerInput}
-			class="textarea block min-h-18 w-full border-0 bg-transparent outline-none focus:outline-none"
-			rows="3"
-			style="height: calc(4.5em + 1.5rem + 3px)"
-			placeholder={status === 'running'
-				? 'Queue a follow-up (Ctrl/Cmd+Enter)'
-				: 'Message (Ctrl/Cmd+Enter to send; paste or drop files)'}
+			class="textarea block min-h-0 w-0 min-w-0 flex-1 resize-none border-0 bg-transparent py-2 outline-none! roomy:h-[calc(4.5em+1.5rem+3px)] roomy:min-h-18 roomy:w-full roomy:resize-y"
+			rows={phone.current ? 1 : 3}
+			placeholder={phone.current
+				? status === 'running' ? 'Queue a follow-up' : 'Message'
+				: status === 'running'
+					? 'Queue a follow-up (Ctrl/Cmd+Enter)'
+					: 'Message (Ctrl/Cmd+Enter to send; paste or drop files)'}
 			bind:value={input}
 			onkeydown={onKeydown}
 			onpaste={onPaste}
+			onfocus={() => (composerFocused = true)}
+			onblur={() => (composerFocused = false)}
 		></textarea>
-		<div class="flex flex-wrap items-center gap-1.5 p-1.5 sm:gap-2">
-			{@render controls?.()}
+		<!-- On a phone only the toggle, skills and send show beside the box until
+		     the toggle opens the rest on a row of their own. -->
+		<div class="flex flex-wrap items-center gap-1.5 p-1.5 roomy:gap-2 {controlsOpen ? 'compact:basis-full' : ''}">
+			<span class="{controlsOpen ? 'contents' : 'hidden'} roomy:contents">{@render controls?.()}</span>
 			{#if voiceAvailable}
 				<button
-					class="btn btn-square btn-sm {voice.enabled ? 'btn-primary' : 'btn-ghost'}"
+					class="btn btn-square btn-sm {voice.enabled ? 'btn-primary' : 'btn-ghost'} {controlsOpen ? '' : 'compact:hidden'}"
 					onclick={toggleVoice}
 					aria-pressed={voice.enabled}
 					aria-label={voice.enabled ? 'Turn voice mode off' : 'Turn voice mode on'}
@@ -1270,7 +1301,7 @@
 					<AudioLines size={16} />
 				</button>
 			{/if}
-			<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+			<div class="ml-auto flex items-center gap-1.5 roomy:gap-2">
 				<input
 					bind:this={fileInput}
 					type="file"
@@ -1278,9 +1309,18 @@
 					class="hidden"
 					onchange={onPick}
 				/>
+				<button
+					class="btn btn-square roomy:hidden {controlsOpen ? 'btn-active' : 'btn-ghost'}"
+					onclick={() => (controlsOpen = !controlsOpen)}
+					aria-expanded={controlsOpen}
+					aria-label="Agent, model and more"
+					title="Agent, model and more"
+				>
+					<SlidersHorizontal size={16} />
+				</button>
 				{#if !session.remote}
 					<button
-						class="btn btn-ghost btn-square"
+						class="btn btn-ghost btn-square {controlsOpen ? '' : 'compact:hidden'}"
 						onclick={() => fileInput?.click()}
 						aria-label="Attach files"
 						title="Attach files"
@@ -1297,13 +1337,15 @@
 					onpick={() => (skillChosen = true)}
 				/>
 
-				<QuickMessages
-					onpick={sendQuickMessage}
-					projectId={sessionProjectId(session, projects)}
-					{projects}
-				/>
+				<span class="{controlsOpen ? 'contents' : 'hidden'} roomy:contents">
+					<QuickMessages
+						onpick={sendQuickMessage}
+						projectId={sessionProjectId(session, projects)}
+						{projects}
+					/>
+				</span>
 				<button class="btn btn-primary" onclick={send} disabled={!canSend} aria-label="Send">
-					<Send size={16} /> <span class="hidden sm:inline">Send</span>
+					<Send size={16} /> <span class="hidden roomy:inline">Send</span>
 				</button>
 			</div>
 		</div>
