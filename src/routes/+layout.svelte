@@ -14,6 +14,7 @@
 	import InboxWatch from '$lib/components/InboxWatch.svelte';
 	import { onShellOpen } from '$lib/shell';
 	import Popover from '$lib/components/Popover.svelte';
+	import SystemMeter from '$lib/components/SystemMeter.svelte';
 	import { badgeText, isContained, isSessionPage, showsNav } from '$lib/nav-core';
 	import { nextTheme, themeOption } from '$lib/theme-core';
 	import { THEME_ICONS, themeUi } from '$lib/theme.svelte';
@@ -230,7 +231,7 @@
 
 {#if withNav}<InboxWatch bind:count={inboxCount} />{/if}
 
-<div class="flex h-[100dvh] flex-col overflow-hidden bg-base-200">
+<div class="deck-shell flex h-[100dvh] flex-col overflow-hidden bg-base-200">
 	<!-- On a phone the session page drops this bar; its menu carries these controls. -->
 	<header
 		class="flex h-12 shrink-0 items-stretch gap-3 border-b border-base-300 bg-base-100 px-3 sm:px-4 {onSession
@@ -249,6 +250,7 @@
 		{/if}
 
 		<div class="ml-auto flex items-center gap-1.5">
+			<SystemMeter />
 			{#if installPrompt}
 				<button class="btn btn-primary btn-sm" onclick={install} aria-label="Install app">
 					<Download size={16} /> <span class="hidden sm:inline">Install</span>

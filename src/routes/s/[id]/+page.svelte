@@ -32,10 +32,11 @@
 	import { goto } from '$app/navigation';
 	import { resolveBeside } from '$lib/beside-core';
 	import { markRead } from '$lib/mark-read';
-	import { Menu, X, Ticket, Check, ChevronDown, AppWindow, Bell, BellRing, BellOff } from '@lucide/svelte';
+	import { Menu, X, Ticket, Check, Ellipsis, AppWindow, Bell, BellRing, BellOff } from '@lucide/svelte';
 	import { inShell, openDevBrowser } from '$lib/shell';
 	import Popover from '$lib/components/Popover.svelte';
 	import NavLinks from '$lib/components/NavLinks.svelte';
+	import SystemMeter from '$lib/components/SystemMeter.svelte';
 	import { THEMES } from '$lib/theme-core';
 	import { THEME_ICONS, themeUi } from '$lib/theme.svelte';
 	import { appChrome } from '$lib/app-chrome.svelte';
@@ -521,10 +522,12 @@
 				<span class="hidden truncate text-xs opacity-60 roomy:inline">{shortPath(session.cwd)}</span>
 			</div>
 			<div class="flex items-center gap-2">
+				<!-- The app bar, which carries the meter elsewhere, is hidden here on a phone. -->
+				<div class="roomy:hidden"><SystemMeter /></div>
 				<!-- Phone width: the views live in this menu instead of the tab row. -->
 				<div class="roomy:hidden">
-					<Popover bind:open={viewMenuOpen} summaryClass="btn btn-ghost btn-sm gap-1" summaryLabel="View: {views.find((v) => v.id === tab)?.label ?? ''}" summaryTitle="View" panelClass="p-2">
-						{#snippet trigger()}{views.find((v) => v.id === tab)?.label ?? 'View'}<ChevronDown size={14} />{/snippet}
+					<Popover bind:open={viewMenuOpen} summaryClass="btn btn-ghost btn-sm btn-square" summaryLabel="View: {views.find((v) => v.id === tab)?.label ?? ''}" summaryTitle="View" panelClass="p-2">
+						{#snippet trigger()}<Ellipsis size={18} />{/snippet}
 						<ul class="menu menu-sm w-full p-0">
 							{#each views as view (view.id)}
 								<li><button onclick={() => { pickView(view.id); viewMenuOpen = false; }} aria-pressed={tab === view.id}>

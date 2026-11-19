@@ -127,6 +127,20 @@ Open PRs awaiting your review for a project. Each row carries \`review\`'s
   "errors": [] }
 \`\`\`
 
+### GET /api/agent/system
+
+The machine's load, as the header meter shows it: CPU use in percent, memory
+and disk (the one holding the home directory) in bytes, network speed in bytes
+a second over the physical interfaces (\`net\` is null where unreadable), and
+the last three minutes of each, one every 3 s, oldest first: percentages, and
+bytes a second for \`down\` and \`up\`. Sampling starts with the first request.
+
+\`\`\`json
+{ "cpu": 12.5, "mem": { "used": 8.1e9, "total": 16.8e9 }, "disk": { "used": 6.7e10, "total": 1.6e11 },
+  "net": { "down": 120000, "up": 34000 },
+  "history": { "cpu": [10.2, 12.5], "mem": [48.1, 48.2], "disk": [41.8, 41.8], "down": [90000, 120000], "up": [30000, 34000] } }
+\`\`\`
+
 ### GET /api/agent/skills
 
 The skills installed on this machine (\`~/.claude/skills\`, each project's
