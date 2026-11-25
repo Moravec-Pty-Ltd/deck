@@ -514,7 +514,8 @@ registered projects or a missing file. Text files up to 1 MB also carry
 
 \`{ "path", "text", "expected" }\` — replace an existing text file (atomic,
 mode kept). \`expected\` is the \`x-content-sha256\` from the GET; 409 if the file
-changed since, 413 over 1 MB, 400 for non-text, 404 outside the projects.
+changed since, 413 over 1 MB, 400 for non-text or a remote session, 404 outside
+the projects, 403 for another project's file or anything under \`.git\`.
 Returns \`{ "sha256", "size" }\`.
 
 ### GET /api/agent/sessions/{id}/dir?path=<relative>
@@ -695,8 +696,8 @@ terminal already holds is a 409. A registered session keeps its id.
 ### POST /api/agent/sessions/{id}/upload
 
 \`{ "files": [{ "name": "report.pdf", "data": "<base64>" }], "text"?: "...", "images"?: [...] }\` —
-share files with a session. Up to 10 per call, 25 MB each; a bigger one is a 413
-naming its size. \`images\` takes the send endpoint's shape and goes inline with
+share files with a session. Up to 10 per call, 25 MB each and 1 GB per session; past
+that is a 413 naming the size. \`images\` takes the send endpoint's shape and goes inline with
 the same turn, so pictures and files can travel in one message.
 
 The files are written under deck's data dir (never into the worktree, so sharing
