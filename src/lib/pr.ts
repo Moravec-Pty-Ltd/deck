@@ -28,15 +28,16 @@ export interface PrMatch {
 // github.com, so github.example.com and www.github.com don't match).
 const PR_URL = /https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d{1,9})(?!\d)/g;
 
+// Every GitHub PR URL in `text`, in order.
+export function prLinks(text: string): PrMatch[] {
+	return [...text.matchAll(PR_URL)].map((m) => ({ url: m[0], repo: `${m[1]}/${m[2]}`, number: Number(m[3]) }));
+}
+
 // The last GitHub PR URL in `text`, or null. Last-wins: an agent may print
 // several links across a session (a push hint, then the opened PR), and the most
 // recently seen one is the session's current PR.
 export function lastPrLink(text: string): PrMatch | null {
-	let last: PrMatch | null = null;
-	for (const m of text.matchAll(PR_URL)) {
-		last = { url: m[0], repo: `${m[1]}/${m[2]}`, number: Number(m[3]) };
-	}
-	return last;
+	return prLinks(text).at(-1) ?? null;
 }
 
 // gh reports terminal states (MERGED/CLOSED) and OPEN; draft is a separate flag

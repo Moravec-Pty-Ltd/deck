@@ -1,7 +1,8 @@
 import { customAlphabet } from 'nanoid';
 import type { DeckSession, SessionIssue, SessionKind, SessionPR, SessionStatus } from '$lib/types';
 import { isAgentKind } from '$lib/types';
-import { lastPrLink, ownsWorktreeBranch } from '$lib/pr';
+import { ownsWorktreeBranch } from '$lib/pr';
+import { capturePr } from './pr-capture';
 import {
 	listStoredSessions,
 	getStoredSession,
@@ -154,24 +155,17 @@ async function computeSessions(): Promise<DeckSession[]> {
 // the most recent GitHub PR URL and persist it so the header chip lights up on
 // open without waiting for a new event. Marked done regardless of outcome, so it
 // runs at most once and a later dismissed `pr` is not resurrected on reload.
-function backfillPr(id: string, alreadyBackfilled?: boolean): SessionPR | undefined {
-	if (alreadyBackfilled) return undefined;
-	const match = lastPrLink(readTranscriptTailText(id));
-	const pr = match ? { ...match, seenAt: Date.now() } : undefined;
-	updateSession(id, pr ? { pr, prBackfilled: true } : { prBackfilled: true });
-	return pr;
+function backfillPr(stored: DeckSession): void {
+	if (stored.pr || stored.prBackfilled) return;
+	updateSession(stored.id, { prBackfilled: true });
+	void capturePr(stored.id, readTranscriptTailText(stored.id), true);
 }
 
 // Derived live view of a stored agent session: the live status plus a one-time
-// PR backfill so the header chip lights up on open.
+// PR backfill, which lights the header chip up through the event feed.
 function agentSessionView(id: string, stored: DeckSession): DeckSession {
-	const pr = stored.pr ?? backfillPr(id, stored.prBackfilled);
-	return {
-		...stored,
-		status: agentStatus(stored),
-		pr,
-		awaitingInput: hasPendingAsk(id)
-	};
+	backfillPr(stored);
+	return { ...stored, status: agentStatus(stored), awaitingInput: hasPendingAsk(id) };
 }
 
 // One session, with `hidden` stamped the same way listSessions does, so a client
@@ -233,7 +227,8 @@ export async function createSession(input: {
 		issues: input.issues?.length ? input.issues : undefined,
 		// Seeded in Review mode so the header PR chip lights up immediately; the
 		// background sync (server/pr.ts) hydrates its live status on the next tick.
-		pr: input.pr
+		pr: input.pr,
+		prSeeded: input.pr ? true : undefined
 	};
 
 	if (isAgentKind(input.kind)) {
