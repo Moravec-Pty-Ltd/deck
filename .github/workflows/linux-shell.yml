@@ -1,6 +1,8 @@
 # Builds the Linux desktop shell (apps/linux) as an AppImage and a deb. A run
-# from the Actions tab keeps them as artifacts; pushing a linux-v* tag also
-# publishes a release, whose latest.json is what the AppImage's updater reads.
+# from the Actions tab keeps them as artifacts; pushing a linux-v* tag on a
+# commit of main also publishes a release, whose latest.json is what the
+# AppImage's updater reads. Only that release job sees the signing key or may
+# write to the repository.
 name: Linux shell
 
 on:
@@ -9,7 +11,7 @@ on:
     tags: ['linux-v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -19,16 +21,18 @@ jobs:
         working-directory: apps/linux
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Check the tag
         if: startsWith(github.ref, 'refs/tags/linux-v')
         env:
           TAG: ${{ github.ref_name }}
-          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
           version=$(jq -r .version tauri.conf.json)
           [ "$TAG" = "linux-v$version" ] || { echo "tag $TAG does not match the tauri.conf.json version $version"; exit 1; }
-          [ "$HAS_KEY" = true ] || { echo "a release needs the TAURI_SIGNING_PRIVATE_KEY secret"; exit 1; }
+          git fetch -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || { echo "$TAG is not on main"; exit 1; }
 
       - name: System libraries
         run: |
@@ -43,32 +47,44 @@ jobs:
 
       - run: cargo test --locked
 
+      # Unsigned: the release job signs what this one built.
       - name: Build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          # Without the signing key there is no update signature; the bundles still build.
-          extra=()
-          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || extra=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
-          npx --yes @tauri-apps/cli@2.12.5 build --bundles appimage deb "${extra[@]}"
+        run: npx --yes @tauri-apps/cli@2.12.5 build --bundles appimage deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deck-linux
           path: |
             apps/linux/target/release/bundle/appimage/*.AppImage
-            apps/linux/target/release/bundle/appimage/*.AppImage.sig
             apps/linux/target/release/bundle/deb/*.deb
 
+  release:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/linux-v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: deck-linux
+          path: bundle
+
+      - name: Sign
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "a release needs the TAURI_SIGNING_PRIVATE_KEY secret"; exit 1; }
+          npx --yes @tauri-apps/cli@2.12.5 signer sign bundle/appimage/*.AppImage > /dev/null
+
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/linux-v')
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          version=$(jq -r .version tauri.conf.json)
-          image=$(ls target/release/bundle/appimage/*.AppImage)
+          version=${TAG#linux-v}
+          image=$(ls bundle/appimage/*.AppImage)
           name=$(basename "$image")
           jq -n \
             --arg version "$version" \
@@ -76,5 +92,5 @@ jobs:
             --arg sig "$(cat "$image.sig")" \
             --arg url "https://github.com/${{ github.repository }}/releases/download/$TAG/$name" \
             '{version: $version, pub_date: $date, platforms: {"linux-x86_64": {signature: $sig, url: $url}}}' > latest.json
-          gh release create "$TAG" --latest --title "deck for Linux ${TAG#linux-v}" --notes "AppImage (updates itself) and deb." \
-            "$image" "$image.sig" target/release/bundle/deb/*.deb latest.json
+          gh release create "$TAG" --repo "${{ github.repository }}" --verify-tag --latest --title "deck for Linux ${TAG#linux-v}" --notes "AppImage (updates itself) and deb." \
+            "$image" "$image.sig" bundle/deb/*.deb latest.json
