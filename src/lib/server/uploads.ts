@@ -40,7 +40,7 @@ export function persistUpload(id: string, name: string, data: string): StoredUpl
 export function uploadedBytes(id: string): number {
 	const dir = sessionDir(id);
 	if (!fs.existsSync(dir)) return 0;
-	return fs.readdirSync(dir).reduce((sum, name) => sum + fs.statSync(path.join(dir, name)).size, 0);
+	return fs.readdirSync(dir).reduce((sum, name) => sum + (fs.statSync(path.join(dir, name), { throwIfNoEntry: false })?.size ?? 0), 0);
 }
 
 // Drop a session's shared files when the session goes, so the data dir doesn't
