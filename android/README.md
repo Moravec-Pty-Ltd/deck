@@ -20,6 +20,9 @@ defaults to `~/Library/Android/sdk`.
 The APK is signed with a personal key generated on first build at
 `~/.deck/android.keystore`. Keep that file; upgrades install over the top only
 when signed with the same key (otherwise uninstall first).
+The build reads its password from `DECK_ANDROID_KEYSTORE_PASSWORD`. A keystore from
+before this has the password `build.sh` used to hold; set the variable to that, or
+change it with `keytool -storepasswd`.
 
 ## Install and set up
 

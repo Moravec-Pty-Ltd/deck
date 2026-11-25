@@ -61,14 +61,15 @@ find "$OUT/obj" -name '*.class' -print0 | xargs -0 "$BT/d8" --release \
 # A personal signing key, kept outside the repo so reinstalls keep working
 # across worktrees and rebuilds.
 KEYSTORE="$HOME/.deck/android.keystore"
+export DECK_ANDROID_KEYSTORE_PASSWORD="${DECK_ANDROID_KEYSTORE_PASSWORD:?set it to the password of $KEYSTORE (a new one is made with it)}"
 if [ ! -f "$KEYSTORE" ]; then
 	mkdir -p "$(dirname "$KEYSTORE")"
 	keytool -genkeypair -keystore "$KEYSTORE" -alias deck -keyalg RSA -keysize 2048 \
-		-validity 10000 -storepass deck-android -keypass deck-android -dname "CN=deck"
+		-validity 10000 -storepass:env DECK_ANDROID_KEYSTORE_PASSWORD -keypass:env DECK_ANDROID_KEYSTORE_PASSWORD -dname "CN=deck"
 fi
 
 "$BT/zipalign" -f 4 "$OUT/deck-unsigned.apk" "$OUT/deck-aligned.apk"
-"$BT/apksigner" sign --ks "$KEYSTORE" --ks-pass pass:deck-android \
+"$BT/apksigner" sign --ks "$KEYSTORE" --ks-pass env:DECK_ANDROID_KEYSTORE_PASSWORD \
 	--out "$OUT/deck.apk" "$OUT/deck-aligned.apk"
 rm -f "$OUT/deck-unsigned.apk" "$OUT/deck-aligned.apk" "$OUT/deck.apk.idsig"
 
