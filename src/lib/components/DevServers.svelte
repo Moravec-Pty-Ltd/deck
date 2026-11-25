@@ -4,10 +4,12 @@
 		canStart,
 		canStop,
 		isInFlight,
+		isLoopbackUrl,
 		serverActionPath,
 		serverLogsPath,
 		sessionServersPath
 	} from '$lib/servers-client';
+	import { inShell, openDevBrowser } from '$lib/shell';
 	import ShellView from './ShellView.svelte';
 	import ServerChip from './ServerChip.svelte';
 	import {
@@ -100,6 +102,19 @@
 		openLogs = { ...openLogs, [name]: !openLogs[name] };
 	}
 
+	// A loopback URL means the deck machine: the shell's dev browser tunnels to it,
+	// and a browser reaches it only when deck itself is on loopback.
+	function canOpen(url: string) {
+		return inShell || !isLoopbackUrl(url) || isLoopbackUrl(location.href);
+	}
+
+	function openPreview(e: MouseEvent & { currentTarget: HTMLAnchorElement }) {
+		const url = e.currentTarget.href;
+		if (!inShell || !isLoopbackUrl(url)) return;
+		e.preventDefault();
+		openDevBrowser(session.id, url);
+	}
+
 	function stepIcon(step: SetupStepProgress) {
 		return step.state;
 	}
@@ -126,11 +141,12 @@
 				<div class="flex flex-wrap items-center gap-2">
 					<span class="font-medium">{s.name}</span>
 					<ServerChip state={s.state} />
-					{#if s.previewUrl && (s.state === 'running' || s.state === 'stalled')}
+					{#if s.previewUrl && (s.state === 'running' || s.state === 'stalled') && canOpen(s.previewUrl)}
 						<a
 							href={s.previewUrl}
 							target="_blank"
 							rel="noopener noreferrer"
+							onclick={openPreview}
 							class="link link-hover inline-flex items-center gap-1 text-xs text-primary"
 						>
 							<ExternalLink size={12} /> {s.previewUrl}

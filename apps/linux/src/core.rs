@@ -141,6 +141,12 @@ pub fn resolve_address(text: &str) -> Option<Url> {
 	matches!(url.scheme(), "http" | "https" | "about").then_some(url)
 }
 
+// An address the deck page asks the dev browser to open: loopback only, so the
+// page can't send it anywhere but a dev server.
+pub fn loopback_address(text: &str) -> Option<Url> {
+	resolve_address(text).filter(|url| url.host_str().is_some_and(is_tunnel_target))
+}
+
 // The WebSocket upgrade for one proxied connection: the token goes in a header,
 // never here.
 pub fn tunnel_url(server: &Url, port: u16, session: Option<&str>) -> Url {
@@ -371,6 +377,16 @@ mod tests {
 		assert_eq!(resolved("file:///etc/passwd"), None);
 		assert_eq!(resolved("tauri://localhost/"), None);
 		assert_eq!(resolved("  "), None);
+	}
+
+	#[test]
+	fn the_deck_page_opens_loopback_addresses_only() {
+		for s in ["http://localhost:5173/app", "http://127.0.0.1:3000", "http://[::1]:8080/", "https://tenant.localhost:3000", "http://0.0.0.0:3000"] {
+			assert_eq!(loopback_address(s).as_ref(), Some(&url(s)), "{s}");
+		}
+		for s in ["http://10.0.0.5:3000", "https://example.com", "http://localhost.example.com", "http://localhost@example.com", "about:blank", "file:///etc/passwd", "tauri://localhost/", ""] {
+			assert_eq!(loopback_address(s), None, "{s}");
+		}
 	}
 
 	#[test]

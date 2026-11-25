@@ -368,7 +368,7 @@ fn on_menu(app: &AppHandle, id: &str) {
 		"browser" => {
 			let app = app.clone();
 			tauri::async_runtime::spawn(async move {
-				if let Err(e) = browser::open(app.clone(), None).await {
+				if let Err(e) = browser::open(app.clone(), None, None).await {
 					tell(&app, e);
 				}
 			});
@@ -546,10 +546,11 @@ async fn dropped_file(index: usize) -> Result<tauri::ipc::Response, String> {
 	std::fs::read(path).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
 }
 
-// The dev browser on a session's servers, from the deck page's session header.
+// The dev browser on a session's servers, from the deck page's session header, or on
+// one server's url, from its Servers tab.
 #[tauri::command]
-async fn open_dev_browser(app: AppHandle, session: String) -> Result<(), String> {
-	let opened = browser::open(app.clone(), Some(session)).await;
+async fn open_dev_browser(app: AppHandle, session: String, url: Option<String>) -> Result<(), String> {
+	let opened = browser::open(app.clone(), Some(session), url).await;
 	if let Err(e) = &opened {
 		tell(&app, e.clone());
 	}
