@@ -4,10 +4,13 @@
 
 	<uses-permission android:name="android.permission.INTERNET" />
 
-	<!-- Cleartext is on: deck is served over plain http on a LAN/tailnet. -->
+	<!-- Cleartext is on: deck may be served over plain http on a LAN/tailnet, when
+	     the address typed says so. The session
+	     cookie stays out of backups. -->
 	<application
 		android:label="deck"
 		android:icon="@mipmap/ic_launcher"
+		android:allowBackup="false"
 		android:usesCleartextTraffic="true"
 		android:supportsRtl="true"
 		android:theme="@android:style/Theme.Material.Light.NoActionBar">

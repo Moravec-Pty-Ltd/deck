@@ -228,11 +228,11 @@ public class MainActivity extends Activity {
 		}
 	}
 
-	/** Trims, defaults the scheme to http, and requires a host. */
+	/** Trims, defaults the scheme to https, and requires a host. */
 	static String normalizeUrl(String raw) {
 		String url = raw == null ? "" : raw.trim();
 		if (url.isEmpty()) return null;
-		if (!url.contains("://")) url = "http://" + url;
+		if (!url.contains("://")) url = "https://" + url;
 		Uri uri = Uri.parse(url);
 		String scheme = uri.getScheme();
 		if (uri.getHost() == null || uri.getHost().isEmpty()) return null;
