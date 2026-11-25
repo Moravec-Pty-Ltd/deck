@@ -25,6 +25,23 @@ function fakeCookies(value?: string): Parameters<typeof requestIsAuthed>[1] {
 	>[1];
 }
 
+it('keeps the data dir and its secrets private, tightening old ones', async () => {
+	const dir = path.join(tmpDir, 'old');
+	fs.mkdirSync(dir, { mode: 0o755 });
+	fs.chmodSync(dir, 0o755);
+	const files = ['token', 'vapid.json', 'push-subscriptions.json'].map((f) => path.join(dir, f));
+	for (const f of files) fs.writeFileSync(f, 'x', { mode: 0o644 });
+	const restore = pinEnv({ DECK_DATA: dir });
+	vi.resetModules();
+	try {
+		await import('./config');
+	} finally {
+		restore();
+	}
+	expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+	for (const f of files) expect(fs.statSync(f).mode & 0o777).toBe(0o600);
+});
+
 describe('tokenMatches', () => {
 	it('accepts the exact token', () => {
 		expect(tokenMatches('correct-horse-battery-staple')).toBe(true);
