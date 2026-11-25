@@ -399,6 +399,12 @@ export interface CreateOptions {
 	remember?: boolean;
 }
 
+const PERMISSION_MODES: unknown[] = ['acceptEdits', 'bypassPermissions', 'default', 'plan'] satisfies DeckSession['permissionMode'][];
+
+function checkPermissionMode(mode: unknown): void {
+	if (mode != null && !PERMISSION_MODES.includes(mode)) error(400, 'invalid permissionMode');
+}
+
 // The whole create pipeline for one untyped internal body: validate,
 // resolve the worktree, create the session, and fire the first turn.
 export async function createSessionFromRequest(
@@ -416,6 +422,7 @@ export async function createSessionFromRequest(
 		prompt?: unknown;
 	};
 	if (!KINDS.includes(kind)) error(400, 'invalid kind');
+	checkPermissionMode(permissionMode);
 	const effortLevel = safeEffort(effort, kind);
 	if (isAgentKind(kind) && !(await agentAvailability())[kind]) error(400, `${kind} is not installed`);
 
