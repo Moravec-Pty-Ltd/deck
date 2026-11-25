@@ -11,7 +11,7 @@ import { pinEnv } from './test-env';
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-devservers-'));
 const restoreEnv = pinEnv({ DECK_DATA: tmpDir, DECK_TOKEN: 'test-token' });
 
-const { probePort } = await import('./devservers');
+const { copyOne, probePort } = await import('./devservers');
 
 afterAll(() => {
 	restoreEnv();
@@ -59,6 +59,27 @@ function close(srv: net.Server): Promise<void> {
 
 afterEach(async () => {
 	await Promise.all(open.splice(0).map(close));
+});
+
+describe('copyOne', () => {
+	it('copies into the worktree, but never through a symlink', () => {
+		const [main, worktree, outside] = ['main', 'wt', 'out'].map((n) => path.join(tmpDir, n));
+		for (const d of [main, worktree, outside]) fs.mkdirSync(d);
+		for (const f of ['.env', 'linked.env', 'dir/.env']) {
+			fs.mkdirSync(path.dirname(path.join(main, f)), { recursive: true });
+			fs.writeFileSync(path.join(main, f), 'A=1');
+		}
+		fs.writeFileSync(path.join(outside, 'target'), 'kept');
+		fs.symlinkSync(path.join(outside, 'target'), path.join(worktree, 'linked.env'));
+		fs.symlinkSync(outside, path.join(worktree, 'dir'));
+		expect(copyOne(main, worktree, '.env')).toBeNull();
+		expect(copyOne(main, worktree, '.env')).toBeNull();
+		expect(fs.readFileSync(path.join(worktree, '.env'), 'utf8')).toBe('A=1');
+		expect(copyOne(main, worktree, 'linked.env')).toMatch(/symlink/);
+		expect(copyOne(main, worktree, 'dir/.env')).toMatch(/symlink/);
+		expect(fs.readFileSync(path.join(outside, 'target'), 'utf8')).toBe('kept');
+		expect(fs.readdirSync(outside)).toEqual(['target']);
+	});
 });
 
 describe('probePort', () => {

@@ -58,6 +58,7 @@ const {
 	isWithinProjects,
 	resolveWithinProjects,
 	isPickerAllowed,
+	inSameProject,
 	confineRelative,
 	projectForPath
 } = await import('./confine');
@@ -158,6 +159,31 @@ describe('completeDirs confinement', () => {
 	it('returns nothing for a directory outside the allowed roots', () => {
 		expect(completeDirs('/etc/')).toEqual([]);
 		expect(completeDirs(`${outside}/`)).toEqual([]);
+	});
+});
+
+describe('inSameProject', () => {
+	it("holds a file to the project that owns the folder, worktrees included", () => {
+		expect(inSameProject(path.join(projRoot, 'src'), path.join(worktrees, 'feature'))).toBe(true);
+		expect(inSameProject(path.join(worktrees, 'feature'), projRoot)).toBe(true);
+		expect(inSameProject(proj2Root, projRoot)).toBe(false);
+		expect(inSameProject(projRoot, nestedRoot)).toBe(false);
+		expect(inSameProject(projRoot, outside)).toBe(false);
+	});
+});
+
+describe('completeDirs hidden folders', () => {
+	it("names $HOME's hidden folders without listing inside them", () => {
+		fs.mkdirSync(path.join(fakeHome, '.keys', 'inner'), { recursive: true });
+		fs.symlinkSync(path.join(fakeHome, '.keys'), path.join(fakeHome, 'alias'));
+		expect(completeDirs(path.join(fakeHome, '.k'))).toEqual(['~/.keys']);
+		expect(completeDirs(`${fakeHome}/.keys/`)).toEqual([]);
+		expect(completeDirs(`${fakeHome}/alias/`)).toEqual([]);
+	});
+
+	it('lists a hidden folder of a registered project', () => {
+		fs.mkdirSync(path.join(projRoot, '.deck', 'out'), { recursive: true });
+		expect(completeDirs(`${projRoot}/.deck/`)).toEqual([path.join(projRoot, '.deck', 'out')]);
 	});
 });
 

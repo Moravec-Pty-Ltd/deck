@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import type { DeckSession } from '$lib/types';
 import { basename, isImagePath, mimeFor, scriptable, type FileInfo } from '$lib/files-core';
 import { MAX_EDIT_BYTES, checkEdit } from '$lib/file-edit-core';
-import { resolveWithinProjects } from './confine';
+import { inSameProject, resolveWithinProjects } from './confine';
 
 // Files a session's messages mention, served back to the clients for previews
 // and downloads. A mention is resolved the way the agent meant it (home and
@@ -93,6 +93,36 @@ export function sha256Hex(data: Buffer | string): string {
 	return crypto.createHash('sha256').update(data).digest('hex');
 }
 
+// Open a resolved file for reading, refusing one swapped for a symlink (or moved
+// behind one) since it was resolved.
+export function openServed(file: ServedFile): number | null {
+	let fd: number;
+	try {
+		fd = fs.openSync(file.absolute, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+	} catch {
+		return null;
+	}
+	const stat = fs.fstatSync(fd);
+	const still = resolveWithinProjects(file.absolute) === file.absolute ? fs.lstatSync(file.absolute, { throwIfNoEntry: false }) : undefined;
+	if (stat.isFile() && stat.size <= MAX_FILE_BYTES && still?.ino === stat.ino && still.dev === stat.dev) return fd;
+	fs.closeSync(fd);
+	return null;
+}
+
+// A save stays in the session's own project and out of git's own files, whose
+// content git acts on. The native realpath gives the on-disk spelling, so a
+// case-insensitive filesystem can't hide the name.
+function editable(session: DeckSession, absolute: string): boolean {
+	let real: string;
+	try {
+		real = fs.realpathSync.native(absolute);
+	} catch {
+		return false;
+	}
+	if (real.split(path.sep).some((part) => part.toLowerCase() === '.git')) return false;
+	return inSameProject(absolute, session.cwd);
+}
+
 export type SaveResult = { ok: true; sha256: string; size: number } | { ok: false; status: number; message: string };
 
 // Replace an existing text file's content. Resolved and confined exactly like a
@@ -102,11 +132,19 @@ export type SaveResult = { ok: true; sha256: string; size: number } | { ok: fals
 export function saveSessionFile(session: DeckSession, mention: string, text: string, expected: string): SaveResult {
 	const file = resolveSessionFile(session, mention);
 	if (!file) return { ok: false, status: 404, message: 'file not found' };
+	if (!editable(session, file.absolute)) return { ok: false, status: 403, message: "only files in this session's project can be edited" };
 	const newBytes = Buffer.byteLength(text);
 	if (file.size > MAX_EDIT_BYTES || newBytes > MAX_EDIT_BYTES) {
 		return { ok: false, status: 413, message: 'file too large to edit (limit 1 MB)' };
 	}
-	const current = fs.readFileSync(file.absolute);
+	const opened = openServed(file);
+	if (opened === null) return { ok: false, status: 404, message: 'file not found' };
+	let current: Buffer;
+	try {
+		current = fs.readFileSync(opened);
+	} finally {
+		fs.closeSync(opened);
+	}
 	const check = checkEdit({
 		name: file.name,
 		currentSize: current.length,

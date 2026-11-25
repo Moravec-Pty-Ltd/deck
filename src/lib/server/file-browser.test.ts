@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, vi, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -63,5 +63,20 @@ describe('listSessionDir', () => {
 	it('treats a file or a missing path as not found', () => {
 		expect(listSessionDir(session(proj), 'README.md')).toMatchObject({ ok: false, status: 404 });
 		expect(listSessionDir(session(proj), 'nope')).toMatchObject({ ok: false, status: 404 });
+	});
+
+	it('cuts a huge folder short, folders first', () => {
+		const big = path.join(proj, 'big');
+		fs.mkdirSync(big);
+		for (let i = 0; i < 2010; i++) fs.writeFileSync(path.join(big, `f${i}`), '');
+		fs.mkdirSync(path.join(big, 'zfolder'));
+		const stats = vi.spyOn(fs, 'statSync');
+		const r = listSessionDir(session(proj), 'big');
+		expect(stats.mock.calls.length).toBeLessThan(2010);
+		stats.mockRestore();
+		expect(r.ok && r.listing.truncated).toBe(true);
+		expect(r.ok && r.listing.entries).toHaveLength(2000);
+		expect(r.ok && r.listing.entries[0].name).toBe('zfolder');
+		fs.rmSync(big, { recursive: true });
 	});
 });

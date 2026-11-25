@@ -36,8 +36,9 @@ function statOrNull(p: string): fs.Stats | null {
 }
 
 // Folders and regular files in `dir`, following symlinks; dangling links and
-// sockets, fifos and devices are left out.
-function readEntries(dir: string): DirEntry[] | null {
+// sockets, fifos and devices are left out. A huge folder is cut to the cap before
+// any is looked at, folders (and links, which may be folders) first.
+function readEntries(dir: string): { entries: DirEntry[]; truncated: boolean } | null {
 	let dirents: fs.Dirent[];
 	try {
 		dirents = fs.readdirSync(dir, { withFileTypes: true });
@@ -45,27 +46,28 @@ function readEntries(dir: string): DirEntry[] | null {
 		return null;
 	}
 	const entries: DirEntry[] = [];
-	for (const d of dirents) {
+	const rank = (d: fs.Dirent) => (d.isDirectory() || d.isSymbolicLink() ? 0 : 1);
+	dirents.sort((a, b) => rank(a) - rank(b) || (a.name < b.name ? -1 : 1));
+	for (const d of dirents.slice(0, MAX_DIR_ENTRIES)) {
 		const stat = statOrNull(path.join(dir, d.name));
 		if (!stat || !(stat.isDirectory() || stat.isFile())) continue;
 		entries.push({ name: d.name, dir: stat.isDirectory(), size: stat.isFile() ? stat.size : 0, mtimeMs: stat.mtimeMs });
 	}
-	return entries;
+	return { entries, truncated: dirents.length > MAX_DIR_ENTRIES };
 }
 
 export function listSessionDir(session: DeckSession, rel: string): ListResult {
 	const target = resolveDir(session, rel);
 	if ('ok' in target) return target;
-	const entries = readEntries(target.dir);
-	if (entries === null) return NOT_FOUND;
-	const sorted = sortEntries(entries);
+	const read = readEntries(target.dir);
+	if (read === null) return NOT_FOUND;
 	return {
 		ok: true,
 		listing: {
 			path: target.rel,
 			root: target.root,
-			entries: sorted.slice(0, MAX_DIR_ENTRIES),
-			truncated: sorted.length > MAX_DIR_ENTRIES
+			entries: sortEntries(read.entries),
+			truncated: read.truncated
 		}
 	};
 }

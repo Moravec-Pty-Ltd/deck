@@ -36,6 +36,13 @@ export function persistUpload(id: string, name: string, data: string): StoredUpl
 	return { path: dest, name: safe, bytes: buf.length };
 }
 
+// Bytes already shared with a session.
+export function uploadedBytes(id: string): number {
+	const dir = sessionDir(id);
+	if (!fs.existsSync(dir)) return 0;
+	return fs.readdirSync(dir).reduce((sum, name) => sum + fs.statSync(path.join(dir, name)).size, 0);
+}
+
 // Drop a session's shared files when the session goes, so the data dir doesn't
 // collect uploads for sessions that no longer exist.
 export function forgetUploads(id: string): void {

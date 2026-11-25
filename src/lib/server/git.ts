@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { error } from '@sveltejs/kit';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -25,9 +26,24 @@ const repoPath = (repo: Repo) => (typeof repo === 'string' ? repo : repo.path);
 // The same host, another directory on it.
 const atPath = (repo: Repo, dir: string): Repo => (typeof repo === 'string' ? dir : { ...repo, path: dir });
 
+// Set by confine.ts, which this module can't import: the store depends on git.
+let isProjectRoot: (dir: string) => boolean = () => false;
+export function setProjectRootCheck(check: typeof isProjectRoot): void {
+	isProjectRoot = check;
+}
+
+// For the commands below: a checkout's files come from elsewhere, so no program its
+// config names is run to watch the working tree, and no bare repository inside it
+// is picked up. A project registered at a bare repository was named by the user.
+function gitArgs(repo: Repo, args: string[]): string[] {
+	const dir = repoPath(repo);
+	const bare = typeof repo === 'string' && isProjectRoot(dir) ? [] : ['-c', 'safe.bareRepository=explicit'];
+	return ['-c', 'core.fsmonitor=false', ...bare, '-C', dir, ...args];
+}
+
 async function git(repo: Repo, ...args: string[]): Promise<string> {
 	if (typeof repo !== 'string') return gitBig(repo, undefined, ...args);
-	const { stdout } = await exec('git', ['-C', repo, ...args]);
+	const { stdout } = await exec('git', gitArgs(repo, args));
 	return stdout;
 }
 
@@ -39,9 +55,9 @@ const DIFF_MAX_BUFFER = 64 * 1024 * 1024;
 async function gitBig(repo: Repo, env: Record<string, string> | undefined, ...args: string[]): Promise<string> {
 	if (typeof repo !== 'string') {
 		const vars = Object.entries(env ?? {}).map(([k, v]) => `${k}=${shellQuote(v)} `).join('');
-		return repo.run(`${vars}${shellJoin(['git', '-C', repo.path, ...args])}`, { maxBuffer: DIFF_MAX_BUFFER });
+		return repo.run(`${vars}${shellJoin(['git', ...gitArgs(repo, args)])}`, { maxBuffer: DIFF_MAX_BUFFER });
 	}
-	const { stdout } = await exec('git', ['-C', repo, ...args], { env: { ...process.env, ...env }, maxBuffer: DIFF_MAX_BUFFER });
+	const { stdout } = await exec('git', gitArgs(repo, args), { env: { ...process.env, ...env }, maxBuffer: DIFF_MAX_BUFFER });
 	return stdout;
 }
 
@@ -128,6 +144,12 @@ async function checkedOutBranch(dir: Repo): Promise<string> {
 	}
 }
 
+// Whether a folder is one of the repo's linked worktrees.
+async function isWorktreeOf(repo: Repo, dir: Repo): Promise<boolean> {
+	const top = await git(dir, 'rev-parse', '--show-toplevel').catch(() => '');
+	return (await listWorktrees(repo)).some((w) => !w.isMain && w.path === top.trim());
+}
+
 // Worktrees land next to the repo: <repo>-worktrees/<branch>. Returns the dir
 // and the branch it is actually on, which differs from the requested one when
 // the dir already existed (an older worktree for the same name, before branch
@@ -149,7 +171,10 @@ export async function createWorktree(
 	const worktrees = path.posix.join(path.posix.dirname(root), `${path.posix.basename(root)}-worktrees`);
 	const dir = path.posix.join(worktrees, worktreeDirName(branch));
 	if (!dir.startsWith(worktrees + '/')) throw new Error(`unsafe branch name: ${branch}`);
-	if (await dirExists(repo, dir)) return { dir, branch: (await checkedOutBranch(atPath(repo, dir))) || branch };
+	if (await dirExists(repo, dir)) {
+		if (!(await isWorktreeOf(repo, atPath(repo, dir)))) error(409, `${dir} exists but is not a worktree of ${root}; move or delete it first`);
+		return { dir, branch: (await checkedOutBranch(atPath(repo, dir))) || branch };
+	}
 	// git makes the missing parents itself on a remote host.
 	if (typeof repo === 'string') fs.mkdirSync(path.dirname(dir), { recursive: true });
 	await git(repo, ...worktreeAddArgs(dir, branch, opts));
@@ -509,10 +534,10 @@ export async function removeWorktree(
 	opts: { deleteBranch?: boolean; branch?: string } = {}
 ) {
 	// --force: drop the worktree even with uncommitted changes (user opted in)
-	await git(repo, 'worktree', 'remove', '--force', worktreeDir);
+	await git(repo, 'worktree', 'remove', '--force', '--', worktreeDir);
 	if (opts.deleteBranch && opts.branch) {
 		try {
-			await git(repo, 'branch', '-D', opts.branch);
+			await git(repo, 'branch', '-D', '--', opts.branch);
 		} catch {
 			// branch may be checked out elsewhere or already gone — non-fatal
 		}

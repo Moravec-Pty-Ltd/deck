@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { Readable } from 'node:stream';
 import { error, json } from '@sveltejs/kit';
 import type { DeckSession } from '$lib/types';
 import { MAX_PATHS_PER_MESSAGE, byteRange } from '$lib/files-core';
@@ -8,7 +9,7 @@ import { parseTranscriptRange } from '$lib/transcript-range-core';
 import { objectBody, sessionOr404 } from './http';
 import { readTranscriptRange } from './transcript';
 import { readImage } from './images';
-import { fileHeaders, resolveSessionFile, saveSessionFile, sha256Hex, statSessionFiles } from './files';
+import { fileHeaders, openServed, resolveSessionFile, saveSessionFile, sha256Hex, statSessionFiles } from './files';
 import { isGitRepo, worktreeDiff, worktreeDiffMeta } from './git';
 import { listSessionDir } from './file-browser';
 import { listRemoteDir, readRemoteFile } from './remote-files';
@@ -44,6 +45,7 @@ export async function sessionImageRoute({ params }: Pick<SessionEvent, 'params'>
 	return new Response(new Uint8Array(img.data), {
 		headers: {
 			'content-type': img.media_type,
+			'x-content-type-options': 'nosniff',
 			'cache-control': 'private, max-age=31536000, immutable'
 		}
 	});
@@ -67,43 +69,59 @@ export async function serveFileRoute({ params, url, request }: SessionEvent): Pr
 	const file = resolveSessionFile(session, url.searchParams.get('path') ?? '');
 	if (!file) error(404, 'file not found');
 	const headers = fileHeaders(file, url.searchParams.get('download') === '1');
-	if (request.headers.get('if-none-match') === headers.etag) return new Response(null, { status: 304, headers });
+	// A compressing proxy weakens the tag.
+	if (request.headers.get('if-none-match')?.replace(/^W\//, '') === headers.etag) return new Response(null, { status: 304, headers });
 	// Safari and iOS play a video only from a server that answers byte ranges.
 	const range = byteRange(request.headers.get('range'), file.size);
 	if (range === 'unsatisfiable') {
 		return new Response(null, { status: 416, headers: { ...headers, 'content-range': `bytes */${file.size}` } });
 	}
+	const fd = openServed(file);
+	if (fd === null) error(404, 'file not found');
 	if (range) {
-		const slice = new Uint8Array(range.end - range.start + 1);
-		const fd = fs.openSync(file.absolute, 'r');
-		try {
-			fs.readSync(fd, slice, 0, slice.length, range.start);
-		} finally {
-			fs.closeSync(fd);
-		}
-		return new Response(slice, {
+		return new Response(streamFile(fd, range.start, range.end), {
 			status: 206,
-			headers: { ...headers, 'content-range': `bytes ${range.start}-${range.end}/${file.size}` }
+			headers: { ...headers, 'content-length': String(range.end - range.start + 1), 'content-range': `bytes ${range.start}-${range.end}/${file.size}` }
 		});
 	}
-	const bytes = fs.readFileSync(file.absolute);
 	// The editor sends this back as `expected` so a save can tell the file moved on.
 	const viewer = viewerFor(file.name);
-	if ((viewer === 'text' || viewer === 'markdown') && bytes.length <= MAX_EDIT_BYTES) {
+	if ((viewer === 'text' || viewer === 'markdown') && file.size <= MAX_EDIT_BYTES) {
+		const bytes = readAndClose(fd);
 		headers['x-content-sha256'] = sha256Hex(bytes);
+		return new Response(new Uint8Array(bytes), { headers });
 	}
-	return new Response(new Uint8Array(bytes), { headers });
+	if (file.size === 0) {
+		fs.closeSync(fd);
+		return new Response(null, { headers });
+	}
+	return new Response(streamFile(fd, 0, file.size - 1), { headers: { ...headers, 'content-length': String(file.size) } });
+}
+
+function readAndClose(fd: number): Buffer {
+	try {
+		return fs.readFileSync(fd);
+	} finally {
+		fs.closeSync(fd);
+	}
+}
+
+// The bytes from `start` to `end` inclusive, closing the file at the end or when
+// the client goes away.
+function streamFile(fd: number, start: number, end: number): ReadableStream<Uint8Array> {
+	return Readable.toWeb(fs.createReadStream('', { fd, start, end })) as ReadableStream<Uint8Array>;
 }
 
 // Save an edited text file: PUT { path, text, expected } where `expected` is the
 // X-Content-Sha256 the read returned. Same resolution and confinement as the
-// read (files.ts); 409 when the file changed since, 413 when over 1 MB.
+// read (files.ts), then to the session's own project; 409 when the file changed since, 413 when over 1 MB.
 export async function saveFileRoute({ params, request }: SessionEvent): Promise<Response> {
 	const session = await sessionOr404(params.id!);
 	const body = await objectBody(request);
 	if (typeof body.path !== 'string' || typeof body.text !== 'string' || typeof body.expected !== 'string') {
 		error(400, 'path, text and expected are required');
 	}
+	if (session.remote) error(400, 'files of a remote session are read-only');
 	const result = saveSessionFile(session, body.path, body.text, body.expected);
 	if (!result.ok) error(result.status, result.message);
 	return json({ sha256: result.sha256, size: result.size });

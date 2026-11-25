@@ -9,7 +9,8 @@ import path from 'node:path';
 // checkout.
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-skills-home-')));
 vi.spyOn(os, 'homedir').mockReturnValue(home);
-vi.mock('./store', () => ({ listProjects: () => [] }));
+const projects: { name: string; path: string }[] = [];
+vi.mock('./store', () => ({ listProjects: () => projects }));
 
 const write = (file: string, text: string) => {
 	fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -71,6 +72,48 @@ describe('skillCatalogue', () => {
 		} finally {
 			fs.writeFileSync(record, saved);
 		}
+	});
+});
+
+describe('links', () => {
+	const outside = path.join(home, 'elsewhere');
+	const link = (target: string, at: string) => {
+		fs.mkdirSync(path.dirname(at), { recursive: true });
+		fs.symlinkSync(target, at);
+	};
+
+	it("keeps a plugin's files inside the plugin", () => {
+		write(path.join(outside, 'skill', 'SKILL.md'), 'private');
+		write(path.join(outside, 'cmd.md'), 'private');
+		link(path.join(outside, 'skill'), path.join(plugin('powers'), 'skills', 'linked'));
+		link(path.join(outside, 'cmd.md'), path.join(plugin('powers'), 'commands', 'linked-cmd.md'));
+		expect(skillBody('powers:linked')).toBeNull();
+		expect(skillBody('powers:linked-cmd')).toBeNull();
+		expect(skillCatalogue().map((s) => s.name)).not.toContain('powers:linked');
+	});
+
+	it("keeps a project's skills to the projects and the user's own", () => {
+		const app = path.join(home, 'app');
+		write(path.join(app, '.claude', 'skills', 'own', 'SKILL.md'), '# own');
+		write(path.join(home, '.agents', 'skills', 'shared', 'SKILL.md'), '# shared');
+		link(path.join(home, '.agents', 'skills', 'shared'), path.join(app, '.claude', 'skills', 'shared'));
+		link(path.join(outside, 'skill'), path.join(app, '.claude', 'skills', 'out'));
+		// Named like the scope of the user's own skills.
+		projects.push({ name: 'global', path: app });
+		try {
+			expect(skillBody('own')).toBe('# own');
+			expect(skillBody('shared')).toBe('# shared');
+			expect(skillBody('out')).toBeNull();
+			expect(skillCatalogue().map((s) => s.name)).toEqual(expect.arrayContaining(['own', 'shared']));
+			expect(skillCatalogue().map((s) => s.name)).not.toContain('out');
+		} finally {
+			projects.length = 0;
+		}
+	});
+
+	it("follows the links in the user's own skills folder", () => {
+		link(path.join(outside, 'skill'), path.join(claude, 'skills', 'mine'));
+		expect(skillBody('mine')).toBe('private');
 	});
 });
 

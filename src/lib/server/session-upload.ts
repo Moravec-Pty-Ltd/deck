@@ -1,9 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import { objectBody, sessionOr404 } from './http';
-import { persistUpload } from './uploads';
+import { persistUpload, uploadedBytes } from './uploads';
 import { sendAgentMessage } from './send-agent-message';
 import { imageKindError, parseImages } from './message-core';
-import { MAX_UPLOAD_FILES, sharedFileMessage, uploadTooLarge } from '$lib/upload-core';
+import { MAX_UPLOAD_FILES, sharedFileMessage, uploadQuota, uploadTooLarge } from '$lib/upload-core';
 
 // Share one or more files with a session. Shared verbatim by
 // /api/sessions/[id]/upload (browser) and /api/agent/sessions/[id]/upload, the
@@ -58,6 +58,8 @@ export async function uploadToSession(event: {
 	const imageRefusal = imageKindError(session.kind, parseImages(body.images));
 	if (imageRefusal) error(400, imageRefusal);
 
+	const overQuota = uploadQuota(uploadedBytes(session.id), files.reduce((sum, f) => sum + decodedBytes(f.data), 0));
+	if (overQuota) error(413, overQuota);
 	// Size was settled before anything was written (see parseFile), so nothing
 	// oversized ever reaches the disk to be cleaned up afterwards.
 	const stored = files.map((f) => persistUpload(session.id, f.name, f.data));
