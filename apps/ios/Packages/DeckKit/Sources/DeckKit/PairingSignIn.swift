@@ -4,7 +4,7 @@ import FoundationNetworking
 #endif
 
 /// What POST /api/pair/request hands a new device: the secret it polls with
-/// and the code to compare against the one deck shows the approver.
+/// and the code the approver types.
 public struct PairingTicket: Decodable, Equatable, Sendable {
 	public let secret: String
 	public let code: String
@@ -61,7 +61,7 @@ public struct PairingClient: Sendable {
 		var request = URLRequest(url: baseURL.appendingPathComponent("api/pair/request"))
 		request.httpMethod = "POST"
 		let (data, response) = try await session.data(for: request)
-		try Self.check(response)
+		try Self.check(response, data: data)
 		return try JSONDecoder().decode(PairingTicket.self, from: data)
 	}
 
@@ -70,7 +70,7 @@ public struct PairingClient: Sendable {
 		components?.queryItems = [URLQueryItem(name: "secret", value: secret)]
 		guard let url = components?.url else { throw URLError(.badURL) }
 		let (data, response) = try await session.data(from: url)
-		try Self.check(response)
+		try Self.check(response, data: data)
 		// A body that doesn't read is a server fault, not a request deck forgot.
 		let status = try JSONDecoder().decode(StatusBody.self, from: data).status
 		let headers = (response as? HTTPURLResponse)?.allHeaderFields ?? [:]
@@ -104,8 +104,13 @@ public struct PairingClient: Sendable {
 		return value
 	}
 
-	private static func check(_ response: URLResponse) throws {
+	private struct Refusal: Decodable { let message: String }
+
+	private static func check(_ response: URLResponse, data: Data) throws {
 		guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-		guard (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+		guard (200..<300).contains(http.statusCode) else {
+			guard let refusal = try? JSONDecoder().decode(Refusal.self, from: data) else { throw URLError(.badServerResponse) }
+			throw DeckError.http(status: http.statusCode, message: refusal.message)
+		}
 	}
 }

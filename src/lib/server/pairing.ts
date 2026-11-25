@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { error } from '@sveltejs/kit';
 import { readJson, writeJson } from './config';
 import { notify } from './push';
 import { publishAgentEvent } from './agent-feed';
@@ -33,6 +34,9 @@ function newCode(): string {
 const PUSH_COOLDOWN_MS = 15_000;
 let lastPushAt = 0;
 
+// When recent requests were made, for the rate limit.
+let recent: number[] = [];
+
 export interface PairingRequest {
 	secret: string;
 	code: string;
@@ -44,7 +48,8 @@ export interface PairingRequest {
 // polling secret and the display code; never the approver-facing id.
 export function requestPairing(): PairingRequest {
 	const now = Date.now();
-	let list = core.prune(load(), now);
+	if (!core.mayRequest(recent, now)) error(429, 'too many sign-in requests; wait a minute and try again');
+	const list = core.prune(load(), now);
 	let code = newCode();
 	while (core.codeInUse(list, code, now)) code = newCode();
 	const record = core.makePairing(
@@ -55,15 +60,17 @@ export function requestPairing(): PairingRequest {
 		},
 		now
 	);
-	list = core.addPairing(list, record, now);
-	save(list);
-	publishAgentEvent(record.id, 'pairing', { pairingId: record.id, code, state: 'pending' });
+	const next = core.addPairing(list, record, now);
+	if (!next) error(429, 'too many devices are waiting; try again in two minutes');
+	recent = [...recent.filter((at) => now - at < 60_000), now];
+	save(next);
+	publishAgentEvent(record.id, 'pairing', { pairingId: record.id, state: 'pending' });
 	if (now - lastPushAt > PUSH_COOLDOWN_MS) {
 		lastPushAt = now;
 		notify({
 			reason: 'needs-you',
 			title: 'deck: device wants access',
-			body: `Approve code ${code}? Open deck to allow or deny.`,
+			body: 'Open deck to type the code it shows, or deny it.',
 			url: '/',
 			tag: 'deck-pairing'
 		});
@@ -77,25 +84,25 @@ export interface PendingPairing {
 }
 
 // The live requests an authenticated browser may approve: just the approver-facing
-// id and the code to eyeball. The requester's secret is never included.
+// id. `code` is blank, for clients that expect the field: the approver types it.
 export function listPending(): PendingPairing[] {
 	const now = Date.now();
 	const list = load();
 	const pruned = core.prune(list, now);
 	if (pruned.length !== list.length) save(pruned);
-	return core.activePending(pruned, now).map(({ id, code }) => ({ id, code }));
+	return core.activePending(pruned, now).map(({ id }) => ({ id, code: '' }));
 }
 
-// Approve or deny a request by its id (from an authenticated browser). Returns
-// whether a live request actually transitioned.
-export function decidePairing(id: string, approve: boolean): boolean {
+// Deny a request, or approve it with the code typed, by its id (from an
+// authenticated browser).
+export function decidePairing(id: string, approve: { code: string } | null): core.Decision {
 	const now = Date.now();
 	const loaded = load();
 	const pruned = core.prune(loaded, now);
-	const { list, changed } = core.decide(pruned, id, approve ? 'approved' : 'denied', now);
-	if (changed || pruned.length !== loaded.length) save(list);
-	if (changed) publishAgentEvent(id, 'pairing', { pairingId: id, state: approve ? 'approved' : 'denied' });
-	return changed;
+	const { list, result, status } = core.decide(pruned, id, approve, now);
+	if (list !== pruned || pruned.length !== loaded.length) save(list);
+	if (status && status !== 'pending') publishAgentEvent(id, 'pairing', { pairingId: id, state: status });
+	return result;
 }
 
 // A requester polls with its secret. On a terminal result the record is consumed

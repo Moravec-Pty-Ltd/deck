@@ -60,7 +60,7 @@ struct MacSignInView: View {
 				Text(ticket.code)
 					.font(.system(size: 34, weight: .semibold, design: .monospaced))
 					.textSelection(.enabled)
-				Text("Approve this request in deck in a browser that is already signed in, after checking it shows the same code.")
+				Text("On a device that is already signed in, type this code to approve the request.")
 					.font(.callout)
 					.foregroundStyle(.secondary)
 				HStack {
@@ -130,7 +130,8 @@ struct MacSignInView: View {
 			return
 		} catch {
 			self.ticket = nil
-			errorMessage = "Couldn't reach deck: \(error.localizedDescription)"
+			// A refusal (too many requests) carries deck's own reason.
+			if case DeckError.http(_, let message) = error { errorMessage = message } else { errorMessage = "Couldn't reach deck: \(error.localizedDescription)" }
 		}
 	}
 

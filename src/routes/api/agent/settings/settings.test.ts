@@ -109,9 +109,13 @@ describe('agent pairing', () => {
 		const req = requestPairing();
 		const { pending } = await (await call(pairingRoute.GET)).json();
 		expect(JSON.stringify(pending)).not.toContain(req.secret);
-		const row = pending.find((p: { code: string }) => p.code === req.code);
-		expect(row).toBeDefined();
-		const decided = await call(decideRoute.POST, { body: { approve: true }, params: { id: row.id } });
+		expect(JSON.stringify(pending)).not.toContain(req.code);
+		const [row] = pending;
+		for (const body of [{ approve: true }, { approve: true, code: 'nope' }]) {
+			expect(await status(() => call(decideRoute.POST, { body, params: { id: row.id } }))).toBe(400);
+		}
+		const spaced = `${req.code.slice(0, 3)} ${req.code.slice(3)}`;
+		const decided = await call(decideRoute.POST, { body: { approve: true, code: spaced }, params: { id: row.id } });
 		expect(await decided.json()).toEqual({ ok: true });
 		const again = await call(decideRoute.POST, { body: { approve: false }, params: { id: row.id } });
 		expect(await again.json()).toEqual({ ok: false });

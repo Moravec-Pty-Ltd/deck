@@ -1348,10 +1348,13 @@ final class ParityTests: XCTestCase {
 		assertShape(sent, "GET", "/api/agent/pairing")
 	}
 
-	func testDecidingAPairingPostsApproveAlone() async {
-		let sent = await requests { _ = try await $0.decidePairing(id: "pair_a", approve: false) }
-		assertShape(sent, "POST", "/api/agent/pairing/pair_a", keys: ["approve"])
-		XCTAssertEqual((sent.first?.json as? [String: Any])?["approve"] as? Bool, false)
+	func testApprovingAPairingPostsTheCodeAndDenyingDoesNot() async {
+		let denied = await requests { _ = try await $0.decidePairing(id: "pair_a", code: nil) }
+		assertShape(denied, "POST", "/api/agent/pairing/pair_a", keys: ["approve"])
+		XCTAssertEqual((denied.first?.json as? [String: Any])?["approve"] as? Bool, false)
+		let approved = await requests { _ = try await $0.decidePairing(id: "pair_a", code: "123456") }
+		assertShape(approved, "POST", "/api/agent/pairing/pair_a", keys: ["approve", "code"])
+		XCTAssertEqual((approved.first?.json as? [String: Any])?["code"] as? String, "123456")
 	}
 
 	func testReviewsUseTheAgentRoute() async throws {
@@ -1372,13 +1375,17 @@ final class ParityTests: XCTestCase {
 		let store = DeckStore(client: Self.stubbedClient())
 		let asked = try JSONDecoder().decode(EventsResponse.self, from: Data("""
 		{ "events": [{ "seq": 1, "sessionId": "pair_a", "type": "pairing", "pairingId": "pair_a", "code": "123456", "state": "pending" },
-		             { "seq": 2, "sessionId": "pair_b", "type": "pairing", "pairingId": "pair_b", "code": "654321", "state": "pending" }], "seq": 2 }
+		             { "seq": 2, "sessionId": "pair_b", "type": "pairing", "pairingId": "pair_b", "state": "pending" }], "seq": 2 }
 		""".utf8))
 		store.apply(asked)
 		store.apply(asked)
-		XCTAssertEqual(store.pairingRequests, [PairingRequest(id: "pair_a", code: "123456"), PairingRequest(id: "pair_b", code: "654321")], "a repeated event is applied once")
+		XCTAssertEqual(store.pairingRequests, [PairingRequest(id: "pair_a", code: "123456"), PairingRequest(id: "pair_b")], "a repeated event is applied once")
 
-		try await store.decidePairing(id: "pair_a", approve: true)
+		do {
+			try await store.decidePairing(id: "pair_a", code: "000000")
+			XCTFail("an older deck's code is checked here")
+		} catch {}
+		try await store.decidePairing(id: "pair_a", code: "123456")
 		XCTAssertEqual(store.pairingRequests.map(\.id), ["pair_b"])
 
 		let decidedElsewhere = try JSONDecoder().decode(EventsResponse.self, from: Data("""

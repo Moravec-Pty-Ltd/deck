@@ -461,7 +461,7 @@ public struct DeckEvent: Codable, Sendable {
 	public let runId: String?
 	public let phase: String?
 	public let updatedAt: Double?
-	/// `pairing`: a device asked for access (`state` pending, with its `code`)
+	/// `pairing`: a device asked for access (`state` pending; an older deck adds its `code`)
 	/// or the request was decided (approved or denied).
 	/// `watches`: the session's full new list of active watches, empty when none are left.
 	public let watches: [Watch]?
