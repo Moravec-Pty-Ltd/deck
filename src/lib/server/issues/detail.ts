@@ -12,7 +12,9 @@ import type { SessionIssue } from '$lib/types';
 import { gh } from './github';
 import { graphql as linearGraphql } from './linear';
 import { clickupComments, cu, seg } from './clickup';
+import { publicGet } from './public-fetch';
 import {
+	asData,
 	imageUrls,
 	isSafeImageUrl,
 	parseClickupDetail,
@@ -157,20 +159,6 @@ function authHeaders(
 // memory / fill the worktree; the fetch timeout bounds a slow drip.
 const MAX_IMG_BYTES = 10 * 1024 * 1024;
 
-// A response worth keeping: 2xx, an actual image content-type, and a declared
-// size within the cap — so a non-image / error / oversized body from an issue
-// URL is dropped before we read it into memory (a lying content-length is caught
-// again after the read).
-function isImageOk(res: Response): boolean {
-	const type = res.headers.get('content-type') ?? '';
-	const len = Number(res.headers.get('content-length'));
-	return res.ok && type.startsWith('image/') && !(len > MAX_IMG_BYTES);
-}
-
-// `redirect: 'manual'` so a 3xx from an allowed host to an internal target can't
-// be followed (it reads as !ok and drops). isSafeImageUrl has already screened
-// the literal host; DNS-rebinding stays an accepted residual for a single-user
-// local tool.
 async function downloadImage(
 	url: string,
 	dest: string,
@@ -182,11 +170,9 @@ async function downloadImage(
 	// form still matches the Linear allowlist instead of losing its auth header.
 	const host = new URL(url).hostname.replace(/\.$/, '');
 	const headers = authHeaders(source, host, apiKey);
-	const res = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(IMG_TIMEOUT_MS) });
-	if (!isImageOk(res)) return false;
-	const buf = Buffer.from(await res.arrayBuffer());
-	if (buf.length === 0 || buf.length > MAX_IMG_BYTES) return false;
-	fs.writeFileSync(dest, buf);
+	const res = await publicGet(url, { headers, timeoutMs: IMG_TIMEOUT_MS, maxBytes: MAX_IMG_BYTES });
+	if (res.status < 200 || res.status > 299 || !res.type.startsWith('image/') || !res.body.length) return false;
+	fs.writeFileSync(dest, res.body);
 	return true;
 }
 
@@ -303,10 +289,12 @@ export async function buildIssuePrompt(
 	}
 	if (details.some(hasImages)) await excludeAssets(worktree);
 
+	const marker = `issue-text-${crypto.randomBytes(6).toString('hex')}`;
+	const wrap = (text: string) => asData(text, marker);
 	return {
 		issueTitle: renderIssueTitle(details),
-		issueBody: renderIssueBody(details),
-		issueComments: renderIssueComments(details),
+		issueBody: renderIssueBody(details, wrap),
+		issueComments: wrap(renderIssueComments(details)),
 		warnings,
 		titles: Object.fromEntries(details.filter((d) => d.title).map((d) => [d.ref, d.title]))
 	};

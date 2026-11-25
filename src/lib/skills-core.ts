@@ -43,7 +43,7 @@ export function skillInvocation(text: string, skills: SkillInfo[]): string {
 	const names = skills.map((s) => s.name).sort((a, b) => b.length - a.length);
 	for (const name of names) {
 		const pattern = new RegExp(
-			`^(?:please\\s+)?(?:run|start|use|do|kick off)?\\s*(?:the\\s+)?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+skill)?(?:\\s+(?:on|for|with|against))?\\b\\s*(.*)$`,
+			`^(?:please\\s+)?(?:run|start|use|do|kick off)?\\s*(?:the\\s+)?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+skill)?(?:\\s+(?:on|for|with|against))?\\b\\s*([\\s\\S]*)$`,
 			'i'
 		);
 		const m = pattern.exec(trimmed);

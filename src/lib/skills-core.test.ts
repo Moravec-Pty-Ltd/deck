@@ -43,6 +43,10 @@ describe('parseSkillFrontmatter', () => {
 });
 
 describe('skillInvocation', () => {
+	it('keeps a multi-line argument', () => {
+		expect(skillInvocation('run notes on one\ntwo', [{ name: 'notes', description: '', scope: 'global' }])).toBe('/notes one\ntwo');
+	});
+
 	it('turns spoken phrasing into the command that runs the skill', () => {
 		expect(skillInvocation('run dev-workflow on ENG-1', skills)).toBe('/dev-workflow ENG-1');
 		expect(skillInvocation('please use the code-review skill for this branch', skills)).toBe('/code-review this branch');

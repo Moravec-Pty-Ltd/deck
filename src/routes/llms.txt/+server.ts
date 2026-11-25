@@ -630,7 +630,9 @@ or restart the turn (other kinds). Returns \`{ "ok": true, "status": "running",
 "seq": <n> }\`. \`seq\` is the event-log cursor at send time: poll the event log
 from it and watch for this session's \`turn-finished\` to know the turn is done.
 Text is literal unless \`expand: true\` is supplied. Expansion can fetch rich
-issue context for attached issues. \`skills: true\` additionally rewrites spoken
+issue context for attached issues; an issue's body and comments arrive marked as
+data, and a GitHub issue's comments only from people with a role in its
+repository. \`skills: true\` additionally rewrites spoken
 skill phrasing into its \`/name arguments\` command (see Discovery). \`voice: true\`
 marks a message spoken in voice mode: deck asks the agent to open its reply
 with a short plain answer that reads well aloud. Images currently require a Claude session;

@@ -24,14 +24,14 @@ describe('issue detail fetch', () => {
 	it('fetches ClickUp comments alongside the task', async () => {
 		const context = await buildIssuePrompt('/path/to/project', [{ issue: clickup, apiKey: 'key' }]);
 		expect(mocks.comments).toHaveBeenCalledWith('key', 'abc');
-		expect(context.issueBody).toBe('Body');
-		expect(context.issueComments).toBe('Older\n\nNewer');
+		expect(context.issueBody).toMatch(/\n<<<(\S+)\nBody\n\1>>>$/);
+		expect(context.issueComments).toMatch(/\n<<<(\S+)\nOlder\n\nNewer\n\1>>>$/);
 		expect(context.warnings).toEqual([]);
 	});
 	it('keeps the ClickUp body when only the comment request fails', async () => {
 		mocks.comments.mockRejectedValue(new Error('ClickUp API 500'));
 		const context = await buildIssuePrompt('/path/to/project', [{ issue: clickup, apiKey: 'key' }]);
-		expect(context.issueBody).toBe('Body');
+		expect(context.issueBody).toMatch(/\n<<<(\S+)\nBody\n\1>>>$/);
 		expect(context.issueComments).toBe('');
 		expect(context.warnings).toEqual([]);
 	});
