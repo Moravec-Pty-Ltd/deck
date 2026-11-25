@@ -1,12 +1,16 @@
 import http from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { registerAsk, type AskQuestion } from './ask';
 import { WatchError, describeMaxDelay } from './watch-core';
-import { watchMaxDelayMs } from './config';
+import { dataDir, watchMaxDelayMs } from './config';
+import { getStoredSession } from './store';
+import { mcpAllowed, writeMcpConfig } from '$lib/mcp-auth';
 import { activeWatches, cancelWatch, createWatch, getWatch } from './watch-store';
 import { waitsForLabel, type Watch } from '$lib/watches';
 
@@ -14,8 +18,9 @@ import { waitsForLabel, type Watch } from '$lib/watches';
 // spawned `claude` at /mcp/<sessionId>. Its main tool, `ask`, mirrors
 // the built-in AskUserQuestion but *blocks* until the user answers in the deck
 // UI — which the headless `-p` CLI can't do for the native tool. The deck
-// session id is taken from the URL path and bound into each tool handler. The
-// watch tools (issue #277) let the agent set a timer that wakes it later.
+// session id is taken from the URL path, must come with that session's secret,
+// and is bound into each tool handler. The watch tools (issue #277) let the agent
+// set a timer that wakes it later.
 
 const ASK_INPUT = {
 	questions: z
@@ -128,11 +133,16 @@ export function buildServer(deckId: string): McpServer {
 	return server;
 }
 
-const transports = new Map<string, StreamableHTTPServerTransport>();
+// Open connections, each usable only by the deck session that opened it.
+const transports = new Map<string, { deckId: string; transport: StreamableHTTPServerTransport }>();
 
 function deckIdFromUrl(url: string | undefined): string | null {
 	const m = (url ?? '').match(/^\/mcp\/([^/?]+)/);
-	return m ? decodeURIComponent(m[1]) : null;
+	try {
+		return m ? decodeURIComponent(m[1]) : null;
+	} catch {
+		return null;
+	}
 }
 
 async function readBody(req: http.IncomingMessage): Promise<unknown> {
@@ -148,13 +158,28 @@ async function readBody(req: http.IncomingMessage): Promise<unknown> {
 
 interface McpState {
 	port: number;
+	// Session secrets derive from this, so each lasts as long as the server does.
+	key: Buffer;
 	ready: Promise<number>;
 }
 
 const g = globalThis as { __deckMcp?: McpState };
 
+function secretFor(state: McpState, deckId: string): string {
+	return createHmac('sha256', state.key).update(deckId).digest('hex');
+}
+
+function admitted(state: McpState, deckId: string, req: http.IncomingMessage): boolean {
+	return !!getStoredSession(deckId) && mcpAllowed(req.headers, state.port, secretFor(state, deckId));
+}
+
+function openTransport(deckId: string, sid: string | undefined): StreamableHTTPServerTransport | undefined {
+	const open = sid ? transports.get(sid) : undefined;
+	return open?.deckId === deckId ? open.transport : undefined;
+}
+
 function startServer(): McpState {
-	const state: McpState = { port: 0, ready: Promise.resolve(0) };
+	const state: McpState = { port: 0, key: randomBytes(32), ready: Promise.resolve(0) };
 
 	const httpServer = http.createServer(async (req, res) => {
 		const deckId = deckIdFromUrl(req.url);
@@ -162,10 +187,14 @@ function startServer(): McpState {
 			res.writeHead(404).end();
 			return;
 		}
+		if (!admitted(state, deckId, req)) {
+			res.writeHead(403).end();
+			return;
+		}
 		try {
 			const sid = req.headers['mcp-session-id'] as string | undefined;
 			const body = req.method === 'POST' ? await readBody(req) : undefined;
-			let transport = sid ? transports.get(sid) : undefined;
+			let transport = openTransport(deckId, sid);
 
 			if (!transport) {
 				if (req.method !== 'POST' || !isInitializeRequest(body)) {
@@ -183,7 +212,7 @@ function startServer(): McpState {
 				const created: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
 					sessionIdGenerator: () => randomUUID(),
 					onsessioninitialized: (id: string) => {
-						transports.set(id, created);
+						transports.set(id, { deckId, transport: created });
 					}
 				});
 				created.onclose = () => {
@@ -212,11 +241,27 @@ function startServer(): McpState {
 
 // Start (once) the localhost MCP server and resolve when it's listening.
 export function ensureMcp(): Promise<number> {
-	if (!g.__deckMcp) g.__deckMcp = startServer();
+	// No key: the state a hot reload kept from a version that had none.
+	if (!g.__deckMcp?.key) g.__deckMcp = startServer();
 	return g.__deckMcp.ready;
 }
 
-export function mcpUrl(deckId: string): string {
-	const port = g.__deckMcp?.port ?? 0;
-	return `http://127.0.0.1:${port}/mcp/${encodeURIComponent(deckId)}`;
+const configDir = path.resolve(dataDir, 'mcp');
+
+function configPath(deckId: string): string {
+	return path.join(configDir, `${encodeURIComponent(deckId)}.json`);
+}
+
+// Write the `--mcp-config` file a session's claude reads, and return its path.
+export function mcpConfigFile(deckId: string): string {
+	const state = g.__deckMcp;
+	if (!state) throw new Error('the MCP server has not started');
+	fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
+	const file = configPath(deckId);
+	writeMcpConfig(file, `http://127.0.0.1:${state.port}/mcp/${encodeURIComponent(deckId)}`, secretFor(state, deckId));
+	return file;
+}
+
+export function forgetMcpConfig(deckId: string): void {
+	fs.rmSync(configPath(deckId), { force: true });
 }

@@ -13,6 +13,7 @@ import {
 } from './store';
 import { hiddenSessionIds, setSessionHidden } from './hidden';
 import { forgetUploads } from './uploads';
+import { forgetMcpConfig } from './mcp';
 import { stampHidden } from '$lib/hidden-core';
 import { readTranscriptTailText } from './transcript';
 import {
@@ -317,6 +318,7 @@ export async function deleteSession(
 		await removeSessionWorktree(stored, opts);
 	}
 	removeSession(id);
+	forgetMcpConfig(id);
 	publishAgentEvent(id, 'session-deleted');
 	syncBadge();
 }

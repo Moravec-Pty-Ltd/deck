@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import type http from 'node:http';
 import type { AgentEntry, DeckToAgent } from '../lib/agent-protocol';
+import { mcpAllowed } from '../lib/mcp-auth';
 
 // The deck agent's moving parts (issue #411), apart from its entry point
 // (deck-agent.ts) so they can be tested in-process. node: APIs only, which bun
@@ -168,7 +169,8 @@ async function readJson(req: http.IncomingMessage): Promise<unknown> {
 type McpHandler = { handleRequest(req: http.IncomingMessage, res: http.ServerResponse, body?: unknown): Promise<void> };
 
 // One request to the runner's loopback MCP endpoint.
-export async function serveMcp(mcp: McpHandler, req: http.IncomingMessage, res: http.ServerResponse) {
+export async function serveMcp(mcp: McpHandler, secret: string, req: http.IncomingMessage, res: http.ServerResponse) {
+	if (!mcpAllowed(req.headers, req.socket.localPort ?? 0, secret)) return void res.writeHead(403).end();
 	if (!req.url?.startsWith('/mcp')) return void res.writeHead(404).end();
 	try {
 		await mcp.handleRequest(req, res, req.method === 'POST' ? await readJson(req) : undefined);

@@ -16,13 +16,14 @@
 // any later serve can pick the session up where the last one dropped.
 
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { writeMcpConfig } from '../lib/mcp-auth';
 import { versionLine, type AgentEvent, type DeckToAgent } from '../lib/agent-protocol';
 import { NO_CLAUDE_MARK, NO_PATH_MARK } from '../lib/remote-core';
 import { abandoned, end, eventWriter, follower, highestSent, livePid, numbered, parse, pump, readText, routeInput, serveMcp } from './agent-core';
@@ -57,6 +58,7 @@ function sessionFiles(id: string | undefined) {
 		start: path.join(dir, 'start.json'),
 		events: path.join(dir, 'events.ndjson'),
 		input: path.join(dir, 'in.ndjson'),
+		mcp: path.join(dir, 'mcp.json'),
 		runnerPid: path.join(dir, 'runner.pid'),
 		claudePid: path.join(dir, 'claude.pid'),
 		// Touched by an attached serve.
@@ -94,13 +96,14 @@ async function runner(id: string) {
 	const mcp = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
 	mcp.onmessage = (msg) => emit({ t: 'mcp', msg });
 	await mcp.start();
-	const server = http.createServer((req, res) => void serveMcp(mcp, req, res));
+	const secret = randomBytes(32).toString('hex');
+	const server = http.createServer((req, res) => void serveMcp(mcp, secret, req, res));
 	const port = await new Promise<number>((resolve) =>
 		server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port))
 	);
 
-	const mcpConfig = JSON.stringify({ mcpServers: { deck: { type: 'http', url: `http://127.0.0.1:${port}/mcp` } } });
-	const child = spawn('claude', [...start.args, '--mcp-config', mcpConfig], { cwd: start.path, stdio: ['pipe', 'pipe', 'pipe'] });
+	writeMcpConfig(f.mcp, `http://127.0.0.1:${port}/mcp`, secret);
+	const child = spawn('claude', [...start.args, '--mcp-config', f.mcp], { cwd: start.path, stdio: ['pipe', 'pipe', 'pipe'] });
 	child.on('error', (e: NodeJS.ErrnoException) => {
 		emit({ t: 'err', text: `${e.code === 'ENOENT' ? NO_CLAUDE_MARK : e.message}\n` });
 		finish(127);
