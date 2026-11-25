@@ -2,7 +2,7 @@
 // issue/PR reference parsing, graph ordering and loop-back edges, which controls
 // a status allows, and the shared fetch/poll helpers both run pages use.
 // Node-free so it is unit-tested.
-import { DONE, type DecisionBy, type PhaseStatus, type RunPhaseDigest, type RunStatus, type WorkflowCategory, type WorkflowDef } from './workflows';
+import { DONE, type DecisionBy, type PhaseStatus, type RunDigest, type RunPhaseDigest, type RunStatus, type WorkflowCategory, type WorkflowDef } from './workflows';
 import type { IssueSourceType } from './types';
 
 // Row accent (a left border) and status badge per run status. Every status also
@@ -217,4 +217,9 @@ export function pollWhileVisible(tick: () => void, ms: number, doc: VisibilityDo
 		stop();
 		doc.removeEventListener('visibilitychange', sync);
 	};
+}
+
+// The session that started a run, if one did.
+export function starterSession(run: Pick<RunDigest, 'startedBy'>): { sessionId: string; title?: string } | undefined {
+	return run.startedBy && 'sessionId' in run.startedBy ? run.startedBy : undefined;
 }

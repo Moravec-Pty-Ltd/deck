@@ -15,6 +15,9 @@ const fake = vi.hoisted(() => ({
 	sent: [] as { id: string; text: string }[],
 	interrupted: [] as string[],
 	notified: [] as Record<string, unknown>[],
+	reports: [] as { id: string; text: string; due: number }[],
+	busy: new Set<string>(),
+	overseerId: undefined as string | undefined,
 	trees: ['t0'] as string[],
 	deltas: [] as [string, string][],
 	verifyCode: 0,
@@ -81,7 +84,7 @@ vi.mock('./create-session', () => ({
 vi.mock('./agents/dispatch', () => ({
 	agentSend: async (s: DeckSession, text: string) => void fake.sent.push({ id: s.id, text }),
 	agentInterrupt: (id: string) => void fake.interrupted.push(id),
-	agentTurnRunning: () => false
+	agentTurnRunning: (id: string) => fake.busy.has(id)
 }));
 vi.mock('./ask', () => ({ hasPendingAsk: () => false }));
 vi.mock('./transcript', () => ({
@@ -137,6 +140,7 @@ vi.mock('./workflow-store', async () => {
 	const { resolveWorkflows } = await import('./workflow-core');
 	return {
 		listRuns: () => fake.runs,
+		overseerId: () => fake.overseerId,
 		getRun: (id: string) => fake.runs.find((r) => r.id === id),
 		saveRun: (run: WorkflowRun) => {
 			if (!fake.runs.includes(run)) fake.runs.push(run);
@@ -153,6 +157,11 @@ vi.mock('./workflow-store', async () => {
 	};
 });
 vi.mock('./workflow-overseer', () => ({ noteOverseer: () => {} }));
+vi.mock('./send-agent-message', () => ({
+	sendAgentMessage: async (s: DeckSession, body: { text: string }) => {
+		fake.reports.push({ id: s.id, text: body.text, due: fake.runs.filter((r) => r.reportDue).length });
+	}
+}));
 
 const { agentFeed } = await import('./agent-feed');
 const runner = await import('./workflow-runner');
@@ -228,6 +237,9 @@ beforeEach(() => {
 	fake.sent = [];
 	fake.interrupted = [];
 	fake.notified = [];
+	fake.reports = [];
+	fake.busy.clear();
+	fake.overseerId = undefined;
 	fake.trees = ['t0'];
 	fake.deltas = [];
 	fake.verifyCode = 0;
@@ -388,6 +400,100 @@ describe('a project with no test command', () => {
 		await runner.runAction(run.id, 'answer', { text: 'set it' });
 		await settle();
 		expect(run.phase).toBe('review');
+	});
+});
+
+describe('reporting to the session that started the run', () => {
+	const boss = { id: 'boss', kind: 'claude', title: 'Boss', cwd: '/p/acme', createdAt: 0, lastActiveAt: 0, status: 'idle' } as DeckSession;
+	const startFromBoss = async (n = 7) => {
+		fake.sessions.set('boss', boss);
+		const run = await runner.startRun({ cwd: '/p/acme', category: 'dev', issue: { ...issue, id: `acme/web#${n}` }, startedBy: { sessionId: 'boss' } });
+		await settle();
+		return run;
+	};
+	const toDone = async (run: WorkflowRun) => {
+		await finishTurn(run);
+		await finishTurn(run, findings(0).replace('[]', '[{"file":"src/a.ts","line":4,"severity":"nit","defect":"odd name"}]'));
+		await finishTurn(run);
+		expect(run.status).toBe('done');
+	};
+
+	it('sends one message when the run is done, with its PR and leftover findings', async () => {
+		const run = await startFromBoss();
+		await toDone(run);
+		await runner.pollRuns();
+		expect(fake.reports).toHaveLength(1);
+		const { id, text, due } = fake.reports[0];
+		expect(due).toBe(1); // still owed until the send has started
+		expect(id).toBe('boss');
+		expect(text).toContain(`http://localhost:4818/runs/${run.id}`);
+		expect(text).toContain('done at phase pr');
+		expect(text).toContain('https://github.com/acme/web/pull/9');
+		expect(text).toContain('- src/a.ts:4 (nit) odd name');
+	});
+
+	it('sends the question when the run blocks, and again when it ends later', async () => {
+		const run = await startFromBoss();
+		await runner.runAction(run.id, 'block', { question: 'Which base?' });
+		await settle();
+		expect(fake.reports.map((r) => r.text)).toEqual([expect.stringContaining('Blocked on: Which base?')]);
+		await runner.runAction(run.id, 'answer', { text: 'main' });
+		await toDone(run);
+		expect(fake.reports).toHaveLength(2);
+	});
+
+	it('waits for a busy session, then sends every due report in one message', async () => {
+		const a = await startFromBoss();
+		const b = await startFromBoss(8);
+		fake.busy.add('boss');
+		await runner.runAction(a.id, 'block', { question: 'A?' });
+		await runner.runAction(b.id, 'block', { question: 'B?' });
+		await settle();
+		expect(fake.reports).toEqual([]);
+		fake.busy.clear();
+		(agentFeed as EventEmitter).emit('event', { type: 'turn-finished', sessionId: 'boss' });
+		await settle();
+		expect(fake.reports).toHaveLength(1);
+		expect(fake.reports[0].text).toMatch(/A\?[^]*B\?/);
+	});
+
+	it('holds a report while its session is a phase of a live run', async () => {
+		const outer = await start();
+		const phase = outer.visits[0].sessionId!;
+		const inner = await runner.startRun({ cwd: '/p/acme', category: 'dev', issue: { ...issue, id: 'acme/web#8' }, startedBy: { sessionId: phase } });
+		await runner.runAction(inner.id, 'block', { question: 'A?' });
+		await settle();
+		expect(fake.reports).toEqual([]);
+		await runner.runAction(outer.id, 'cancel', {});
+		await runner.pollRuns();
+		await settle();
+		expect(fake.reports.map((r) => r.id)).toEqual([phase]);
+	});
+
+	it('drops a report for a run that moved on before the session was free', async () => {
+		const run = await startFromBoss();
+		fake.busy.add('boss');
+		await runner.runAction(run.id, 'block', { question: 'A?' });
+		await runner.runAction(run.id, 'resume', {});
+		fake.busy.clear();
+		await runner.pollRuns();
+		await settle();
+		expect(fake.reports).toEqual([]);
+		expect(run.reportDue).toBeUndefined();
+	});
+
+	it('skips a deleted session, the overseer, and a run a person started', async () => {
+		const gone = await startFromBoss();
+		fake.sessions.delete('boss');
+		await runner.runAction(gone.id, 'block', { question: 'A?' });
+		const watched = await startFromBoss(8);
+		fake.overseerId = 'boss';
+		await runner.runAction(watched.id, 'block', { question: 'B?' });
+		const human = await runner.startRun({ cwd: '/p/acme', category: 'dev', issue: { ...issue, id: 'acme/web#9' }, startedBy: { human: true } });
+		await runner.runAction(human.id, 'block', { question: 'C?' });
+		await settle();
+		expect(fake.reports).toEqual([]);
+		expect([gone, watched, human].map((r) => r.reportDue)).toEqual([undefined, undefined, undefined]);
 	});
 });
 

@@ -11,6 +11,7 @@
 		parseIssueRef,
 		parsePrRef,
 		pollWhileVisible,
+		starterSession,
 		workflowsByCategory,
 		PHASE_STATUS_VIEW,
 		RUN_STATUS_VIEW
@@ -18,6 +19,7 @@
 	import type { AgentIssue, AgentPr, Project } from '$lib/types';
 	import { relativeTime } from '$lib/time';
 	import { shortIssueId } from '$lib/issues';
+	import StarterLink from '$lib/components/StarterLink.svelte';
 	import IssuePicker from '$lib/components/IssuePicker.svelte';
 	import PrPicker from '$lib/components/PrPicker.svelte';
 	import { goto } from '$app/navigation';
@@ -50,6 +52,9 @@
 
 	let clearing = $state(false);
 	const shownRuns = $derived(inGroup(runs, (r) => r.projectPath, groupSwitch.projects, groupSwitch.selected));
+	// Runs a session started, grouped under it where its newest run falls; the
+	// rest are grouped together.
+	const runGroups = $derived([...Map.groupBy(shownRuns, (r) => starterSession(r)?.sessionId ?? '')]);
 	const finishedCount = $derived(runs.filter((r) => r.status === 'done' || r.status === 'cancelled').length);
 
 	const groups = $derived(workflowsByCategory(workflows));
@@ -162,6 +167,7 @@
 				workflow: workflowId || undefined,
 				category: workflow?.category,
 				base: base.trim() || undefined,
+				startedBy: { human: true },
 				...picked
 			});
 			await goto(`/runs/${encodeURIComponent(run.id)}`);
@@ -328,52 +334,64 @@
 					: 'No runs yet. Start one to walk an issue or a PR through its workflow.'}
 			</p>
 		{:else}
-			<ul class="space-y-2">
-				{#each shownRuns as run (run.id)}
-					{@const view = RUN_STATUS_VIEW[run.status]}
-					{@const muted = run.status === 'paused' || run.status === 'cancelled'}
-					<li>
-						<a
-							href="/runs/{encodeURIComponent(run.id)}"
-							class="block rounded-box border border-l-[3px] border-base-300 bg-base-100 px-3 py-2 hover:bg-base-200 {view.accent}"
-						>
-							<div class="flex items-center gap-2">
-								<span class="min-w-0 flex-1 truncate text-sm font-medium {muted ? 'opacity-60' : ''}">{run.title}</span>
-								{#if run.testsSkipped}<span class="badge badge-sm badge-warning" title={run.testsSkipped}>tests skipped</span>{/if}
-								<span class="badge badge-sm {view.badge}">{view.label}</span>
-								<span class="w-8 text-right text-xs opacity-50">{relativeTime(run.updatedAt)}</span>
-							</div>
-							<div class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs opacity-60">
-								<span class="truncate">{run.workflow.name}</span>
-								<span aria-hidden="true">·</span>
-								<span class="truncate">{basename(run.projectPath)}</span>
-								<span aria-hidden="true">·</span>
-								<GitBranch size={11} class="shrink-0" />
-								<span class="truncate font-mono">{run.branch}</span>
-							</div>
-							<div class="mt-2 flex items-center gap-2">
-								<div class="flex flex-1 gap-0.5" role="img" aria-label="Phases: {run.phases.map((p) => `${p.label} ${PHASE_STATUS_VIEW[p.status].label}`).join(', ')}">
-									{#each run.phases as p (p.id)}
-										<span
-											class="h-1.5 flex-1 rounded-sm {PHASE_STATUS_VIEW[p.status].fill} {p.id === run.phase ? 'outline outline-1 outline-offset-1 outline-base-content/40' : ''}"
-											title="{p.label}: {PHASE_STATUS_VIEW[p.status].label}"
-										></span>
-									{/each}
+			{#each runGroups as [sessionId, groupRuns] (sessionId)}
+				{#if sessionId}
+					{@const finished = groupRuns.filter((r) => r.status === 'done').length}
+					<h2 class="flex min-w-0 items-center gap-2 text-xs">
+						<span class="shrink-0 opacity-60">Started by</span>
+						<StarterLink run={groupRuns[0]} />
+						{#if finished}<span class="ml-auto shrink-0 opacity-60">{finished} done</span>{/if}
+					</h2>
+				{:else if runGroups.length > 1}
+					<h2 class="text-xs opacity-60">Other runs</h2>
+				{/if}
+				<ul class="space-y-2">
+					{#each groupRuns as run (run.id)}
+						{@const view = RUN_STATUS_VIEW[run.status]}
+						{@const muted = run.status === 'paused' || run.status === 'cancelled'}
+						<li>
+							<a
+								href="/runs/{encodeURIComponent(run.id)}"
+								class="block rounded-box border border-l-[3px] border-base-300 bg-base-100 px-3 py-2 hover:bg-base-200 {view.accent}"
+							>
+								<div class="flex items-center gap-2">
+									<span class="min-w-0 flex-1 truncate text-sm font-medium {muted ? 'opacity-60' : ''}">{run.title}</span>
+									{#if run.testsSkipped}<span class="badge badge-sm badge-warning" title={run.testsSkipped}>tests skipped</span>{/if}
+									<span class="badge badge-sm {view.badge}">{view.label}</span>
+									<span class="w-8 text-right text-xs opacity-50">{relativeTime(run.updatedAt)}</span>
 								</div>
-								<span class="shrink-0 text-xs opacity-70">
-									{currentLabel(run)}{#if run.cap}<span class="ml-1.5 opacity-70">round <span class="font-mono">{run.round}/{run.cap}</span></span>{/if}
-								</span>
-							</div>
-							{#if run.status === 'blocked' && run.block}
-								<p class="mt-2 flex items-start gap-1.5 text-sm">
-									<CircleHelp size={14} class="mt-0.5 shrink-0 text-warning" />
-									<span class="line-clamp-2">{run.block.question}</span>
-								</p>
-							{/if}
-						</a>
-					</li>
-				{/each}
-			</ul>
+								<div class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs opacity-60">
+									<span class="truncate">{run.workflow.name}</span>
+									<span aria-hidden="true">·</span>
+									<span class="truncate">{basename(run.projectPath)}</span>
+									<span aria-hidden="true">·</span>
+									<GitBranch size={11} class="shrink-0" />
+									<span class="truncate font-mono">{run.branch}</span>
+								</div>
+								<div class="mt-2 flex items-center gap-2">
+									<div class="flex flex-1 gap-0.5" role="img" aria-label="Phases: {run.phases.map((p) => `${p.label} ${PHASE_STATUS_VIEW[p.status].label}`).join(', ')}">
+										{#each run.phases as p (p.id)}
+											<span
+												class="h-1.5 flex-1 rounded-sm {PHASE_STATUS_VIEW[p.status].fill} {p.id === run.phase ? 'outline outline-1 outline-offset-1 outline-base-content/40' : ''}"
+												title="{p.label}: {PHASE_STATUS_VIEW[p.status].label}"
+											></span>
+										{/each}
+									</div>
+									<span class="shrink-0 text-xs opacity-70">
+										{currentLabel(run)}{#if run.cap}<span class="ml-1.5 opacity-70">round <span class="font-mono">{run.round}/{run.cap}</span></span>{/if}
+									</span>
+								</div>
+								{#if run.status === 'blocked' && run.block}
+									<p class="mt-2 flex items-start gap-1.5 text-sm">
+										<CircleHelp size={14} class="mt-0.5 shrink-0 text-warning" />
+										<span class="line-clamp-2">{run.block.question}</span>
+									</p>
+								{/if}
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/each}
 		{/if}
 	</div>
 

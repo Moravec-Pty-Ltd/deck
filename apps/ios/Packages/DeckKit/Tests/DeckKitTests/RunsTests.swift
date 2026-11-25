@@ -61,6 +61,7 @@ private func digest(id: String = "r_1", status: String = "blocked", phase: Strin
 	  \(block ? #""block": { "question": "Which base?", "at": 1500, "by": "engine", "step": "review", "kind": "no-tests" },"# : "")
 	  "handoff": { "text": "left off at the null case", "tree": "abc123", "at": 1400 },
 	  "error": "phase crashed once", "testsSkipped": "Tests skipped",
+	  "startedBy": { "sessionId": "c_boss", "title": "Boss" },
 	  "createdAt": 1000, "updatedAt": \(updatedAt), "handoffStale": true }
 	"""
 }
@@ -96,6 +97,8 @@ final class RunsTests: XCTestCase {
 		XCTAssertEqual(run.handoff?.tree, "abc123")
 		XCTAssertEqual(run.error, "phase crashed once")
 		XCTAssertEqual(run.handoffStale, true)
+		XCTAssertEqual(run.startedBy?.sessionId, "c_boss")
+		XCTAssertEqual(run.startedBy?.title, "Boss")
 		let review = try XCTUnwrap(run.currentPhase)
 		XCTAssertEqual(review.visits, 2)
 		XCTAssertEqual(review.onFail, "fix")

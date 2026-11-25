@@ -183,6 +183,10 @@ export interface RunPr {
 	baseRefName?: string;
 }
 
+// Who asked for the run: a session (told when the run ends) or a person in the
+// UI. Absent on an automatic run and on one started without saying.
+export type RunStarter = { sessionId: string } | { human: true };
+
 // The state the engine carries between phases. Steps 3 to 5 of the dev loop
 // make no commits, so this plus the uncommitted working tree is the handoff.
 export interface WorkflowRun {
@@ -235,6 +239,10 @@ export interface WorkflowRun {
 	handoff?: RunHandoff;
 	decisions: RunDecision[];
 	error?: string;
+	startedBy?: RunStarter;
+	// The run ended and its starting session has not been told yet. Stored, so a
+	// busy session or a restart delays the message rather than losing it.
+	reportDue?: boolean;
 	// Set while a finished run is reopened to fix its leftover findings: the
 	// commit the branch was at, so the gate can tell a new commit was pushed.
 	followUp?: { head: string };
@@ -310,6 +318,8 @@ export interface RunDigest {
 	error?: string;
 	// Set when no tests stand behind the run: why, for a person to read.
 	testsSkipped?: string;
+	// `title` is the starting session's, absent once that session is deleted.
+	startedBy?: { sessionId: string; title?: string } | { human: true };
 	// A follow-up fix of leftover findings is in progress.
 	followUp: boolean;
 	createdAt: number;

@@ -125,6 +125,13 @@ public struct RunHandoff: Codable, Hashable, Sendable {
 	public let at: Double
 }
 
+/// Who started a run: a session (`title` absent once it is deleted) or a person.
+public struct RunStarter: Codable, Hashable, Sendable {
+	public let sessionId: String?
+	public let title: String?
+	public let human: Bool?
+}
+
 public struct RunDigest: Codable, Hashable, Identifiable, Sendable {
 	public let id: String
 	public let url: String?
@@ -159,6 +166,8 @@ public struct RunDigest: Codable, Hashable, Identifiable, Sendable {
 	public let followUp: Bool?
 	/// Set when the latest verify ran no tests: why, for a person to read.
 	public let testsSkipped: String?
+	/// Absent on an automatic run and on one started without saying.
+	public let startedBy: RunStarter?
 
 	/// A finished dev run that opened a PR but left findings behind can be sent
 	/// back to fix them. The dev-category check mirrors deck's rule so the button

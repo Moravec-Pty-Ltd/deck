@@ -5,12 +5,15 @@
 import { error } from '@sveltejs/kit';
 import { parseIssue, parsePr } from './create-session';
 import { isFlagSafe } from './agents/args';
+import { isAgentKind } from '$lib/types';
+import { getStoredSession } from './store';
 import { expandTilde } from './fsutil';
 import { baseUrl } from './config';
 import { lastVisit, runDigest } from './workflow-core';
 import { listRuns } from './workflow-store';
 import { snapshotTree } from './workflow-exec';
-import { WORKFLOW_CATEGORIES, type RunDigest, type RunPr, type WorkflowCategory, type WorkflowRun } from '$lib/workflows';
+import { WORKFLOW_CATEGORIES, type RunDigest, type RunPr, type RunStarter, type WorkflowCategory, type WorkflowRun } from '$lib/workflows';
+import { starterSession } from '$lib/workflow-view';
 import type { StartRunRequest } from './workflow-runner';
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
@@ -43,6 +46,16 @@ function issue(v: unknown): StartRunRequest['issue'] {
 	return { ...picked.issue, ...(picked.sourceId ? { sourceId: picked.sourceId } : {}) };
 }
 
+function startedBy(v: unknown): RunStarter | undefined {
+	if (v == null) return undefined;
+	const { sessionId, human } = v as { sessionId?: unknown; human?: unknown };
+	if (human === true && sessionId === undefined) return { human };
+	const id = str(sessionId);
+	const session = human === undefined ? getStoredSession(id) : undefined;
+	if (!session || !isAgentKind(session.kind)) error(400, 'startedBy must be { sessionId } of an agent session, or { human: true }');
+	return { sessionId: id };
+}
+
 export function parseStartRequest(body: Record<string, unknown>): StartRunRequest {
 	const cwd = expandTilde(str(body.cwd));
 	if (!cwd) error(400, 'cwd is required');
@@ -53,12 +66,16 @@ export function parseStartRequest(body: Record<string, unknown>): StartRunReques
 		issue: issue(body.issue),
 		pr: pr(body.pr),
 		base: safeRef(body.base, 'base branch'),
-		title: str(body.title) || undefined
+		title: str(body.title) || undefined,
+		startedBy: startedBy(body.startedBy)
 	};
 }
 
 export function digest(run: WorkflowRun): RunDigest {
-	return runDigest(run, baseUrl);
+	const d = runDigest(run, baseUrl);
+	const sessionId = starterSession(d)?.sessionId;
+	if (!sessionId) return d;
+	return { ...d, startedBy: { sessionId, title: getStoredSession(sessionId)?.title } };
 }
 
 // A run's tree snapshot, reused for a few seconds: the run page polls every 3s

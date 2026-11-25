@@ -31,11 +31,13 @@ import * as core from './workflow-core';
 import * as store from './workflow-store';
 import * as wexec from './workflow-exec';
 import { noteOverseer } from './workflow-overseer';
+import { flushReports, reportRun } from './workflow-report';
 import { canFixFindings } from '$lib/workflows';
 import type {
 	DecisionBy,
 	PhaseVisit,
 	RunPr,
+	RunStarter,
 	StepAgent,
 	WorkflowCategory,
 	WorkflowDef,
@@ -91,6 +93,7 @@ function announce(run: WorkflowRun, by?: DecisionBy): void {
 		notify({ reason: 'stopped', title: `Run finished · ${run.title}`, body: core.testsSkipped(run), tag: run.id, url: `/runs/${run.id}` });
 		noteOverseer(run, 'done');
 	}
+	if (run.status === 'blocked' || run.status === 'done') reportRun(run);
 }
 
 async function apply(run: WorkflowRun, effect: core.Effect): Promise<void> {
@@ -451,6 +454,7 @@ function pollDetached(run: WorkflowRun): Promise<void> {
 
 // Resolves once every poll started by this tick has finished.
 export async function pollRuns(): Promise<void> {
+	flushReports();
 	const due = store.listRuns().filter((r) => !core.isFinished(r) && !polling.has(r.id));
 	await Promise.all(due.map(pollDetached));
 }
@@ -500,6 +504,7 @@ export interface StartRunRequest {
 	pr?: RunPr;
 	base?: string;
 	title?: string;
+	startedBy?: RunStarter;
 }
 
 function activeIn(cwd: string): WorkflowRun | undefined {
@@ -605,6 +610,7 @@ export async function startRun(req: StartRunRequest): Promise<WorkflowRun> {
 		title: startTitle(req, place.branch),
 		issue: req.issue,
 		pr: req.pr,
+		startedBy: req.startedBy,
 		profile,
 		now: Date.now()
 	});
