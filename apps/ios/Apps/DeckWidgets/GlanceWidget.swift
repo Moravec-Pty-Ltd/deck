@@ -85,6 +85,7 @@ struct GlanceProvider: TimelineProvider {
 struct AnswerAskIntent: AppIntent {
 	static var title: LocalizedStringResource = "Answer deck question"
 	static var isDiscoverable = false
+	static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@Parameter(title: "Session") var sessionId: String
 	@Parameter(title: "Question") var askId: String?

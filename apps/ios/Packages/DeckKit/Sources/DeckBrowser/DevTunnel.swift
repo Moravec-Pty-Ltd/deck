@@ -2,6 +2,7 @@ import DeckKit
 import Foundation
 import NIOCore
 import NIOPosix
+import Network
 import os
 
 /// File-level rather than a static member: the event-loop callbacks log from
@@ -87,6 +88,10 @@ public final class DevTunnel {
 	/// `deinit` risks doing it from its own loop.
 	private static let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
+	/// What the listener asks of a connection: only this app's web views know it.
+	static let proxyUser = "deck"
+	let password = (0..<2).map { _ in String(UInt64.random(in: .min ... .max), radix: 16) }.joined()
+
 	private var listener: Channel?
 	private var boundConfig: Config?
 	/// The port last bound, asked for again on every rebind so the web views'
@@ -121,6 +126,17 @@ public final class DevTunnel {
 			await self.closeListener()
 			self.report(.idle)
 		}
+	}
+
+	/// How a web view reaches the listener on `port`.
+	func proxy(port localPort: Int) -> ProxyConfiguration? {
+		guard let port = NWEndpoint.Port(rawValue: UInt16(localPort)) else { return nil }
+		// Only the sentinel goes through deck. A dev page's CDN scripts and fonts
+		// load directly, since the tunnel refuses anything but loopback.
+		var config = ProxyConfiguration(socksv5Proxy: .hostPort(host: "127.0.0.1", port: port))
+		config.applyCredential(username: Self.proxyUser, password: password)
+		config.matchDomains = [LoopbackHost.sentinel]
+		return config
 	}
 
 	/// Run after whatever is already running, so no two of these overlap.
@@ -183,12 +199,13 @@ public final class DevTunnel {
 			log.error("forward refused: \(reason, privacy: .public)")
 			Task { @MainActor in self?.onForwardError?(reason) }
 		}
+		let password = password
 		return try await ServerBootstrap(group: Self.group)
 			.serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.childChannelInitializer { inbound in
 				inbound.eventLoop.makeCompletedFuture {
 					try inbound.pipeline.syncOperations.addHandler(
-						SOCKS5Handler(config: config, onForward: forwarded, onForwardError: refused))
+						SOCKS5Handler(config: config, password: password, onForward: forwarded, onForwardError: refused))
 				}
 			}
 			.bind(host: "127.0.0.1", port: port)

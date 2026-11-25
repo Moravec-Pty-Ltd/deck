@@ -14,6 +14,7 @@ extension SessionActivityAttributes: @retroactive ActivityAttributes {}
 struct StopSessionActivityIntent: LiveActivityIntent {
 	static var title: LocalizedStringResource = "Stop deck session"
 	static var description = IntentDescription("Interrupts the session's current turn.")
+	static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@Parameter(title: "Session")
 	var sessionId: String

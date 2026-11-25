@@ -46,18 +46,22 @@ public enum AskNotification {
 
 #if canImport(UserNotifications) && !os(watchOS)
 extension AskNotification {
-	/// "Option 1" to "Option 3", then "Reply" for free text.
-	public static func registerCategories() {
+	/// "Option 1" to "Option 3", then "Reply" for free text. Each answers a
+	/// session, so each needs the device unlocked.
+	static var askCategory: UNNotificationCategory {
 		let options = (0..<optionSlots).map { i in
-			UNNotificationAction(identifier: optionAction(i), title: "Option \(i + 1)", options: [])
+			UNNotificationAction(identifier: optionAction(i), title: "Option \(i + 1)", options: [.authenticationRequired])
 		}
 		let reply = UNTextInputNotificationAction(
-			identifier: replyAction, title: "Reply", options: [],
+			identifier: replyAction, title: "Reply", options: [.authenticationRequired],
 			textInputButtonTitle: "Send", textInputPlaceholder: "Your answer")
-		let ask = UNNotificationCategory(
+		return UNNotificationCategory(
 			identifier: category, actions: options + [reply], intentIdentifiers: [],
 			options: [.customDismissAction])
-		UNUserNotificationCenter.current().setNotificationCategories([ask])
+	}
+
+	public static func registerCategories() {
+		UNUserNotificationCenter.current().setNotificationCategories([askCategory])
 	}
 
 	/// What an ask action answers with; nil for a plain tap or a non-ask
