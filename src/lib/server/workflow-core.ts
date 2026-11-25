@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { EFFORT_LEVELS } from '$lib/effort';
 import { AGENT_KINDS } from '$lib/types';
-import type { SessionIssue } from '$lib/types';
+import type { Project, SessionIssue } from '$lib/types';
 import {
 	type PushState,
 	DONE,
@@ -22,6 +22,7 @@ import {
 	type RunPhaseDigest,
 	type RunPr,
 	type StepAgent,
+	type VerifyTests,
 	type WorkflowCategory,
 	type WorkflowDef,
 	type WorkflowRun,
@@ -434,13 +435,15 @@ export function blockerCount(findings: Finding[]): number {
 // What a finished visit produced, as the runner computed it.
 export interface GateResult {
 	pass: boolean;
-	// Passed because there was nothing to check (a repo with no test command).
+	// Passed because there was nothing to check (a project set to have no tests).
 	skipped?: boolean;
 	// The step could not produce a verdict at all (a crashed turn, a missing
 	// structured block, a gh error). Retried, then the run blocks.
 	error?: string;
 	detail?: string;
 	structured?: Structured;
+	// The step can't go on until a person answers this (no test command found).
+	ask?: string;
 	// A verify step's output, handed to the fix phase when it is red.
 	output?: string;
 }
@@ -621,6 +624,11 @@ export function advance(run: WorkflowRun, result: GateResult, now: number): Effe
 	closeVisit(run, result, now);
 	run.updatedAt = now;
 	if (result.error) return onError(run, step, result.error, now);
+	if (result.ask) {
+		const effect = blockRun(run, step.id, result.ask, now);
+		run.block!.kind = 'no-tests';
+		return effect;
+	}
 	run.failures[step.id] = 0;
 	return (HANDLERS[step.role] ?? passOrFail)(run, step, result, now);
 }
@@ -690,6 +698,9 @@ const EDIT_TEST_NOTE =
 const REVIEW_TEST_NOTE =
 	'Run no tests: the Tests step already ran them and they passed. Do not start background jobs, and never end your turn while waiting on one.';
 
+const REVIEW_NO_TESTS_NOTE =
+	'Run no tests. The Tests step ran none either, so nothing has been tested. Do not start background jobs, and never end your turn while waiting on one.';
+
 function issueRef(run: WorkflowRun): string {
 	return run.issue?.url || run.issue?.id || run.title;
 }
@@ -733,7 +744,7 @@ function reviewPrompt(run: WorkflowRun, step: WorkflowStep, ctx: PromptContext):
 		skillLine(step, ''),
 		PHASE_NOTE,
 		'You did not write this code. Do not edit anything; return findings only.',
-		REVIEW_TEST_NOTE,
+		testsSkipped(run) ? REVIEW_NO_TESTS_NOTE : REVIEW_TEST_NOTE,
 		`The change is for ${issueRef(run)}; judge it against that issue's acceptance criteria.`,
 		reviewScope(run, ctx),
 		FINDINGS_CONTRACT
@@ -798,7 +809,7 @@ function prPrompt(run: WorkflowRun, step: WorkflowStep): string[] {
 	return [
 		skillLine(step, `${issueRef(run)} base-branch=${run.base ?? ''}${reviewer} loop=no`),
 		PHASE_NOTE,
-		'The work in this worktree is implemented, tested, and reviewed. Run the commit and PR step only: one commit, push, open the PR with the issue linked by a closing keyword, request the reviewers. Do not run any review loop.'
+		`The work in this worktree is implemented, ${testsSkipped(run) ? 'and reviewed. No tests ran; say so in the PR body' : 'tested, and reviewed'}. Run the commit and PR step only: one commit, push, open the PR with the issue linked by a closing keyword, request the reviewers. Do not run any review loop.`
 	];
 }
 
@@ -876,6 +887,43 @@ export function detectVerifyCommand(scripts: Record<string, string> | undefined,
 	const parts = ['check', 'typecheck'].filter((s) => scripts[s]).slice(0, 1).map((s) => `${pm} run ${s}`);
 	if (scripts.test) parts.push(`${pm} test`);
 	return parts.length ? parts.join(' && ') : null;
+}
+
+// What verify runs. With tests `skipped` the command is the typecheck, if any.
+export interface VerifyPlan {
+	command: string | null;
+	tests: VerifyTests;
+}
+
+export function verifyPlan(
+	override: string | undefined,
+	project: Pick<Project, 'noTests'>,
+	scripts: Record<string, string> | undefined,
+	lockfiles: string[]
+): VerifyPlan {
+	if (override) return { command: override, tests: 'run' };
+	const command = detectVerifyCommand(scripts, lockfiles);
+	if (scripts?.test) return { command, tests: 'run' };
+	return project.noTests ? { command, tests: 'skipped' } : { command: null, tests: 'missing' };
+}
+
+const SUBPACKAGES_SHOWN = 10;
+
+export function noTestsQuestion(name: string, subpackages: string[]): string {
+	const more = subpackages.length - SUBPACKAGES_SHOWN;
+	const found = subpackages.slice(0, SUBPACKAGES_SHOWN).join(', ') + (more > 0 ? ` and ${more} more` : '');
+	return [
+		`No test command found in ${name}. Answer "test: <command>" to set one, or "no tests" to confirm skipping tests for this project.`,
+		...(found ? [`Sub-packages with a test script: ${found}.`] : [])
+	].join('\n');
+}
+
+// The project setting an answer to that question makes. Anything else is not
+// taken as a command: a remark must never run as shell.
+export function parseTestsAnswer(text: string): Pick<Project, 'testCommand' | 'noTests'> | null {
+	if (/^no tests[.!]?$/i.test(text)) return { noTests: true };
+	const command = /^test:\s*(\S[\s\S]*)$/i.exec(text)?.[1];
+	return command ? { testCommand: command, noTests: undefined } : null;
 }
 
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
@@ -1011,6 +1059,29 @@ function phaseDigest(run: WorkflowRun, step: WorkflowStep): RunPhaseDigest {
 	};
 }
 
+// What the run's latest testing came to: a follow-up fix's own check when that is
+// newest, else each verify step's last visit, worst first.
+function testsOutcome(run: WorkflowRun): VerifyTests | undefined {
+	const newest = run.visits.findLast((v) => v.tests);
+	if (!newest || stepById(run, newest.step)?.role !== 'verify') return newest?.tests;
+	const last = run.steps.filter((s) => s.role === 'verify').map((s) => visitsOf(run, s.id).at(-1)?.tests);
+	return (['missing', 'skipped', 'run'] as const).find((t) => last.includes(t));
+}
+
+// The run is still at the verify step that found no test command, whatever its status.
+export function testsUnsettled(run: WorkflowRun): boolean {
+	return testsOutcome(run) === 'missing' && currentStep(run)?.role === 'verify';
+}
+
+// Why no tests stand behind the run, or undefined when they ran (or the
+// run hasn't got past verify).
+export function testsSkipped(run: WorkflowRun): string | undefined {
+	const outcome = testsOutcome(run);
+	if (outcome === 'skipped') return 'Tests skipped: no test command was found and this project is set to have no tests.';
+	const past = outcome === 'missing' && !testsUnsettled(run);
+	return past ? 'Tests skipped: the run was moved past verify, which found no test command.' : undefined;
+}
+
 export function runDigest(run: WorkflowRun, baseUrl: string): RunDigest {
 	const review = stepWithRole(run, 'review');
 	return {
@@ -1037,6 +1108,7 @@ export function runDigest(run: WorkflowRun, baseUrl: string): RunDigest {
 		block: run.block,
 		handoff: run.handoff,
 		error: run.error,
+		testsSkipped: testsSkipped(run),
 		followUp: !!run.followUp,
 		createdAt: run.createdAt,
 		updatedAt: run.updatedAt

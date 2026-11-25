@@ -117,6 +117,10 @@ export interface Coverage {
 
 export type VisitResult = 'pass' | 'fail' | 'error' | 'skipped' | 'interrupted';
 
+// `missing`: no test command anywhere, and nobody has said the project has no
+// tests, so a person decides. `skipped`: they said it has none.
+export type VerifyTests = 'run' | 'skipped' | 'missing';
+
 // One visit to one step: a session (skill steps) or a command run (verify).
 export interface PhaseVisit {
 	step: string;
@@ -127,6 +131,9 @@ export interface PhaseVisit {
 	endedAt?: number;
 	result?: VisitResult;
 	detail?: string;
+	// Visits that run the verify command (verify, a follow-up fix): what it meant
+	// for the tests.
+	tests?: VerifyTests;
 	// A person drove this phase's session during a take-over.
 	humanTouched?: boolean;
 	// Review visits: the working-tree snapshot the reviewer was shown. It becomes
@@ -155,6 +162,9 @@ export interface RunBlock {
 	at: number;
 	by: DecisionBy;
 	step: string;
+	// The verify step found no test command: the answer sets one on the project,
+	// or confirms it has no tests.
+	kind?: 'no-tests';
 }
 
 // The intent note left by whoever was driving a phase, stamped with the
@@ -298,6 +308,8 @@ export interface RunDigest {
 	block?: RunBlock;
 	handoff?: RunHandoff;
 	error?: string;
+	// Set when no tests stand behind the run: why, for a person to read.
+	testsSkipped?: string;
 	// A follow-up fix of leftover findings is in progress.
 	followUp: boolean;
 	createdAt: number;

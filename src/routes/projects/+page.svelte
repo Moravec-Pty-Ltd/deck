@@ -18,6 +18,7 @@
 	// automation is always materialised (both toggles and both agent picks present)
 	// so the inputs bind cleanly; the API stores the all-default shape as absent.
 	type ProjectRow = Project & {
+		noTests: boolean;
 		automation: { work: boolean; review: boolean; workflows: boolean; workAgent: AgentRow; reviewAgent: AgentRow };
 	};
 
@@ -73,6 +74,7 @@
 		if (res.ok) {
 			projects = ((await res.json()) as Project[]).map((p) => ({
 				...p,
+				noTests: !!p.noTests,
 				automation: {
 					work: !!p.automation?.work,
 					review: !!p.automation?.review,
@@ -107,6 +109,8 @@
 				template: p.template,
 				account: p.account ?? '',
 				reviewPrompt: p.reviewPrompt ?? '',
+				testCommand: p.testCommand ?? '',
+				noTests: p.noTests,
 				lastBase: p.lastBase,
 				automation: {
 					work: p.automation.work,
@@ -258,6 +262,18 @@
 										placeholder="Default base branch (remembered automatically)"
 										bind:value={p.lastBase}
 									/>
+									<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+										<input
+											class="input input-sm w-full font-mono sm:w-72"
+											placeholder="Test command (blank: detected)"
+											aria-label="Test command for workflow runs"
+											bind:value={p.testCommand}
+										/>
+										<label class="flex cursor-pointer items-center gap-2 text-sm" title="Workflow runs go on without tests when no test command is found">
+											<input type="checkbox" class="checkbox checkbox-sm" bind:checked={p.noTests} />
+											<span>This project has no tests</span>
+										</label>
+									</div>
 									{#if accounts.length || p.account}
 										{@const problem = accounts.find((a) => a.name === p.account)?.problem}
 										<label class="mt-2 flex flex-wrap items-center gap-2 text-sm">

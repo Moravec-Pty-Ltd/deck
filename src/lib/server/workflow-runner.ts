@@ -15,7 +15,7 @@ import { forgetTree } from './workflow-api';
 import { deleteSession } from './sessions';
 import { agentFields } from './automation-core';
 import { agentInterrupt, agentSend, agentTurnRunning } from './agents/dispatch';
-import { getStoredSession, listProjects, listStoredSessions, updateSession } from './store';
+import { getStoredSession, listProjects, listStoredSessions, updateProject, updateSession } from './store';
 import { hasPendingAsk } from './ask';
 import { sessionLastResult } from './transcript';
 import { notify } from './push';
@@ -88,7 +88,7 @@ function announce(run: WorkflowRun, by?: DecisionBy): void {
 		if (by !== 'overseer') noteOverseer(run, 'blocked');
 	}
 	if (run.status === 'done') {
-		notify({ reason: 'stopped', title: `Run finished · ${run.title}`, tag: run.id, url: `/runs/${run.id}` });
+		notify({ reason: 'stopped', title: `Run finished · ${run.title}`, body: core.testsSkipped(run), tag: run.id, url: `/runs/${run.id}` });
 		noteOverseer(run, 'done');
 	}
 }
@@ -136,12 +136,20 @@ function startStep(run: WorkflowRun, step: WorkflowStep, visit: PhaseVisit, epoc
 const verifying = new Map<string, AbortController>();
 
 async function startVerify(run: WorkflowRun, step: WorkflowStep, visit: PhaseVisit, epoch: number): Promise<void> {
-	const command = wexec.verifyCommand(run.cwd, step.command);
-	if (!command) return finish(run, epoch, { pass: true, skipped: true, detail: 'no test command found' });
+	const { command, tests } = wexec.planVerify(run.cwd, step.command, projectOf(run));
+	visit.tests = tests;
+	if (tests === 'missing') return askForTests(run, epoch);
+	if (!command) return finish(run, epoch, { pass: true, skipped: true, detail: 'the project is set to have no tests' });
 	visit.detail = command;
 	commit(run);
 	const { code, output } = await trackedVerify(run, command);
 	await finish(run, epoch, { pass: code === 0, detail: `${command} exited ${code}`, output });
+}
+
+async function askForTests(run: WorkflowRun, epoch: number): Promise<void> {
+	const subpackages = await wexec.testSubpackages(run.cwd).catch(() => []);
+	const name = projectOf(run).name || run.projectPath;
+	await finish(run, epoch, { pass: false, detail: 'no test command found', ask: core.noTestsQuestion(name, subpackages) });
 }
 
 // Run the verify command where a cancel, block, or resume can stop it.
@@ -300,11 +308,20 @@ const followUpGate: Gate = async (run) => {
 	const state = await wexec.pushState(run.cwd, run.followUp!.head);
 	const problem = core.followUpProblem(state, run.followUp!.head, run.branch);
 	if (problem) return { pass: false, detail: problem };
-	const command = wexec.verifyCommand(run.cwd, run.steps.find((s) => s.role === 'verify')?.command);
+	const { command, tests: plan } = followUpPlan(run);
+	const visit = openVisit(run);
+	if (visit) visit.tests = plan;
+	if (plan === 'missing') return { pass: false, detail: NO_TEST_COMMAND };
 	const tests = command ? await trackedVerify(run, command) : { code: 0, output: '' };
 	if (tests.code !== 0) return { pass: false, detail: `${command} exited ${tests.code} on the pushed commit` };
 	return { pass: true, detail: state.head.slice(0, 7) };
 };
+
+const NO_TEST_COMMAND = 'no test command found; set one, or turn on "no tests", in the project settings';
+
+function followUpPlan(run: WorkflowRun): core.VerifyPlan {
+	return wexec.planVerify(run.cwd, run.steps.find((s) => s.role === 'verify')?.command, projectOf(run));
+}
 
 function gateFor(run: WorkflowRun, step: WorkflowStep): Gate {
 	return run.followUp && step.role === 'fix' ? followUpGate : GATES[step.gate];
@@ -693,6 +710,10 @@ const resume: Handler = async (run, body, actor) => {
 	assertLive(run);
 	const phase = str(body.phase) || run.phase;
 	if (!core.stepById(run, phase)) error(400, `the workflow has no step "${phase}"`);
+	// Pausing first doesn't get round this: it reads the visits.
+	if (actor.by === 'overseer' && phase !== run.phase && core.testsUnsettled(run)) {
+		error(409, 'no test command was found; only a person can move the run on without one');
+	}
 	record(run, actor, 'resume', phase);
 	const paused = pausedEndFor(run, phase);
 	if (paused) return settlePausedEnd(run, paused);
@@ -721,11 +742,30 @@ const cancel: Handler = async (run, _body, actor) => {
 	commit(run);
 };
 
+// Save the answer on the project, so verify finds it on resume. A setting
+// changed on the project meanwhile also counts; anything else would only block
+// the run on the same question again.
+// Returns whether the answer was such a setting.
+function answerNoTests(run: WorkflowRun, text: string, actor: Actor): boolean {
+	if (actor.by === 'overseer') error(409, 'only a person can set or skip a project\'s tests');
+	const patch = core.parseTestsAnswer(text);
+	if (patch) {
+		if (!updateProject(run.projectPath, patch)) error(409, 'the project is no longer registered');
+		return true;
+	}
+	if (wexec.planVerify(run.cwd, core.currentStep(run)?.command, projectOf(run)).tests === 'missing') {
+		error(400, 'answer "test: <command>" or "no tests"');
+	}
+	return false;
+}
+
 const answer: Handler = async (run, body, actor) => {
 	if (run.status !== 'blocked') error(409, 'the run is not waiting on an answer');
 	const text = str(body.text);
 	if (!text) error(400, 'text is required');
-	run.answers.push({ text, at: Date.now() });
+	// A project setting is not advice for a later phase's prompt.
+	const setting = run.block?.kind === 'no-tests' && answerNoTests(run, text, actor);
+	if (!setting) run.answers.push({ text, at: Date.now() });
 	await resume(run, {}, { ...actor, reason: actor.reason || text });
 };
 
@@ -735,6 +775,8 @@ const block: Handler = async (run, body, actor) => {
 	assertLive(run);
 	const question = str(body.question);
 	if (!question) error(400, 'question is required');
+	// Its answer is a project setting, so another question must not take its place.
+	if (run.status === 'blocked' && run.block?.kind === 'no-tests') error(409, 'the run is already waiting on a test command');
 	run.epoch += 1;
 	closeOpen(run, 'blocked');
 	core.blockRun(run, run.phase, question, Date.now(), actor.by);
@@ -821,6 +863,7 @@ function fixableStep(run: WorkflowRun): WorkflowStep {
 async function followUpStart(run: WorkflowRun): Promise<string> {
 	const view = await reviewView(run);
 	if (view.state !== 'OPEN') error(409, `the PR is ${view.state.toLowerCase()}, so there is nothing to push to`);
+	if (followUpPlan(run).tests === 'missing') error(409, NO_TEST_COMMAND);
 	return wexec.headCommit(run.cwd);
 }
 

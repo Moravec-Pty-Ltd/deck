@@ -12,7 +12,7 @@ vi.mock('./confine', () => ({
 	confineRelative: (root: string, rel: string) => path.join(root, rel)
 }));
 
-const { deltaBetween, pushState, runVerify, snapshotTree, syncPullWorktree, toplevel } = await import('./workflow-exec');
+const { deltaBetween, pushState, runVerify, snapshotTree, testSubpackages, syncPullWorktree, toplevel } = await import('./workflow-exec');
 
 const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-exec-'));
 const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
@@ -115,6 +115,28 @@ describe('runVerify', () => {
 		// Waits 600 ms behind the wait file, then runs for 100 ms: only the 100 ms count.
 		const queued = 'touch "$DECK_VERIFY_WAIT_FILE"; sleep 0.6; rm "$DECK_VERIFY_WAIT_FILE"; sleep 0.1; echo done';
 		expect(await runVerify(repo, queued, undefined, 400)).toEqual({ code: 0, output: 'done\n' });
+	});
+});
+
+describe('testSubpackages', () => {
+	it('finds nested manifests with a test script, not ignored or symlinked ones', async () => {
+		const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-subpackages-')));
+		const manifest = (d: string, scripts: object) => {
+			fs.mkdirSync(path.join(dir, d), { recursive: true });
+			fs.writeFileSync(path.join(dir, d, 'package.json'), JSON.stringify({ scripts }));
+		};
+		try {
+			execFileSync('git', ['init', '-q', dir]);
+			fs.writeFileSync(path.join(dir, '.gitignore'), 'node_modules\n');
+			manifest('apps/web', { test: 'vitest' });
+			manifest('docs', { build: 'x' });
+			manifest('node_modules/dep', { test: 'x' });
+			fs.mkdirSync(path.join(dir, 'linked'));
+			fs.symlinkSync(path.join(dir, 'apps/web/package.json'), path.join(dir, 'linked/package.json'));
+			expect(await testSubpackages(dir)).toEqual(['apps/web']);
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 

@@ -15,6 +15,13 @@ function carryStr(v: unknown, existing: string | undefined, label: string): stri
 	return v.trim() || undefined;
 }
 
+// false clears, so an unset flag stays absent from the record.
+function carryFlag(v: unknown, existing: boolean | undefined, label: string): boolean | undefined {
+	if (v === undefined) return existing;
+	if (typeof v !== 'boolean') throw new Error(`${label} must be a boolean`);
+	return v || undefined;
+}
+
 // The name falls back to the existing one, then to the directory's basename, so
 // an edit that omits it no longer resets it.
 function resolveName(v: unknown, existing: string | undefined, dir: string): string {
@@ -52,6 +59,8 @@ export function buildProjectRecord(
 		template: carryStr(body.template, existing.template, 'template'),
 		account: carryStr(body.account, existing.account, 'account'),
 		reviewPrompt: carryStr(body.reviewPrompt, existing.reviewPrompt, 'reviewPrompt'),
+		testCommand: carryStr(body.testCommand, existing.testCommand, 'testCommand'),
+		noTests: carryFlag(body.noTests, existing.noTests, 'noTests'),
 		lastBase: carryStr(body.lastBase, existing.lastBase, 'lastBase'),
 		// Written only by other endpoints (projects/hidden, session creates,
 		// projects/sources), and the record is replaced wholesale, so they always carry.

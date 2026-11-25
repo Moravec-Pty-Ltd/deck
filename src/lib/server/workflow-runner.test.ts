@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeckSession, Project } from '$lib/types';
 import type { WorkflowRun } from '$lib/workflows';
+import type { VerifyPlan } from './workflow-core';
 
 // The runner is orchestration: sessions spawn per phase, completions arrive as
 // feed events, and pause / take-over / resume / restart must not race them. Drive
@@ -17,6 +18,7 @@ const fake = vi.hoisted(() => ({
 	trees: ['t0'] as string[],
 	deltas: [] as [string, string][],
 	verifyCode: 0,
+	plan: { command: 'pnpm test', tests: 'run' } as VerifyPlan,
 	// Whether fetchPullRef freshly fetched pr/<n>, and the PR checkouts the runner refreshed.
 	prRefCreated: true,
 	synced: [] as [string, number][],
@@ -47,6 +49,10 @@ vi.mock('./store', () => ({
 	listProjects: () => fake.projects,
 	getStoredSession: (id: string) => fake.sessions.get(id),
 	listStoredSessions: () => [...fake.sessions.values()],
+	updateProject: (path: string, patch: Partial<Project>) => {
+		const project = fake.projects.find((p) => p.path === path);
+		return project && Object.assign(project, patch);
+	},
 	updateSession: (id: string, patch: Partial<DeckSession>) => Object.assign(fake.sessions.get(id)!, patch)
 }));
 vi.mock('./sessions', () => ({ deleteSession: async (id: string) => void fake.sessions.delete(id) }));
@@ -110,7 +116,12 @@ vi.mock('./workflow-exec', () => ({
 	pushState: async () => ({ branch: 'acme-web-7', upstreamRef: 'origin/acme-web-7', remote: 'origin', clean: true, descends: true, ...fake.git }),
 	syncPullWorktree: async (cwd: string, n: number) => void fake.synced.push([cwd, n]),
 	toplevel: async (dir: string) => (dir.startsWith('/p/acme/') ? '/p/acme' : dir),
-	verifyCommand: () => 'pnpm test',
+	planVerify: (_cwd: string, command: string | undefined, project: Project): VerifyPlan => {
+		const override = command || project.testCommand;
+		if (override) return { command: override, tests: 'run' };
+		return fake.plan.tests === 'missing' && project.noTests ? { command: null, tests: 'skipped' } : fake.plan;
+	},
+	testSubpackages: async () => ['apps/web'],
 	runVerify: async () => ({
 		code: fake.verifyCode,
 		output: fake.verifyCode ? 'FAIL' : 'ok'
@@ -145,6 +156,7 @@ vi.mock('./workflow-overseer', () => ({ noteOverseer: () => {} }));
 
 const { agentFeed } = await import('./agent-feed');
 const runner = await import('./workflow-runner');
+const { runDigest } = await import('./workflow-core');
 
 const settle = async () => {
 	for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
@@ -219,6 +231,7 @@ beforeEach(() => {
 	fake.trees = ['t0'];
 	fake.deltas = [];
 	fake.verifyCode = 0;
+	fake.plan = { command: 'pnpm test', tests: 'run' };
 	fake.prRefCreated = true;
 	fake.synced = [];
 	fake.spawnGate = null;
@@ -297,6 +310,84 @@ describe('a dev run end to end', () => {
 		expect(run.phase).toBe('review');
 		await finishTurn(run, 'still prose');
 		expect(run.status).toBe('blocked');
+	});
+});
+
+describe('a project with no test command', () => {
+	async function blocked(): Promise<WorkflowRun> {
+		fake.plan = { command: null, tests: 'missing' };
+		const run = await start();
+		await finishTurn(run);
+		return run;
+	}
+
+	it('blocks at verify with a question instead of reaching review', async () => {
+		const run = await blocked();
+		expect(run).toMatchObject({ status: 'blocked', phase: 'verify', block: { kind: 'no-tests' } });
+		expect(run.block?.question).toContain('No test command found in acme.');
+		expect(run.block?.question).toContain('apps/web');
+		expect(fake.created).toHaveLength(1);
+		expect(fake.notified.at(-1)).toMatchObject({ reason: 'needs-you' });
+	});
+
+	it('saves a command answer on the project and runs it', async () => {
+		const run = await blocked();
+		await runner.runAction(run.id, 'answer', { text: 'test: make test' });
+		await settle();
+		expect(fake.projects[0].testCommand).toBe('make test');
+		expect(run.phase).toBe('review');
+		expect(run.visits.find((v) => v.step === 'verify' && v.result === 'pass')?.detail).toBe('make test exited 0');
+		expect(runDigest(run, '').testsSkipped).toBeUndefined();
+	});
+
+	it('saves an opt-out, and shows it on the digest, the reviewer, the PR phase and the finish', async () => {
+		const run = await blocked();
+		await runner.runAction(run.id, 'answer', { text: 'no tests' });
+		await settle();
+		expect(fake.projects[0].noTests).toBe(true);
+		expect(run.phase).toBe('review');
+		expect(runDigest(run, '').testsSkipped).toContain('Tests skipped');
+		expect(promptOf(-1)).toContain('nothing has been tested');
+		await finishTurn(run, findings(0));
+		expect(promptOf(-1)).toContain('No tests ran');
+		expect(promptOf(-1)).not.toContain('- no tests');
+		await finishTurn(run);
+		expect(fake.notified.at(-1)).toMatchObject({ reason: 'stopped', body: expect.stringContaining('Tests skipped') });
+	});
+
+	it('refuses any other answer, and any answer from the overseer', async () => {
+		const run = await blocked();
+		await expect(runner.runAction(run.id, 'answer', { text: 'they are in web' })).rejects.toMatchObject({ status: 400 });
+		await expect(runner.runAction(run.id, 'answer', { text: 'no tests', by: 'overseer' })).rejects.toMatchObject({ status: 409 });
+		expect(run).toMatchObject({ status: 'blocked', answers: [] });
+		expect(fake.projects[0].noTests).toBeUndefined();
+	});
+
+	it('lets only a person resume past the question, and shows it', async () => {
+		const run = await blocked();
+		expect(runDigest(run, '').testsSkipped).toBeUndefined();
+		await expect(runner.runAction(run.id, 'block', { question: 'Stuck', by: 'overseer' })).rejects.toMatchObject({ status: 409 });
+		await runner.runAction(run.id, 'takeover', { by: 'overseer' });
+		await expect(runner.runAction(run.id, 'resume', { phase: 'review', by: 'overseer' })).rejects.toMatchObject({ status: 409 });
+		await runner.runAction(run.id, 'resume', { phase: 'review' });
+		await settle();
+		expect(run.phase).toBe('review');
+		expect(promptOf(-1)).toContain('nothing has been tested');
+		expect(runDigest(run, '').testsSkipped).toContain('moved past verify');
+	});
+
+	it('does not call a run cancelled at the question moved on', async () => {
+		const run = await blocked();
+		await runner.runAction(run.id, 'cancel', {});
+		expect(runDigest(run, '').testsSkipped).toBeUndefined();
+	});
+
+	it('takes any answer once the project itself was fixed', async () => {
+		const run = await blocked();
+		fake.projects[0].testCommand = 'make test';
+		await runner.runAction(run.id, 'answer', { text: 'set it' });
+		await settle();
+		expect(run.phase).toBe('review');
 	});
 });
 
@@ -785,6 +876,16 @@ describe('fixing leftover findings', () => {
 		expect(run.findings).toHaveLength(1);
 	});
 
+	it("reports the follow-up's own tests, not the earlier verify's", async () => {
+		const run = await doneWithNit();
+		fake.plan = { command: null, tests: 'skipped' };
+		await runner.runAction(run.id, 'fix-findings', {});
+		fake.git = { head: 'c1', upstream: 'c1' };
+		await finishTurn(run);
+		expect(run.status).toBe('done');
+		expect(runDigest(run, '').testsSkipped).toContain('Tests skipped');
+	});
+
 	it('reopens once when two requests race', async () => {
 		const run = await doneWithNit();
 		const [a, b] = await Promise.allSettled([runner.runAction(run.id, 'fix-findings', {}), runner.runAction(run.id, 'fix-findings', {})]);
@@ -823,6 +924,13 @@ describe('fixing leftover findings', () => {
 		await finishTurn(run); // no new commit: blocked
 		await runner.runAction(run.id, 'resume', { phase: 'verify' });
 		expect(run.followUp).toBeUndefined();
+	});
+
+	it('refuses when no test command is found, before spending a session', async () => {
+		const run = await doneWithNit();
+		fake.plan = { command: null, tests: 'missing' };
+		await expect(runner.runAction(run.id, 'fix-findings', {})).rejects.toMatchObject({ status: 409 });
+		expect(run.status).toBe('done');
 	});
 
 	it('refuses a run that is not a finished dev run with leftover findings', async () => {
