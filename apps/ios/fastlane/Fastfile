@@ -52,6 +52,9 @@ def xcode_auth_args
     # Without this the archive stops at "Macro must be enabled before it can
     # be used".
     "-skipMacroValidation",
+    # Ship exactly the package versions in Packages/DeckKit/Package.resolved.
+    "-disableAutomaticPackageResolution",
+    "-onlyUsePackageVersionsFromResolvedFile",
     "-authenticationKeyPath #{File.expand_path(ENV.fetch("ASC_KEY_PATH")).shellescape}",
     "-authenticationKeyID #{ENV.fetch("ASC_KEY_ID")}",
     "-authenticationKeyIssuerID #{ENV.fetch("ASC_ISSUER_ID")}"
