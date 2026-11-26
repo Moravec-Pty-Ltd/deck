@@ -238,12 +238,31 @@ extension LocalModelStore {
 		[.toolCalling, .reasoning, .guidedGeneration]
 	}
 
+	nonisolated private static func weights(id: String, revision: String) -> URL {
+		let cache = HubCache.default
+		guard let repo = Repo.ID(rawValue: id) else { return cache.cacheDirectory }
+		let commit = cache.resolveRevision(repo: repo, kind: .model, ref: revision) ?? revision
+		if commit != "main", let snapshot = try? cache.snapshotPath(repo: repo, kind: .model, commitHash: commit) { return snapshot }
+		return cache.repoDirectory(repo: repo, kind: .model)
+	}
+
 	fileprivate func model() -> MLXLanguageModel? {
 		if builtFor == chosenId, let existing = built as? MLXLanguageModel { return existing }
 		guard !chosenId.isEmpty else { return nil }
-		let fresh = #huggingFaceLanguageModel(
-			configuration: ModelConfiguration(id: chosenId),
-			capabilities: Self.capabilities)
+		let revision = LocalModelCatalogue.revision(for: chosenId)
+		// What #huggingFaceLanguageModel expands to, except that it looks for the
+		// weights at the pinned commit: the macro only knows `main`.
+		let fresh = MLXLanguageModel(
+			configuration: ModelConfiguration(id: chosenId, revision: revision),
+			capabilities: Self.capabilities,
+			weightsLocation: { id in Self.weights(id: id, revision: revision) },
+			load: { configuration, progressHandler in
+				try await loadModelContainer(
+					from: #hubDownloader(),
+					using: #huggingFaceTokenizerLoader(),
+					configuration: configuration,
+					progressHandler: progressHandler)
+			})
 		built = fresh
 		builtFor = chosenId
 		return fresh

@@ -4,6 +4,14 @@ import XCTest
 /// The shortlist deck offers and the validator for a typed repo id (deck#239).
 /// Pure: no MLX is loaded and nothing is downloaded.
 final class LocalModelCatalogueTests: XCTestCase {
+	func testEverySuggestedModelIsPinnedToACommit() {
+		for option in LocalModelCatalogue.suggested {
+			XCTAssertNotNil(option.revision.wholeMatch(of: #/[0-9a-f]{40}/#), option.id)
+			XCTAssertEqual(LocalModelCatalogue.revision(for: option.id), option.revision)
+		}
+		XCTAssertEqual(LocalModelCatalogue.revision(for: "someone/else"), "main")
+	}
+
 	func testTheShortlistIsOrderedSmallestFirst() {
 		let sizes = LocalModelCatalogue.suggested.map(\.weightsBytes)
 		XCTAssertEqual(sizes, sizes.sorted(), "the list is read as a size ladder, so it has to be in size order")
@@ -29,9 +37,9 @@ final class LocalModelCatalogueTests: XCTestCase {
 	}
 
 	func testSizesReadAsGigabytesOrMegabytes() {
-		XCTAssertEqual(LocalModelOption(id: "a/b", name: "n", weightsBytes: 1_720_000_000, note: "x").size, "1.7 GB")
-		XCTAssertEqual(LocalModelOption(id: "a/b", name: "n", weightsBytes: 970_000_000, note: "x").size, "970 MB")
-		XCTAssertEqual(LocalModelOption(id: "a/b", name: "n", weightsBytes: 340_000_000, note: "x").size, "340 MB")
+		XCTAssertEqual(LocalModelOption(id: "a/b", revision: "main", name: "n", weightsBytes: 1_720_000_000, note: "x").size, "1.7 GB")
+		XCTAssertEqual(LocalModelOption(id: "a/b", revision: "main", name: "n", weightsBytes: 970_000_000, note: "x").size, "970 MB")
+		XCTAssertEqual(LocalModelOption(id: "a/b", revision: "main", name: "n", weightsBytes: 340_000_000, note: "x").size, "340 MB")
 	}
 
 	func testNamesAModelItHasAnEntryFor() {

@@ -20,6 +20,19 @@ public enum CredentialStore {
 	static let accessGroup = "$(AppIdentifierPrefix)tech.moravec.deck"
 
 	#if canImport(Security)
+	/// Push handling and background refresh need the token after first unlock.
+	/// It stays on this device: a backup restored elsewhere signs in again. (The
+	/// Mac's login keychain takes no notice of this.)
+	static let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
+	/// Items saved before that rule, moved to it once per launch. In place, so
+	/// the credentials in use are never at risk.
+	private static let tightenOnce: Void = {
+		for group in [true, false] {
+			SecItemUpdate(query(group: group) as CFDictionary, [kSecAttrAccessible as String: accessible] as CFDictionary)
+		}
+	}()
+
 	private static func query(group: Bool, extra: [String: Any] = [:]) -> [String: Any] {
 		var q: [String: Any] = [
 			kSecClass as String: kSecClassGenericPassword,
@@ -35,7 +48,7 @@ public enum CredentialStore {
 	private static func copyIntoGroup(_ credentials: Credentials) {
 		guard let data = try? JSONEncoder().encode(credentials) else { return }
 		let value: [String: Any] = [
-			kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+			kSecAttrAccessible as String: accessible,
 			kSecValueData as String: data
 		]
 		SecItemAdd(query(group: true, extra: value) as CFDictionary, nil)
@@ -51,6 +64,7 @@ public enum CredentialStore {
 
 	public static func load() -> Credentials? {
 		#if canImport(Security)
+		_ = tightenOnce
 		let reading: [String: Any] = [
 			kSecReturnData as String: true,
 			kSecMatchLimit as String: kSecMatchLimitOne
@@ -74,8 +88,7 @@ public enum CredentialStore {
 		guard let data = try? JSONEncoder().encode(credentials) else { return false }
 		delete()
 		let value: [String: Any] = [
-			// Push handling and background refresh need the token after first unlock.
-			kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+			kSecAttrAccessible as String: accessible,
 			kSecValueData as String: data
 		]
 		if SecItemAdd(query(group: true, extra: value) as CFDictionary, nil) == errSecSuccess { return true }

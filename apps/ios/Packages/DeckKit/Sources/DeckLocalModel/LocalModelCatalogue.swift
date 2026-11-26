@@ -10,6 +10,8 @@ import Foundation
 /// also the only thing MLX needs to fetch and load it.
 public struct LocalModelOption: Identifiable, Hashable, Sendable {
 	public let id: String
+	/// The commit it is fetched at, so a later push to the repo changes nothing.
+	public let revision: String
 	/// What it is called on screen.
 	public let name: String
 	/// The weights as downloaded. Shown before committing to the download, and
@@ -18,8 +20,9 @@ public struct LocalModelOption: Identifiable, Hashable, Sendable {
 	/// One line on when to pick this one over its neighbours.
 	public let note: String
 
-	public init(id: String, name: String, weightsBytes: Int64, note: String) {
+	public init(id: String, revision: String, name: String, weightsBytes: Int64, note: String) {
 		self.id = id
+		self.revision = revision
 		self.name = name
 		self.weightsBytes = weightsBytes
 		self.note = note
@@ -46,21 +49,25 @@ public enum LocalModelCatalogue {
 	public static let suggested: [LocalModelOption] = [
 		LocalModelOption(
 			id: "mlx-community/Qwen3-1.7B-4bit",
+			revision: "3b1b1768f8f8cf8351c712464f906e86c2b8269e",
 			name: "Qwen3 1.7B",
 			weightsBytes: 970_000_000,
 			note: "The lightest one worth asking to call a tool. Pick it if 2B is too much for your phone."),
 		LocalModelOption(
 			id: "mlx-community/Qwen3.5-2B-4bit",
+			revision: "674aaa7240b91e8012fcad5d791b7dfe5ba90207",
 			name: "Qwen3.5 2B",
 			weightsBytes: 1_720_000_000,
 			note: "Suggested. The same family as the model on the deck machine, two sizes down, so it behaves the way that one does."),
 		LocalModelOption(
 			id: "mlx-community/Llama-3.2-3B-Instruct-4bit",
+			revision: "7f0dc925e0d0afb0322d96f9255cfddf2ba5636e",
 			name: "Llama 3.2 3B",
 			weightsBytes: 1_810_000_000,
 			note: "A second opinion in another family, if Qwen misreads what you ask for."),
 		LocalModelOption(
 			id: "mlx-community/Qwen3-4B-4bit",
+			revision: "4dcb3d101c2a062e5c1d4bb173588c54ea6c4d25",
 			name: "Qwen3 4B",
 			weightsBytes: 2_260_000_000,
 			note: "The most capable of these. Worth it on a phone with the memory to spare.")
@@ -77,6 +84,11 @@ public enum LocalModelCatalogue {
 
 	public static var suggestedOption: LocalModelOption? {
 		option(for: suggestedId)
+	}
+
+	/// The commit to fetch. A hand-typed repo has no pin, so it follows `main`.
+	public static func revision(for id: String) -> String {
+		option(for: id)?.revision ?? "main"
 	}
 
 	public static func option(for id: String) -> LocalModelOption? {
