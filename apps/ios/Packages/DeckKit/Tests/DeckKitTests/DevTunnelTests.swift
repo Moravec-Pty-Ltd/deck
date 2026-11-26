@@ -1,5 +1,6 @@
 import DeckKit
 import Network
+import WebKit
 import XCTest
 @testable import DeckBrowser
 
@@ -49,7 +50,7 @@ final class DevTunnelTests: XCTestCase {
 		// Through the sentinel on purpose: it has to be mapped back to
 		// localhost, which is the whole point of the rewrite.
 		let page = "http://\(LoopbackHost.sentinel):\(target.port)"
-		let body = try await Self.get("\(page)/", throughSOCKS: localPort, origin: page)
+		let body = try await Self.get("\(page)/", throughSOCKS: localPort, password: tunnel.password, origin: page)
 		XCTAssertEqual(body, "tunnelled")
 		// The dev server sees localhost, which is what its Origin checks expect.
 		let head = target.received.lowercased()
@@ -138,7 +139,73 @@ final class DevTunnelTests: XCTestCase {
 		XCTAssertEqual(wide.url?.absoluteString, "ws://192.168.1.20:4818/api/tunnel?port=3000")
 	}
 
+	/// Every refusal a connection without the password gets, byte for byte.
+	@MainActor
+	func testTheListenerWantsThePassword() async throws {
+		let tunnel = DevTunnel()
+		var forwards = 0
+		tunnel.onForward = { _, _ in forwards += 1 }
+		await tunnel.start(Self.config())
+		guard case .connected(let port) = tunnel.status else { return XCTFail("\(tunnel.status)") }
+
+		func login(_ user: String, _ password: String) -> [UInt8] {
+			[1, UInt8(user.utf8.count)] + Array(user.utf8) + [UInt8(password.utf8.count)] + Array(password.utf8)
+		}
+		let hello: [UInt8] = [5, 1, 2]
+		let connect: [UInt8] = [5, 1, 0, 1, 127, 0, 0, 1, 0x14, 0x35]
+		let noPassword = try await Self.exchange(port, [5, 1, 0] + connect)
+		XCTAssertEqual(noPassword, [5, 0xff])
+		let socks4 = try await Self.exchange(port, [4, 1, 2])
+		XCTAssertEqual(socks4, [5, 0xff])
+		for wrong in [login("deck", "nope"), login("deck", ""), login("other", tunnel.password)] {
+			let refused = try await Self.exchange(port, hello + wrong + connect)
+			XCTAssertEqual(refused, [5, 2, 1, 1])
+		}
+		XCTAssertEqual(forwards, 0)
+		let admitted = try await Self.exchange(port, hello + login("deck", tunnel.password) + connect)
+		XCTAssertEqual(Array(admitted.prefix(4)), [5, 2, 1, 0])
+		XCTAssertNotEqual(tunnel.password, DevTunnel().password)
+		await tunnel.stop()
+	}
+
+	/// WebKit has to present the password it was given, or no page loads.
+	@MainActor
+	func testAWebViewPresentsThePassword() async throws {
+		let tunnel = DevTunnel()
+		let forwarded = expectation(description: "the web view's connection was admitted")
+		forwarded.assertForOverFulfill = false
+		tunnel.onForward = { _, _ in forwarded.fulfill() }
+		await tunnel.start(Self.config())
+		guard case .connected(let port) = tunnel.status else { return XCTFail("\(tunnel.status)") }
+		let store = WKWebsiteDataStore.nonPersistent()
+		store.proxyConfigurations = [try XCTUnwrap(tunnel.proxy(port: port))]
+		let configuration = WKWebViewConfiguration()
+		configuration.websiteDataStore = store
+		let webView = WKWebView(frame: .zero, configuration: configuration)
+		webView.load(URLRequest(url: URL(string: "http://\(LoopbackHost.sentinel):5173/")!))
+		await fulfillment(of: [forwarded], timeout: 20)
+		await tunnel.stop()
+	}
+
 	// MARK: Harness
+
+	/// Send bytes to the listener and collect what it answers until it closes.
+	private static func exchange(_ port: Int, _ bytes: [UInt8]) async throws -> [UInt8] {
+		let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: UInt16(port))!, using: .tcp)
+		connection.start(queue: .global())
+		defer { connection.cancel() }
+		connection.send(content: Data(bytes), completion: .idempotent)
+		var answer: [UInt8] = []
+		while true {
+			let (data, done) = await withCheckedContinuation { (next: CheckedContinuation<(Data?, Bool), Never>) in
+				connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { data, _, isComplete, error in
+					next.resume(returning: (data, isComplete || error != nil))
+				}
+			}
+			answer += data ?? Data()
+			if done { return answer }
+		}
+	}
 
 	private static func config(localPort: Int = 0) -> DevTunnel.Config {
 		.init(credentials: Credentials(baseURL: URL(string: "http://deck.invalid")!, token: "t"), localPort: localPort)
@@ -146,12 +213,14 @@ final class DevTunnelTests: XCTestCase {
 
 	/// A GET through a SOCKS5 proxy. URLSession does the handshake, so this
 	/// exercises the listener the way WebKit will.
-	private static func get(_ url: String, throughSOCKS port: Int, origin: String? = nil) async throws -> String {
+	private static func get(_ url: String, throughSOCKS port: Int, password: String, origin: String? = nil) async throws -> String {
 		let configuration = URLSessionConfiguration.ephemeral
 		configuration.connectionProxyDictionary = [
 			kCFStreamPropertySOCKSProxyHost as String: "127.0.0.1",
 			kCFStreamPropertySOCKSProxyPort as String: port,
-			kCFStreamPropertySOCKSVersion as String: kCFStreamSocketSOCKSVersion5
+			kCFStreamPropertySOCKSVersion as String: kCFStreamSocketSOCKSVersion5,
+			kCFStreamPropertySOCKSUser as String: DevTunnel.proxyUser,
+			kCFStreamPropertySOCKSPassword as String: password
 		]
 		configuration.timeoutIntervalForRequest = 20
 		let session = URLSession(configuration: configuration)

@@ -161,13 +161,7 @@ public final class BrowserModel {
 	}
 
 	private var proxy: ProxyConfiguration? {
-		guard let localPort = proxyPort, let port = NWEndpoint.Port(rawValue: UInt16(localPort))
-		else { return nil }
-		// Only the sentinel goes through deck. A dev page's CDN scripts and fonts
-		// load directly, since the tunnel refuses anything but loopback.
-		var config = ProxyConfiguration(socksv5Proxy: .hostPort(host: "127.0.0.1", port: port))
-		config.matchDomains = [LoopbackHost.sentinel]
-		return config
+		proxyPort.flatMap(tunnel.proxy(port:))
 	}
 
 	/// Bring the listener up, or rebind it. Called on open and on every return

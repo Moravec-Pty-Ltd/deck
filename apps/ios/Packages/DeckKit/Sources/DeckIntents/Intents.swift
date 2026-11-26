@@ -4,6 +4,9 @@ import DeckKit
 /// Registration point: app targets include this via AppIntentsPackage.
 public struct DeckIntentsPackage: AppIntentsPackage {}
 
+// Every intent that changes something sets `authenticationPolicy`, so a locked
+// device asks for authentication first. The read-only ones stay available.
+
 /// Siri starts claude sessions; other kinds are a phone-side choice.
 let intentKind = "claude"
 
@@ -107,6 +110,7 @@ public struct StartWorkIntent: AppIntent {
 	public static let title: LocalizedStringResource = "Start Work on an Issue"
 	public static let description = IntentDescription(
 		"Spawns a deck coding session that starts working on an open issue.")
+	public static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@Parameter(title: "Issue")
 	public var issue: IssueEntity
@@ -151,6 +155,7 @@ public struct StartSessionIntent: AppIntent {
 	public static let title: LocalizedStringResource = "Start a deck Session"
 	public static let description = IntentDescription(
 		"Starts a deck coding session in a project, working on whatever you describe.")
+	public static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@Parameter(title: "Project")
 	public var project: ProjectEntity
@@ -210,6 +215,7 @@ public struct StartReviewIntent: AppIntent {
 	public static let title: LocalizedStringResource = "Start a PR Review"
 	public static let description = IntentDescription(
 		"Spawns a deck session that checks out and reviews an open pull request.")
+	public static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@Parameter(title: "Pull request")
 	public var pullRequest: PREntity
@@ -244,6 +250,7 @@ public struct AnswerIntent: AppIntent {
 	public static let title: LocalizedStringResource = "Answer deck"
 	public static let description = IntentDescription(
 		"Answers the question a deck session is blocked on. With no session given, answers the oldest pending question.")
+	public static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@Parameter(title: "Session")
 	public var session: SessionEntity?
@@ -288,6 +295,7 @@ public struct AnswerIntent: AppIntent {
 public struct SendPromptIntent: AppIntent {
 	public static let title: LocalizedStringResource = "Send a Prompt to a Session"
 	public static let description = IntentDescription("Sends a prompt to a deck session.")
+	public static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@Parameter(title: "Session")
 	public var session: SessionEntity
@@ -352,6 +360,7 @@ public struct SessionStatusIntent: AppIntent {
 public struct StopSessionIntent: AppIntent {
 	public static let title: LocalizedStringResource = "Stop a Session"
 	public static let description = IntentDescription("Interrupts a deck session's current turn.")
+	public static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@Parameter(title: "Session")
 	public var session: SessionEntity

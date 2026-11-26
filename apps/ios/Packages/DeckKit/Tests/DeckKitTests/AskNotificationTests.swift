@@ -10,6 +10,12 @@ final class AskNotificationTests: XCTestCase {
 		XCTAssertNil(AskNotification.optionSlot("com.apple.UNNotificationDefaultActionIdentifier"))
 	}
 
+	func testEveryAnswerNeedsTheDeviceUnlocked() {
+		let actions = AskNotification.askCategory.actions
+		XCTAssertEqual(actions.count, AskNotification.optionSlots + 1)
+		for action in actions { XCTAssertTrue(action.options.contains(.authenticationRequired), action.identifier) }
+	}
+
 	func testATapOpensTheRunOrTheSessionTheURLNames() {
 		XCTAssertEqual(AskNotification.target(userInfo: ["url": "/runs/r_1"]), .run("r_1"))
 		XCTAssertEqual(AskNotification.target(userInfo: ["url": "http://deck.test/s/c_1"]), .session("c_1"))

@@ -2,7 +2,8 @@ import Foundation
 import os
 import NIOCore
 
-/// Minimal SOCKS5 server: no authentication, CONNECT only. On CONNECT it opens
+/// Minimal SOCKS5 server: username and password (RFC 1929), CONNECT only, so
+/// nothing else on the device can use the tunnel's sign-in. On CONNECT it opens
 /// a WebSocket to deck's `/api/tunnel` for the requested port and hands the
 /// connection to a `WebSocketBridge`, so WKWebView's request comes out on the
 /// deck machine.
@@ -10,20 +11,23 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 	typealias InboundIn = ByteBuffer
 	typealias OutboundOut = ByteBuffer
 
-	private enum State { case greeting, request, piping }
+	private enum State { case greeting, password, request, piping }
 	private var state: State = .greeting
 	private var buffer: ByteBuffer?
 	private var bridge: WebSocketBridge?
 	private let config: DevTunnel.Config
+	private let password: String
 	private let onForward: @Sendable (String, Int) -> Void
 	private let onForwardError: @Sendable (String) -> Void
 
 	init(
 		config: DevTunnel.Config,
+		password: String,
 		onForward: @escaping @Sendable (String, Int) -> Void,
 		onForwardError: @escaping @Sendable (String) -> Void
 	) {
 		self.config = config
+		self.password = password
 		self.onForward = onForward
 		self.onForwardError = onForwardError
 	}
@@ -47,6 +51,7 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 	private func advance(context: ChannelHandlerContext) {
 		switch state {
 		case .greeting: parseGreeting(context: context)
+		case .password: parsePassword(context: context)
 		case .request: parseRequest(context: context)
 		case .piping: break
 		}
@@ -61,12 +66,42 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 		buf.moveReaderIndex(forwardBy: 2 + methodCount)
 		buffer = buf
 
-		var reply = context.channel.allocator.buffer(capacity: 2)
-		reply.writeBytes([0x05, 0x00]) // version 5, no authentication
-		context.writeAndFlush(wrapOutboundOut(reply), promise: nil)
+		guard bytes[0] == 0x05, bytes[2..<(2 + methodCount)].contains(0x02) else {
+			send(context.channel, [0x05, 0xff]) // no acceptable method
+			context.close(promise: nil)
+			return
+		}
+		send(context.channel, [0x05, 0x02])
+		state = .password
+		advance(context: context)
+	}
 
+	private func parsePassword(context: ChannelHandlerContext) {
+		guard var buf = buffer else { return }
+		let bytes = Array(buf.readableBytesView)
+		guard bytes.count >= 2 else { return }
+		let passwordAt = 2 + Int(bytes[1])
+		guard bytes.count > passwordAt else { return }
+		let end = passwordAt + 1 + Int(bytes[passwordAt])
+		guard bytes.count >= end else { return }
+		buf.moveReaderIndex(forwardBy: end)
+		buffer = buf
+
+		let user = String(decoding: bytes[2..<passwordAt], as: UTF8.self)
+		guard bytes[0] == 0x01, user == DevTunnel.proxyUser, Self.same(bytes[(passwordAt + 1)..<end], password) else {
+			send(context.channel, [0x01, 0x01])
+			context.close(promise: nil)
+			return
+		}
+		send(context.channel, [0x01, 0x00])
 		state = .request
 		advance(context: context)
+	}
+
+	/// Takes as long for a wrong guess as for the right one.
+	private static func same(_ given: ArraySlice<UInt8>, _ password: String) -> Bool {
+		let expected = Array(password.utf8)
+		return given.count == expected.count && zip(given, expected).reduce(0) { $0 | ($1.0 ^ $1.1) } == 0
 	}
 
 	private func parseRequest(context: ChannelHandlerContext) {
@@ -157,9 +192,11 @@ final class SOCKS5Handler: ChannelInboundHandler, RemovableChannelHandler {
 	}
 
 	private func reply(_ channel: Channel, _ code: UInt8) {
-		var reply = channel.allocator.buffer(capacity: 10)
-		reply.writeBytes([0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
-		channel.writeAndFlush(reply, promise: nil)
+		send(channel, [0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+	}
+
+	private func send(_ channel: Channel, _ bytes: [UInt8]) {
+		channel.writeAndFlush(channel.allocator.buffer(bytes: bytes), promise: nil)
 	}
 }
 
