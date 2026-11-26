@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { appendLine, whenDrained } from './transcript-writer';
 import { persistImage } from './images';
 import { getStoredSession, setSessionStatus, updateSession } from './store';
-import { ensureMcp, mcpUrl } from './mcp';
+import { ensureMcp, mcpConfigFile } from './mcp';
 import { rejectAsk } from './ask';
 import { notify } from './push';
 import { runningSubagentIds, transcriptPath, transcriptCostSummary } from './transcript';
@@ -273,7 +273,7 @@ function claudeArgs(id: string, session: DeckSession, agent = false): string[] {
 	if (agent) return [...args, '--append-system-prompt', `${ASK_PROMPT}\n\n${WATCH_PROMPT}`];
 	args.push(
 		'--append-system-prompt', `${ASK_PROMPT}\n\n${FILES_PROMPT}\n\n${WATCH_PROMPT}`,
-		'--mcp-config', JSON.stringify({ mcpServers: { deck: { type: 'http', url: mcpUrl(id) } } })
+		'--mcp-config', mcpConfigFile(id)
 	);
 	return args;
 }

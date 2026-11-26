@@ -13,7 +13,7 @@ vi.mock('./store', () => ({
 	setSessionStatus: vi.fn(),
 	updateSession: vi.fn()
 }));
-vi.mock('./mcp', () => ({ ensureMcp: () => Promise.resolve(), mcpUrl: () => 'http://mcp' }));
+vi.mock('./mcp', () => ({ ensureMcp: () => Promise.resolve(), mcpConfigFile: () => '/path/to/mcp.json' }));
 vi.mock('./ask', () => ({ rejectAsk: vi.fn() }));
 vi.mock('./push', () => ({ notify: vi.fn() }));
 vi.mock('./transcript', () => ({

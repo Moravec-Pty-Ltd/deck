@@ -2,6 +2,7 @@
 // A stand-in for the `claude` CLI in stream-json mode, for deck's e2e tests.
 // Keywords in a prompt pick the reply; see e2e/README.md.
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
@@ -79,12 +80,13 @@ function result(started, subtype = 'success', text = '') {
 
 // Calls deck's MCP `ask` tool over Streamable HTTP and returns the answer text.
 async function mcpAsk(questions) {
-	const url = JSON.parse(mcpConfig).mcpServers.deck.url;
+	const { url, headers } = JSON.parse(readFileSync(mcpConfig, 'utf8')).mcpServers.deck;
 	let sid;
 	const rpc = async (body) => {
 		const res = await fetch(url, {
 			method: 'POST',
 			headers: {
+				...headers,
 				'content-type': 'application/json',
 				accept: 'application/json, text/event-stream',
 				...(sid ? { 'mcp-session-id': sid } : {})

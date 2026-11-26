@@ -129,14 +129,17 @@ describe('serveMcp', () => {
 		const handleRequest = vi.fn(async (_req: http.IncomingMessage, res: http.ServerResponse, body?: unknown) => {
 			res.end(JSON.stringify(body ?? null));
 		});
-		const server = http.createServer((req, res) => void serveMcp({ handleRequest }, req, res));
+		const server = http.createServer((req, res) => void serveMcp({ handleRequest }, 's3cret', req, res));
 		await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 		const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 		try {
-			expect((await fetch(`${base}/other`)).status).toBe(404);
-			const ok = await fetch(`${base}/mcp`, { method: 'POST', body: '{"id":1}' });
+			const headers = { authorization: 'Bearer s3cret' };
+			expect((await fetch(`${base}/mcp`, { method: 'POST', body: '{}' })).status).toBe(403);
+			expect(handleRequest).not.toHaveBeenCalled();
+			expect((await fetch(`${base}/other`, { headers })).status).toBe(404);
+			const ok = await fetch(`${base}/mcp`, { method: 'POST', headers, body: '{"id":1}' });
 			expect(await ok.json()).toEqual({ id: 1 });
-			expect((await fetch(`${base}/mcp`, { method: 'POST', body: '{nope' })).status).toBe(500);
+			expect((await fetch(`${base}/mcp`, { method: 'POST', headers, body: '{nope' })).status).toBe(500);
 		} finally {
 			server.close();
 		}
