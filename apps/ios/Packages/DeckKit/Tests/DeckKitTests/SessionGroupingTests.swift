@@ -42,6 +42,18 @@ final class SessionGroupingTests: XCTestCase {
 		XCTAssertFalse(shows(session("h", agoSeconds: 16 * 60, dueIn: [nowMs + 60_000])))
 	}
 
+	/// A finished card must not outrank a working one: the lock screen shows the highest first.
+	func testCardsRankAQuestionThenWorkThenAnError() {
+		let rank = { (status: String, asking: Bool) in
+			SessionActivityAttributes.ContentState(status: status, awaitingInput: asking, lastText: "", costUsd: 0, turns: 0, updatedAt: 0).relevance
+		}
+		XCTAssertEqual(rank("running", true), 100)
+		XCTAssertEqual(rank("idle", true), 100)
+		XCTAssertEqual(rank("running", false), 50)
+		XCTAssertEqual(rank("error", false), 25)
+		XCTAssertEqual(rank("idle", false), 0)
+	}
+
 	func testBucketsFollowTheFixedOrderAndDropEmptyOnes() {
 		let sections = SessionGrouping.byStatus([
 			session("dead", status: "dead"),

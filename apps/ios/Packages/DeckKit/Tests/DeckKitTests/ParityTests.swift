@@ -215,13 +215,14 @@ final class ParityTests: XCTestCase {
 	/// start it can't decode, so the attributes and state must decode with the
 	/// default coding ActivityKit uses (dates as seconds since 2001).
 	func testServerStartPushDecodesIntoTheActivity() throws {
-		let json = #"{"aps":{"timestamp":1800000000,"event":"start","content-state":{"status":"running","awaitingInput":false,"lastText":"Reading the router","costUsd":0.25,"turns":3,"updatedAt":1800000000000},"attributes-type":"SessionActivityAttributes","attributes":{"sessionId":"abc","title":"Fix login","startedAt":821692800},"alert":{"title":"Fix login","body":"Working"}}}"#
+		let json = #"{"aps":{"timestamp":1800000000,"event":"start","content-state":{"status":"running","awaitingInput":false,"lastText":"Reading the router","costUsd":0.25,"turns":3,"updatedAt":1800000000000},"relevance-score":50,"attributes-type":"SessionActivityAttributes","attributes":{"sessionId":"abc","title":"Fix login","startedAt":821692800},"alert":{"title":"Fix login","body":"Working"}}}"#
 		struct Aps: Decodable {
 			let attributesType: String
 			let attributes: SessionActivityAttributes
 			let contentState: SessionActivityAttributes.ContentState
+			let relevanceScore: Double
 			enum CodingKeys: String, CodingKey {
-				case attributesType = "attributes-type", attributes, contentState = "content-state"
+				case attributesType = "attributes-type", attributes, contentState = "content-state", relevanceScore = "relevance-score"
 			}
 		}
 		struct Push: Decodable { let aps: Aps }
@@ -231,6 +232,8 @@ final class ParityTests: XCTestCase {
 		XCTAssertEqual(aps.attributes.title, "Fix login")
 		XCTAssertEqual(aps.attributes.startedAt, Date(timeIntervalSince1970: 1_800_000_000))
 		XCTAssertEqual(aps.contentState, .init(status: "running", awaitingInput: false, lastText: "Reading the router", costUsd: 0.25, turns: 3, updatedAt: 1_800_000_000_000))
+		// The app ranks the cards it updates itself by the same rule.
+		XCTAssertEqual(aps.contentState.relevance, aps.relevanceScore)
 	}
 
 	func testAgentSwitchUsesSharedServerRoute() async throws {

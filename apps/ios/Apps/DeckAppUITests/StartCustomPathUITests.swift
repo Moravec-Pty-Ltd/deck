@@ -7,15 +7,21 @@ final class StartCustomPathUITests: XCTestCase {
 		continueAfterFailure = false
 	}
 
-	func testStartsInAFolderAndShowsAMissingOne() throws {
+	func testStartsInAFolderAndShowsARefusedOne() throws {
 		let app = try FoldableUITests.launch(environment: [:])
 		app.buttons["Start"].firstMatch.tap()
 
-		openSheet(app, path: "~/missing")
+		// A missing folder is offered as a new one, made when the session starts.
+		typePath(app, "~/missing")
+		XCTAssertTrue(app.staticTexts["New folder: created when you start."].waitForExistence(timeout: 10),
+			"a missing folder should be offered as a new one\n\(app.debugDescription.prefix(3000))")
+
+		// deck will not make a hidden folder, so it refuses the start.
+		openSheet(app, path: "~/.missing")
 		tapStart(app)
 		let error = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'cwd does not exist'")).firstMatch
 		XCTAssertTrue(error.waitForExistence(timeout: 20), "the server's error should show in the sheet\n\(app.debugDescription.prefix(3000))")
-		shot("custom-path-missing")
+		shot("custom-path-refused")
 		app.navigationBars["New session"].buttons["Cancel"].tap()
 
 		openSheet(app, path: "~/data")
@@ -27,6 +33,14 @@ final class StartCustomPathUITests: XCTestCase {
 	}
 
 	private func openSheet(_ app: XCUIApplication, path: String) {
+		typePath(app, path)
+		let new = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'New session in'")).firstMatch
+		XCTAssertTrue(new.waitForExistence(timeout: 10))
+		new.tap()
+		XCTAssertTrue(app.navigationBars["New session"].waitForExistence(timeout: 10), "the sheet should open\n\(app.debugDescription.prefix(3000))")
+	}
+
+	private func typePath(_ app: XCUIApplication, _ path: String) {
 		let picker = app.buttons["startProject"].firstMatch
 		XCTAssertTrue(picker.waitForExistence(timeout: 20), "the project picker is missing\n\(app.debugDescription.prefix(3000))")
 		picker.tap()
@@ -40,10 +54,6 @@ final class StartCustomPathUITests: XCTestCase {
 		}
 		field.typeText(path)
 		shot("custom-path-field")
-		let new = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'New session in'")).firstMatch
-		XCTAssertTrue(new.waitForExistence(timeout: 10))
-		new.tap()
-		XCTAssertTrue(app.navigationBars["New session"].waitForExistence(timeout: 10), "the sheet should open\n\(app.debugDescription.prefix(3000))")
 	}
 
 	/// Start waits for the defaults to load, so wait for it to enable first.

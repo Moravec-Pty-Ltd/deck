@@ -113,7 +113,8 @@ final class ActivityManager {
 			sessionId: session.id,
 			title: session.title ?? session.id,
 			startedAt: Date(timeIntervalSince1970: startedMs / 1000))
-		let content = ActivityContent(state: state(for: session, lastText: ""), staleDate: nil)
+		let contentState = state(for: session, lastText: "")
+		let content = ActivityContent(state: contentState, staleDate: nil, relevanceScore: contentState.relevance)
 		do {
 			adopt(try Activity.request(attributes: attributes, content: content, pushType: .token))
 		} catch {
@@ -152,7 +153,8 @@ final class ActivityManager {
 	/// keeping the last reply text deck pushed.
 	func update(_ session: SessionDigest) {
 		guard let activity = activity(for: session.id) else { return }
-		let content = ActivityContent(state: state(for: session, lastText: activity.content.state.lastText), staleDate: nil)
+		let contentState = state(for: session, lastText: activity.content.state.lastText)
+		let content = ActivityContent(state: contentState, staleDate: nil, relevanceScore: contentState.relevance)
 		Task { await activity.update(content) }
 	}
 

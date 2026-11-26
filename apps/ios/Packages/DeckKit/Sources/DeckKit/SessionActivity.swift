@@ -22,6 +22,14 @@ public struct SessionActivityAttributes: Codable, Hashable, Sendable {
 			self.turns = turns
 			self.updatedAt = updatedAt
 		}
+
+		/// Where the card ranks among the phone's cards, highest shown first: a
+		/// question, then a working session, then an error. deck's pushes send
+		/// the same score (activityRelevance in apns-core.ts).
+		public var relevance: Double {
+			if awaitingInput { return 100 }
+			return status == SessionStatus.running.rawValue ? 50 : status == SessionStatus.error.rawValue ? 25 : 0
+		}
 	}
 
 	public let sessionId: String
