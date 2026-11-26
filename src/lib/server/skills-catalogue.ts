@@ -14,9 +14,9 @@ import { listProjects } from './store';
 // of a long one would swamp the context of whatever asked for it.
 const SKILL_BODY_CHARS = 6000;
 
-function skillDirs(): { dir: string; scope: string }[] {
-	const dirs = [{ dir: path.join(os.homedir(), '.claude', 'skills'), scope: 'global' }];
-	for (const p of listProjects()) dirs.push({ dir: path.join(p.path, '.claude', 'skills'), scope: p.name });
+function skillDirs(): { dir: string; scope: string; project: string | null }[] {
+	const dirs: ReturnType<typeof skillDirs> = [{ dir: path.join(os.homedir(), '.claude', 'skills'), scope: 'global', project: null }];
+	for (const p of listProjects()) dirs.push({ dir: path.join(p.path, '.claude', 'skills'), scope: p.name, project: p.path });
 	return dirs;
 }
 
@@ -56,6 +56,28 @@ function pluginDirs(): { plugin: string; dir: string }[] {
 		const dir = enabled[key] === false ? null : userInstallPath(installs);
 		return dir ? [{ plugin: key.split('@')[0], dir }] : [];
 	});
+}
+
+function realOrNull(p: string): string | null {
+	try {
+		return fs.realpathSync(p);
+	} catch {
+		return null;
+	}
+}
+
+// Whether a file really is inside `dir`, whatever links lead to it.
+function reallyInside(file: string, dir: string): boolean {
+	const [real, root] = [realOrNull(file), realOrNull(dir)];
+	return real !== null && root !== null && real.startsWith(root + path.sep);
+}
+
+// A project's skills come with its repository, so each must be a file of that
+// project or one of the user's own skills (which installers link to).
+function skillAllowed(file: string, project: string | null): boolean {
+	if (project === null) return true;
+	const own = ['.claude', '.agents'].map((d) => path.join(os.homedir(), d, 'skills'));
+	return [project, ...own].some((dir) => reallyInside(file, dir));
 }
 
 // The manifest's own skills or commands entry: a path or a list of them,
@@ -99,7 +121,7 @@ function pluginEntries(dir: string): [string, string][] {
 	return [
 		...[path.join(dir, 'skills'), ...manifestPaths(dir, 'skills')].flatMap(skillFiles),
 		...[path.join(dir, 'commands'), ...manifestPaths(dir, 'commands')].flatMap(commandFiles)
-	];
+	].filter(([, file]) => reallyInside(file, dir));
 }
 
 // Every plugin skill and command, named `plugin:name` the way the harness runs
@@ -128,7 +150,7 @@ function safeReaddir(dir: string): string[] {
 
 export function skillCatalogue(): SkillInfo[] {
 	const skills: SkillInfo[] = [];
-	for (const { dir, scope } of skillDirs()) {
+	for (const { dir, scope, project } of skillDirs()) {
 		let entries: string[] = [];
 		try {
 			entries = fs.readdirSync(dir);
@@ -136,7 +158,8 @@ export function skillCatalogue(): SkillInfo[] {
 			continue;
 		}
 		for (const name of entries) {
-			const skill = readSkill(path.join(dir, name, 'SKILL.md'), scope, name);
+			const file = path.join(dir, name, 'SKILL.md');
+			const skill = skillAllowed(file, project) ? readSkill(file, scope, name) : null;
 			if (skill) skills.push(skill);
 		}
 	}
@@ -155,7 +178,8 @@ export function skillBody(name: string): string | null {
 		const file = pluginEntries(dir).find(([n]) => n === inPlugin)?.[1];
 		return file ? fs.readFileSync(file, 'utf8').slice(0, SKILL_BODY_CHARS) : null;
 	}
-	for (const { dir } of skillDirs()) {
+	for (const { dir, project } of skillDirs()) {
+		if (!skillAllowed(path.join(dir, name, 'SKILL.md'), project)) continue;
 		try {
 			return fs.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8').slice(0, SKILL_BODY_CHARS);
 		} catch {

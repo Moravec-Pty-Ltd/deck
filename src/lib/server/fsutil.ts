@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isPickerAllowed } from './confine';
+import { isPickerListable } from './confine';
 
 // Expand a leading ~ / ~/ to the user's home directory. Everything else is
 // returned untouched so absolute and relative paths pass straight through.
@@ -40,7 +40,7 @@ export function completeDirs(query: string, limit = 40): string[] {
 
 	// Confine enumeration to $HOME and registered projects so the picker can't be
 	// turned into a directory-recon tool over the whole host (e.g. q=/etc/).
-	if (!isPickerAllowed(dir)) return [];
+	if (!isPickerListable(dir)) return [];
 
 	let entries: fs.Dirent[];
 	try {

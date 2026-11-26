@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setProjectRootCheck } from './git';
 import { listProjects } from './store';
 
 // Confinement for request-supplied filesystem/git paths. The auth token (or the
@@ -64,6 +65,21 @@ export function isWithinProjects(dir: string): boolean {
 	return resolveWithinProjects(dir) !== null;
 }
 
+// Is `dir` the folder of a registered project itself?
+function isProjectRoot(dir: string): boolean {
+	const real = canonical(dir);
+	return real !== null && listProjects().some((p) => canonical(p.path) === real);
+}
+
+setProjectRootCheck(isProjectRoot);
+
+// Whether canonical `file` sits in the project (or its worktrees) that owns `dir`.
+export function inSameProject(file: string, dir: string): boolean {
+	const project = projectForPath(dir);
+	const root = project === null ? null : canonical(project);
+	return root !== null && (within(file, root) || within(file, `${root}-worktrees`));
+}
+
 // The registered project a path belongs to — the project itself or one of its
 // worktrees — or null. Returns the stored (un-canonicalized) project path so it
 // matches the store's by-string project lookup, letting a worktree cwd map back
@@ -95,6 +111,16 @@ export function projectForPath(dir: string): string | null {
 export function isPickerAllowed(dir: string): boolean {
 	const home = canonical(os.homedir());
 	return isUnder(dir, home === null ? projectRoots() : [home, ...projectRoots()]);
+}
+
+// The picker's listing stops at $HOME's hidden folders (keys, credentials, app
+// state), unless one is inside a registered project.
+export function isPickerListable(dir: string): boolean {
+	if (!isPickerAllowed(dir)) return false;
+	if (isWithinProjects(dir)) return true;
+	const real = canonical(dir);
+	const home = canonical(os.homedir());
+	return real !== null && home !== null && !path.relative(home, real).split(path.sep).some((part) => part.startsWith('.'));
 }
 
 // Resolve a user-supplied relative path under `root`, rejecting absolute paths

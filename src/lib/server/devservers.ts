@@ -254,16 +254,30 @@ function shellTask(step: SetupStep, ctx: ServerCtx, inst: Instance): Task {
 	};
 }
 
+// Whether `dst`, or a folder on the way to it from `root`, is a symlink: the copy
+// would land wherever it points.
+function crossesSymlink(root: string, dst: string): boolean {
+	let at = path.resolve(root);
+	return path
+		.relative(at, dst)
+		.split(path.sep)
+		.some((part) => {
+			at = path.join(at, part);
+			return fs.lstatSync(at, { throwIfNoEntry: false })?.isSymbolicLink() ?? false;
+		});
+}
+
 // Copy one config file from the main worktree to the session worktree, confining
 // both ends so neither can read from / write to outside the registered tree. A
 // destination that resolves to the worktree root itself (empty / `.` / self-
 // cancelling rel) names no file, so it's rejected rather than copying onto a dir.
-function copyOne(from: string, to: string, rel: string): string | null {
+export function copyOne(from: string, to: string, rel: string): string | null {
 	const src = confineRelative(from, rel);
 	const dst = confineRelative(to, rel);
 	if (!src || !dst) return `unsafe path: ${rel}`;
 	if (dst === path.resolve(to)) return `copy target is not a file: ${rel}`;
 	try {
+		if (crossesSymlink(to, dst)) return `copy target is a symlink: ${rel}`;
 		fs.mkdirSync(path.dirname(dst), { recursive: true });
 		fs.copyFileSync(src, dst);
 		return null;

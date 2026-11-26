@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {
 	createWorktree,
+	isGitRepo,
+	removeWorktree,
+	setProjectRootCheck,
 	worktreeAddArgs,
 	worktreeDiff,
 	capPatch,
@@ -13,6 +16,9 @@ import {
 	cloneRepo
 } from './git';
 import { slugifyBranch } from './branch-core';
+
+const roots: string[] = [];
+setProjectRootCheck((dir) => roots.includes(dir));
 
 // Lock the argv ordering: every positional arg must sit after `--`, so the test
 // fails if the separator is dropped or reordered (the S4 regression guard).
@@ -126,6 +132,40 @@ describe('createWorktree against a real repo', () => {
 		execFileSync('git', ['-C', repo, 'worktree', 'add', '-b', 'acme/web#42', '--', `${repo}-worktrees/acme-web-42`], { env });
 		const { branch } = await createWorktree(repo, 'acme-web-42', { newBranch: true });
 		expect(branch).toBe('acme/web#42');
+	});
+
+	it("refuses a folder that is not the repo's own worktree", async () => {
+		const dir = `${repo}-worktrees/taken`;
+		fs.mkdirSync(dir, { recursive: true });
+		await expect(createWorktree(repo, 'taken', { newBranch: true })).rejects.toMatchObject({ status: 409, body: { message: expect.stringContaining('not a worktree') } });
+		fs.rmdirSync(dir);
+		fs.symlinkSync(repo, dir);
+		await expect(createWorktree(repo, 'taken', { newBranch: true })).rejects.toMatchObject({ status: 409 });
+		fs.rmSync(dir);
+		execFileSync('git', ['init', '-q', dir], { env });
+		await expect(createWorktree(repo, 'taken', { newBranch: true })).rejects.toMatchObject({ status: 409, body: { message: expect.stringContaining('not a worktree') } });
+	});
+
+	it('works in a bare repo only when it is the registered project', async () => {
+		const bare = `${repo}-bare.git`;
+		execFileSync('git', ['clone', '-q', '--bare', repo, bare], { env });
+		try {
+			await expect(createWorktree(bare, 'wt', { newBranch: true })).rejects.toThrow(/bareRepository/);
+			roots.push(bare);
+			const first = await createWorktree(bare, 'wt', { newBranch: true });
+			expect(await createWorktree(bare, 'wt', { newBranch: true })).toEqual(first);
+			expect(await isGitRepo(first.dir)).toBe(true);
+		} finally {
+			roots.length = 0;
+			for (const d of [bare, `${bare}-worktrees`]) fs.rmSync(d, { recursive: true, force: true });
+		}
+	});
+
+	it('removes a worktree and its branch', async () => {
+		const { dir, branch } = await createWorktree(repo, 'gone', { newBranch: true });
+		await removeWorktree(repo, dir, { deleteBranch: true, branch });
+		expect(fs.existsSync(dir)).toBe(false);
+		expect(execFileSync('git', ['-C', repo, 'branch', '--list', 'gone'], { env }).toString()).toBe('');
 	});
 });
 

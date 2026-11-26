@@ -19,7 +19,7 @@ fs.writeFileSync(path.join(outside, 'secret.png'), 'nope');
 fs.symlinkSync(path.join(outside, 'secret.png'), path.join(projRoot, 'link.png'));
 fs.writeFileSync(path.join(dataDir, 'projects.json'), JSON.stringify([{ name: 'p', path: projRoot }]));
 
-const { fileHeaders, resolveSessionFile, saveSessionFile, sha256Hex, statSessionFiles, MAX_FILE_BYTES } = await import('./files');
+const { fileHeaders, openServed, resolveSessionFile, saveSessionFile, sha256Hex, statSessionFiles, MAX_FILE_BYTES } = await import('./files');
 
 afterAll(() => {
 	vi.restoreAllMocks();
@@ -65,6 +65,30 @@ describe('resolveSessionFile', () => {
 		fs.writeFileSync(huge, '');
 		fs.truncateSync(huge, MAX_FILE_BYTES + 1);
 		expect(resolveSessionFile(session, huge)).toBeNull();
+	});
+});
+
+describe('openServed', () => {
+	it('refuses a file swapped for a link after it was resolved', () => {
+		const file = path.join(projRoot, 'swap.txt');
+		fs.writeFileSync(file, 'ok');
+		const resolved = resolveSessionFile(session, file)!;
+		const fd = openServed(resolved)!;
+		expect(fs.readFileSync(fd, 'utf8')).toBe('ok');
+		fs.closeSync(fd);
+		fs.rmSync(file);
+		fs.symlinkSync(path.join(outside, 'secret.png'), file);
+		expect(openServed(resolved)).toBeNull();
+		fs.rmSync(file);
+
+		const dir = path.join(projRoot, 'moved');
+		fs.mkdirSync(dir);
+		fs.writeFileSync(path.join(dir, 'secret.png'), 'ok');
+		const inDir = resolveSessionFile(session, path.join(dir, 'secret.png'))!;
+		fs.rmSync(dir, { recursive: true });
+		fs.symlinkSync(outside, dir);
+		expect(openServed(inDir)).toBeNull();
+		fs.rmSync(dir);
 	});
 });
 
@@ -143,6 +167,23 @@ describe('saveSessionFile', () => {
 		expect(saveSessionFile(session, stray, 'y', sha256Hex('x'))).toMatchObject({ ok: false, status: 404 });
 		expect(saveSessionFile(session, path.join(projRoot, 'nope.txt'), 'y', '')).toMatchObject({ ok: false, status: 404 });
 		expect(fs.readFileSync(stray, 'utf8')).toBe('x');
+	});
+
+	it("refuses git's own files and another project's files", () => {
+		const other = scratch('other');
+		fs.writeFileSync(path.join(dataDir, 'projects.json'), JSON.stringify([{ name: 'p', path: projRoot }, { name: 'o', path: other }]));
+		const save = (file: string) => {
+			fs.mkdirSync(path.dirname(file), { recursive: true });
+			fs.writeFileSync(file, 'x');
+			return saveSessionFile(session, file, 'y', sha256Hex('x'));
+		};
+		for (const file of [path.join(projRoot, '.git', 'config'), path.join(projRoot, 'sub', '.GIT', 'notes.txt'), path.join(other, 'a.txt')]) {
+			expect(save(file)).toMatchObject({ ok: false, status: 403 });
+			expect(fs.readFileSync(file, 'utf8')).toBe('x');
+		}
+		for (const file of [path.join(projRoot, '.gitignore'), path.join(`${projRoot}-worktrees`, 'feature', 'a.txt')]) expect(save(file)).toMatchObject({ ok: true });
+		fs.rmSync(other, { recursive: true });
+		fs.rmSync(`${projRoot}-worktrees`, { recursive: true });
 	});
 
 	it('refuses binary and oversized files and oversized text', () => {

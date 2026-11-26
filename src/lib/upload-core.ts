@@ -11,6 +11,8 @@
 // the limit.
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_UPLOAD_FILES = 10;
+// Everything one session may hold, until it is deleted.
+const MAX_SESSION_UPLOAD_BYTES = 1024 * 1024 * 1024;
 
 // The image types a model can be handed inline. Any other image (SVG, HEIC, ...)
 // is shared as a file instead, so it is never silently dropped.
@@ -38,6 +40,12 @@ export function safeUploadName(name: string): string {
 export function uploadTooLarge(bytes: number): string | null {
 	if (bytes <= MAX_UPLOAD_BYTES) return null;
 	return `file is ${mb(bytes)} MB; the limit is ${mb(MAX_UPLOAD_BYTES)} MB`;
+}
+
+// Whether a share would take a session past its total, and why not when it would.
+export function uploadQuota(held: number, incoming: number): string | null {
+	if (held + incoming <= MAX_SESSION_UPLOAD_BYTES) return null;
+	return `this session already holds ${mb(held)} MB of files; the limit is ${mb(MAX_SESSION_UPLOAD_BYTES)} MB`;
 }
 
 function mb(bytes: number): string {

@@ -63,6 +63,17 @@ describe('uploadToSession', () => {
 		expect(sent).toHaveBeenCalledWith(session, expect.objectContaining({ images: [image] }));
 	});
 
+	it('refuses a share past the session total before writing anything', async () => {
+		session = { id: 'c_full', kind: 'claude', title: 't', cwd: '/path/to/project', status: 'idle', createdAt: 1, lastActiveAt: 1 } as DeckSession;
+		const held = path.join(uploads, 'c_full', 'big');
+		fs.mkdirSync(path.dirname(held), { recursive: true });
+		fs.writeFileSync(held, '');
+		fs.truncateSync(held, 1024 * 1024 * 1024); // sparse
+		await expect(upload({ files })).rejects.toMatchObject({ status: 413 });
+		expect(written().some((f) => f.endsWith('notes.txt'))).toBe(false);
+		expect(sent).not.toHaveBeenCalled();
+	});
+
 	it('shares plain files with a non-claude session', async () => {
 		session = { id: 'x_codex', kind: 'codex', title: 't', cwd: '/path/to/project', status: 'idle', createdAt: 1, lastActiveAt: 1 } as DeckSession;
 		expect((await upload({ files })).status).toBe(200);
