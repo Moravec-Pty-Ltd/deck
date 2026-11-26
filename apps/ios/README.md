@@ -473,8 +473,8 @@ ways:
 - **Paste** the server URL and the token, or paste a whole sign-in link (the
   one the QR code encodes) into the URL field and the token comes with it.
 - **Ask for access.** The app requests pairing from the server and shows a
-  six-digit code. Approve the request in deck in a browser that is already
-  signed in, after checking it shows the same code; the app picks the token up
+  six-digit code. Type that code on a device that is already signed in to
+  approve the request; the app picks the token up
   from the approval and signs in.
 
 The main window is a sidebar of places (Inbox, Runs, Schedules, Start) over

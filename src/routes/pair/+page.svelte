@@ -19,8 +19,8 @@
 		message = '';
 		try {
 			const res = await fetch('/api/pair/request', { method: 'POST' });
-			if (!res.ok) throw new Error("Couldn't start pairing");
-			const data = await res.json();
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(data.message ?? "Couldn't start pairing");
 			code = data.code;
 			secret = data.secret;
 			phase = 'waiting';
@@ -73,7 +73,7 @@
 			</button>
 		{:else if phase === 'waiting'}
 			<p class="mb-4 text-sm opacity-70">
-				On a device that's already signed in, approve this request. Check the code matches.
+				On a device that's already signed in, type this code to approve the request.
 			</p>
 			<div class="rounded-box bg-base-200 py-6 text-center">
 				<div class="font-mono text-4xl font-semibold tracking-[0.3em]">{code}</div>

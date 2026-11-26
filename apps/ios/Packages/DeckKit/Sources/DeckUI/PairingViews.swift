@@ -1,41 +1,47 @@
 import SwiftUI
 import DeckKit
 
-/// One device asking to sign in: the code to compare against the one it shows,
-/// and the choice. Mirrors the web's PairApprovals card.
+/// One device asking to sign in: a field for the code it shows, and the choice. Mirrors the web's PairApprovals card.
 public struct PairingRequestRow: View {
 	let request: PairingRequest
 	let busy: Bool
-	let onDecide: (Bool) -> Void
+	let onDecide: (_ code: String?) -> Void
+	@State private var code = ""
 
-	public init(request: PairingRequest, busy: Bool, onDecide: @escaping (Bool) -> Void) {
+	public init(request: PairingRequest, busy: Bool, onDecide: @escaping (_ code: String?) -> Void) {
 		self.request = request
 		self.busy = busy
 		self.onDecide = onDecide
 	}
 
+	private var typed: String { code.filter { !$0.isWhitespace } }
+
 	public var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
 			Label("A device wants to access deck", systemImage: "iphone.and.arrow.forward")
 				.font(.headline)
-			Text("Approve only if this code shows on that device:")
+			Text("Type the code it shows to approve it.")
 				.font(.subheadline)
 				.foregroundStyle(.secondary)
-			Text(request.code)
-				.font(.system(.largeTitle, design: .monospaced).weight(.semibold))
-				.tracking(6)
-				.frame(maxWidth: .infinity)
+			TextField("Code", text: $code)
+				.font(.system(.title, design: .monospaced).weight(.semibold))
+				.multilineTextAlignment(.center)
+				.textFieldStyle(.roundedBorder)
+				#if os(iOS)
+				.keyboardType(.numberPad)
+				#endif
 				.accessibilityIdentifier("pairingCode")
 			HStack(spacing: 12) {
-				Button(role: .destructive) { onDecide(false) } label: {
+				Button(role: .destructive) { onDecide(nil) } label: {
 					Label("Deny", systemImage: "xmark").frame(maxWidth: .infinity)
 				}
 				.buttonStyle(.bordered)
 				.accessibilityIdentifier("pairingDeny")
-				Button { onDecide(true) } label: {
+				Button { onDecide(typed) } label: {
 					Label("Approve", systemImage: "checkmark").frame(maxWidth: .infinity)
 				}
 				.buttonStyle(.borderedProminent)
+				.disabled(typed.count != 6)
 				.accessibilityIdentifier("pairingApprove")
 			}
 			.controlSize(.large)

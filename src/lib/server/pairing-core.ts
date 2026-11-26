@@ -9,9 +9,8 @@
 //   - `id`: returned only to the approving (authenticated) browser in the pending
 //     list; approve/deny reference it. Kept apart from `secret` so the approver
 //     never learns the requester's polling handle.
-//   - `code`: a short human-readable code shown on both devices so a person can
-//     confirm the request in front of them is the one they're approving. Not a
-//     security boundary.
+//   - `code`: a short code shown only on the requesting device. The approver types
+//     it, so they can't approve a device they aren't looking at.
 
 export type PairingStatus = 'pending' | 'approved' | 'denied';
 
@@ -22,6 +21,8 @@ export interface Pairing {
 	createdAt: number;
 	expiresAt: number;
 	status: PairingStatus;
+	// Wrong codes typed for it so far.
+	wrong?: number;
 }
 
 // What a polling requester should do next.
@@ -30,9 +31,17 @@ export type ClaimResult = 'approved' | 'pending' | 'denied' | 'expired' | 'unkno
 // Short-lived by design: a request is a live "someone is holding a device asking to
 // get in" prompt, not a durable grant.
 export const PAIR_TTL_MS = 2 * 60 * 1000;
-// Cap concurrent live requests so a burst can't grow the store unbounded; the oldest
-// is evicted to make room.
+// Cap concurrent live requests so a burst can't grow the store unbounded. Past it a
+// new one is refused: making room would drop a request someone is waiting on.
 export const MAX_PENDING = 10;
+// How many may be made in a minute, over all devices: the route is public.
+export const MAX_PER_MINUTE = 5;
+export const MAX_WRONG_CODES = 5;
+
+// Whether one more may be made now, given when recent ones were.
+export function mayRequest(recent: number[], now: number): boolean {
+	return recent.filter((at) => now - at < 60_000).length < MAX_PER_MINUTE;
+}
 
 export function isExpired(p: Pairing, now: number): boolean {
 	return now >= p.expiresAt;
@@ -58,32 +67,26 @@ export function codeInUse(list: Pairing[], code: string, now: number): boolean {
 	return list.some((p) => p.code === code && !isExpired(p, now));
 }
 
-// Prune, evict the oldest live requests down to the cap, then append the new one.
-export function addPairing(list: Pairing[], p: Pairing, now: number): Pairing[] {
-	let next = prune(list, now);
-	if (next.length >= MAX_PENDING) {
-		next = [...next].sort((a, b) => a.createdAt - b.createdAt).slice(next.length - (MAX_PENDING - 1));
-	}
-	return [...next, p];
+// Prune, then append the new one; null when the queue is full.
+export function addPairing(list: Pairing[], p: Pairing, now: number): Pairing[] | null {
+	const next = prune(list, now);
+	return next.length < MAX_PENDING ? [...next, p] : null;
 }
 
-// Approve or deny a request by its approver-facing id. Only a live pending request
-// transitions; a stale or already-decided one is a no-op (changed: false).
-export function decide(
-	list: Pairing[],
-	id: string,
-	status: Exclude<PairingStatus, 'pending'>,
-	now: number
-): { list: Pairing[]; changed: boolean } {
-	let changed = false;
-	const next = list.map((p) => {
-		if (p.id === id && p.status === 'pending' && !isExpired(p, now)) {
-			changed = true;
-			return { ...p, status };
-		}
-		return p;
-	});
-	return { list: next, changed };
+export type Decision = 'ok' | 'gone' | 'wrong-code';
+
+// Deny a request, or approve it with its code, by its approver-facing id. Only a
+// live pending request transitions; a stale or already-decided one is 'gone'. Too
+// many wrong codes deny it.
+export function decide(list: Pairing[], id: string, approve: { code: string } | null, now: number): { list: Pairing[]; result: Decision; status?: PairingStatus } {
+	const found = list.find((p) => p.id === id && p.status === 'pending' && !isExpired(p, now));
+	if (!found) return { list, result: 'gone' };
+	const put = (next: Partial<Pairing>) => list.map((p) => (p === found ? { ...p, ...next } : p));
+	if (!approve) return { list: put({ status: 'denied' }), result: 'ok', status: 'denied' };
+	if (approve.code === found.code) return { list: put({ status: 'approved' }), result: 'ok', status: 'approved' };
+	const wrong = (found.wrong ?? 0) + 1;
+	const status = wrong >= MAX_WRONG_CODES ? 'denied' : 'pending';
+	return { list: put({ wrong, status }), result: 'wrong-code', status };
 }
 
 // Resolve a requester's poll by its secret. A terminal state (approved/denied) is

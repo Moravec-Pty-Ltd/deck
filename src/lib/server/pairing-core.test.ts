@@ -10,6 +10,9 @@ import {
 	consumeBySecret,
 	PAIR_TTL_MS,
 	MAX_PENDING,
+	MAX_PER_MINUTE,
+	MAX_WRONG_CODES,
+	mayRequest,
 	type Pairing
 } from './pairing-core';
 
@@ -64,44 +67,52 @@ describe('addPairing', () => {
 	it('prunes expired before appending', () => {
 		const stale = p({ id: 'stale' }, 0);
 		const fresh = p({ id: 'fresh' }, PAIR_TTL_MS + 1);
-		const list = addPairing([stale], fresh, PAIR_TTL_MS + 1);
+		const list = addPairing([stale], fresh, PAIR_TTL_MS + 1)!;
 		expect(list.map((x) => x.id)).toEqual(['fresh']);
 	});
 
-	it('evicts the oldest live request when at the cap', () => {
+	it('refuses a new request when full, keeping the ones waiting', () => {
 		let list: Pairing[] = [];
-		for (let i = 0; i < MAX_PENDING; i++) {
-			list = addPairing(list, p({ id: `p${i}`, secret: `s${i}` }, 1000 + i), 1000 + i);
-		}
-		expect(list).toHaveLength(MAX_PENDING);
-		const extra = p({ id: 'newest', secret: 'sx' }, 2000);
-		list = addPairing(list, extra, 2000);
-		expect(list).toHaveLength(MAX_PENDING);
-		expect(list.map((x) => x.id)).not.toContain('p0'); // oldest evicted
-		expect(list.map((x) => x.id)).toContain('newest');
+		for (let i = 0; i < MAX_PENDING; i++) list = addPairing(list, p({ id: `p${i}`, secret: `s${i}` }, 1000), 1000)!;
+		expect(addPairing(list, p({ id: 'extra' }, 2000), 2000)).toBeNull();
+		expect(addPairing(list, p({ id: 'later' }, PAIR_TTL_MS + 1001), PAIR_TTL_MS + 1001)).toHaveLength(1);
 	});
 });
 
+it('allows only so many requests a minute', () => {
+	const recent = Array.from({ length: MAX_PER_MINUTE }, () => 1000);
+	expect(mayRequest(recent.slice(1), 2000)).toBe(true);
+	expect(mayRequest(recent, 2000)).toBe(false);
+	expect(mayRequest(recent, 61_000)).toBe(true);
+});
+
 describe('decide', () => {
-	it('approves a live pending request', () => {
-		const { list, changed } = decide([p({ id: 'a' })], 'a', 'approved', 1000);
-		expect(changed).toBe(true);
-		expect(list[0].status).toBe('approved');
+	const right = { code: '000000' };
+
+	it('approves with the code, and denies without one', () => {
+		const approved = decide([p({ id: 'a' })], 'a', right, 1000);
+		expect(approved).toMatchObject({ result: 'ok', status: 'approved' });
+		expect(approved.list[0].status).toBe('approved');
+		expect(decide([p({ id: 'a' })], 'a', null, 1000).list[0].status).toBe('denied');
 	});
 
-	it('is a no-op for an unknown id', () => {
-		const { changed } = decide([p({ id: 'a' })], 'nope', 'approved', 1000);
-		expect(changed).toBe(false);
+	it('refuses a wrong code and denies after too many', () => {
+		let list = [p({ id: 'a' })];
+		for (let i = 1; i < MAX_WRONG_CODES; i++) {
+			const r = decide(list, 'a', { code: '' }, 1000);
+			expect(r).toMatchObject({ result: 'wrong-code', status: 'pending' });
+			list = r.list;
+		}
+		expect(decide(list, 'a', right, 1000).result).toBe('ok');
+		const last = decide(list, 'a', { code: '111111' }, 1000);
+		expect(last).toMatchObject({ result: 'wrong-code', status: 'denied' });
+		expect(decide(last.list, 'a', right, 1000).result).toBe('gone');
 	});
 
-	it('is a no-op once already decided', () => {
-		const { changed } = decide([p({ id: 'a', status: 'approved' })], 'a', 'denied', 1000);
-		expect(changed).toBe(false);
-	});
-
-	it('is a no-op for an expired request', () => {
-		const { changed } = decide([p({ id: 'a' }, 0)], 'a', 'approved', PAIR_TTL_MS + 1);
-		expect(changed).toBe(false);
+	it('is gone when unknown, already decided or expired', () => {
+		expect(decide([p({ id: 'a' })], 'nope', right, 1000).result).toBe('gone');
+		expect(decide([p({ id: 'a', status: 'approved' })], 'a', null, 1000).result).toBe('gone');
+		expect(decide([p({ id: 'a' }, 0)], 'a', right, PAIR_TTL_MS + 1).result).toBe('gone');
 	});
 });
 

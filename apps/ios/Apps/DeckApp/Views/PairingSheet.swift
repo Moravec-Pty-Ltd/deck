@@ -16,8 +16,8 @@ struct PairingSheet: View {
 			MacDialogList {
 				VStack(spacing: 8) {
 					ForEach(store.pairingRequests) { request in
-						PairingRequestRow(request: request, busy: busy != nil) { approve in
-							decide(request, approve: approve)
+						PairingRequestRow(request: request, busy: busy != nil) { code in
+							decide(request, code: code)
 						}
 					}
 				}
@@ -36,8 +36,8 @@ struct PairingSheet: View {
 			ScrollView {
 				VStack(spacing: 16) {
 					ForEach(store.pairingRequests) { request in
-						PairingRequestRow(request: request, busy: busy != nil) { approve in
-							decide(request, approve: approve)
+						PairingRequestRow(request: request, busy: busy != nil) { code in
+							decide(request, code: code)
 						}
 					}
 					if let failure {
@@ -61,12 +61,12 @@ struct PairingSheet: View {
 		#endif
 	}
 
-	private func decide(_ request: PairingRequest, approve: Bool) {
+	private func decide(_ request: PairingRequest, code: String?) {
 		busy = request.id
 		failure = nil
 		Task {
 			do {
-				try await store.decidePairing(id: request.id, approve: approve)
+				try await store.decidePairing(id: request.id, code: code)
 			} catch {
 				failure = error.localizedDescription
 			}

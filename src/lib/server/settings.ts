@@ -69,7 +69,10 @@ export async function decidePairingRoute({
 	params: Partial<Record<string, string>>;
 	request: Request;
 }): Promise<Response> {
-	const { approve } = await objectBody(request);
+	const { approve, code } = await objectBody(request);
 	if (typeof approve !== 'boolean') error(400, 'approve must be a boolean');
-	return json({ ok: decidePairing(params.id!, approve) });
+	if (approve && typeof code !== 'string') error(400, 'type the code the device shows to approve it (update this app if it has nowhere to type one)');
+	const result = decidePairing(params.id!, approve ? { code: (code as string).replace(/\s/g, '') } : null);
+	if (result === 'wrong-code') error(400, 'that is not the code the device shows (a request is denied after five wrong codes)');
+	return json({ ok: result === 'ok' });
 }

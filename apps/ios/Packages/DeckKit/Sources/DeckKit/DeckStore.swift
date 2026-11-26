@@ -169,12 +169,17 @@ public final class DeckStore {
 		if let fresh = try? await client.reviews() { reviews = fresh }
 	}
 
-	/// Let a device in or turn it away. The request leaves the list either way:
+	/// Let a device in with the code it shows, or turn it away with nil. A wrong
+	/// code throws and leaves the request, unless too many were tried. Otherwise the request leaves the list either way:
 	/// one that had already expired or been decided elsewhere is gone too.
 	@discardableResult
-	public func decidePairing(id: String, approve: Bool) async throws -> Bool {
+	public func decidePairing(id: String, code: String?) async throws -> Bool {
 		guard let client else { throw DeckError.notConfigured }
-		let ok = try await client.decidePairing(id: id, approve: approve)
+		// An older deck hands out the code and leaves the check to us.
+		if let code, let shown = pairingRequests.first(where: { $0.id == id })?.code, !shown.isEmpty, shown != code {
+			throw DeckError.http(status: 400, message: "That is not the code the device shows.")
+		}
+		let ok = try await client.decidePairing(id: id, code: code)
 		pairingRequests.removeAll { $0.id == id }
 		return ok
 	}
@@ -555,11 +560,7 @@ public final class DeckStore {
 			return
 		}
 		guard !pairingRequests.contains(where: { $0.id == id }) else { return }
-		if let code = event.code {
-			pairingRequests.append(PairingRequest(id: id, code: code))
-		} else {
-			Task { await refreshPairing() }
-		}
+		pairingRequests.append(PairingRequest(id: id, code: event.code ?? ""))
 	}
 
 	// MARK: - Refresh

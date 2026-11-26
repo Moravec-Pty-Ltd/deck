@@ -1439,13 +1439,15 @@ polling.
 
 ### GET /api/agent/pairing
 
-Live requests: \`{ "pending": [{ "id": "...", "code": "123456" }] }\`. Check
-the code against the one the new device shows before approving.
+Live requests: \`{ "pending": [{ "id": "...", "code": "" }] }\`. The code shows only
+on the new device (\`code\` here is always blank).
 
 ### POST /api/agent/pairing/{id}
 
-\`{ "approve": true }\` (or \`false\` to deny). Returns \`{ "ok": true }\`;
-\`ok\` is false when the request expired or was already decided.
+\`{ "approve": true, "code": "123456" }\` with the code the device shows, or
+\`{ "approve": false }\` to deny. Returns \`{ "ok": true }\`; \`ok\` is false when the
+request expired or was already decided. A wrong or missing code is a 400, and
+five wrong ones deny the request.
 
 ## Push notifications
 
@@ -1514,7 +1516,7 @@ Each event is \`{ "seq", "sessionId", "type", "at", ...payload }\`:
 	fetch \`GET /api/agent/runs/{id}\` for its digest;
 	\`sessionId\` carries the run id)
 - \`run-deleted\`: { runId } (a run was removed; drop it from your list)
-- \`pairing\`: { pairingId, code?, state: pending|approved|denied } (a device asked
+- \`pairing\`: { pairingId, state: pending|approved|denied } (a device asked
 	for access, or a request was decided; \`sessionId\` carries the pairing id)
 
 Apply deltas idempotently: after a gap re-snapshot (or bootstrap) an overlapping
