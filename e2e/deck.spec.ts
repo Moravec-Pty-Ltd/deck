@@ -202,6 +202,57 @@ test('browses the session folder and previews a text file and an image', async (
 	await expect(page.getByRole('dialog')).toBeVisible();
 });
 
+test('Markdown renders only inert HTML, and pages carry a content policy', async ({ page }) => {
+	const doc = [
+		'# Doc',
+		'',
+		'Press <kbd>Esc</kbd> and <a href="https://example.com" style="position:fixed" target="_top">read</a>.',
+		'',
+		'<details open><summary>More</summary><b class="fixed">bold</b></details>',
+		'',
+		'<div style="position:fixed;inset:0" id="cover" align="center">plain</div>',
+		'',
+		'<form action="/api/agent/sessions" method="post"><input name="x"><button>Go</button></form>',
+		'',
+		'<FORM action="/elsewhere"><TEXTAREA name="y"></TEXTAREA></FORM>',
+		'',
+		'<iframe src="/settings"></iframe><embed src="/settings"><object data="/settings"></object><video src="/a"></video>',
+		'',
+		'Inline <FORM action="/x">y</FORM> and <constructor visibility="public">z</constructor>.',
+		'',
+		'- [x] task',
+		''
+	].join('\n');
+	fs.writeFileSync(path.join(project, 'inert.md'), doc);
+	try {
+		await openSession(page, 'inert');
+		const blocked: string[] = [];
+		page.on('console', (m) => {
+			if (/Content Security Policy/i.test(m.text())) blocked.push(m.text());
+		});
+		const home = await page.reload();
+		const csp = home!.headers()['content-security-policy'] ?? '';
+		const tab = page.getByRole('button', { name: 'Files', exact: true });
+		await open(tab, page.getByRole('button', { name: /^inert\.md / }));
+		await page.getByRole('button', { name: /^inert\.md / }).click();
+		const md = page.locator('.markdown').last();
+		await expect(md.locator('h1')).toHaveText('Doc');
+		await expect(md.locator('kbd')).toHaveText('Esc');
+		await expect(md.locator('details[open] summary')).toHaveText('More');
+		await expect(md.locator('details b')).toHaveText('bold');
+		await expect(md.locator('a')).toHaveAttribute('href', 'https://example.com');
+		await expect(md.locator('div[align="center"]')).toHaveText('plain');
+		await expect(md.locator('input[type="checkbox"]')).toBeChecked();
+		await expect(md.locator('form, button, textarea, iframe, embed, object, video, input:not([type="checkbox"])')).toHaveCount(0);
+		await expect(md.locator('[style], [id], a[target="_top"], b[class]')).toHaveCount(0);
+		for (const rule of ["default-src 'self'", "form-action 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'"]) expect(csp).toContain(rule);
+		expect(csp).not.toMatch(/script-src[^;]*unsafe/);
+		expect(blocked).toEqual([]);
+	} finally {
+		fs.rmSync(path.join(project, 'inert.md'));
+	}
+});
+
 test('quick messages list the project ones before the global ones', async ({ page }) => {
 	await page.request.put('/api/agent/quick-messages', { headers, data: [] });
 	await openSession(page, 'quick');

@@ -1,6 +1,6 @@
 import type { ReadOut, SpeechCapabilities, SpeechSegment, SpokenQuestion } from './speech-core';
 import { PRE_ROLL_MS, RECORDING_MAX_MS, RECORDING_MIN_MS, TAKE_SAMPLE_RATE, VAD_CLOSE_MS, VAD_OPEN_MS, VAD_THRESHOLD, settledTake } from './speech-core';
-import captureWorklet from './pcm-capture.worklet.js?url';
+import captureWorklet from './pcm-capture.worklet.js?url&no-inline'; // a data: URL would fall foul of the script-src
 import {
 	ACKNOWLEDGEMENTS,
 	ANNOUNCE_SETTLE_MS,
