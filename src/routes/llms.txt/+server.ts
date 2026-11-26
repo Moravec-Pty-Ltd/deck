@@ -34,6 +34,10 @@ Send the shared token on every /api request (deck-spawned agents find it in
 
 Unauthenticated requests to /api/* get 401. This document needs no auth.
 
+Send JSON bodies with \`content-type: application/json\`; another type gets 415.
+A state-changing request whose \`Origin\` is not deck's own gets 403 (clients that
+send no \`Origin\` are unaffected).
+
 ## Error shape
 
 Every /api error is a JSON body \`{ "message": "..." }\` with an HTTP status:

@@ -26,6 +26,7 @@ when signed with the same key (otherwise uninstall first).
 1. Copy `build/deck.apk` to the phone (or use `--install` with USB debugging)
    and open it to install. Allow installs from unknown sources if prompted.
 2. On first launch, enter the deck server URL, e.g. `http://your-mac:4818`
+   (over the LAN, start the production server with `HOST=0.0.0.0`)
    (a tailnet hostname works well).
 3. Back navigates the app; pressing back at the root opens a small menu with
    Reload, Change server, and Exit.

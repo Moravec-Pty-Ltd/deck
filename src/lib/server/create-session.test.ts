@@ -78,3 +78,10 @@ it('keeps the 400 for a missing folder without createDir', async () => {
 	await expect(start({ cwd: '~/code/missing' })).rejects.toMatchObject({ status: 400, body: { message: 'cwd does not exist' } });
 	expect(seen.projectsAtCreate).toEqual([]);
 });
+
+it('refuses an unknown permissionMode before creating anything', async () => {
+	const body = { kind: 'claude', cwd: '~/code/mode', createDir: true };
+	await expect(start({ ...body, permissionMode: '--other' })).rejects.toMatchObject({ status: 400, body: { message: 'invalid permissionMode' } });
+	await expect(start({ ...body, permissionMode: ['plan'] })).rejects.toMatchObject({ status: 400 });
+	expect(fs.existsSync(path.join(home, 'code', 'mode'))).toBe(false);
+});

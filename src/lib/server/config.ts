@@ -174,20 +174,25 @@ export function isPrivateHost(host: string): boolean {
 	return h.includes(':') ? isPrivateIpv6(h) : isPrivateIpv4(h);
 }
 
-function hostFromBaseUrl(): string {
+function urlFromBaseUrl(): URL | null {
 	for (const candidate of [baseUrl, `http://${baseUrl}`]) {
 		try {
 			// A scheme-less base URL like `localhost:4818` parses with `localhost:` as
 			// the protocol and an empty hostname, so only accept a non-empty hostname
 			// and otherwise fall through to the http://-prefixed form.
-			const { hostname } = new URL(candidate);
-			if (hostname) return hostname;
+			const url = new URL(candidate);
+			if (url.hostname) return url;
 		} catch {
 			// Try the scheme-prefixed form next; give up (unknown host) if both fail.
 		}
 	}
-	return '';
+	return null;
 }
+
+// The host (with any port) of the configured base URL: one of the hosts a
+// same-origin request may come from.
+const base = urlFromBaseUrl();
+export const baseHost = base?.host ?? '';
 
 // DECK_NO_AUTH drops the token gate on the assumption that a private network path
 // (Tailscale, loopback, a LAN) is the real access boundary. deck can't see that
@@ -198,7 +203,7 @@ function hostFromBaseUrl(): string {
 function resolveNoAuth(): boolean {
 	if (DEMO) return true; // canned dataset; nothing real to expose
 	if (!noAuthRequested) return false;
-	const host = hostFromBaseUrl();
+	const host = base?.hostname ?? '';
 	if (isPrivateHost(host)) return true;
 	const shown = host || baseUrl;
 	if (noAuthPublicAck) {
@@ -218,21 +223,13 @@ function resolveNoAuth(): boolean {
 // flag is refused unless DECK_NO_AUTH_PUBLIC=1 - see resolveNoAuth / issue #163.
 export const noAuth = resolveNoAuth();
 
-// Request-time backstop for the boot guardrail. The boot check keys off
-// DECK_BASE_URL; if that's left at its localhost default while deck is actually
-// reached over a public tunnel, no-auth still slips through. Observing the real
-// request Host catches that and warns loudly, once. Deliberately a warning, not a
-// gate: the Host header is spoofable (a request can claim Host: localhost), so it
-// can't decide the bypass - the token stays the real boundary for public tunnels
-// (issue #163).
-let warnedPublicNoAuthHost = false;
-export function warnIfPublicNoAuthHost(hostname: string) {
-	if (warnedPublicNoAuthHost || !noAuth || !noAuthRequested || noAuthPublicAck) return;
-	if (isPrivateHost(hostname)) return;
-	warnedPublicNoAuthHost = true;
-	console.error(
-		`[deck] WARNING: DECK_NO_AUTH is serving requests on public host ${hostname} unauthenticated. If deck is reached over a public tunnel, unset DECK_NO_AUTH and carry the token (or set DECK_BASE_URL so the boot check can refuse). See the README on remote access.`
-	);
+// With no token gate, the Host header is what separates a request made to deck
+// from one whose hostname merely resolves here. A private address or a .ts.net
+// name passes (DECK_BASE_URL's host is one: no-auth requires it, see above) and
+// anything else is refused. Demo mode has nothing real to protect, and
+// DECK_NO_AUTH_PUBLIC acknowledges any host.
+export function noAuthHostAllowed(hostname: string): boolean {
+	return DEMO || noAuthPublicAck || isPrivateHost(hostname);
 }
 
 let printed = false;

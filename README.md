@@ -83,7 +83,7 @@ pnpm build
 PORT=4818 BODY_SIZE_LIMIT=4M node --env-file=.env server.js
 ```
 
-On first request deck prints an access URL with a token, and stores the token in `~/.deck/token`. Open `http://<host>:4818/?token=<token>` once and a year-long cookie is set.
+On first request deck prints an access URL with a token, and stores the token in `~/.deck/token`. Open `http://localhost:4818/?token=<token>` once and a year-long cookie is set. To reach deck from another device, put Tailscale or a tunnel in front (below), or set `HOST=0.0.0.0` for the LAN.
 
 Dev server: `pnpm dev`.
 
@@ -92,13 +92,13 @@ Dev server: `pnpm dev`.
 | Variable | Default | Purpose |
 |---|---|---|
 | `PORT` | `3000` | HTTP port (the examples use `4818`) |
-| `HOST` | `0.0.0.0` | Bind address |
+| `HOST` | `127.0.0.1` | Bind address. Set `0.0.0.0` to accept connections from the LAN |
 | `BODY_SIZE_LIMIT` | `512K` | Largest request body the production server accepts. Voice takes upload as 16 kHz WAV (32 KB a second), so 512K holds about 16 seconds of speech; the start commands above set `4M`, enough for the full two-minute take. `vite dev` has no limit. |
 | `DECK_DATA` | `~/.deck` | Data directory (state, transcripts, keys) |
 | `DECK_TOKEN` | random | Override the generated access token |
-| `DECK_NO_AUTH` | unset | Set to `1` to skip the token gate entirely. **Only safe when the network path is genuinely private** (Tailscale with Funnel off, loopback, or a LAN), never on a raw public tunnel. If the resolved host (`DECK_BASE_URL`) isn't obviously private, deck ignores this flag and keeps the gate on. |
+| `DECK_NO_AUTH` | unset | Set to `1` to skip the token gate entirely. **Only safe when the network path is genuinely private** (Tailscale with Funnel off, loopback, or a LAN), never on a raw public tunnel. If the resolved host (`DECK_BASE_URL`) isn't obviously private, deck ignores this flag and keeps the gate on. Requests are answered only on `localhost`, a private IP address or a full `.ts.net` name. |
 | `DECK_NO_AUTH_PUBLIC` | unset | Set to `1` to force `DECK_NO_AUTH` even when the host looks public, acknowledging the app is served unauthenticated to anyone with the URL. Don't use this with a raw public tunnel; carry the token instead. |
-| `DECK_BASE_URL` | `http://localhost:<PORT>` | The URL deck is reached at. Used in sign-in QR codes, push links, `/llms.txt` and the `DECK_BASE_URL` given to spawned agents, and as the signal for whether `DECK_NO_AUTH` is safe. |
+| `DECK_BASE_URL` | `http://localhost:<PORT>` | The URL deck is reached at. Set it to the public URL when a proxy in front rewrites `Host`, or deck refuses the browser's writes as cross-origin. Used in sign-in QR codes, push links, `/llms.txt` and the `DECK_BASE_URL` given to spawned agents, and as the signal for whether `DECK_NO_AUTH` is safe. |
 | `DECK_TAILSCALE` | unset | Set to `1` to have `vite dev` register a node-level `tailscale serve --https=<port>` for its lifetime. Off by default; a Tailscale Service is the better way to reach deck over the tailnet (see [Remote access](#remote-access-tailscale)). |
 | `DECK_DEMO` | unset | Set to `1` to serve a fixed, sanitized demo dataset instead of `~/.deck` (used for the README screenshots). Skips auth and the host tmux scan, so it never shows real sessions or paths. |
 | `DECK_PUSH_SUBJECT` | `mailto:info@moravec.tech` | VAPID contact for web push (Apple rejects a localhost mailto) |

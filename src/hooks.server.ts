@@ -1,6 +1,7 @@
 import type { Handle, RequestEvent } from '@sveltejs/kit';
 import { redirect, json } from '@sveltejs/kit';
-import { PUBLIC_PATHS, noAuth, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches, warnIfPublicNoAuthHost } from '$lib/server/config';
+import { PUBLIC_PATHS, baseHost, noAuth, noAuthHostAllowed, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches } from '$lib/server/config';
+import { UNKNOWN_HOST, hostName, refuseWrite } from '$lib/server/request-guard-core';
 import { ensureMcp } from '$lib/server/mcp';
 import { initSecrets } from '$lib/server/secrets';
 import '$lib/server/monitor';
@@ -34,23 +35,47 @@ function deny(event: RequestEvent): Response {
 	redirect(302, '/login');
 }
 
-export const handle: Handle = async ({ event, resolve }) => {
-	printAccessUrl(event.url.origin);
-	warnIfPublicNoAuthHost(event.url.hostname);
+function unknownHost(host: string) {
+	return noAuth && !noAuthHostAllowed(hostName(host)) ? { status: 403, message: UNKNOWN_HOST } : null;
+}
 
-	if (noAuth) return resolve(event);
+// The refusal a request gets before auth, or null when it may go on. The Host
+// header is read directly: ORIGIN pins event.url whatever the client asked for.
+// The route id, not the path, names the route: the path may be percent-encoded.
+function refuse({ request, url, route }: RequestEvent): Response | null {
+	const host = request.headers.get('host') ?? url.host;
+	const refused = unknownHost(host) ?? refuseWrite({ method: request.method, headers: request.headers, routeId: route.id, hosts: [host, url.host, baseHost] });
+	return refused && json({ message: refused.message }, { status: refused.status });
+}
 
-	// The agent-API contract doc is public by design (it documents auth, carries
-	// no secrets, and a client needs it before it can authenticate).
-	if (event.url.pathname === '/llms.txt') return resolve(event);
+// same-origin, not no-referrer: the latter makes browsers send `Origin: null` on
+// deck's own form posts, which refuse() turns away.
+function secure(response: Response): Response {
+	response.headers.set('x-content-type-options', 'nosniff');
+	response.headers.set('referrer-policy', 'same-origin');
+	return response;
+}
 
-	// A valid header token (programmatic clients) or session cookie (browsers)
-	// authenticates the request outright.
-	if (requestIsAuthed(event.request.headers, event.cookies)) return resolve(event);
+// Whether a request goes straight through: no-auth mode, the agent-API contract
+// doc (public by design: it documents auth, carries no secrets, and a client needs
+// it before it can authenticate), a valid header token (programmatic clients) or
+// the session cookie (browsers).
+function admitted(event: RequestEvent): boolean {
+	if (noAuth || event.url.pathname === '/llms.txt') return true;
+	return requestIsAuthed(event.request.headers, event.cookies);
+}
+
+const authenticate: Handle = async ({ event, resolve }) => {
+	if (admitted(event)) return resolve(event);
 
 	// A valid ?token= mints the session cookie and redirects to a clean URL.
 	if (tokenMatches(event.url.searchParams.get('token'))) exchangeUrlToken(event);
 
 	if (PUBLIC_PATHS.has(event.url.pathname)) return resolve(event);
 	return deny(event);
+};
+
+export const handle: Handle = async ({ event, resolve }) => {
+	printAccessUrl(event.url.origin);
+	return secure(refuse(event) ?? (await authenticate({ event, resolve })));
 };

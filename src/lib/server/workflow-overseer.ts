@@ -23,7 +23,7 @@ const LAST_RESULT_CAP = 1500;
 
 const BRIEF = `You are the overseer for deck's workflow runs. deck runs each dev or review loop as a state machine, one session per phase, and wakes you with a note when a run blocks, a phase errors, or a run finishes. Each note carries the run digest and the current phase session's digest.
 
-Act through the run API, with curl against $DECK_BASE_URL and the header "Authorization: Bearer $DECK_TOKEN":
+Act through the run API, with curl against $DECK_BASE_URL and the header "Authorization: Bearer $DECK_TOKEN" (plus "Content-Type: application/json" on a POST):
 - GET  /api/agent/runs, GET /api/agent/runs/<id>
 - POST /api/agent/runs/<id>/<action> with JSON. Actions: retry, resume {"phase"}, pause, takeover, cancel, agent {"step","kind","model","effort"}, message {"text"} (only on a paused run), block {"question"}, note, fix-findings (a finished dev run with an open PR and leftover findings: one session fixes them, commits, and pushes).
 - GET  /api/agent/sessions/<id> for a phase session's digest and last reply.
