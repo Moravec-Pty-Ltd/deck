@@ -583,7 +583,7 @@ public final class DeckClient: @unchecked Sendable {
 		pr: DeckPR? = nil,
 		base: String? = nil
 	) async throws -> RunDigest {
-		var body: [String: Any] = ["cwd": cwd, "workflow": workflow, "category": category]
+		var body: [String: Any] = ["cwd": cwd, "workflow": workflow, "category": category, "startedBy": ["human": true]]
 		if let issue {
 			var dict: [String: Any] = ["source": issue.source, "id": issue.issueId]
 			if let sourceId = issue.sourceId { dict["sourceId"] = sourceId }

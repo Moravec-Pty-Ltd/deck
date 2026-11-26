@@ -21,6 +21,7 @@ import {
 	type RunDigest,
 	type RunPhaseDigest,
 	type RunPr,
+	type RunStarter,
 	type StepAgent,
 	type VerifyTests,
 	type WorkflowCategory,
@@ -279,6 +280,7 @@ export interface NewRunInput {
 	title: string;
 	issue?: SessionIssue;
 	pr?: RunPr;
+	startedBy?: RunStarter;
 	profile: ResolvedProfile;
 	now: number;
 }
@@ -298,6 +300,7 @@ export function newRun(input: NewRunInput): WorkflowRun {
 		title: input.title,
 		issue: input.issue,
 		pr: input.pr,
+		startedBy: input.startedBy,
 		loop: profile.loop,
 		reviewer: profile.reviewer,
 		status: 'running',
@@ -1109,10 +1112,24 @@ export function runDigest(run: WorkflowRun, baseUrl: string): RunDigest {
 		handoff: run.handoff,
 		error: run.error,
 		testsSkipped: testsSkipped(run),
+		startedBy: run.startedBy,
 		followUp: !!run.followUp,
 		createdAt: run.createdAt,
 		updatedAt: run.updatedAt
 	};
+}
+
+// What the starting session is told when its run ends.
+export function runReport(run: WorkflowRun, baseUrl: string): string {
+	return [
+		`Workflow run ${run.id} (${run.title}), which you started, is ${run.status} at phase ${run.phase}: ${baseUrl}/runs/${run.id}`,
+		run.pr && `PR: ${run.pr.url ?? `https://github.com/${run.pr.repo}/pull/${run.pr.number}`}`,
+		run.status === 'blocked' && run.block && `Blocked on: ${run.block.question}`,
+		run.findings.length > 0 && 'Leftover findings:',
+		...run.findings.map((f) => `- ${f.file}${f.line ? `:${f.line}` : ''} (${f.severity}) ${f.defect.replace(/\s+/g, ' ')}`)
+	]
+		.filter(Boolean)
+		.join('\n');
 }
 
 // ---- Loading stored runs ----

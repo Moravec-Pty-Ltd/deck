@@ -912,8 +912,14 @@ draw the board and a run's phases, with no HTML:
 	"block": { "question": "...", "at": 0, "by": "engine", "step": "pr", "kind"?: "no-tests" },
 	"testsSkipped"?: "Tests skipped: ...",
 	"handoff": { "text": "...", "tree": "<git tree>", "at": 0 },
+	"startedBy": { "sessionId": "c_...", "title": "..." },
 	"createdAt": 0, "updatedAt": 0 }
 \`\`\`
+
+\`startedBy\` is the session that started the run (\`title\` is absent once it
+is deleted) or \`{ "human": true }\`; absent on an automatic run or one
+started without saying. \`GET /api/agent/sessions/{id}/runs\` lists the digests
+of the runs a session started, newest first.
 
 \`waiting\` means the run is waiting on a PR reviewer (deck polls \`gh\`).
 \`phases[].sessions\` holds one entry per visit, so a review phase that ran four
@@ -924,11 +930,18 @@ rounds lists four sessions. \`GET /api/agent/runs/{id}\` returns one digest plus
 
 \`{ "cwd": "<project path or one of its worktrees>", "workflow"?: "<id>",
 "category"?: "dev"|"review", "issue"?: { "source", "id", "url"? },
-"pr"?: { "repo", "number", "baseRefName"? }, "base"?: "<branch>", "title"? }\`
+"pr"?: { "repo", "number", "baseRefName"? }, "base"?: "<branch>", "title"?,
+"startedBy"?: { "sessionId": "$DECK_SESSION_ID" } | { "human": true } }\`
 starts a run and returns its digest (201). Without \`workflow\` the category's
 default runs. A dev run started at a project root makes a worktree on the
 issue's branch; a review run checks the PR out; a run started inside a
 worktree works there. 409 when that worktree already has an active run.
+
+Send your own session id as \`startedBy\` and deck messages that session once
+each time the run ends (done, or blocked, including on an error): the run link,
+status, PR, leftover findings, and the question if it blocked. A busy session
+is told when its turn finishes; a deleted one is skipped. 400 when the id is
+not a live agent session.
 
 ### DELETE /api/agent/runs?finished=1
 

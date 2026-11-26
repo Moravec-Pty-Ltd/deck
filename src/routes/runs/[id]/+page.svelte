@@ -6,6 +6,7 @@
 	import { relativeTime } from '$lib/time';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import StarterLink from '$lib/components/StarterLink.svelte';
 	import WorkflowGraph from '$lib/components/WorkflowGraph.svelte';
 	import { GitBranch, GitPullRequest, CircleHelp, Pause, Hand, Play, RotateCcw, Ban, Trash2, Wrench } from '@lucide/svelte';
 
@@ -155,6 +156,12 @@
 		<span class="opacity-70" title="Escalations spent: {escalations.join(', ') || 'none'}">
 			escalations <span class="font-mono">{escalations.length}/{Object.keys(run.escalations).length}</span>
 		</span>
+		{#if run.startedBy}
+			<span class="inline-flex min-w-0 max-w-full items-center gap-1">
+				<span class="shrink-0 opacity-70">started by</span>
+				{#if 'human' in run.startedBy}<span class="opacity-70">a person</span>{:else}<StarterLink {run} />{/if}
+			</span>
+		{/if}
 		<span class="opacity-50">updated {relativeTime(run.updatedAt)}</span>
 	</div>
 
