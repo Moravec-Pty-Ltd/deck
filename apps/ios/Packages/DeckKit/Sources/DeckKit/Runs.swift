@@ -113,6 +113,9 @@ public struct RunBlock: Codable, Hashable, Sendable {
 	public let at: Double
 	public let by: String
 	public let step: String
+	/// "no-tests": the answer sets the project's test command, or confirms it
+	/// has no tests. Absent otherwise.
+	public let kind: String?
 }
 
 /// The intent note left by whoever drove a phase last.
@@ -154,6 +157,8 @@ public struct RunDigest: Codable, Hashable, Identifiable, Sendable {
 	public let handoffStale: Bool?
 	/// A fix-findings follow-up is running (or ran) on this finished run.
 	public let followUp: Bool?
+	/// Set when the latest verify ran no tests: why, for a person to read.
+	public let testsSkipped: String?
 
 	/// A finished dev run that opened a PR but left findings behind can be sent
 	/// back to fix them. The dev-category check mirrors deck's rule so the button

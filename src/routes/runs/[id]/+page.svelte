@@ -161,6 +161,9 @@
 	{#if run.error}
 		<div class="alert alert-error mb-3 py-2 text-sm" role="alert">{run.error}</div>
 	{/if}
+	{#if run.testsSkipped}
+		<div class="alert alert-warning mb-3 py-2 text-sm" role="status">{run.testsSkipped}</div>
+	{/if}
 	{#if actionError}
 		<div class="alert alert-error mb-3 py-2 text-sm" role="alert">{actionError}</div>
 	{/if}
@@ -172,7 +175,7 @@
 				<span>Blocked at {run.block.step}, asked by {run.block.by} {relativeTime(run.block.at)} ago</span>
 			</div>
 			<p class="text-sm font-medium whitespace-pre-wrap">{run.block.question}</p>
-			<textarea class="textarea textarea-sm mt-3 w-full" rows="3" placeholder="Your answer" aria-label="Your answer" bind:value={answerText}></textarea>
+			<textarea class="textarea textarea-sm mt-3 w-full" rows="3" placeholder={run.block.kind === 'no-tests' ? 'test: <command>, or: no tests' : 'Your answer'} aria-label="Your answer" bind:value={answerText}></textarea>
 			<div class="mt-2 flex justify-end">
 				<button class="btn btn-sm btn-primary" onclick={answer} disabled={!answerText.trim() || !!busy}>Answer and resume</button>
 			</div>

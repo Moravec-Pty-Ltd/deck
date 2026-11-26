@@ -10,6 +10,8 @@ const stored: Project = {
 	template: 'Work on {issue}',
 	account: 'acme',
 	reviewPrompt: 'Review it',
+	testCommand: 'make test',
+	noTests: true,
 	lastBase: 'main',
 	lastModels: { claude: { model: 'opus' } },
 	lastEffort: 'high',
@@ -32,6 +34,11 @@ describe('buildProjectRecord', () => {
 		expect(next).toEqual({ ...stored, name: 'Renamed', group: undefined, account: undefined, template: 'New' });
 	});
 
+	it('clears the test settings', () => {
+		const next = buildProjectRecord({ testCommand: '', noTests: false }, stored.path, stored);
+		expect(next).toMatchObject({ testCommand: undefined, noTests: undefined });
+	});
+
 	it('never takes the fields other endpoints own from the body', () => {
 		const next = buildProjectRecord({ hidden: false, sources: [], lastModels: {}, lastEffort: 'low' }, stored.path, stored);
 		expect(next).toEqual(stored);
@@ -45,6 +52,7 @@ describe('buildProjectRecord', () => {
 	it.each([
 		[{ name: 3 }, /name must be a string/],
 		[{ group: 3 }, /group must be a string/],
+		[{ noTests: 'yes' }, /noTests must be a boolean/],
 		[{ reviewPrompt: [] }, /reviewPrompt must be a string/],
 		[{ dev: 'nope' }, /./],
 		[{ automation: 'nope' }, /./]

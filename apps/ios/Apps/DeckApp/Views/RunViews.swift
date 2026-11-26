@@ -51,6 +51,9 @@ struct RunRow: View {
 				if run.followUp == true {
 					Chip(text: "follow-up", color: .accentColor)
 				}
+				if run.testsSkipped != nil {
+					Chip(text: "tests skipped", color: .orange)
+				}
 				Spacer(minLength: 8)
 				Text(RelativeFormat.string(run.updatedAt))
 					.font(.caption2)
@@ -271,6 +274,9 @@ struct RunView: View {
 				if run.followUp == true {
 					Chip(text: "follow-up", color: .accentColor)
 				}
+			}
+			if let skipped = run.testsSkipped {
+				Text(skipped).font(.callout).foregroundStyle(.orange)
 			}
 			if let block = run.block, run.status == .blocked {
 				Text(block.question).font(.callout)

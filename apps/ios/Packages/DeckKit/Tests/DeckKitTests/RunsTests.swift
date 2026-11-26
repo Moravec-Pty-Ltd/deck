@@ -58,9 +58,9 @@ private func digest(id: String = "r_1", status: String = "blocked", phase: Strin
 	      "decisions": [{ "at": 450, "by": "overseer", "step": "review", "action": "retry", "reason": "flaky reviewer" }] },
 	    { "id": "verify", "label": "Verify", "role": "verify", "status": "pending", "visits": 0, "next": "pr",
 	      "sessions": [{ "visit": 1, "startedAt": 50 }], "decisions": [] }],
-	  \(block ? #""block": { "question": "Which base?", "at": 1500, "by": "engine", "step": "review" },"# : "")
+	  \(block ? #""block": { "question": "Which base?", "at": 1500, "by": "engine", "step": "review", "kind": "no-tests" },"# : "")
 	  "handoff": { "text": "left off at the null case", "tree": "abc123", "at": 1400 },
-	  "error": "phase crashed once",
+	  "error": "phase crashed once", "testsSkipped": "Tests skipped",
 	  "createdAt": 1000, "updatedAt": \(updatedAt), "handoffStale": true }
 	"""
 }
@@ -91,6 +91,8 @@ final class RunsTests: XCTestCase {
 		XCTAssertEqual(run.findings.first?.keep, "k")
 		XCTAssertTrue(run.escalations.disagreement)
 		XCTAssertEqual(run.block?.step, "review")
+		XCTAssertEqual(run.block?.kind, "no-tests")
+		XCTAssertEqual(run.testsSkipped, "Tests skipped")
 		XCTAssertEqual(run.handoff?.tree, "abc123")
 		XCTAssertEqual(run.error, "phase crashed once")
 		XCTAssertEqual(run.handoffStale, true)

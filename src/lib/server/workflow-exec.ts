@@ -10,7 +10,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { confineRelative, resolveWithinProjects } from './confine';
 import { isFlagSafe } from './agents/args';
-import { detectVerifyCommand, deltaRanges, type PrReviewView } from './workflow-core';
+import { deltaRanges, verifyPlan, type PrReviewView, type VerifyPlan } from './workflow-core';
+import type { Project } from '$lib/types';
 import type { PushState, WorkflowRun } from '$lib/workflows';
 
 const exec = promisify(execFile);
@@ -107,10 +108,21 @@ function lockfiles(root: string): string[] {
 	return ['pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'].filter((f) => fs.existsSync(path.join(root, f)));
 }
 
-export function verifyCommand(cwd: string, override?: string): string | null {
-	if (override) return override;
+// A step's own command wins: a workflow may have several verify steps, and the
+// project's command must not replace a lint one.
+export function planVerify(cwd: string, stepCommand: string | undefined, project: Project): VerifyPlan {
 	const root = confined(cwd);
-	return detectVerifyCommand(readScripts(root), lockfiles(root));
+	return verifyPlan(stepCommand || project.testCommand, project, readScripts(root), lockfiles(root));
+}
+
+// Directories below the root whose package.json has a test script. Listed by
+// git, so ignored trees (node_modules) are left out; a symlink is not followed.
+export async function testSubpackages(cwd: string): Promise<string[]> {
+	const root = confined(cwd);
+	const out = await git(root, ['ls-files', '-z', '-co', '--exclude-standard', '--', '*/package.json']);
+	const dirs = out.split('\0').filter(Boolean).map((f) => path.dirname(f));
+	const real = dirs.filter((d) => resolveWithinProjects(path.join(root, d, 'package.json')) === path.join(root, d, 'package.json'));
+	return [...new Set(real)].filter((d) => readScripts(path.join(root, d))?.test).sort();
 }
 
 // Kill the command's whole process group: `pnpm run check && pnpm test` runs

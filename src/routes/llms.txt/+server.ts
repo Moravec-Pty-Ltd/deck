@@ -246,9 +246,10 @@ issue-source keys go unless another project's source still uses them. Returns
 ### GET /api/agent/projects/config?path=<path>
 
 A project's full stored record: \`{ name, path, group?, hidden?, template?,
-reviewPrompt?, lastBase?, lastModels?, lastEffort?, sources?, dev?, automation? }\`.
+reviewPrompt?, testCommand?, noTests?, lastBase?, lastModels?, lastEffort?, sources?, dev?, automation? }\`.
 \`template\` and \`reviewPrompt\` are the first-prompt templates for work and
-review sessions, \`dev\` the dev-server config, \`automation\` the background
+review sessions, \`testCommand\` and \`noTests\` what a workflow run's verify
+step does (see Workflow runs), \`dev\` the dev-server config, \`automation\` the background
 feed config. Without \`path\`, an array of every record. 404 for an
 unregistered path.
 
@@ -256,9 +257,9 @@ unregistered path.
 
 \`{ "path": "<registered path>", ...fields }\` edits a project. Only the fields
 you send change: \`name\`, \`group\`, \`template\`, \`reviewPrompt\`,
-\`lastBase\`, \`account\` (strings; a blank clears, a non-string is a 400;
+\`testCommand\`, \`lastBase\`, \`account\` (strings; a blank clears, a non-string is a 400;
 \`account\` must name an account from \`GET /api/agent/accounts\`, blank means
-Default), \`dev\`, \`remote\` (see Remote projects) and
+Default), \`noTests\` (boolean), \`dev\`, \`remote\` (see Remote projects) and
 \`automation\` (validated; a bad shape is a 400 naming the problem). \`hidden\`
 has its own route, sources theirs, and the remembered model picks are written
 by session creates, so those are ignored here. Returns the updated record; 404
@@ -854,9 +855,13 @@ fresh agent session per phase, all in the run's worktree. Phases invoke skills
 computed (an exit code, a review finding's severity, or a \`gh\` query), never
 judged by a model. A run survives a deck restart. One run per worktree.
 
-Tests run once per round, in the verify step (the project's own \`test\`
-script, so a project whose default test run is a fast changed-only mode gets
-that). Implement, fix, arbiter and closer phases are told to check their work
+Tests run once per round, in the verify step: the step's \`command\`, else the
+project's \`testCommand\`, else the root package.json's \`test\` script (so a project whose default test run is a fast changed-only mode gets that). With none of these the run blocks with
+\`block.kind: "no-tests"\`; answering \`test: <command>\` or \`no tests\` saves
+\`testCommand\` or \`noTests\` on the project and resumes, and any other answer
+is a 400. A project with \`noTests\` goes on (running the type check if there is
+one). The digest carries \`testsSkipped\`, a sentence to show, when no tests ran:
+that, or a person resumed past the question (the overseer gets a 409). Implement, fix, arbiter and closer phases are told to check their work
 with at most a type check and the single test file they changed; the review
 phase runs no tests and reads verify's result instead. The verify command is
 stopped after 20 minutes of running time. Time spent queued for a shared test
@@ -897,7 +902,8 @@ draw the board and a run's phases, with no HTML:
 			"startedAt": 0, "endedAt": 0, "humanTouched": false }],
 		"decisions": [{ "at": 0, "by": "overseer|human|engine", "step": "review",
 			"action": "retry", "reason": "..." }] }],
-	"block": { "question": "...", "at": 0, "by": "engine", "step": "pr" },
+	"block": { "question": "...", "at": 0, "by": "engine", "step": "pr", "kind"?: "no-tests" },
+	"testsSkipped"?: "Tests skipped: ...",
 	"handoff": { "text": "...", "tree": "<git tree>", "at": 0 },
 	"createdAt": 0, "updatedAt": 0 }
 \`\`\`
@@ -949,7 +955,8 @@ the run's current phase. Returns the run digest.
 - \`retry\`: resume at the current phase.
 - \`cancel\`: stop the run for good.
 - \`answer\` \`{ "text" }\` (required): answer a blocked run; it resumes at its
-  phase with the answer handed to the next session.
+  phase with the answer handed to the next session. A \`no-tests\` block takes
+  only the two answers above, and 409s the overseer.
 - \`block\` \`{ "question" }\` (required): block the run on a question and notify.
 - \`agent\` \`{ "step"?, "kind"?, "model"?, "provider"?, "effort"? }\`: change what a
   step runs on for this run. All fields blank clears the override.

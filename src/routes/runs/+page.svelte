@@ -339,6 +339,7 @@
 						>
 							<div class="flex items-center gap-2">
 								<span class="min-w-0 flex-1 truncate text-sm font-medium {muted ? 'opacity-60' : ''}">{run.title}</span>
+								{#if run.testsSkipped}<span class="badge badge-sm badge-warning" title={run.testsSkipped}>tests skipped</span>{/if}
 								<span class="badge badge-sm {view.badge}">{view.label}</span>
 								<span class="w-8 text-right text-xs opacity-50">{relativeTime(run.updatedAt)}</span>
 							</div>

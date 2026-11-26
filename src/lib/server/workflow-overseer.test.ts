@@ -68,6 +68,15 @@ describe('the overseer', () => {
 		expect(fake.sent[0].text).toContain('done at implement');
 	});
 
+	it('leads with skipped tests', () => {
+		fake.overseerId = 'o1';
+		fake.sessions.set('o1', session('o1'));
+		const r = run();
+		r.visits.push({ step: 'verify', visit: 1, startedAt: 0, tests: 'skipped' });
+		noteOverseer(r, 'done');
+		expect(fake.sent[0].text).toContain('**Tests skipped');
+	});
+
 	it('does not register a start that a stop overtook', async () => {
 		fake.overseerId = undefined;
 		const first = startOverseer();

@@ -15,8 +15,10 @@ import {
 	repoMismatch,
 	matchProfile,
 	newRun,
+	noTestsQuestion,
 	normalizeRun,
 	parseStructured,
+	parseTestsAnswer,
 	phasePrompt,
 	pickWorkflow,
 	resolveWorkflows,
@@ -24,7 +26,8 @@ import {
 	runDigest,
 	stepById,
 	type GateResult,
-	type PrReviewView
+	type PrReviewView,
+	verifyPlan
 } from './workflow-core';
 import type { Finding, WorkflowRun } from '$lib/workflows';
 
@@ -384,6 +387,31 @@ describe('gates from outside data', () => {
 		expect(detectVerifyCommand({ typecheck: 'tsc', test: 'jest' }, [])).toBe('npm run typecheck && npm test');
 		expect(detectVerifyCommand({ build: 'vite build' }, ['yarn.lock'])).toBeNull();
 		expect(detectVerifyCommand(undefined, [])).toBeNull();
+	});
+
+	it('blocks on a missing test command unless the project opted out', () => {
+		const pnpm = ['pnpm-lock.yaml'];
+		expect(verifyPlan(undefined, {}, { test: 'vitest' }, pnpm)).toEqual({ command: 'pnpm test', tests: 'run' });
+		expect(verifyPlan('make test', { noTests: true }, undefined, [])).toEqual({ command: 'make test', tests: 'run' });
+		expect(verifyPlan(undefined, {}, undefined, [])).toEqual({ command: null, tests: 'missing' });
+		expect(verifyPlan(undefined, { noTests: true }, undefined, [])).toEqual({ command: null, tests: 'skipped' });
+		// A typecheck is not a test: it never stands in for one, but still runs after an opt-out.
+		expect(verifyPlan(undefined, {}, { check: 'tsc' }, pnpm)).toEqual({ command: null, tests: 'missing' });
+		expect(verifyPlan(undefined, { noTests: true }, { check: 'tsc' }, pnpm)).toEqual({ command: 'pnpm run check', tests: 'skipped' });
+		// Opting out never hides tests that exist.
+		expect(verifyPlan(undefined, { noTests: true }, { test: 'vitest' }, pnpm).tests).toBe('run');
+	});
+
+	it('names the sub-packages in the question, up to a limit', () => {
+		expect(noTestsQuestion('acme', [])).not.toContain('Sub-packages');
+		expect(noTestsQuestion('acme', ['apps/web', 'server'])).toContain('Sub-packages with a test script: apps/web, server.');
+		expect(noTestsQuestion('acme', Array.from({ length: 12 }, (_, i) => `p${i}`))).toContain('p9 and 2 more.');
+	});
+
+	it('reads only the two answers the question asks for', () => {
+		expect(parseTestsAnswer('No tests.')).toEqual({ noTests: true });
+		expect(parseTestsAnswer('test: npm --prefix web test')).toEqual({ testCommand: 'npm --prefix web test', noTests: undefined });
+		for (const text of ['test:', 'no tests yet, add some', 'rm -rf build', 'the tests are in web']) expect(parseTestsAnswer(text)).toBeNull();
 	});
 
 	it('turns a zero-context diff into file ranges', () => {

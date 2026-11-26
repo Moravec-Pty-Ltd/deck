@@ -719,6 +719,10 @@ public struct ProjectDetail: Codable, Sendable {
 	public let template: String?
 	/// The first prompt of a review session.
 	public let reviewPrompt: String?
+	/// What a workflow run's verify step runs, instead of the detected command.
+	public let testCommand: String?
+	/// Workflow runs may go on without a test command.
+	public let noTests: Bool?
 	public let hidden: Bool?
 	public let automation: ProjectAutomation?
 	public let dev: DevConfig?
@@ -730,9 +734,11 @@ public struct ProjectDetail: Codable, Sendable {
 	public init(
 		path: String, name: String?, group: String?, template: String? = nil, reviewPrompt: String? = nil,
 		hidden: Bool? = nil, automation: ProjectAutomation?, dev: DevConfig? = nil, account: String? = nil,
-		remote: ProjectRemote? = nil
+		remote: ProjectRemote? = nil, testCommand: String? = nil, noTests: Bool? = nil
 	) {
 		self.remote = remote
+		self.testCommand = testCommand
+		self.noTests = noTests
 		self.account = account
 		self.path = path
 		self.name = name

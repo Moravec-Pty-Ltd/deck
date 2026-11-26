@@ -272,6 +272,12 @@ export interface Project {
 	// First-prompt template for Review-mode sessions (started on a PR awaiting
 	// review). Empty means an empty prompt field, exactly like `template`.
 	reviewPrompt?: string;
+	// What a workflow run's verify step runs here, instead of the command detected
+	// from the root package.json (issue #402).
+	testCommand?: string;
+	// This project has no tests: verify may go on without a test command. A test
+	// command that does exist still runs.
+	noTests?: boolean;
 	lastBase?: string;
 	// Last model picked per agent kind for this project, so the new-session modal
 	// re-selects it next time (issue #51). Stored in ~/.deck, never committed.

@@ -966,8 +966,10 @@ final class ParityTests: XCTestCase {
 	}
 
 	func testAccountsDecodeOnProjectsSessionsAndTheAccountsRoute() async throws {
-		let detail = try JSONDecoder().decode(ProjectDetail.self, from: Data(#"{"path":"/path/to/project","account":"work"}"#.utf8))
+		let detail = try JSONDecoder().decode(ProjectDetail.self, from: Data(#"{"path":"/path/to/project","account":"work","testCommand":"make test","noTests":true}"#.utf8))
 		XCTAssertEqual(detail.account, "work")
+		XCTAssertEqual(detail.testCommand, "make test")
+		XCTAssertEqual(detail.noTests, true)
 		let session = try JSONDecoder().decode(SessionDigest.self, from: Data(#"{"id":"example","status":"idle","account":"work"}"#.utf8))
 		XCTAssertEqual(session.account, "work")
 		let json = #"[{"name":"work","kind":"login","share":["CLAUDE.md","skills"],"envKeys":[],"configDir":"~/.deck/accounts/work","loginCommand":"claude login","ready":false,"problem":"Not signed in","email":null,"org":null}]"#

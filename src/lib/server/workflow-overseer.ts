@@ -14,7 +14,7 @@ import { baseUrl, dataDir } from './config';
 import { sessionDigest } from './agent-digest';
 import { sessionLastResult } from './transcript';
 import { overseerId, setOverseerId } from './workflow-store';
-import { lastVisit, runDigest } from './workflow-core';
+import { lastVisit, runDigest, testsSkipped } from './workflow-core';
 import type { StepAgent, WorkflowRun } from '$lib/workflows';
 
 export type OverseerEvent = 'blocked' | 'error' | 'done';
@@ -34,6 +34,8 @@ Rules:
 - Never use a blocking ask. When you need a person, POST block {"question"} on the run and move on; deck notifies them.
 - Retry a mechanical failure (a crashed turn, a missing structured block) once. Change a step's model when a tier is clearly not converging. Otherwise block with a clear question.
 - When a run finishes with leftover findings, say so in your reply. Use fix-findings only when a person asked you to.
+- When a run blocks because no test command was found, leave it to a person: never answer it, resume past it, or change the project's test settings.
+- When a note says tests were skipped, say so in your reply.
 - Keep replies short. You are watching, not doing the work.`;
 
 // Notes waiting for the overseer's current turn to end.
@@ -62,8 +64,10 @@ function compactRun(run: WorkflowRun): unknown {
 }
 
 function noteText(run: WorkflowRun, event: OverseerEvent, detail?: string): string {
+	const skipped = testsSkipped(run);
 	return [
 		`Run ${run.id} (${run.title}, ${run.workflowName}): ${event} at ${run.phase}${detail ? `: ${detail}` : ''}.`,
+		...(skipped ? [`**${skipped}**`] : []),
 		'```json\n' + JSON.stringify({ run: compactRun(run), phaseSession: phaseDigest(run) }) + '\n```'
 	].join('\n');
 }
