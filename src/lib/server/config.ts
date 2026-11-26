@@ -26,6 +26,19 @@ export const uploadsDir = path.join(dataDir, 'uploads');
 // JSONL a consumer tails or reads via the /api/agent/events cursor.
 export const eventLogFile = path.join(dataDir, 'events.jsonl');
 
+// Tighten what an earlier version left readable by others. Missing is fine, and
+// so is a data dir on a volume that takes no modes.
+function makePrivate(p: string, mode: number): void {
+	try {
+		fs.chmodSync(p, mode);
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code !== 'ENOENT') console.warn(`[deck] could not make ${p} private:`, e);
+	}
+}
+
+fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+makePrivate(dataDir, 0o700);
+for (const file of ['token', 'vapid.json', 'push-subscriptions.json']) makePrivate(path.join(dataDir, file), 0o600);
 fs.mkdirSync(transcriptsDir, { recursive: true });
 fs.mkdirSync(agentSessionsDir, { recursive: true });
 fs.mkdirSync(imagesDir, { recursive: true });

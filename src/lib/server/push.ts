@@ -24,7 +24,7 @@ function loadVapid(): Vapid {
 	const existing = readJson<Vapid | null>(VAPID_FILE, null);
 	if (existing?.publicKey && existing.privateKey) return existing;
 	const keys = webpush.generateVAPIDKeys();
-	writeJson(VAPID_FILE, keys);
+	writeJson(VAPID_FILE, keys, 0o600);
 	return keys;
 }
 
@@ -63,13 +63,14 @@ export function isValidPushEndpoint(endpoint: unknown): endpoint is string {
 export function addSub(sub: PushSubscription) {
 	const subs = listSubs().filter((s) => s.endpoint !== sub.endpoint);
 	subs.push(sub);
-	writeJson(SUBS_FILE, subs.slice(-MAX_SUBS));
+	writeJson(SUBS_FILE, subs.slice(-MAX_SUBS), 0o600);
 }
 
 export function removeSub(endpoint: string) {
 	writeJson(
 		SUBS_FILE,
-		listSubs().filter((s) => s.endpoint !== endpoint)
+		listSubs().filter((s) => s.endpoint !== endpoint),
+		0o600
 	);
 }
 

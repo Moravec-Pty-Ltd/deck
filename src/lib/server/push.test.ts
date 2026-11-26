@@ -15,6 +15,7 @@ const { isValidPushEndpoint, addSub, notify } = await import('./push');
 const SUBS_FILE = path.join(tmpDir, 'push-subscriptions.json');
 const sub = (endpoint: string) =>
 	({ endpoint, keys: { p256dh: 'p', auth: 'a' } }) as Parameters<typeof addSub>[0];
+const mode = (file: string) => fs.statSync(path.join(tmpDir, file)).mode & 0o777;
 const readSubs = (): Array<{ endpoint: string }> =>
 	JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
 
@@ -30,6 +31,12 @@ afterAll(() => {
 	if (originalDataDir === undefined) delete process.env.DECK_DATA;
 	else process.env.DECK_DATA = originalDataDir;
 	fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+it('writes its key and subscriptions for the user only', () => {
+	addSub(sub('https://push.example/a'));
+	expect(mode('vapid.json')).toBe(0o600);
+	expect(mode('push-subscriptions.json')).toBe(0o600);
 });
 
 describe('isValidPushEndpoint', () => {
