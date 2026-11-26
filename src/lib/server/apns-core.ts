@@ -310,9 +310,18 @@ export interface ActivityPush {
 		timestamp: number;
 		event: 'update' | 'end';
 		'content-state': ActivityState;
+		'relevance-score': number;
 		'stale-date'?: number;
 		'dismissal-date'?: number;
 	};
+}
+
+// Orders a phone's cards, which shows the highest first: a question, then a
+// working session, then an error, then the rest. ContentState.relevance in
+// DeckKit is the same rule, for the cards the app updates itself.
+export function activityRelevance(state: Pick<ActivityState, 'status' | 'awaitingInput'>): number {
+	if (state.awaitingInput) return 100;
+	return state.status === 'running' ? 50 : state.status === 'error' ? 25 : 0;
 }
 
 // A finished session's card goes stale after this long (the system dims it);
@@ -323,7 +332,7 @@ const ACTIVITY_DISMISS_AFTER_S = 60;
 // `dismissAt` (epoch seconds) overrides an end's default short dismissal.
 export function toActivityPush(state: ActivityState, event: 'update' | 'end', nowMs: number, dismissAt?: number): ActivityPush {
 	const now = Math.floor(nowMs / 1000);
-	const aps: ActivityPush['aps'] = { timestamp: now, event, 'content-state': state };
+	const aps: ActivityPush['aps'] = { timestamp: now, event, 'content-state': state, 'relevance-score': activityRelevance(state) };
 	if (event === 'end') aps['dismissal-date'] = dismissAt ?? now + ACTIVITY_DISMISS_AFTER_S;
 	else if (state.status !== 'running') aps['stale-date'] = now + ACTIVITY_STALE_AFTER_S;
 	return { aps };
@@ -338,6 +347,7 @@ export interface ActivityStartPush {
 		timestamp: number;
 		event: 'start';
 		'content-state': ActivityState;
+		'relevance-score': number;
 		'attributes-type': 'SessionActivityAttributes';
 		attributes: { sessionId: string; title: string; startedAt: number };
 		alert: ApnsAlert;
@@ -356,6 +366,7 @@ export function toActivityStartPush(
 			timestamp: Math.floor(nowMs / 1000),
 			event: 'start',
 			'content-state': state,
+			'relevance-score': activityRelevance(state),
 			'attributes-type': 'SessionActivityAttributes',
 			attributes: { sessionId: session.id, title: session.title, startedAt: Math.floor(nowMs / 1000) - APPLE_EPOCH_OFFSET_S },
 			alert: { title: session.title, body: state.awaitingInput ? 'Needs your input' : 'Working' }

@@ -49,21 +49,24 @@ final class ComposerKeyboardUITests: XCTestCase {
 		field.typeText("\nseven\neight\nnine")
 		XCTAssertTrue(waitFor { abs(field.frame.height - capped) <= 1 }, "the field kept growing past five lines")
 
-		field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "\nthree\nfour\nfive\nsix\nseven\neight\nnine".count))
+		// Typed this fast, a few deletes can be dropped; send the rest until it is back to two lines.
+		for _ in 0..<5 {
+			let extra = (field.value as? String ?? "").count - "one\ntwo".count
+			guard extra > 0 else { break }
+			field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: extra))
+		}
 		XCTAssertEqual(field.value as? String, "one\ntwo")
 		XCTAssertTrue(waitFor { field.frame.height < four }, "the field did not shrink")
 		// Paste only shows with something on the clipboard.
 		UIPasteboard.general.string = "pasted"
-		field.press(forDuration: 1.2)
-		XCTAssertTrue(app.menuItems["Paste"].waitForExistence(timeout: 5), "no Paste in the edit menu once the field fits again")
+		XCTAssertTrue(openEditMenu(field, app), "no Paste in the edit menu once the field fits again")
 		app.menuItems["Paste"].tap()
 		XCTAssertTrue(waitFor { (field.value as? String ?? "").hasSuffix("pasted") }, "the paste did not land")
 
 		// A long paste lands at the cap, not past it.
 		clear(field, app)
 		UIPasteboard.general.string = (1...12).map { "paragraph \($0) of a long pasted message" }.joined(separator: "\n\n")
-		field.press(forDuration: 1.2)
-		XCTAssertTrue(app.menuItems["Paste"].waitForExistence(timeout: 5))
+		XCTAssertTrue(openEditMenu(field, app), "no Paste in the edit menu on the empty field")
 		app.menuItems["Paste"].tap()
 		XCTAssertTrue(waitFor { (field.value as? String ?? "").hasSuffix("paragraph 12 of a long pasted message") })
 		XCTAssertTrue(waitFor { abs(field.frame.height - capped) <= 1 }, "a long paste did not land at the cap")
@@ -144,6 +147,17 @@ final class ComposerKeyboardUITests: XCTestCase {
 			field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 50))
 		}
 		XCTAssertEqual(field.value as? String ?? "", "", "the draft did not clear")
+	}
+
+	/// A long press on the field, again if the menu does not come up: one
+	/// can land while the field is still settling. A field that scrolls never
+	/// offers Paste, so a retry does not hide that.
+	private func openEditMenu(_ field: XCUIElement, _ app: XCUIApplication) -> Bool {
+		for _ in 0..<3 {
+			field.press(forDuration: 1.2)
+			if app.menuItems["Paste"].waitForExistence(timeout: 3) { return true }
+		}
+		return false
 	}
 
 	private func hasFocus(_ element: XCUIElement) -> Bool {

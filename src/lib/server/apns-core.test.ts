@@ -252,7 +252,7 @@ describe('live activity pushes', () => {
 		const { toActivityPush, activityText, shouldPushText, activityTopic, ACTIVITY_TEXT_INTERVAL_MS } = await import('./apns-core');
 		const state = { status: 'running', awaitingInput: false, lastText: 'x', costUsd: 0.1, turns: 2, updatedAt: 0 };
 		const running = toActivityPush(state, 'update', 10_000);
-		expect(running.aps).toEqual({ timestamp: 10, event: 'update', 'content-state': state });
+		expect(running.aps).toEqual({ timestamp: 10, event: 'update', 'content-state': state, 'relevance-score': 50 });
 		const idle = toActivityPush({ ...state, status: 'idle' }, 'update', 10_000);
 		expect(idle.aps['stale-date']).toBe(10 + 30 * 60);
 		const end = toActivityPush(state, 'end', 10_000);
@@ -278,6 +278,14 @@ describe('live activity pushes', () => {
 		expect(startsActivity({ status: 'idle', subagents: 1 })).toBe(false);
 		expect(startsActivity({ status: 'error', unread: true })).toBe(false);
 	});
+	it('ranks a question over a working session over an error over the rest', async () => {
+		const { activityRelevance } = await import('./apns-core');
+		expect(activityRelevance({ status: 'running', awaitingInput: true })).toBe(100);
+		expect(activityRelevance({ status: 'idle', awaitingInput: true })).toBe(100);
+		expect(activityRelevance({ status: 'running', awaitingInput: false })).toBe(50);
+		expect(activityRelevance({ status: 'error', awaitingInput: false })).toBe(25);
+		expect(activityRelevance({ status: 'idle', awaitingInput: false })).toBe(0);
+	});
 	it('ends a quiet card at the end of the just-finished window', async () => {
 		const { toActivityPush, activityDismissAt } = await import('./apns-core');
 		const state = { status: 'idle', awaitingInput: false, lastText: '', costUsd: 0, turns: 1, updatedAt: 0 };
@@ -290,7 +298,7 @@ describe('live activity pushes', () => {
 		const state = { status: 'running', awaitingInput: false, lastText: 'Reading the router', costUsd: 0.25, turns: 3, updatedAt: 1800000000000 };
 		const push = toActivityStartPush({ id: 'abc', title: 'Fix login' }, state, 1_800_000_000_000);
 		expect(JSON.stringify(push)).toBe(
-			'{"aps":{"timestamp":1800000000,"event":"start","content-state":{"status":"running","awaitingInput":false,"lastText":"Reading the router","costUsd":0.25,"turns":3,"updatedAt":1800000000000},"attributes-type":"SessionActivityAttributes","attributes":{"sessionId":"abc","title":"Fix login","startedAt":821692800},"alert":{"title":"Fix login","body":"Working"}}}'
+			'{"aps":{"timestamp":1800000000,"event":"start","content-state":{"status":"running","awaitingInput":false,"lastText":"Reading the router","costUsd":0.25,"turns":3,"updatedAt":1800000000000},"relevance-score":50,"attributes-type":"SessionActivityAttributes","attributes":{"sessionId":"abc","title":"Fix login","startedAt":821692800},"alert":{"title":"Fix login","body":"Working"}}}'
 		);
 		expect(toActivityStartPush({ id: 'abc', title: 't' }, state, 1_800_000_000_789).aps.attributes.startedAt).toBe(821692800);
 	});

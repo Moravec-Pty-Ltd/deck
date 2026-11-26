@@ -113,7 +113,8 @@ final class RunsUITests: XCTestCase {
 		let opened = expectation(for: NSPredicate { _, _ in self.server.requested("c_impl2") }, evaluatedWith: nil)
 		wait(for: [opened], timeout: 15)
 
-		let posts = server.posts
+		// Opening the session also marks it read, which is not a run action.
+		let posts = server.posts.filter { $0.path.hasPrefix("/api/agent/runs/") }
 		XCTAssertEqual(posts.map(\.path), [
 			"/api/agent/runs/r_review/pause",
 			"/api/agent/runs/r_review/resume",
