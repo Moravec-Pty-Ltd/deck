@@ -17,7 +17,8 @@ On first launch, enter the server address (the one you open deck at in a
 browser, for example `https://deck.example.ts.net`), then sign in as usual.
 Settings (server, shortcut, start at login) are in the tray menu.
 
-The dev browser opens from a session's header (Dev browser) or the tray. It
+The dev browser opens from a session's header (Dev browser), a running
+server's localhost URL on its Servers tab, or the tray. It
 has a tab for each running dev server of the session (from the tray, of every
 session; deck lists none for a remote session, so type its address), and
 `localhost` in it means the deck machine, or a remote session's host: it loads through deck's tunnel, signed in with the shell's own deck

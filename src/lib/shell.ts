@@ -23,9 +23,10 @@ export function openEditor(command: string): void {
 }
 
 // The shell's dev browser on a session's dev servers (on its host, for a remote
-// session). A shell from before the dev browser refuses the call.
-export function openDevBrowser(session: string): void {
-	void ipc?.invoke('open_dev_browser', { session }).catch(() => {});
+// session), with a tab on a loopback url when given. A shell from before the dev
+// browser refuses the call, and one from before urls ignores the url.
+export function openDevBrowser(session: string, url?: string): void {
+	void ipc?.invoke('open_dev_browser', { session, url }).catch(() => {});
 }
 
 // Hands the shell what the nav's inbox badge counts: the tray shows the count

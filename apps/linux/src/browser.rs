@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tauri::webview::{NewWindowResponse, PermissionResponse};
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Url, Webview, WebviewBuilder, WebviewUrl, Window};
 
-use crate::core::{classify_browser, is_previewable, resolve_address, server_tabs, DevServer, Nav, ServerTab};
+use crate::core::{classify_browser, is_previewable, loopback_address, resolve_address, server_tabs, DevServer, Nav, ServerTab};
 use crate::tunnel::{self, Route};
 
 const BAR: f64 = 82.0;
@@ -37,7 +37,8 @@ fn token(app: &AppHandle, server: &Url) -> String {
 		.unwrap_or_default()
 }
 
-pub async fn open(app: AppHandle, session: Option<String>) -> Result<(), String> {
+pub async fn open(app: AppHandle, session: Option<String>, url: Option<String>) -> Result<(), String> {
+	let url = url.map(|u| loopback_address(&u).ok_or("The dev browser only opens localhost addresses from deck.")).transpose()?;
 	let server = crate::server(&app).ok_or("Set the deck server first.")?;
 	if session.as_deref().is_some_and(|s| s.is_empty() || s.len() > 128 || !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')) {
 		return Err("invalid session".into());
@@ -56,6 +57,7 @@ pub async fn open(app: AppHandle, session: Option<String>) -> Result<(), String>
 	if let Some(window) = app.get_window(&label) {
 		let _ = window.unminimize();
 		let _ = window.set_focus();
+		want(app.get_webview(&bar_label(&label)), url);
 		return Ok(());
 	}
 	let window = tauri::window::WindowBuilder::new(&app, &label)
@@ -73,7 +75,16 @@ pub async fn open(app: AppHandle, session: Option<String>) -> Result<(), String>
 	})?;
 	#[cfg(target_os = "linux")]
 	crate::linux::pin_height(&bar, BAR as i32);
+	want(Some(bar), url);
 	Ok(())
+}
+
+// Asks the toolbar for a tab on url. It may not have run its script yet, so the
+// url is left where the script looks for it once it does.
+fn want(bar: Option<Webview>, url: Option<Url>) {
+	if let (Some(bar), Some(url)) = (bar, url) {
+		let _ = bar.eval(format!("window.wanted = {}; window.openWanted?.()", serde_json::json!(url.as_str())));
+	}
 }
 
 fn route_of(window: &str) -> Option<(String, Arc<Mutex<Route>>)> {

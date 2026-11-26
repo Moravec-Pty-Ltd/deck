@@ -41,7 +41,8 @@
 		</div>
 		<script>
 			// The tab list lives here; the shell (browser.rs) owns a webview per tab
-			// and calls onPage and openTab as pages change or ask for a new tab.
+			// and calls onPage, openTab and openWanted as pages change or ask for a new
+			// tab, or the deck page for an address.
 			const invoke = window.__TAURI_INTERNALS__.invoke;
 			const $ = (id) => document.getElementById(id);
 			// { id, title, url, port?, listening, loaded }. A tab with a port comes from
@@ -138,6 +139,26 @@
 				go(t, url);
 			};
 
+			// From the shell: the deck page asked for window.wanted. Held until the
+			// first refresh, so a dev server's own tab is there to reuse.
+			let ready = false;
+			const origin = (url) => {
+				try {
+					return new URL(url).origin;
+				} catch {
+					return null;
+				}
+			};
+			window.openWanted = () => {
+				const url = window.wanted;
+				if (!ready || !url) return;
+				window.wanted = null;
+				const same = tabs.filter((t) => origin(t.url) === origin(url));
+				const t = same.find((t) => t.loaded) ?? same[0];
+				if (t) go(t, url);
+				else openTab(url);
+			};
+
 			window.onPage = ({ tab: id, url, title }) => {
 				const t = tabs.find((t) => t.id === id);
 				if (!t) return;
@@ -211,7 +232,9 @@
 			});
 
 			refresh().then(() => {
-				if (tabs[0]) select(tabs[0]);
+				ready = true;
+				if (window.wanted) openWanted();
+				else if (tabs[0]) select(tabs[0]);
 				else blank();
 			});
 			setInterval(refresh, 5000);

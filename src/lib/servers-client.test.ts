@@ -3,6 +3,7 @@ import {
 	canStart,
 	canStop,
 	isInFlight,
+	isLoopbackUrl,
 	serverActionPath,
 	serverLogsPath,
 	sessionServersPath,
@@ -25,6 +26,28 @@ describe('server state predicates', () => {
 	it('isInFlight covers setup and starting', () => {
 		expect(ALL.filter(isInFlight)).toEqual(['setup', 'starting']);
 	});
+});
+
+describe('isLoopbackUrl', () => {
+	it.each([
+		'http://localhost:5173/app',
+		'http://LOCALHOST:3000',
+		'http://127.0.0.1:3000',
+		'http://127.1.2.3:3000',
+		'http://[::1]:8080/',
+		'https://tenant.localhost:3000',
+		'http://0.0.0.0:3000'
+	])('%s is loopback', (url) => expect(isLoopbackUrl(url)).toBe(true));
+
+	it.each([
+		'http://192.168.1.20:3000',
+		'http://10.0.0.5:3000',
+		'https://example.com',
+		'http://localhost.example.com',
+		'http://127.0.0.1.example.com',
+		'http://notlocalhost:3000',
+		'not a url'
+	])('%s is not', (url) => expect(isLoopbackUrl(url)).toBe(false));
 });
 
 describe('serverActionPath', () => {

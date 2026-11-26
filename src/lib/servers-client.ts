@@ -24,6 +24,13 @@ export function isInFlight(state: ServerState): boolean {
 	return state === 'setup' || state === 'starting';
 }
 
+// A URL that only works on the machine serving it, 0.0.0.0 (as dev servers print
+// it) included. Mirrors the Linux shell's is_tunnel_target.
+export function isLoopbackUrl(url: string): boolean {
+	if (!URL.canParse(url)) return false;
+	return /^(localhost|.+\.localhost|127(\.\d+){3}|0\.0\.0\.0|\[::1?\])\.?$/.test(new URL(url).hostname);
+}
+
 export function sessionServersPath(id: string): string {
 	return `/api/agent/sessions/${encodeURIComponent(id)}/servers`;
 }
