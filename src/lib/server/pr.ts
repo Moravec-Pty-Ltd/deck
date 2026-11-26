@@ -108,7 +108,7 @@ export async function currentUserRoute(): Promise<Response> {
 export function dismissPrRoute({ params }: { params: Partial<Record<string, string>> }): Response {
 	const id = params.id ?? '';
 	if (!getStoredSession(id)) error(404, 'session not found');
-	updateSession(id, { pr: undefined });
+	updateSession(id, { pr: undefined, prSeeded: undefined, prBackfilled: true });
 	return json({ ok: true });
 }
 

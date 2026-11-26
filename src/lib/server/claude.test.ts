@@ -15,6 +15,7 @@ vi.mock('./store', () => ({
 }));
 vi.mock('./mcp', () => ({ ensureMcp: () => Promise.resolve(), mcpConfigFile: () => '/path/to/mcp.json' }));
 vi.mock('./ask', () => ({ rejectAsk: vi.fn() }));
+vi.mock('./pr-capture', () => ({ capturePr: async () => {} }));
 vi.mock('./push', () => ({ notify: vi.fn() }));
 vi.mock('./transcript', () => ({
 	transcriptPath: (id: string) => `/t/${id}`,

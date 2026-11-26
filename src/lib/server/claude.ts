@@ -21,6 +21,7 @@ import { AGENT_BINARIES } from './agents/binaries';
 import { spawnAgent } from './agents/spawn';
 import { resultEvent } from './agents/events';
 import { lastPrLink } from '../pr';
+import { capturePr } from './pr-capture';
 import { killRemoteClaude, spawnRemoteClaude } from './remote';
 import { sshFailure } from '$lib/remote-core';
 import type { DeckSession } from '$lib/types';
@@ -125,7 +126,9 @@ export function appendEvent(id: string, event: Record<string, unknown>) {
 			}
 			if (mayAffectAgents(serialized)) syncSubagents(id);
 		});
-	capturePr(id, serialized);
+	// The shared write chokepoint for every agent kind, so one hook covers them all.
+	// Any part of the event counts (text, tool results, inputs): last link seen wins.
+	if (lastPrLink(serialized)) void capturePr(id, serialized);
 }
 
 // Recount the session's running subagents (issue #374) and publish a change.
@@ -155,23 +158,6 @@ function subagentsFinished(id: string) {
 		unread: true,
 		url: `/s/${id}`
 	});
-}
-
-// Capture the most recent GitHub PR link an agent prints. This is the shared
-// write chokepoint for every agent kind (claude's handleEvent and the pi/codex
-// runner both land here), so one hook covers all of them. Scans the whole
-// serialized event (assistant text, tool results, user messages, tool inputs)
-// since the ask is "any PR link, last seen wins". Only writes when the URL
-// differs from the stored one, so the hot append path doesn't rewrite
-// sessions.json per event.
-function capturePr(id: string, serialized: string) {
-	const match = lastPrLink(serialized);
-	if (!match) return;
-	const session = getStoredSession(id);
-	if (!session || session.pr?.url === match.url) return;
-	const pr = { ...match, seenAt: Date.now() };
-	updateSession(id, { pr });
-	publishAgentEvent(id, 'pr', { pr });
 }
 
 export function setStatus(id: string, status: 'running' | 'idle' | 'error') {

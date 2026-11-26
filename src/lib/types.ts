@@ -149,6 +149,8 @@ export interface DeckSession {
 	// doesn't repeat on every open and a dismissed `pr` isn't resurrected from the
 	// transcript on reload (see getSession backfill).
 	prBackfilled?: boolean;
+	// Started on its PR (a review), which later links don't replace.
+	prSeeded?: boolean;
 	// Kept out of the ordinary lists and shown in their "Hidden" section instead.
 	// Never stored on the record: the server derives it per read from the hidden
 	// ids and the hidden projects (see server/hidden.ts), so every client reads
