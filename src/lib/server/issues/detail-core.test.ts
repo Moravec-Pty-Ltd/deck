@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	DETAIL_CAP,
+	asData,
 	imageUrls,
 	isSafeImageUrl,
 	parseClickupDetail,
@@ -19,9 +20,18 @@ describe('per-source parsing', () => {
 			parseGithubDetail({
 				title: 'Fix login',
 				body: 'It breaks.',
-				comments: [{ body: 'me too' }, { body: '' }, {}]
+				comments: [{ body: 'me too', authorAssociation: 'OWNER' }, { body: '' }, {}]
 			})
 		).toEqual({ title: 'Fix login', body: 'It breaks.', comments: ['me too'] });
+	});
+
+	it('keeps GitHub comments from people with a role in the repository, and the user', () => {
+		const by = (authorAssociation?: string, viewerDidAuthor = false) => ({ body: authorAssociation ?? 'none', authorAssociation, viewerDidAuthor });
+		const comments = [by('OWNER'), by('MEMBER'), by('COLLABORATOR'), by('CONTRIBUTOR'), by('NONE'), by(undefined), by('FIRST_TIMER', true)];
+		const parsed = parseGithubDetail({ comments });
+		expect(parsed.comments).toEqual(['OWNER', 'MEMBER', 'COLLABORATOR', 'FIRST_TIMER']);
+		expect(parsed.omitted).toBe(3);
+		expect(renderIssueComments([detail({ omitted: 1 })])).toBe('(1 comment from people with no role in the repository left out)');
 	});
 
 	it('parses a Linear issue node', () => {
@@ -87,6 +97,8 @@ describe('isSafeImageUrl', () => {
 		expect(isSafeImageUrl('http://127.0.0.1/x.png')).toBe(false);
 		expect(isSafeImageUrl('http://localhost:3000/x.png')).toBe(false);
 		expect(isSafeImageUrl('http://10.0.0.5/x.png')).toBe(false);
+		expect(isSafeImageUrl('http://100.64.0.1/x.png')).toBe(false);
+		expect(isSafeImageUrl('http://100.63.0.1/x.png')).toBe(true);
 		expect(isSafeImageUrl('http://192.168.1.9/x.png')).toBe(false);
 		expect(isSafeImageUrl('http://172.16.0.1/x.png')).toBe(false);
 		expect(isSafeImageUrl('http://[::1]/x.png')).toBe(false);
@@ -136,6 +148,13 @@ describe('render single issue', () => {
 
 	it('falls back when the body is empty', () => {
 		expect(renderIssueBody([detail({ body: '' })])).toBe('(no description)');
+	});
+
+	it('wraps the text as data, and deck\'s own note outside it', () => {
+		const out = renderIssueBody([detail({ images: ['a.png'] })], (t) => asData(t, 'm1'));
+		expect(out).toMatch(/^The text between the two m1 markers[^\n]*\n<<<m1\nfirst body\n[\s\S]*\nm1>>>\n\nReference images/);
+		expect(asData('', 'm1')).toBe('');
+		expect(renderIssueTitle([detail({ title: 'One\nline' })])).toBe('One line');
 	});
 
 	it('title is the issue title', () => {
