@@ -28,12 +28,12 @@ export function redactSettings(s: DeckSettings): AgentSettingsView {
 	return view;
 }
 
-type FieldType = 'string' | 'url' | 'boolean' | 'number' | readonly string[];
+type FieldType = 'string' | 'url' | 'httpBase' | 'stream' | 'boolean' | 'number' | readonly string[];
 
 // The blocks an agent may PATCH and the fields each holds. Everything else in
 // the file (model profiles, remembered picks) is the web's to manage.
 const BLOCKS = {
-	speech: { ttsUrl: 'string', sttUrl: 'string', streamUrl: 'string', voice: 'string' },
+	speech: { ttsUrl: 'httpBase', sttUrl: 'httpBase', streamUrl: 'stream', voice: 'string' },
 	operator: {
 		url: 'url',
 		model: 'string',
@@ -59,10 +59,27 @@ function isObject(v: unknown): v is Record<string, unknown> {
 	return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
+function parseUrl(v: unknown): URL | null {
+	return typeof v === 'string' && URL.canParse(v.trim()) ? new URL(v.trim()) : null;
+}
+
+// A server deck appends its own path to, so nothing may follow the path here.
+function isHttpBase(v: unknown): boolean {
+	const url = parseUrl(v);
+	return !!url && /^https?:$/.test(url.protocol) && !/[?#]/.test(String(v));
+}
+
+// A WebSocket address, where a query is fine (`?model=...`).
+const isStream = (v: unknown) => /^(wss?|https?):$/.test(parseUrl(v)?.protocol ?? '') && !String(v).includes('#');
+
+// A blank URL clears the field.
+const URL_CHECKS: Record<string, (v: unknown) => boolean> = { url: (v) => parseUrl(v) !== null, httpBase: isHttpBase, stream: isStream };
+
 function fieldOk(type: FieldType, v: unknown): boolean {
 	if (Array.isArray(type)) return typeof v === 'string' && type.includes(v);
 	if (type === 'number') return typeof v === 'number' && Number.isFinite(v);
-	if (type === 'url') return typeof v === 'string' && (!v.trim() || URL.canParse(v.trim()));
+	const check = URL_CHECKS[type as string];
+	if (check) return (typeof v === 'string' && !v.trim()) || check(v);
 	return typeof v === type;
 }
 

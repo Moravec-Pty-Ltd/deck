@@ -47,6 +47,12 @@ describe('parseSettingsPatch', () => {
 		[{ modelProfiles: [] }, 'unknown setting modelProfiles'],
 		[{ speech: 'x' }, 'speech must be an object or null'],
 		[{ speech: { nope: 'x' } }, 'unknown field speech.nope'],
+		[{ speech: { ttsUrl: 'file:///x' } }, 'invalid speech.ttsUrl'],
+		[{ speech: { ttsUrl: 'http://127.0.0.1:3000/?x=' } }, 'invalid speech.ttsUrl'],
+		[{ speech: { sttUrl: 'http://127.0.0.1:3000/#' } }, 'invalid speech.sttUrl'],
+		[{ speech: { sttUrl: '127.0.0.1:3000' } }, 'invalid speech.sttUrl'],
+		[{ speech: { streamUrl: 'ws://x/y#z' } }, 'invalid speech.streamUrl'],
+		[{ speech: { streamUrl: 'ftp://x/y' } }, 'invalid speech.streamUrl'],
 		[{ operator: { provider: 'other' } }, 'invalid operator.provider'],
 		[{ operator: { apiKey: 5 } }, 'invalid operator.apiKey'],
 		[{ operator: { url: 'not a url' } }, 'invalid operator.url'],
@@ -58,6 +64,9 @@ describe('parseSettingsPatch', () => {
 	});
 
 	it('reads blank strings as clears', () => {
+		const urls = { ttsUrl: 'https://tts.example/base', sttUrl: 'http://127.0.0.1:3000', streamUrl: 'ws://127.0.0.1:3000/v1/realtime?model=m' };
+		expect(patchOf({ speech: urls }).blocks.speech).toEqual(urls);
+		expect(patchOf({ speech: { ttsUrl: '' } }).blocks.speech).toEqual({ ttsUrl: null });
 		expect(patchOf({ speech: { voice: '  ' }, zedSshTarget: '' })).toEqual({ blocks: { speech: { voice: null } }, zedSshTarget: null });
 	});
 });

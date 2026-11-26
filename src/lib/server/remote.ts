@@ -48,8 +48,21 @@ function controlDir(): string {
 	return sshDir.length + 42 < 100 ? sshDir : path.join(os.tmpdir(), `deck-ssh-${process.getuid?.() ?? 'u'}`);
 }
 
+// The control socket is the open connection, so its folder has to be the user's
+// own and closed to others: the fallback is in the shared temp folder, where
+// something else may hold the name.
+export function assertPrivateDir(dir: string, uid = process.getuid?.()): void {
+	const stat = fs.lstatSync(dir);
+	const mine = uid === undefined || stat.uid === uid;
+	if (stat.isDirectory() && mine && (stat.mode & 0o077) === 0) return;
+	throw new Error(`${dir} must be a folder of yours that only you can open: remove it, or chmod 700 it`);
+}
+
 function ensureFiles() {
 	for (const dir of new Set([sshDir, controlDir()])) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+	// deck's own folder may predate this rule; one it made in the temp folder can't.
+	fs.chmodSync(sshDir, 0o700);
+	assertPrivateDir(controlDir());
 	if (!fs.existsSync(askpass)) fs.writeFileSync(askpass, `#!/bin/sh\nprintf '%s\\n' "$${SECRET_ENV}"\n`, { mode: 0o700 });
 }
 
