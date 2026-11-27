@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { error, json } from '@sveltejs/kit';
+import { READ_ONLY_KINDS } from '$lib/types';
 import { getStoredSession, updateSession } from './store';
 import { objectBody } from './http';
 import { agentTurnRunning } from './agents/dispatch';
@@ -30,6 +31,7 @@ export async function changeSessionAgent(event: {
 	const session = getStoredSession(id);
 	if (!session) error(404, 'session not found');
 	if (session.kind === 'shell') error(400, 'shell sessions cannot switch agents');
+	if (session.readOnly && !READ_ONLY_KINDS.includes(kind)) error(400, 'a review of a fork\'s pull request can switch only to claude or codex');
 	if (agentTurnRunning(id)) error(409, 'a turn is running');
 	if (session.kind === kind) return json({ ok: true });
 	const from = session.kind;

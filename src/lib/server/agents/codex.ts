@@ -25,7 +25,8 @@ export const codexDriver: AgentDriver = {
 		// network (gh, package installs) and non-workspace writes, which breaks
 		// normal dev work. deck's claude sessions already default to bypassed
 		// permissions, so codex gets the same trust level.
-		const flags = ['--json', '--sandbox', 'danger-full-access', '--skip-git-repo-check'];
+		// A fork's pull request is reviewed in codex's read-only sandbox.
+		const flags = ['--json', '--sandbox', session.readOnly ? 'read-only' : 'danger-full-access', '--skip-git-repo-check'];
 		if (isFlagSafe(session.model)) flags.push('-m', session.model!);
 		// exec's flags must precede the `resume` subcommand: `codex exec resume`
 		// rejects them after it (exit 2). `--` stops codex parsing the prompt as

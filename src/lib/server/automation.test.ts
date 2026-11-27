@@ -14,7 +14,9 @@ const fake = vi.hoisted(() => ({
 	created: [] as Record<string, unknown>[],
 	options: [] as (Record<string, unknown> | undefined)[],
 	issues: [] as Issue[],
-	runs: [] as Record<string, unknown>[]
+	runs: [] as Record<string, unknown>[],
+	trusted: new Set<number>(),
+	trustFails: false
 }));
 
 vi.mock('./store', () => ({
@@ -26,6 +28,12 @@ vi.mock('./workflow-runner', () => ({
 	startRun: async (req: Record<string, unknown>) => {
 		fake.runs.push(req);
 		return { id: `r${fake.runs.length}` };
+	}
+}));
+vi.mock('./issues/github', () => ({
+	prAuthorTrusted: async (_repo: string, n: number) => {
+		if (fake.trustFails) throw new Error('gh: rate limited');
+		return fake.trusted.has(n);
 	}
 }));
 vi.mock('./prs', () => ({ getProjectPrs: async (p: Project) => ({ prs: fake.prs[p.path] ?? [] }) }));
@@ -67,6 +75,7 @@ const pr = (number: number, updatedAt: number): PullRequest => ({
 	headRefOid: `sha${number}`,
 	baseRefName: 'main',
 	isDraft: false,
+	isCrossRepository: false,
 	author: 'someone',
 	updatedAt
 });
@@ -104,6 +113,35 @@ describe('automatic review throttle', () => {
 		expect(fake.created).toHaveLength(1);
 		// Unclaimed, so the next tick retries them.
 		expect(Object.keys(fake.processed)).toEqual(['auto:review:acme/web#1@sha1']);
+	});
+
+	it('passes over a fork PR whose author has no role in the repository, and reviews a trusted one', async () => {
+		fake.trusted = new Set([2]);
+		fake.prs = { '/p/acme': [{ ...pr(1, 100), isCrossRepository: true }, { ...pr(2, 200), isCrossRepository: true }] };
+		await pollAutomation();
+		expect(fake.created.map((b) => (b.pr as { number: number }).number)).toEqual([2]);
+		// Claimed, so it is not asked about on every tick.
+		expect(Object.keys(fake.processed)).toHaveLength(2);
+	});
+
+	it('leaves a fork PR unclaimed when gh cannot say who wrote it, and reviews it with claude when the agent has no read-only mode', async () => {
+		fake.projects = [{ ...project('acme'), automation: { review: true, reviewAgent: { kind: 'opencode' } } } as Project];
+		fake.prs = { '/p/acme': [{ ...pr(9, 100), isCrossRepository: true }] };
+		fake.trusted = new Set();
+		fake.trustFails = true;
+		await pollAutomation();
+		expect(fake.created).toHaveLength(0);
+		expect(fake.processed).toEqual({});
+		fake.trustFails = false;
+		fake.trusted = new Set([9]);
+		await pollAutomation();
+		expect(fake.created[0]).toMatchObject({ kind: 'claude', model: undefined });
+		// A same-repo PR keeps the project's agent.
+		fake.created = [];
+		fake.sessions = [];
+		fake.prs = { '/p/acme': [pr(10, 200)] };
+		await pollAutomation();
+		expect(fake.created[0]).toMatchObject({ kind: 'opencode' });
 	});
 
 	it('drains oldest-updated first, across projects and not just within one', async () => {

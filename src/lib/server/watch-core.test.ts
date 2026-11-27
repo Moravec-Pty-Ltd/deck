@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Watch } from '$lib/watches';
 import {
+	checkAllowed,
 	ACTIVE_CAP,
 	HISTORY_MS,
 	MAX_DELAY_CEILING_MS,
@@ -35,6 +36,14 @@ function watch(over: Partial<Watch> = {}): Watch {
 		...over
 	};
 }
+
+describe('checkAllowed', () => {
+	it('lets only a session that skips prompts give a check, never a read-only review', () => {
+		expect(checkAllowed({ permissionMode: 'bypassPermissions' })).toBe(true);
+		expect(checkAllowed({ permissionMode: 'acceptEdits' })).toBe(false);
+		expect(checkAllowed({ permissionMode: 'bypassPermissions', readOnly: true })).toBe(false);
+	});
+});
 
 describe('parseDelay', () => {
 	it.each([

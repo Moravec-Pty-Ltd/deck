@@ -62,6 +62,7 @@ interface GhPr {
 	headRefOid: string;
 	baseRefName: string;
 	isDraft: boolean;
+	isCrossRepository?: boolean;
 	author: { login: string } | null;
 	updatedAt: string;
 }
@@ -83,7 +84,7 @@ export async function fetchReviewRequestedPrs(source: GithubSource): Promise<Pul
 		'--limit',
 		'100',
 		'--json',
-		'number,title,url,headRefName,headRefOid,baseRefName,isDraft,author,updatedAt'
+		'number,title,url,headRefName,headRefOid,baseRefName,isDraft,isCrossRepository,author,updatedAt'
 	]);
 	const items = JSON.parse(out) as GhPr[];
 	return items.map((p) => ({
@@ -96,9 +97,33 @@ export async function fetchReviewRequestedPrs(source: GithubSource): Promise<Pul
 		headRefOid: p.headRefOid ?? '',
 		baseRefName: p.baseRefName,
 		isDraft: p.isDraft,
+		isCrossRepository: p.isCrossRepository !== false,
 		author: p.author?.login ?? '',
 		updatedAt: Date.parse(p.updatedAt) || 0
 	}));
+}
+
+// Whether a pull request comes from a fork. Unknown counts as a fork, the
+// stricter reading.
+export async function prFromFork(repo: string, number: number): Promise<boolean> {
+	try {
+		return JSON.parse(await gh(['pr', 'view', String(number), '-R', repo, '--json', 'isCrossRepository'])).isCrossRepository !== false;
+	} catch {
+		return true;
+	}
+}
+
+const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+
+// Whether a pull request's author has a role in its repository, so automation
+// may review it unasked. Throws when gh cannot say, so the caller asks again.
+export async function prAuthorTrusted(repo: string, number: number): Promise<boolean> {
+	const [owner, name] = repo.split('/');
+	const query = 'query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) { pullRequest(number: $n) { authorAssociation } } }';
+	const out = await gh(['api', 'graphql', '-f', `query=${query}`, '-f', `o=${owner}`, '-f', `r=${name}`, '-F', `n=${number}`]);
+	const association = JSON.parse(out)?.data?.repository?.pullRequest?.authorAssociation;
+	if (typeof association !== 'string') throw new Error(`no author association for ${repo}#${number}`);
+	return TRUSTED_ASSOCIATIONS.has(association);
 }
 
 interface SubIssuesResult {

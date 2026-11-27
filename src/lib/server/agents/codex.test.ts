@@ -43,6 +43,11 @@ describe('codexDriver.buildTurn', () => {
 		]);
 	});
 
+	it('reviews a fork\'s pull request in the read-only sandbox', () => {
+		const turn = codexDriver.buildTurn({ ...session(), readOnly: true }, 'review', undefined);
+		expect(turn.args.slice(1, 4)).toEqual(['--json', '--sandbox', 'read-only']);
+	});
+
 	it('puts exec flags before the resume subcommand', () => {
 		// `codex exec resume` rejects exec's flags after the subcommand (exit 2 on
 		// 0.153.3), so a resumed turn must carry them between `exec` and `resume`.

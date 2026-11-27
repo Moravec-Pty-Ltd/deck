@@ -179,6 +179,6 @@ export const CHECK_NOT_ALLOWED =
 
 // A check runs shell outside the agent's own permission checks, so only a session
 // already allowed to run anything may give one.
-export function checkAllowed(session: { permissionMode?: string }): boolean {
-	return session.permissionMode === 'bypassPermissions';
+export function checkAllowed(session: { permissionMode?: string; readOnly?: boolean }): boolean {
+	return session.permissionMode === 'bypassPermissions' && !session.readOnly;
 }

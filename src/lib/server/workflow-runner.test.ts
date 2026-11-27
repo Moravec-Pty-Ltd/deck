@@ -136,6 +136,7 @@ vi.mock('./workflow-exec', () => ({
 	},
 	ghLogin: async () => 'me'
 }));
+vi.mock('./issues/github', () => ({ prFromFork: async (_repo: string, n: number) => n === 666 }));
 vi.mock('./workflow-store', async () => {
 	const { resolveWorkflows } = await import('./workflow-core');
 	return {
@@ -876,6 +877,10 @@ describe('where a run starts', () => {
 	it('picks the review workflow for a PR when no category is named', async () => {
 		const run = await runner.startRun({ cwd: '/p/acme', pr: { repo: 'acme/web', number: 5 } });
 		expect(run.category).toBe('review');
+	});
+
+	it('refuses a workflow run on a PR from a fork', async () => {
+		await expect(runner.startRun({ cwd: '/p/acme', category: 'review', pr: { repo: 'acme/web', number: 666 } })).rejects.toMatchObject({ status: 400 });
 	});
 
 	it('refuses a PR from another repo than the project', async () => {

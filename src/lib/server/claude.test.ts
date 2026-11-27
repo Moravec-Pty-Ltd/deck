@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawnAgent = vi.hoisted(() => vi.fn());
 const subagentIds = vi.hoisted(() => vi.fn((): string[] => []));
+const stored = vi.hoisted(() => ({ extra: {} as Record<string, unknown> }));
 vi.mock('./agents/spawn', () => ({ spawnAgent }));
 vi.mock('./transcript-writer', () => ({
 	appendLine: vi.fn(() => Promise.resolve()),
 	whenDrained: () => Promise.resolve()
 }));
 vi.mock('./store', () => ({
-	getStoredSession: (id: string) => ({ id, kind: 'claude', title: 't', cwd: '/tmp', status: 'idle' }),
+	getStoredSession: (id: string) => ({ id, kind: 'claude', title: 't', cwd: '/tmp', status: 'idle', ...stored.extra }),
 	setSessionStatus: vi.fn(),
 	updateSession: vi.fn()
 }));
@@ -53,7 +54,23 @@ function fakeChild() {
 let seq = 0;
 beforeEach(() => {
 	vi.clearAllMocks();
+	stored.extra = {};
 	seq++;
+});
+
+describe('a read-only review session', () => {
+	it('starts claude with read-only tools, only user settings and only deck\'s MCP server', async () => {
+		stored.extra = { readOnly: true, permissionMode: 'bypassPermissions' };
+		spawnAgent.mockResolvedValueOnce(fakeChild());
+		await claude.sendMessage(`c_ro_${seq}`, 'review');
+		const args = spawnAgent.mock.calls[0][1] as string[];
+		const after = (flag: string) => args[args.indexOf(flag) + 1];
+		expect(args).not.toContain('--dangerously-skip-permissions');
+		expect(after('--permission-mode')).toBe('default');
+		expect(after('--setting-sources')).toBe('user');
+		expect(args).toContain('--strict-mcp-config');
+		expect(after('--tools')).toBe('Read,Grep,Glob,TodoWrite');
+	});
 });
 
 describe('sendMessage when claude cannot start', () => {
