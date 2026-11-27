@@ -16,6 +16,7 @@ import type {
 	SetupStepProgress
 } from '$lib/types';
 import { isAgentKind } from '$lib/types';
+import { childEnv } from './agent-token';
 import { listProjects, getStoredSession, listStoredSessions } from './store';
 import { confineRelative } from './confine';
 import {
@@ -249,7 +250,7 @@ function shellTask(step: SetupStep, ctx: ServerCtx, inst: Instance): Task {
 			if (!cwd) return Promise.resolve({ code: 1, output: `cwd escapes worktree: ${step.cwd}` });
 			if (!isDir(cwd))
 				return Promise.resolve({ code: 1, output: `working directory does not exist: ${cwd}` });
-			return runShell(step.run, cwd, { ...process.env, ...devEnv(ctx) }, inst);
+			return runShell(step.run, cwd, { ...childEnv(process.env), ...devEnv(ctx) }, inst);
 		}
 	};
 }

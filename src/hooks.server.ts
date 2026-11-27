@@ -1,6 +1,8 @@
 import type { Handle, RequestEvent } from '@sveltejs/kit';
 import { redirect, json } from '@sveltejs/kit';
-import { PUBLIC_PATHS, baseHost, noAuth, noAuthHostAllowed, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches } from '$lib/server/config';
+import { PUBLIC_PATHS, authToken, baseHost, headerToken, noAuth, noAuthHostAllowed, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches } from '$lib/server/config';
+import { agentMayReach, agentTokenSession } from '$lib/server/agent-token';
+import { getStoredSession } from '$lib/server/store';
 import { UNKNOWN_HOST, hostName, refuseWrite } from '$lib/server/request-guard-core';
 import { ensureMcp } from '$lib/server/mcp';
 import { initSecrets } from '$lib/server/secrets';
@@ -62,7 +64,14 @@ function secure(response: Response): Response {
 // the session cookie (browsers).
 function admitted(event: RequestEvent): boolean {
 	if (noAuth || event.url.pathname === '/llms.txt') return true;
-	return requestIsAuthed(event.request.headers, event.cookies);
+	return requestIsAuthed(event.request.headers, event.cookies) || agentAdmitted(event);
+}
+
+// An agent session's own token (S8): good for the agent API, minus settings,
+// credentials, pairing and project config, while its session exists.
+function agentAdmitted({ request, route }: RequestEvent): boolean {
+	const id = agentTokenSession(authToken, headerToken(request.headers));
+	return !!id && agentMayReach(route.id, request.method) && !!getStoredSession(id);
 }
 
 const authenticate: Handle = async ({ event, resolve }) => {
