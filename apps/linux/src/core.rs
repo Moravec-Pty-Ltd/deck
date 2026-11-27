@@ -238,6 +238,13 @@ pub fn xdg_trigger(accelerator: &str) -> Option<String> {
 	Some(format!("{}+{key}", out.join("+")).trim_start_matches('+').to_string())
 }
 
+// WebKitGTK's DMA-BUF renderer is the usual cause of its crashes and blank
+// windows on Wayland with newer drivers, so the shell turns it off there unless
+// the user set WEBKIT_DISABLE_DMABUF_RENDERER or asked for it with DECK_WEBKIT_DMABUF=1.
+pub fn disable_dmabuf(wayland: bool, user_set: Option<&OsStr>, deck_dmabuf: Option<&OsStr>) -> bool {
+	wayland && user_set.is_none() && deck_dmabuf != Some(OsStr::new("1"))
+}
+
 // The update dialog for this run: one at a time, and a version put off with "Later"
 // is not offered again until the next start.
 #[derive(Default)]
@@ -437,5 +444,15 @@ mod tests {
 		assert!(prompt.offer("0.1.3"), "a newer release is offered");
 		prompt.close(None);
 		assert!(prompt.offer("0.1.3"), "a failed install offers it again");
+	}
+
+	#[test]
+	fn dmabuf_is_off_on_wayland_unless_the_user_chose() {
+		let one = Some(OsStr::new("1"));
+		assert!(disable_dmabuf(true, None, None));
+		assert!(disable_dmabuf(true, None, Some(OsStr::new("0"))));
+		assert!(!disable_dmabuf(false, None, None), "X11 keeps the renderer");
+		assert!(!disable_dmabuf(true, Some(OsStr::new("0")), None), "the user's own setting wins");
+		assert!(!disable_dmabuf(true, None, one), "DECK_WEBKIT_DMABUF=1 turns it back on");
 	}
 }

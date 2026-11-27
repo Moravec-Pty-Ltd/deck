@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=deck
+Comment=Drive Claude Code sessions from one window
+Exec=deck %u
+StartupWMClass=deck
+Icon=deck
+Categories=Development;
+Terminal=false
+Type=Application
+MimeType=x-scheme-handler/deck;
