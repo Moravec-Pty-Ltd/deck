@@ -458,7 +458,7 @@ fn versions(app: &AppHandle) -> String {
 // Async so the portal's confirmation dialog doesn't freeze the window.
 #[tauri::command]
 async fn save_settings(app: AppHandle, window: WebviewWindow, server: String, shortcut: String, autostart: bool) -> Result<String, String> {
-	let url = parse_server(&server).ok_or("Enter the deck server's address, like http://deck.example:4818")?;
+	let url = parse_server(&server).ok_or("Enter the deck server's address, like https://deck.example:4818")?;
 	let shortcut = Some(shortcut.trim().to_string()).filter(|s| !s.is_empty());
 	let next = Settings { server: Some(url.to_string()), shortcut: shortcut.clone() };
 	store_settings(&app, &next)?;

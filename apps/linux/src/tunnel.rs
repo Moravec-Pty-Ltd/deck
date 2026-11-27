@@ -111,8 +111,10 @@ async fn serve(mut client: TcpStream, password: &str, route: &Mutex<Route>) -> R
 	let port = client.read_u16().await?;
 
 	if !is_tunnel_target(&host) {
-		// Resolved here once, so a name for loopback (127.1, a rebinding DNS
-		// name) is tunnelled too, and the connection uses the addresses checked.
+		// Resolved here once, and the connection uses the addresses checked. Only
+		// literal loopback names are tunnelled: another name that resolves to
+		// loopback (a rebinding DNS name) is refused, or a page on it could read
+		// the deck machine's dev servers as its own origin.
 		let addrs: Vec<_> = match tokio::net::lookup_host((host.as_str(), port)).await {
 			Ok(addrs) => addrs.collect(),
 			Err(e) => {
@@ -120,18 +122,20 @@ async fn serve(mut client: TcpStream, password: &str, route: &Mutex<Route>) -> R
 				return Err(e.into());
 			}
 		};
-		if !addrs.iter().any(|a| is_local_ip(a.ip())) {
-			let mut target = match TcpStream::connect(&addrs[..]).await {
-				Ok(t) => t,
-				Err(e) => {
-					reply(&mut client, 5).await?;
-					return Err(e.into());
-				}
-			};
-			reply(&mut client, 0).await?;
-			tokio::io::copy_bidirectional(&mut client, &mut target).await?;
-			return Ok(());
+		if addrs.iter().any(|a| is_local_ip(a.ip())) {
+			reply(&mut client, 2).await?;
+			return Err(format!("{host} resolves to loopback but is not a loopback name").into());
 		}
+		let mut target = match TcpStream::connect(&addrs[..]).await {
+			Ok(t) => t,
+			Err(e) => {
+				reply(&mut client, 5).await?;
+				return Err(e.into());
+			}
+		};
+		reply(&mut client, 0).await?;
+		tokio::io::copy_bidirectional(&mut client, &mut target).await?;
+		return Ok(());
 	}
 
 	// No Origin header (tungstenite sends none): the server refuses one.
@@ -273,11 +277,12 @@ mod tests {
 		let (_, r) = socks(&proxy, &proxy.password.clone(), &[5, 1, 0, 1, 127, 0, 0, 1, 0x0b, 0xb8]).await;
 		assert_eq!(r[1], 0);
 		let (_, r) = socks(&proxy, &proxy.password.clone(), &domain("127.1", 8080)).await;
-		assert_eq!(r[1], 0, "a name that resolves to loopback is tunnelled, not connected to here");
+		// 127.1 stands in for a rebinding DNS name: not literal, resolves to loopback.
+		assert_eq!(r[1], 2, "a name that resolves to loopback is refused, neither tunnelled nor connected to here");
 		let seen = seen.lock().unwrap().clone();
 		assert_eq!(seen[0], ("/api/tunnel?port=5173&session=abc-1".into(), "Bearer s3cret".into(), false));
 		assert_eq!(seen[1].0, "/api/tunnel?port=3000&session=abc-1");
-		assert_eq!(seen[2].0, "/api/tunnel?port=8080&session=abc-1");
+		assert_eq!(seen.len(), 2);
 	}
 
 	#[tokio::test]

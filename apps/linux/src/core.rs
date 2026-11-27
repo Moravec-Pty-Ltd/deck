@@ -25,9 +25,16 @@ pub fn deck_link_path(link: &Url) -> Option<String> {
 }
 
 // The server URL as typed on first launch: http(s) only, reduced to its origin.
+// With no scheme it is https, except for this machine's loopback, where a dev
+// server answers plain http.
 pub fn parse_server(input: &str) -> Option<Url> {
 	let input = input.trim();
-	let with_scheme = if input.contains("://") { input.to_string() } else { format!("http://{input}") };
+	let with_scheme = if input.contains("://") {
+		input.to_string()
+	} else {
+		let host = Url::parse(&format!("http://{input}")).ok()?.host_str()?.to_string();
+		format!("{}://{input}", if is_tunnel_target(&host) { "http" } else { "https" })
+	};
 	let url = Url::parse(&with_scheme).ok()?;
 	if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
 		return None;
@@ -298,7 +305,9 @@ mod tests {
 
 	#[test]
 	fn server_input_becomes_an_origin() {
-		assert_eq!(parse_server("deck.example:4818").unwrap().as_str(), "http://deck.example:4818/");
+		assert_eq!(parse_server("deck.example:4818").unwrap().as_str(), "https://deck.example:4818/");
+		assert_eq!(parse_server("localhost:4818").unwrap().as_str(), "http://localhost:4818/");
+		assert_eq!(parse_server("http://deck.example:4818").unwrap().as_str(), "http://deck.example:4818/");
 		assert_eq!(parse_server(" https://deck.example/s/x ").unwrap().as_str(), "https://deck.example/");
 		assert!(parse_server("file:///etc/passwd").is_none());
 		assert!(parse_server("").is_none());

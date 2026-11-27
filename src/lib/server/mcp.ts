@@ -239,6 +239,11 @@ function startServer(): McpState {
 	return state;
 }
 
+// The MCP server's port once it is listening, else undefined.
+export function mcpPort(): number | undefined {
+	return g.__deckMcp?.port || undefined;
+}
+
 // Start (once) the localhost MCP server and resolve when it's listening.
 export function ensureMcp(): Promise<number> {
 	// No key: the state a hot reload kept from a version that had none.

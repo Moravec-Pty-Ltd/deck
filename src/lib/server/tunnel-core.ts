@@ -26,14 +26,24 @@ export function parseTunnelRequest(params: URLSearchParams): TunnelRequest {
 export type Admission = { port: number; session?: string } | { status: number; reason: string };
 
 // Whether a tunnel request goes ahead: a valid deck token, no browser origin, a
-// valid request, and (when it names one) a session deck knows. Only the native
-// app uses this, and it sends no Origin; refusing one keeps a web page from
-// reaching every loopback port, even when DECK_NO_AUTH waives the token.
-export function admitTunnel(authed: boolean, origin: string | undefined, params: URLSearchParams, sessionExists: (id: string) => boolean): Admission {
+// valid request, (when it names one) a session deck knows, and not one of deck's
+// own ports on this machine (`ownPorts`: the server's and the MCP server's), which
+// a page in the dev browser has no business reaching. Only the native app uses
+// this, and it sends no Origin; refusing one keeps a web page from reaching
+// every loopback port, even when DECK_NO_AUTH waives the token.
+export function admitTunnel(
+	authed: boolean,
+	origin: string | undefined,
+	params: URLSearchParams,
+	session: (id: string) => { remote: boolean } | undefined,
+	ownPorts: number[]
+): Admission {
 	if (!authed) return { status: 401, reason: 'Unauthorized' };
 	if (origin !== undefined) return { status: 403, reason: 'Forbidden' };
 	const request = parseTunnelRequest(params);
 	if ('error' in request) return { status: 400, reason: 'Bad Request' };
-	if (request.session && !sessionExists(request.session)) return { status: 404, reason: 'Not Found' };
+	const found = request.session ? session(request.session) : undefined;
+	if (request.session && !found) return { status: 404, reason: 'Not Found' };
+	if (!found?.remote && ownPorts.includes(request.port)) return { status: 403, reason: 'Forbidden' };
 	return request;
 }
