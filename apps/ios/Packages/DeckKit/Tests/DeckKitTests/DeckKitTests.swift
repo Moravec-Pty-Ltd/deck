@@ -373,6 +373,11 @@ final class DeckKitTests: XCTestCase {
 		let withPort = DeckQR.parse("http://192.168.1.5:4818/?token=t0k3n")
 		XCTAssertEqual(withPort?.baseURL.absoluteString, "http://192.168.1.5:4818")
 
+		// The sign-in QR now carries a device's own credential in the fragment.
+		let fragment = DeckQR.parse("https://deck.example.com/login#token=deck-device.abc.def")
+		XCTAssertEqual(fragment?.baseURL.absoluteString, "https://deck.example.com")
+		XCTAssertEqual(fragment?.token, "deck-device.abc.def")
+
 		XCTAssertNil(DeckQR.parse("https://deck.example.com/"))
 		XCTAssertNil(DeckQR.parse("not a url"))
 		XCTAssertNil(DeckQR.parse("ftp://deck.example.com/?token=x"))

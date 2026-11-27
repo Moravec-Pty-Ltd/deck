@@ -1472,6 +1472,38 @@ on the new device (\`code\` here is always blank).
 request expired or was already decided. A wrong or missing code is a 400, and
 five wrong ones deny the request.
 
+## Devices and the token
+
+Each signed-in browser or app has its own credential (\`deck-device.<id>.<secret>\`),
+sent like the token (header or cookie) and stored by deck only as a hash. Signing
+in with deck's token at /login (a POST), approving a pairing request, or scanning
+the sign-in QR makes one. deck's token keeps working everywhere until it is
+rotated. An agent's token cannot reach these routes.
+
+### GET /api/agent/devices
+
+\`{ "devices": [{ "id", "name", "createdAt", "lastSeenAt"?, "current" }] }\`;
+\`current\` marks the device asking.
+
+### POST /api/agent/devices
+
+\`{ "name"? }\`. Makes a credential for a device about to sign in and returns
+\`{ "id", "credential" }\` (201). It is shown only here. The sign-in QR encodes
+\`<origin>/login#token=<credential>\`.
+
+### DELETE /api/agent/devices/{id}
+
+Signs that device out for good: \`{ "ok": true }\`, or 404.
+
+### POST /api/agent/token
+
+Rotates deck's token: the old one, and every agent token derived from it, stop
+working at once. Devices with their own credential stay signed in; anything that
+still holds deck's token (an app signed in before devices had their own, a
+script) must sign in again. Open connections (a tunnel, a terminal, an event
+poll) run until they end. Revoking a device also revokes the credentials it made. The new token is written to
+~/.deck/token and never returned. A 409 when \`DECK_TOKEN\` pins the token.
+
 ## Push notifications
 
 Native iOS, watchOS and macOS clients register a device token to receive the same nudges

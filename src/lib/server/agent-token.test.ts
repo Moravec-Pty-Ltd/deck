@@ -18,7 +18,7 @@ describe('agent tokens', () => {
 		}
 		for (const p of [
 			null, '/api/token', '/api/sessions', '/api/agent/settings', '/api/agent/settings/skill', '/api/agent/credentials',
-			'/api/agent/accounts', '/api/agent/pairing/[id]', '/api/agent/user', '/api/agent/projects/config', '/api/agent/projects/remote/secret'
+			'/api/agent/accounts', '/api/agent/pairing/[id]', '/api/agent/devices', '/api/agent/devices/[id]', '/api/agent/token', '/api/agent/user', '/api/agent/projects/config', '/api/agent/projects/remote/secret'
 		]) {
 			expect(agentMayReach(p, 'GET'), String(p)).toBe(false);
 		}

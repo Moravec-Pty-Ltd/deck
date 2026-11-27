@@ -7,8 +7,10 @@ const project = path.join(root, 'acme');
 const headers = { 'x-deck-token': 'e2e' };
 
 async function signIn(page: Page) {
-	await page.goto('/?token=e2e');
-	await expect(page).not.toHaveURL(/token=|\/login/);
+	await page.goto('/login');
+	await page.fill('input[name=token]', 'e2e');
+	await page.click('button[type=submit]');
+	await expect(page).not.toHaveURL(/\/login/);
 }
 
 // A fresh claude session in the project, made through the API so each test starts clean.

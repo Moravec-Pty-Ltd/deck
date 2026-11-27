@@ -457,6 +457,12 @@ public final class DeckStore {
 				connection = .live
 			} catch is CancellationError {
 				return
+			} catch DeckError.http(let status, let message) where status == 401 && message == "unauthorized" {
+				// deck's own 401 (a proxy's would say something else): this device's
+				// sign-in was revoked, or it used deck's token and that was rotated.
+				// Back to the sign-in screen rather than offline forever.
+				signOut()
+				return
 			} catch {
 				if Task.isCancelled { return }
 				connection = .offline(error.localizedDescription)

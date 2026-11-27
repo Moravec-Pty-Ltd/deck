@@ -9,9 +9,9 @@ import { pinEnv } from './test-env';
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-config-'));
 const restoreEnv = pinEnv({ DECK_DATA: tmpDir, DECK_TOKEN: 'correct-horse-battery-staple' });
 
-const { tokenMatches, headerToken, requestIsAuthed, isPrivateHost, AUTH_COOKIE } = await import(
-	'./config'
-);
+const { tokenMatches, headerToken, isPrivateHost, AUTH_COOKIE, rotateToken } = await import('./config');
+const { requestIsAuthed } = await import('./auth');
+const { addDevice, revokeDevice, signInCredential } = await import('./devices');
 
 afterAll(() => {
 	restoreEnv();
@@ -104,6 +104,27 @@ describe('requestIsAuthed', () => {
 
 	it('accepts a valid session cookie', () => {
 		expect(requestIsAuthed(new Headers(), fakeCookies('correct-horse-battery-staple'))).toBe(true);
+	});
+
+	it("accepts a device's own credential until it is revoked", () => {
+		const { device, credential } = addDevice('Phone');
+		expect(requestIsAuthed(new Headers({ authorization: `Bearer ${credential}` }), fakeCookies())).toBe(true);
+		expect(requestIsAuthed(new Headers(), fakeCookies(credential))).toBe(true);
+		expect(requestIsAuthed(new Headers(), fakeCookies(credential.slice(0, -2) + 'xx'))).toBe(false);
+		revokeDevice(device.id);
+		expect(requestIsAuthed(new Headers(), fakeCookies(credential))).toBe(false);
+	});
+
+	it('signs a login in as a new device, as the QR\'s device, or not at all', () => {
+		const fresh = signInCredential('correct-horse-battery-staple', 'curl/8');
+		expect(fresh).toMatch(/^deck-device\./);
+		expect(signInCredential(fresh!, null)).toBe(fresh);
+		expect(signInCredential('nope', null)).toBeNull();
+	});
+
+	it('will not rotate a token DECK_TOKEN pins', () => {
+		expect(() => rotateToken()).toThrow('DECK_TOKEN');
+		expect(tokenMatches('correct-horse-battery-staple')).toBe(true);
 	});
 
 	it('rejects when neither header nor cookie carries the token', () => {

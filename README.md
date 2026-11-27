@@ -83,7 +83,7 @@ pnpm build
 PORT=4818 BODY_SIZE_LIMIT=4M node --env-file=.env server.js
 ```
 
-On first request deck prints an access URL with a token, and stores the token in `~/.deck/token`. Open `http://localhost:4818/?token=<token>` once and a year-long cookie is set. To reach deck from another device, put Tailscale or a tunnel in front (below), or set `HOST=0.0.0.0` for the LAN.
+deck stores its access token in `~/.deck/token` and, on first request, prints its address and that file's path (never the token). Open `http://localhost:4818/login` and paste the token once: the browser gets its own sign-in, a year-long cookie you can revoke under **Settings > Devices**, where you can also rotate the token. To reach deck from another device, put Tailscale or a tunnel in front (below), or set `HOST=0.0.0.0` for the LAN.
 
 Dev server: `pnpm dev`.
 
@@ -145,7 +145,7 @@ Define the `deck` service in the Tailscale admin console first. Its serve config
 
 `DECK_NO_AUTH=1` drops the token gate, which is redundant once only the tailnet can reach it. Leave it unset to keep token auth.
 
-**Public tunnels: keep the token on.** `DECK_NO_AUTH` is safe only when the network path itself is private (Tailscale with Funnel off, loopback, a LAN, or an authenticating proxy like Cloudflare Access in front). deck can't see the network path, so it treats the resolved host (`DECK_BASE_URL`) as the signal: if no-auth is set but the host isn't obviously private (not loopback, not a `.ts.net` / `100.64.0.0/10` Tailscale address, not RFC1918), deck ignores the flag, keeps the gate on, and logs a warning rather than exposing every route to the open internet. If you reach deck over a raw public tunnel (a Cloudflare/ngrok-style hostname), don't set `DECK_NO_AUTH` at all: authenticate the browser once via `/?token=` or the QR/pairing flow, and have native/programmatic clients send the bearer token per request. (`DECK_NO_AUTH_PUBLIC=1` overrides the guardrail if you really are behind an authenticating proxy, but a plain tunnel is not that.)
+**Public tunnels: keep the token on.** `DECK_NO_AUTH` is safe only when the network path itself is private (Tailscale with Funnel off, loopback, a LAN, or an authenticating proxy like Cloudflare Access in front). deck can't see the network path, so it treats the resolved host (`DECK_BASE_URL`) as the signal: if no-auth is set but the host isn't obviously private (not loopback, not a `.ts.net` / `100.64.0.0/10` Tailscale address, not RFC1918), deck ignores the flag, keeps the gate on, and logs a warning rather than exposing every route to the open internet. If you reach deck over a raw public tunnel (a Cloudflare/ngrok-style hostname), don't set `DECK_NO_AUTH` at all: sign the browser in once at `/login` or with the QR/pairing flow, and have native/programmatic clients send the bearer token per request. (`DECK_NO_AUTH_PUBLIC=1` overrides the guardrail if you really are behind an authenticating proxy, but a plain tunnel is not that.)
 
 `vite dev` leaves tailscale alone unless you set `DECK_TAILSCALE=1`. Then a small plugin (see `vite.config.ts`) registers a node-level `tailscale serve --https=<port>` for the life of the process. Prefer the service above: the node-level entry outlives a reboot, tailscaled then holds the port before the dev server starts, and vite quietly moves to the next one.
 
@@ -249,7 +249,7 @@ Upgrading with an existing `~/.deck/secrets.json` migrates automatically on the 
 - Permission modes: new Claude sessions default to YOLO (`--dangerously-skip-permissions`); untick for `acceptEdits`. Headless turns can't answer permission prompts, so `default`/`plan` will stall on gated tools. The `ask` tool is allow-listed so it works in either mode.
 - A server restart drops live processes. Transcripts and resume state survive, so the next message respawns and resumes.
 - http(s) links in session output are clickable. The transcript auto-scrolls only when you're already near the bottom; a jump-to-latest button appears otherwise.
-- State lives in `~/.deck/`: `sessions.json`, `projects.json`, `schedules.json`, `token`, `vapid.json`, `push-subscriptions.json`, and `transcripts/`.
+- State lives in `~/.deck/`: `sessions.json`, `projects.json`, `schedules.json`, `token`, `devices.json`, `vapid.json`, `push-subscriptions.json`, and `transcripts/`.
 
 ## Contributing
 

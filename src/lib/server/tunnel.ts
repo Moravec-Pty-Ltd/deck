@@ -3,7 +3,8 @@ import type { IncomingMessage } from 'node:http';
 import net from 'node:net';
 import { Duplex, pipeline } from 'node:stream';
 import { WebSocketServer, createWebSocketStream } from 'ws';
-import { headerToken, noAuth, tokenMatches } from './config';
+import { headerToken, noAuth } from './config';
+import { credentialValid } from './auth';
 import { sessionConnection } from './remote';
 import { getStoredSession } from './store';
 import { TUNNEL_HOST, admitTunnel } from './tunnel-core';
@@ -29,7 +30,7 @@ function authed(req: IncomingMessage): boolean {
 		const value = req.headers[name];
 		if (typeof value === 'string') headers.set(name, value);
 	}
-	return tokenMatches(headerToken(headers));
+	return credentialValid(headerToken(headers));
 }
 
 function openTarget(port: number, sessionId: string | undefined): Duplex {
