@@ -3,11 +3,10 @@
 	import { TriangleAlert } from '@lucide/svelte';
 	import Modal from './Modal.svelte';
 
-	// Sign-in QR for onboarding a new device. It encodes `${origin}/?token=<token>`
-	// - the same access URL the server prints at startup - so scanning it on a device
-	// on the same network hits the ?token= gate and gets signed in, no manual paste.
-	// The token is fetched from the authed /api/token (the deck_token cookie is
-	// httpOnly, so client JS can't read it directly).
+	// Sign-in QR for a new device. It encodes `${origin}/login#token=<credential>`
+	// with a credential made for that device (POST /api/agent/devices), so the
+	// device can be revoked on its own and deck's token never leaves the server.
+	// The fragment is not sent to the server; the login page posts it.
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
 	let token = $state('');
@@ -20,13 +19,13 @@
 	$effect(() => {
 		if (!open) return;
 		error = '';
-		fetch('/api/token')
-			.then((r) => (r.ok ? r.json() : Promise.reject(new Error("Couldn't load token"))))
-			.then((d) => (token = d.token))
+		fetch('/api/agent/devices', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error("Couldn't make a sign-in code"))))
+			.then((d) => (token = d.credential))
 			.catch((e) => (error = e.message));
 	});
 
-	const url = $derived(token ? `${location.origin}/?token=${encodeURIComponent(token)}` : '');
+	const url = $derived(token ? `${location.origin}/login#token=${encodeURIComponent(token)}` : '');
 
 	// A single <path> built from the module matrix, drawn black on a white tile
 	// (fixed colours, not theme tokens: QR scanners want dark-on-light contrast) with
@@ -78,8 +77,8 @@
 		<div class="mt-3 flex items-start gap-2 rounded-box bg-warning/10 p-3 text-xs text-warning">
 			<TriangleAlert size={15} class="mt-0.5 shrink-0" />
 			<span>
-				This grants full, long-lived access to deck. Only show it to devices and people you
-				trust.
+				This grants full access to deck until you revoke it under Devices. Only show it to
+				devices and people you trust.
 			</span>
 		</div>
 	{:else}

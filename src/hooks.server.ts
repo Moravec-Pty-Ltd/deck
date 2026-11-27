@@ -1,6 +1,9 @@
 import type { Handle, RequestEvent } from '@sveltejs/kit';
 import { redirect, json } from '@sveltejs/kit';
-import { PUBLIC_PATHS, authToken, baseHost, headerToken, noAuth, noAuthHostAllowed, printAccessUrl, requestIsAuthed, setAuthCookie, tokenMatches } from '$lib/server/config';
+import { AUTH_COOKIE, PUBLIC_PATHS, authToken, baseHost, headerToken, noAuth, noAuthHostAllowed, printAccessUrl, setAuthCookie, tokenMatches } from '$lib/server/config';
+import { requestIsAuthed } from '$lib/server/auth';
+import { addDevice } from '$lib/server/devices';
+import { upgradesCookie } from '$lib/server/devices-core';
 import { agentMayReach, agentTokenSession } from '$lib/server/agent-token';
 import { getStoredSession } from '$lib/server/store';
 import { UNKNOWN_HOST, hostName, refuseWrite } from '$lib/server/request-guard-core';
@@ -19,14 +22,6 @@ ensureMcp();
 // startup failure, and an existing plaintext secrets.json migrates here (see
 // secrets.ts).
 initSecrets();
-
-// Exchange a valid ?token= for the session cookie and redirect to a clean URL.
-function exchangeUrlToken(event: RequestEvent): never {
-	setAuthCookie(event.cookies, event.url.protocol === 'https:');
-	const clean = new URL(event.url);
-	clean.searchParams.delete('token');
-	redirect(302, clean.pathname + clean.search);
-}
 
 function deny(event: RequestEvent): Response {
 	if (event.url.pathname.startsWith('/api/')) {
@@ -74,14 +69,22 @@ function agentAdmitted({ request, route }: RequestEvent): boolean {
 	return !!id && agentMayReach(route.id, request.method) && !!getStoredSession(id);
 }
 
+// A browser signed in before devices had their own credentials carries deck's
+// token in its cookie: swap it for a device credential, so it can be revoked
+// and the token rotated without signing it out.
+// Only on a page load, which a browser makes one at a time and whose Set-Cookie
+// it keeps; parallel API calls, or a client that drops cookies, would each mint one.
+function upgradeCookie(event: RequestEvent): void {
+	if (!upgradesCookie(event.request.method, event.request.headers.get('sec-fetch-mode'))) return;
+	if (!tokenMatches(event.cookies.get(AUTH_COOKIE))) return;
+	const { credential } = addDevice(event.request.headers.get('user-agent') ?? 'Browser');
+	setAuthCookie(event.cookies, event.url.protocol === 'https:', credential);
+}
+
 const authenticate: Handle = async ({ event, resolve }) => {
-	if (admitted(event)) return resolve(event);
-
-	// A valid ?token= mints the session cookie and redirects to a clean URL.
-	if (tokenMatches(event.url.searchParams.get('token'))) exchangeUrlToken(event);
-
-	if (PUBLIC_PATHS.has(event.url.pathname)) return resolve(event);
-	return deny(event);
+	if (!admitted(event)) return PUBLIC_PATHS.has(event.url.pathname) ? resolve(event) : deny(event);
+	upgradeCookie(event);
+	return resolve(event);
 };
 
 export const handle: Handle = async ({ event, resolve }) => {

@@ -11,7 +11,7 @@
 #   DECK_TOKEN  a known token, so you can curl it without reading the real one
 #
 # Usage:  pnpm dev:scratch [port] [data-dir]
-# Then:   open http://localhost:<port>/?token=scratch
+# Then:   open http://localhost:<port>/login and paste: scratch
 #
 # The data dir is wiped on each start: it is scratch, not a second home. Point
 # it somewhere under /tmp and register whatever projects the test needs by
@@ -33,5 +33,5 @@ mkdir -p "$DATA"
 printf '[]' > "$DATA/sessions.json"
 [ -f "$DATA/projects.json" ] || printf '[]' > "$DATA/projects.json"
 
-echo "scratch deck on http://localhost:$PORT/?token=scratch  (data: $DATA)"
+echo "scratch deck on http://localhost:$PORT/login, token: scratch  (data: $DATA)"
 exec env DECK_DATA="$DATA" DECK_TOKEN=scratch npx vite dev --port "$PORT" --strictPort

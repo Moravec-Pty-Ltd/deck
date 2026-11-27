@@ -110,7 +110,7 @@ Pages on other origins open in the default browser. A deck page opened in a new 
 
 The dev browser's webviews use a SOCKS5 proxy the shell runs on loopback, with
 a random password only they are given. A loopback host goes over one WebSocket
-to the server's `/api/tunnel` per connection, with the deck token (read from
+to the server's `/api/tunnel` per connection, with the window's deck credential (read from
 the main window's sign-in cookie) in a header; every other host, a CDN say, is
 connected to directly. Unlike WKWebView on Apple, WebKitGTK proxies a literal
 `localhost`, so pages keep the origin a dev server's CORS settings expect. The

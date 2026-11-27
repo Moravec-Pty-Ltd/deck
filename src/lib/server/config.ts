@@ -75,16 +75,32 @@ function loadToken(): string {
 	return token;
 }
 
-export const authToken = loadToken();
+// deck's own token: the owner's key, pasted once to sign a device in. Devices
+// then hold their own credential (devices.ts). `let`, so a rotation takes effect
+// in every module that imports it.
+export let authToken = loadToken();
 
-// The browser session credential. Both the ?token= gate (exchangeUrlToken in
-// hooks.server.ts) and the pairing status endpoint mint this same cookie, so its
-// name and options live here as the single source of truth. A year-long httpOnly
-// cookie: deck is a trusted single-user tool on a LAN/tailnet.
+// A new token in place of the old one, which stops working at once, along with
+// every agent token derived from it. Not possible when DECK_TOKEN pins it.
+export function rotateToken(): void {
+	if (tokenCache.__deckEnvToken) throw new Error('the token is set by DECK_TOKEN; change it there');
+	const token = crypto.randomBytes(24).toString('hex');
+	fs.writeFileSync(tokenFile, token, { mode: 0o600 });
+	fs.chmodSync(tokenFile, 0o600);
+	authToken = token;
+	authTokenHash = crypto.createHash('sha256').update(token).digest();
+}
+
+
+// The browser session cookie, holding a device's own credential. The login
+// action, the pairing status endpoint and the old-cookie upgrade in hooks.server.ts
+// all set it, so its name and options live here. A year-long httpOnly cookie,
+// revocable under Settings > Devices.
 export const AUTH_COOKIE = 'deck_token';
 
-export function setAuthCookie(cookies: Cookies, secure: boolean) {
-	cookies.set(AUTH_COOKIE, authToken, {
+// `credential` is the device's own (devices.ts), never deck's token.
+export function setAuthCookie(cookies: Cookies, secure: boolean, credential: string) {
+	cookies.set(AUTH_COOKIE, credential, {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
@@ -116,7 +132,7 @@ export function headerToken(headers: Headers): string | null {
 }
 
 // Pre-hash the secret once so request-time comparison hits a fixed-length digest.
-const authTokenHash = crypto.createHash('sha256').update(authToken).digest();
+let authTokenHash = crypto.createHash('sha256').update(authToken).digest();
 
 // Constant-time token check. Hashing both sides to a fixed-length digest equalises
 // length (so we leak neither a prefix-match signal nor the token length) and keeps
@@ -134,13 +150,6 @@ export function tokenMatches(candidate: string | null | undefined): boolean {
 // never disagree on what's public.
 export const PUBLIC_PATHS = new Set(['/login', '/pair', '/api/pair/request', '/api/pair/status']);
 
-// Does this request already carry a valid credential - the per-request header
-// token (programmatic clients) or the session cookie (browsers)? Shared by the
-// request hook and the root layout load so the token check lives in one place
-// (issue #164). The ?token= URL exchange stays in the hook: it mints the cookie.
-export function requestIsAuthed(headers: Headers, cookies: Cookies): boolean {
-	return tokenMatches(headerToken(headers)) || tokenMatches(cookies.get(AUTH_COOKIE));
-}
 
 // Whether the DECK_NO_AUTH env flag (as opposed to demo mode) asked to drop the
 // token gate. Kept separate so the public-host guardrail below only second-guesses
@@ -256,7 +265,7 @@ let printed = false;
 export function printAccessUrl(origin: string) {
 	if (printed) return;
 	printed = true;
-	console.log(noAuth ? `[deck] access: ${origin}/ (no auth)` : `[deck] access: ${origin}/?token=${authToken}`);
+	console.log(noAuth ? `[deck] access: ${origin}/ (no auth)` : `[deck] access: ${origin}/ (sign in with the token in ${tokenFile})`);
 }
 
 export function readJson<T>(file: string, fallback: T): T {

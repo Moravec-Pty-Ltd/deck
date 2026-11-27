@@ -31,7 +31,7 @@ export function agentTokenSession(secret: string, token: string | null | undefin
 // secrets live. Registering a project, which widens what the file routes
 // read, is a person's call too. Checked on the route id, which SvelteKit has
 // already decoded, so an encoded path cannot slip past; no route, no access.
-const AGENT_DENIED = /^\/api\/agent\/(settings|credentials|accounts|pairing|user|projects\/(config|sources|remote))(\/|$)/;
+const AGENT_DENIED = /^\/api\/agent\/(settings|credentials|accounts|pairing|devices|token|user|projects\/(config|sources|remote))(\/|$)/;
 const AGENT_READ_ONLY = /^\/api\/agent\/projects(\/clone)?$/;
 
 export function agentMayReach(routeId: string | null, method: string): boolean {

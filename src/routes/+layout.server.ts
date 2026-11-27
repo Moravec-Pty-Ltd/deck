@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
-import { PUBLIC_PATHS, noAuth, requestIsAuthed } from '$lib/server/config';
+import { PUBLIC_PATHS, noAuth } from '$lib/server/config';
+import { requestIsAuthed } from '$lib/server/auth';
 import type { LayoutServerLoad } from './$types';
 
 // Auth guard at the load layer so it runs on client-side (SPA) navigations too,

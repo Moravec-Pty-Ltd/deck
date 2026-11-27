@@ -11,6 +11,11 @@ const config = {
 		// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
 		// See https://svelte.dev/docs/kit/adapters for more information about adapters.
 		adapter: adapter(),
+		// SvelteKit's own form check compares the full origin, which fails behind
+		// Tailscale serve or a tunnel (the browser says https, the server sees
+		// http). deck's request guard (hooks.server.ts refuse()) checks every
+		// state-changing request's Origin against the host instead.
+		csrf: { trustedOrigins: ['*'] },
 		csp: {
 			directives: {
 				'default-src': ['self'],

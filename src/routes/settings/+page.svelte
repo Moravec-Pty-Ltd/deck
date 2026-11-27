@@ -8,6 +8,7 @@
 	import AgentSkills from '$lib/components/AgentSkills.svelte';
 	import PairApprovals from '$lib/components/PairApprovals.svelte';
 	import QrModal from '$lib/components/QrModal.svelte';
+	import DeviceList from '$lib/components/DeviceList.svelte';
 	import ZedSettings from '$lib/components/ZedSettings.svelte';
 	import ClaudeAccounts from '$lib/components/ClaudeAccounts.svelte';
 
@@ -131,8 +132,8 @@
 					<div class="min-w-0 flex-1 basis-56">
 						<div class="text-sm font-medium">Sign-in QR code</div>
 						<p class="m-0 text-xs opacity-70">
-							Scan it from a phone or tablet on the same network to sign it in. It grants full,
-							long-lived access.
+							Scan it from a phone or tablet on the same network to sign it in. It grants full
+							access until you revoke it below.
 						</p>
 					</div>
 					<button class="btn btn-sm" onclick={() => (qrOpen = true)}>
@@ -145,6 +146,13 @@
 						A device that asks to pair shows a code. Approve it here only if the codes match.
 					</p>
 					<PairApprovals empty="No device is waiting for approval." />
+				</div>
+				<div class="p-4">
+					<div class="text-sm font-medium">Signed-in devices</div>
+					<p class="mt-0 mb-3 text-xs opacity-70">
+						Each browser and app has its own sign-in. Revoke one to sign it out.
+					</p>
+					<DeviceList />
 				</div>
 			</div>
 		</SettingsSection>

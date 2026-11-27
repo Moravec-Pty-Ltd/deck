@@ -108,13 +108,14 @@ public enum CredentialStore {
 	}
 }
 
-/// Parses the URL encoded in deck's sign-in QR: `<origin>/?token=<token>`.
+/// Parses the URL encoded in deck's sign-in QR: `<origin>/login#token=<credential>`,
+/// or `<origin>/?token=<token>` from servers before devices had their own sign-ins.
 public enum DeckQR {
 	public static func parse(_ string: String) -> Credentials? {
 		guard let components = URLComponents(string: string.trimmingCharacters(in: .whitespacesAndNewlines)),
 			let scheme = components.scheme, ["http", "https"].contains(scheme),
 			let host = components.host,
-			let token = components.queryItems?.first(where: { $0.name == "token" })?.value,
+			let token = fragmentToken(components) ?? components.queryItems?.first(where: { $0.name == "token" })?.value,
 			!token.isEmpty
 		else { return nil }
 		var origin = URLComponents()
@@ -123,5 +124,12 @@ public enum DeckQR {
 		origin.port = components.port
 		guard let baseURL = origin.url else { return nil }
 		return Credentials(baseURL: baseURL, token: token)
+	}
+
+	private static func fragmentToken(_ components: URLComponents) -> String? {
+		guard let fragment = components.fragment else { return nil }
+		var query = URLComponents()
+		query.query = fragment
+		return query.queryItems?.first(where: { $0.name == "token" })?.value
 	}
 }
