@@ -37,14 +37,21 @@ function basename(dir: string): string {
 // Registering a directory makes everything under it readable through the
 // project endpoints, so $HOME itself and anything under a dot-directory of it
 // (~/.secrets, ~/.deck, ~/code/.hidden) stay off limits. Both paths canonical.
+// So do ~/Library (keychains, mail, browser data) and anything in it, and the
+// personal folders themselves; a project inside one, such as ~/Documents/app,
+// is fine.
+// Compared in lower case: macOS paths are case-insensitive, and a typed
+// ~/library stays lower case through realpath.
+const PERSONAL_FOLDERS = new Set(['documents', 'desktop', 'downloads', 'pictures', 'movies', 'music', 'videos', 'templates', 'public']);
+
 export function homeRegistrationRefusal(dir: string, home: string): string | null {
 	if (dir === home) return 'cannot register the home directory itself';
 	if (!dir.startsWith(home + '/')) return null;
-	const hidden = dir
-		.slice(home.length + 1)
-		.split('/')
-		.some((segment) => segment.startsWith('.'));
-	return hidden ? 'cannot register a hidden (dot) directory under the home directory' : null;
+	const segments = dir.slice(home.length + 1).split('/');
+	if (segments.some((segment) => segment.startsWith('.'))) return 'cannot register a hidden (dot) directory under the home directory';
+	const top = segments[0].toLowerCase();
+	if (top === 'library') return 'cannot register ~/Library or a folder in it';
+	return segments.length === 1 && PERSONAL_FOLDERS.has(top) ? `cannot register ~/${segments[0]} itself; register a project folder inside it` : null;
 }
 
 export function buildProjectRecord(

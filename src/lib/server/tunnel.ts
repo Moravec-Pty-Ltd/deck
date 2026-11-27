@@ -6,6 +6,7 @@ import { WebSocketServer, createWebSocketStream } from 'ws';
 import { headerToken, noAuth, tokenMatches } from './config';
 import { sessionConnection } from './remote';
 import { getStoredSession } from './store';
+import { mcpPort } from './mcp';
 import { TUNNEL_HOST, admitTunnel } from './tunnel-core';
 
 // GET /api/tunnel?port=<n>[&session=<id>]: the native dev browser's transport
@@ -48,7 +49,12 @@ function openTarget(port: number, sessionId: string | undefined): Duplex {
 function handleTunnelUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {
 	const url = new URL(req.url ?? '/', 'http://localhost');
 	if (url.pathname !== '/api/tunnel') return false;
-	const admitted = admitTunnel(authed(req), req.headers.origin, url.searchParams, (id) => !!getStoredSession(id));
+	const ownPorts = [req.socket.localPort, mcpPort()].filter((p) => p !== undefined);
+	const lookup = (id: string) => {
+		const s = getStoredSession(id);
+		return s && { remote: !!s.remote };
+	};
+	const admitted = admitTunnel(authed(req), req.headers.origin, url.searchParams, lookup, ownPorts);
 	if ('status' in admitted) {
 		refuse(socket, admitted.status, admitted.reason);
 		return true;

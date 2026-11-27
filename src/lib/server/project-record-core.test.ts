@@ -73,12 +73,18 @@ describe('homeRegistrationRefusal', () => {
 		['/home/me', 'cannot register the home directory itself'],
 		['/home/me/.secrets', 'cannot register a hidden (dot) directory under the home directory'],
 		['/home/me/.deck/x', 'cannot register a hidden (dot) directory under the home directory'],
-		['/home/me/code/.hidden', 'cannot register a hidden (dot) directory under the home directory']
+		['/home/me/code/.hidden', 'cannot register a hidden (dot) directory under the home directory'],
+		['/home/me/Library', 'cannot register ~/Library or a folder in it'],
+		['/home/me/Library/Mail', 'cannot register ~/Library or a folder in it'],
+		['/home/me/library/Mail', 'cannot register ~/Library or a folder in it'],
+		['/home/me/documents', 'cannot register ~/documents itself; register a project folder inside it'],
+		['/home/me/Documents', 'cannot register ~/Documents itself; register a project folder inside it'],
+		['/home/me/Downloads', 'cannot register ~/Downloads itself; register a project folder inside it']
 	])('refuses %s', (dir, message) => {
 		expect(homeRegistrationRefusal(dir, home)).toBe(message);
 	});
 
-	it.each(['/home/me/code/app', '/home/me/a.b', '/home/meow/.x', '/srv/.data/app'])('allows %s', (dir) => {
+	it.each(['/home/me/code/app', '/home/me/a.b', '/home/meow/.x', '/srv/.data/app', '/home/me/Documents/app', '/home/me/code/Library', '/home/me/code/Documents', '/home/me/code/downloads'])('allows %s', (dir) => {
 		expect(homeRegistrationRefusal(dir, home)).toBeNull();
 	});
 });

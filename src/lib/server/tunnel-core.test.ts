@@ -30,8 +30,8 @@ describe('parseTunnelRequest', () => {
 });
 
 describe('admitTunnel', () => {
-	const known = (id: string) => id === 'live';
-	const admit = (authed: boolean, query: string, origin?: string) => admitTunnel(authed, origin, new URLSearchParams(query), known);
+	const known = (id: string) => (id === 'live' ? { remote: false } : id === 'far' ? { remote: true } : undefined);
+	const admit = (authed: boolean, query: string, origin?: string) => admitTunnel(authed, origin, new URLSearchParams(query), known, [4818, 51234]);
 
 	it('refuses a request without a valid deck token, before looking at anything else', () => {
 		expect(admit(false, 'port=3000')).toEqual({ status: 401, reason: 'Unauthorized' });
@@ -48,6 +48,12 @@ describe('admitTunnel', () => {
 		expect(admit(true, 'port=3000&host=example.com')).toMatchObject({ status: 400 });
 		expect(admit(true, 'port=70000')).toMatchObject({ status: 400 });
 		expect(admit(true, 'port=3000&session=gone')).toMatchObject({ status: 404 });
+	});
+
+	it("refuses deck's own ports on this machine, but not on a remote session's host", () => {
+		expect(admit(true, 'port=4818')).toEqual({ status: 403, reason: 'Forbidden' });
+		expect(admit(true, 'port=51234&session=live')).toMatchObject({ status: 403 });
+		expect(admit(true, 'port=4818&session=far')).toEqual({ port: 4818, session: 'far' });
 	});
 
 	it('admits a valid request', () => {
