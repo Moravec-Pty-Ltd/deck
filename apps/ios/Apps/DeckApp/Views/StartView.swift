@@ -131,6 +131,9 @@ struct StartView: View {
 	/// The typed folder doesn't exist yet, so the start creates it.
 	private var createDir: Bool { custom && folderState?.state == .new }
 
+	/// The server won't start in the typed folder; its reason shows above.
+	private var refused: Bool { custom && folderState?.state == .refused }
+
 	private var registration: ProjectRegistration? {
 		guard custom, saveAsProject, folderState?.canRegister == true else { return nil }
 		return ProjectRegistration(name: projectName, group: projectGroup)
@@ -202,6 +205,7 @@ struct StartView: View {
 						} label: {
 							Label("New session in \(project.name)", systemImage: "plus.circle")
 						}
+						.disabled(refused)
 						Text(custom
 							? "Starts a session in this folder with whatever you type as the first message."
 							: "Starts a session on its own branch with whatever you type as the first message.")
@@ -213,7 +217,7 @@ struct StartView: View {
 							} label: {
 								Label("Terminal in \(project.name)", systemImage: "terminal")
 							}
-							.disabled(startingShell)
+							.disabled(startingShell || refused)
 							.accessibilityIdentifier("startShell")
 						}
 					case .issues:

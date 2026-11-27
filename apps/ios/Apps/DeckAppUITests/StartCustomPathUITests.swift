@@ -16,13 +16,14 @@ final class StartCustomPathUITests: XCTestCase {
 		XCTAssertTrue(app.staticTexts["New folder: created when you start."].waitForExistence(timeout: 10),
 			"a missing folder should be offered as a new one\n\(app.debugDescription.prefix(3000))")
 
-		// deck will not make a hidden folder, so it refuses the start.
-		openSheet(app, path: "~/.missing")
-		tapStart(app)
-		let error = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'cwd does not exist'")).firstMatch
-		XCTAssertTrue(error.waitForExistence(timeout: 20), "the server's error should show in the sheet\n\(app.debugDescription.prefix(3000))")
+		// deck will not make a hidden folder, so it says why and offers no start.
+		typePath(app, "~/.missing")
+		let reason = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'hidden (dot) folder'")).firstMatch
+		XCTAssertTrue(reason.waitForExistence(timeout: 10), "the refusal should show\n\(app.debugDescription.prefix(3000))")
 		shot("custom-path-refused")
-		app.navigationBars["New session"].buttons["Cancel"].tap()
+		XCTAssertFalse(newSessionButton(app).isEnabled, "a refused folder can't be started")
+		let shell = app.buttons["startShell"].firstMatch
+		XCTAssertTrue(!shell.exists || !shell.isEnabled, "nor can a terminal open in it")
 
 		openSheet(app, path: "~/data")
 		XCTAssertTrue(app.staticTexts["Folder"].exists, "a folder is named as one, with no worktree choice")
@@ -34,10 +35,14 @@ final class StartCustomPathUITests: XCTestCase {
 
 	private func openSheet(_ app: XCUIApplication, path: String) {
 		typePath(app, path)
-		let new = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'New session in'")).firstMatch
+		let new = newSessionButton(app)
 		XCTAssertTrue(new.waitForExistence(timeout: 10))
 		new.tap()
 		XCTAssertTrue(app.navigationBars["New session"].waitForExistence(timeout: 10), "the sheet should open\n\(app.debugDescription.prefix(3000))")
+	}
+
+	private func newSessionButton(_ app: XCUIApplication) -> XCUIElement {
+		app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'New session in'")).firstMatch
 	}
 
 	private func typePath(_ app: XCUIApplication, _ path: String) {
