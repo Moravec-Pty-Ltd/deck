@@ -7,6 +7,7 @@ import { isAgentKind } from '$lib/types';
 import { skillBody, skillCatalogue } from './skills-catalogue';
 import { resolveSecretsFile, SECRETS_FILE_RULE } from './secrets-file';
 import {
+	asSessionOutput,
 	askAnnouncement,
 	conversationWindow,
 	matchSessions,
@@ -281,7 +282,7 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
 async function latestReply(args: Record<string, unknown>): Promise<string> {
 	const session = await agentSessionArg(args);
 	const reply = sessionLastResult(session.id);
-	return reply ? reply.slice(0, TOOL_RESULT_CHARS) : `${session.title} has not replied yet.`;
+	return reply ? asSessionOutput(reply.slice(0, TOOL_RESULT_CHARS)) : `${session.title} has not replied yet.`;
 }
 
 async function sendMessage(args: Record<string, unknown>): Promise<string> {
@@ -304,7 +305,7 @@ async function stopSession(args: Record<string, unknown>): Promise<string> {
 }
 
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
-	list_sessions: async () => JSON.stringify((await listSessions()).map(operatorSession).map(({ lastActiveAt: _drop, ...rest }) => rest)),
+	list_sessions: async () => asSessionOutput(JSON.stringify((await listSessions()).map(operatorSession).map(({ lastActiveAt: _drop, ...rest }) => rest))),
 	latest_reply: latestReply,
 	send_message: sendMessage,
 	answer_ask: answerQuestion,

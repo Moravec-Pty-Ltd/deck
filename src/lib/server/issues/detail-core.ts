@@ -142,13 +142,14 @@ const IMAGE_NOTE =
 
 // One issue's section of the [issue_body] block. A multi-issue block delimits
 // each with a header + url; a lone issue is just its body (its url is the
-// separate [issue_url] token).
-function bodySection(d: IssueDetail, multi: boolean): string {
+// separate [issue_url] token), with its title when asked so a prompt that
+// shows no [issue_title] still reads it inside the markers.
+function bodySection(d: IssueDetail, multi: boolean, titled: boolean): string {
 	const lines: string[] = [];
 	if (multi) {
 		lines.push(`----- ${d.ref}: ${d.title} -----`);
 		if (d.url) lines.push(`URL: ${d.url}`);
-	}
+	} else if (titled && d.title) lines.push(`Title: ${d.title.replace(/\s+/g, ' ').trim()}`);
 	lines.push(truncate(d.body) || '(no description)');
 	if (d.images.length) {
 		lines.push('Images:');
@@ -181,10 +182,10 @@ export function renderIssueTitle(details: IssueDetail[]): string {
 // [issue_body]: every issue's body (with its image refs), one delimited section
 // each when there's more than one, plus a single trailing read-only note when
 // any images landed.
-export function renderIssueBody(details: IssueDetail[], wrap = (text: string) => text): string {
+export function renderIssueBody(details: IssueDetail[], wrap = (text: string) => text, titled = false): string {
 	if (!details.length) return '';
 	const multi = details.length > 1;
-	const body = wrap(details.map((d) => bodySection(d, multi)).join('\n\n').trim());
+	const body = wrap(details.map((d) => bodySection(d, multi, titled)).join('\n\n').trim());
 	const hasImages = details.some((d) => d.images.length);
 	return (hasImages ? `${body}\n\n${IMAGE_NOTE}` : body).trim();
 }

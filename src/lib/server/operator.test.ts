@@ -113,12 +113,12 @@ describe('operatorChat', () => {
 		];
 		const reply = await operatorChat('Read me the latest from auth.');
 		expect(reply.text).toBe('Auth token refresh rotated the key and all tests pass.');
-		expect(reply.actions).toEqual([{ tool: 'latest_reply', args: { session_id: 'c_auth' }, result: 'I rotated the key and all 12 tests pass.' }]);
+		expect(reply.actions).toEqual([{ tool: 'latest_reply', args: { session_id: 'c_auth' }, result: expect.stringMatching(/\n<<<(session-output-[\w-]+)\nI rotated the key and all 12 tests pass.\n\1>>>$/) }]);
 		expect(requests[0].messages[0].content).toContain('"title":"Auth token refresh"');
 		expect(requests[0].messages[0].content).toContain('dev-workflow (global)');
 		expect(requests[0].tools).toBeDefined();
 		// The second call sees the tool result.
-		expect(requests[1].messages.at(-1)).toMatchObject({ role: 'tool', content: 'I rotated the key and all 12 tests pass.' });
+		expect(requests[1].messages.at(-1)).toMatchObject({ role: 'tool', content: expect.stringContaining('\nI rotated the key and all 12 tests pass.\n') });
 		expect(operatorHistory().map((t) => t.role)).toEqual(['user', 'assistant', 'assistant']);
 	});
 
