@@ -327,6 +327,7 @@ final class OperatorController {
 	}
 
 	private func announce(_ text: String) {
+		brain?.dropHeld()
 		entries.append(OperatorEntry(role: .announcement, text: text, actions: [], at: Date()))
 		speak(text)
 	}

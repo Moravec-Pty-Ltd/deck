@@ -652,8 +652,7 @@ export interface PromptContext {
 // server/issues/detail.ts, kept structural so this node-free module doesn't
 // depend on the fetcher.
 export interface IssueText {
-	issueTitle?: string;
-	issueBody?: string;
+	issueText?: string;
 	issueComments?: string;
 	warnings?: string[];
 }
@@ -672,15 +671,14 @@ function issueUnreadable(issue: IssueText, run: WorkflowRun): string {
 function issueBlock(ctx: PromptContext, run: WorkflowRun): string {
 	const issue = ctx.issue;
 	if (!issue) return '';
-	const title = trimmed(issue.issueTitle);
-	const body = trimmed(issue.issueBody);
+	const body = trimmed(issue.issueText);
 	const comments = trimmed(issue.issueComments);
-	if (!title && !body && !comments) return issueUnreadable(issue, run);
+	if (!body && !comments) return issueUnreadable(issue, run);
 	return [
-		`${issueRef(run)}${title ? ` — ${title}` : ''}`,
+		issueRef(run),
 		body,
 		comments && `Comments:\n${comments}`,
-		'That is the issue in full, already fetched. Do not go and read it again.'
+		'That is the issue, already fetched. Do not go and read it again.'
 	]
 		.filter(Boolean)
 		.join('\n\n');

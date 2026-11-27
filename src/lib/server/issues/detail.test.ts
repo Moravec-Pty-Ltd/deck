@@ -38,6 +38,7 @@ describe('issue detail fetch', () => {
 	it('names an issue whose tracker has no credential', async () => {
 		const context = await buildIssuePrompt('/path/to/project', [{ issue: linear }, { issue: github }]);
 		expect(context.issueTitle).toBe('Bug');
+		expect(context.issueText).toMatch(/\n<<<(\S+)\nTitle: Bug\nSteps\n\1>>>$/);
 		expect(context.warnings).toEqual(['no linear API key for EX-1']);
 		expect(mocks.linear).not.toHaveBeenCalled();
 	});

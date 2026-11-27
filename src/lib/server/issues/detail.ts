@@ -244,6 +244,8 @@ export interface IssuePromptContext {
 	issueTitle: string;
 	issueBody: string;
 	issueComments: string;
+	// [issue_body] with the title inside the markers, for prompts deck writes.
+	issueText: string;
 	// One line per attached issue whose context could not be fetched, so the
 	// session can say so instead of quietly rendering empty blocks.
 	warnings: string[];
@@ -295,6 +297,7 @@ export async function buildIssuePrompt(
 		issueTitle: renderIssueTitle(details),
 		issueBody: renderIssueBody(details, wrap),
 		issueComments: wrap(renderIssueComments(details)),
+		issueText: renderIssueBody(details, wrap, true),
 		warnings,
 		titles: Object.fromEntries(details.filter((d) => d.title).map((d) => [d.ref, d.title]))
 	};

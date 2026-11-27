@@ -597,8 +597,7 @@ describe('take over and resume', () => {
 
 	it('hands the implement phase the issue text instead of making it fetch', async () => {
 		fake.issueContext = {
-			issueTitle: 'Rename a session',
-			issueBody: 'The title should be editable from the list.',
+			issueText: 'Title: Rename a session\nThe title should be editable from the list.',
 			issueComments: '- jin: the app needs it too',
 			warnings: []
 		};
@@ -619,7 +618,7 @@ describe('take over and resume', () => {
 	});
 
 	it('leaves the review phase without an issue block', async () => {
-		fake.issueContext = { issueTitle: 'T', issueBody: 'B', issueComments: '', warnings: [] };
+		fake.issueContext = { issueText: 'B', issueComments: '', warnings: [] };
 		const run = await start();
 		await finishTurn(run); // implement -> verify -> review
 		expect(promptOf(1)).not.toContain('Do not go and read it again.');
