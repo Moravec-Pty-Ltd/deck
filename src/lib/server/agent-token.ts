@@ -17,6 +17,7 @@ export function agentToken(secret: string, sessionId: string): string {
 
 // The session an agent token belongs to, or null when it is not a valid one.
 export function agentTokenSession(secret: string, token: string | null | undefined): string | null {
+	// 43 characters: a SHA-256 digest in base64url.
 	const m = typeof token === 'string' ? /^deck-agent\.([\w-]{1,128})\.([\w-]{43})$/.exec(token) : null;
 	if (!m) return null;
 	const want = Buffer.from(mac(secret, m[1]));
@@ -39,6 +40,8 @@ export function agentMayReach(routeId: string | null, method: string): boolean {
 	return !AGENT_READ_ONLY.test(routeId) || method === 'GET' || method === 'HEAD';
 }
 
+// Keep in step with the DECK_* variables deck reads (grep the source for
+// `env.DECK_`): one missing here reaches every child process.
 // deck's own server settings in its environment: a child process has no use for
 // them, and DECK_TOKEN is deck's whole access. Other DECK_* variables (a hook's
 // DECK_NOTIFY_SCRIPT, say) are the user's and pass through.
