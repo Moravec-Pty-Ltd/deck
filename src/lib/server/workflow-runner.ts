@@ -22,6 +22,7 @@ import { notify } from './push';
 import { createWorktree, fetchPullRef, originRepo } from './git';
 import { projectForPath, resolveWithinProjects } from './confine';
 import { issuePromptContext } from './issues/prompt';
+import { prFromFork } from './issues/github';
 import { slugifyBranch } from './branch-core';
 import { lastPrLink } from '$lib/pr';
 import { singleIssueTitle } from '$lib/issues';
@@ -562,6 +563,9 @@ async function refreshPrWorktree(dir: string, pr: RunPr): Promise<void> {
 }
 
 async function prPlacement(root: string, pr: RunPr, base: string | undefined): Promise<Placement> {
+	// A run's sessions would work in the fork's checkout, and a read-only review
+	// cannot post with gh, so a fork's PR gets a plain review session instead.
+	if (await prFromFork(pr.repo, pr.number)) error(400, 'this pull request is from a fork (or deck could not tell), so it is reviewed in a review session, not a workflow run');
 	const { branch, created } = await fetchPullRef(root, pr.number);
 	const wt = await createWorktree(root, branch, { newBranch: false });
 	if (!created && wt.branch === branch) await refreshPrWorktree(wt.dir, pr);

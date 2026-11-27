@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { DeckSession } from '$lib/types';
 import { authToken, baseUrl } from '../config';
 
 // Stamp the deck session id into a spawned agent's environment so an external
@@ -13,17 +14,20 @@ import { authToken, baseUrl } from '../config';
 // `extra` is merged last so a model profile can point the agent at another
 // backend (ANTHROPIC_BASE_URL and friends) for this session only, without
 // leaking that choice into deck's own process env.
+// A review session runs in a pull request's checkout, whose files and agent
+// settings its author chose, so it gets no token: it reports, and you act.
 export function agentEnv(
-	id: string,
+	session: Pick<DeckSession, 'id' | 'prSeeded'>,
 	cwd: string,
 	extra?: Record<string, string | undefined>
 ): NodeJS.ProcessEnv {
+	const { DECK_TOKEN: _token, ...env } = process.env;
 	return {
-		...process.env,
+		...env,
 		PWD: path.resolve(cwd),
-		DECK_SESSION_ID: id,
+		DECK_SESSION_ID: session.id,
 		DECK_BASE_URL: baseUrl,
-		DECK_TOKEN: authToken,
+		...(session.prSeeded ? {} : { DECK_TOKEN: authToken }),
 		...extra
 	};
 }

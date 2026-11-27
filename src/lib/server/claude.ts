@@ -218,6 +218,18 @@ function reportCrash(id: string, text: string) {
 	});
 }
 
+// The only built-in tools a read-only review has; deck's MCP tools come on top.
+const READ_ONLY_TOOLS = 'Read,Grep,Glob,TodoWrite';
+
+// A pull request from a fork: tools that only read, deck's MCP server and no
+// other, and none of the checkout's own settings, whose hooks claude would
+// otherwise run without asking.
+function permissionArgs(session: DeckSession): string[] {
+	if (session.readOnly) return ['--permission-mode', 'default', '--setting-sources', 'user', '--strict-mcp-config', '--tools', READ_ONLY_TOOLS];
+	if (session.permissionMode === 'bypassPermissions') return ['--dangerously-skip-permissions'];
+	return ['--permission-mode', session.permissionMode ?? 'acceptEdits'];
+}
+
 // `agent`: a remote session through the deck agent, which supplies --mcp-config.
 function claudeArgs(id: string, session: DeckSession, agent = false): string[] {
 	const args = [
@@ -238,11 +250,7 @@ function claudeArgs(id: string, session: DeckSession, agent = false): string[] {
 	// Reasoning effort (issue #178): absent runs the CLI default. The value is one
 	// of a fixed enum, but guard it like --model so a leading dash can't inject.
 	if (isFlagSafe(session.effort)) args.push('--effort', session.effort!);
-	if (session.permissionMode === 'bypassPermissions') {
-		args.push('--dangerously-skip-permissions');
-	} else {
-		args.push('--permission-mode', session.permissionMode ?? 'acceptEdits');
-	}
+	args.push(...permissionArgs(session));
 
 	// A remote host can't reach deck (issue #410): no MCP tools, no deck prompts.
 	if (session.remote && !agent) {
@@ -273,7 +281,7 @@ async function spawnClaude(id: string, session: DeckSession, profileEnv?: Record
 	const account = await sessionAccountEnv(session.account);
 	return spawnAgent(AGENT_BINARIES.claude, claudeArgs(id, session), {
 		cwd: session.cwd,
-		env: agentEnv(id, session.cwd, sessionEnv(account, profileEnv)),
+		env: agentEnv(session, session.cwd, sessionEnv(account, profileEnv)),
 		stdio: ['pipe', 'pipe', 'pipe']
 	});
 }

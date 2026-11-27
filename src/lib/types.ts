@@ -13,6 +13,10 @@ export type SessionStatus = 'running' | 'idle' | 'error' | 'dead';
 
 // Agent kinds drive an LLM coding agent (chat view); 'shell' is a tmux terminal.
 export type AgentKind = Exclude<SessionKind, 'shell'>;
+// The agents that can review a fork's pull request read-only: claude with
+// read-only tools, codex in its read-only sandbox.
+export const READ_ONLY_KINDS: readonly SessionKind[] = ['claude', 'codex'];
+
 export const AGENT_KINDS = ['claude', 'pi', 'codex', 'opencode'] as const satisfies readonly AgentKind[];
 // `satisfies` only proves every entry is an AgentKind. This proves the reverse:
 // adding a kind to SessionKind without listing it above stops type-checking, so it
@@ -151,6 +155,9 @@ export interface DeckSession {
 	prBackfilled?: boolean;
 	// Started on its PR (a review), which later links don't replace.
 	prSeeded?: boolean;
+	// Reviewing a pull request from a fork: tools that only read, and no agent
+	// settings from the checkout.
+	readOnly?: boolean;
 	// Kept out of the ordinary lists and shown in their "Hidden" section instead.
 	// Never stored on the record: the server derives it per read from the hidden
 	// ids and the hidden projects (see server/hidden.ts), so every client reads
@@ -513,6 +520,8 @@ export interface PullRequest {
 	headRefOid: string;
 	baseRefName: string;
 	isDraft: boolean;
+	// From a fork, so its author need not have any role in the repository.
+	isCrossRepository?: boolean;
 	author: string;
 	updatedAt: number;
 }

@@ -1,7 +1,8 @@
 import { error, isHttpError } from '@sveltejs/kit';
-import { AGENT_KINDS, isAgentKind, type ProjectRemote, type AgentKind, type DeckEffort, type DeckSession, type SessionKind, type SessionPR, type IssueSourceType } from '$lib/types';
+import { AGENT_KINDS, READ_ONLY_KINDS, isAgentKind, type ProjectRemote, type AgentKind, type DeckEffort, type DeckSession, type SessionKind, type SessionPR, type SessionIssue, type IssueSourceType } from '$lib/types';
 import { createSession } from './sessions';
-import { clearWorktreeBranch, createWorktree, fetchPullRef, isGitRepo, type Repo } from './git';
+import { clearWorktreeBranch, createWorktree, fetchPullRef, isGitRepo, originRepo, type Repo } from './git';
+import { prFromFork } from './issues/github';
 import { connectionFor, remoteProject, remoteRepo, remoteShellCommand } from './remote';
 import { isFlagSafe } from './agents/args';
 import { agentAvailability } from './agents/available';
@@ -405,6 +406,82 @@ function checkPermissionMode(mode: unknown): void {
 	if (mode != null && !PERMISSION_MODES.includes(mode)) error(400, 'invalid permissionMode');
 }
 
+// A review of a pull request from a fork runs read-only, since its author need
+// have no role in the repository. Unknown counts as a fork.
+async function reviewsFork(kind: SessionKind, pr: SessionPR | undefined, wt: WorktreeReq | undefined, cwd: string): Promise<boolean> {
+	const target = reviewTarget(pr, wt);
+	if (!target || !isAgentKind(kind)) return false;
+	const repo = target.repo ?? (await originRepo(cwd));
+	const fork = repo ? await prFromFork(repo, target.number) : true;
+	if (fork && !READ_ONLY_KINDS.includes(kind)) error(400, 'a pull request from a fork can be reviewed only with claude or codex');
+	return fork;
+}
+
+// The PR whose code the session gets: one deck fetches itself (fromPr) comes
+// from origin, so its repo is origin's, never the caller's say-so.
+function reviewTarget(pr: SessionPR | undefined, wt: WorktreeReq | undefined): { number: number; repo?: string } | null {
+	const fromPr = wt?.fromPr !== undefined ? toPrNumber(wt.fromPr) : null;
+	if (fromPr) return { number: fromPr };
+	return pr ? { number: pr.number, repo: pr.repo } : null;
+}
+
+// The kind, permission mode and effort a body asks for are valid, and the agent
+// is installed. Returns the effort level.
+async function checkCreate(kind: SessionKind, permissionMode: unknown, effort: unknown): Promise<DeckEffort | undefined> {
+	if (!KINDS.includes(kind)) error(400, 'invalid kind');
+	checkPermissionMode(permissionMode);
+	const effortLevel = safeEffort(effort, kind);
+	if (isAgentKind(kind) && !(await agentAvailability())[kind]) error(400, `${kind} is not installed`);
+	return effortLevel;
+}
+
+// Create and register the folder (both optional) once their own checks pass and
+// before the session, so it starts inside its new project. A later failure
+// (account, worktree, tmux) leaves them in place.
+function startFolder(body: Record<string, unknown>): string {
+	const folder = planStartFolder(body.cwd, body.createDir, body.registerProject);
+	if (folder.create && worktreeRequested(body.worktree as WorktreeReq | undefined)) {
+		error(400, 'a new folder is not a git repository, so it cannot have a worktree');
+	}
+	commitStartFolder(folder);
+	return folder.cwd;
+}
+
+// Where the session runs and under which account, and whether it reviews a
+// fork's PR read-only. The fork check runs before any worktree exists, so a
+// refusal leaves nothing behind.
+async function placeSession(startCwd: string, kind: SessionKind, body: Record<string, unknown>) {
+	const wt = body.worktree as WorktreeReq | undefined;
+	const remotePlan = await planRemote(startCwd, kind, wt);
+	const account = isAgentKind(kind) && !remotePlan ? projectAccount(startCwd) : undefined;
+	if (kind === 'claude' && !remotePlan) {
+		const problem = await accountProblem(account);
+		if (problem) error(400, problem);
+	}
+	const readOnly = await reviewsFork(kind, parsePr(body.pr), wt, startCwd);
+	const place = remotePlan
+		? { cwd: startCwd, worktree: remotePlan.worktree, branch: remotePlan.branch }
+		: await resolveWorktree(startCwd, body as { worktree?: WorktreeReq });
+	return { ...place, remotePlan, account, readOnly };
+}
+
+function sessionIssues(picked: PickedIssue[]): SessionIssue[] {
+	return picked.map((p) => ({ ...p.issue, ...(p.sourceId ? { sourceId: p.sourceId } : {}) }));
+}
+
+// Fire-and-forget, but not silent: a failed dispatch lands on the transcript
+// so the fresh session says why nothing is happening.
+function dispatchFirstTurn(session: DeckSession, kind: SessionKind, prompt: unknown, picked: PickedIssue[]): void {
+	void maybeDispatch(session, kind, asStr(prompt), picked).catch((e) => {
+		console.error(`[deck] first-turn dispatch failed for ${session.id}:`, e);
+		appendEvent(session.id, {
+			type: 'deck.error',
+			text: e instanceof Error ? e.message : 'failed to start the first turn',
+			ts: Date.now()
+		});
+	});
+}
+
 // The whole create pipeline for one untyped internal body: validate,
 // resolve the worktree, create the session, and fire the first turn.
 export async function createSessionFromRequest(
@@ -421,59 +498,30 @@ export async function createSessionFromRequest(
 		command?: string;
 		prompt?: unknown;
 	};
-	if (!KINDS.includes(kind)) error(400, 'invalid kind');
-	checkPermissionMode(permissionMode);
-	const effortLevel = safeEffort(effort, kind);
-	if (isAgentKind(kind) && !(await agentAvailability())[kind]) error(400, `${kind} is not installed`);
-
-	// Create and register the folder (both optional) once their own checks pass and
-	// before the session, so it starts inside its new project. A later failure
-	// (account, worktree, tmux) leaves them in place.
-	const folder = planStartFolder(body.cwd, body.createDir, body.registerProject);
-	if (folder.create && worktreeRequested(body.worktree as WorktreeReq | undefined)) {
-		error(400, 'a new folder is not a git repository, so it cannot have a worktree');
-	}
-	commitStartFolder(folder);
-	const startCwd = folder.cwd;
-	const remotePlan = await planRemote(startCwd, kind, body.worktree as WorktreeReq | undefined);
-	const account = isAgentKind(kind) && !remotePlan ? projectAccount(startCwd) : undefined;
-	if (kind === 'claude' && !remotePlan) {
-		const problem = await accountProblem(account);
-		if (problem) error(400, problem);
-	}
-	const { cwd, worktree, branch } = remotePlan
-		? { cwd: startCwd, worktree: remotePlan.worktree, branch: remotePlan.branch }
-		: await resolveWorktree(startCwd, body as { worktree?: WorktreeReq });
+	const effortLevel = await checkCreate(kind, permissionMode, effort);
+	const startCwd = startFolder(body);
+	const place = await placeSession(startCwd, kind, body);
 	const picked = parseIssues(body);
-	const pr = parsePr(body.pr);
 
 	const session = await createSession({
 		kind,
-		title: title || singleIssueTitle(picked.map((p) => p.issue)) || branch,
-		cwd,
+		title: title || singleIssueTitle(picked.map((p) => p.issue)) || place.branch,
+		cwd: place.cwd,
 		model,
 		provider,
 		effort: effortLevel,
-		permissionMode,
-		account,
-		command: remotePlan?.command ?? command,
-		worktree,
-		remote: remotePlan?.remote,
-		issues: picked.map((p) => ({ ...p.issue, ...(p.sourceId ? { sourceId: p.sourceId } : {}) })),
-		pr
+		// A read-only review never skips permission prompts, whatever was asked.
+		permissionMode: place.readOnly ? 'default' : permissionMode,
+		account: place.account,
+		command: place.remotePlan?.command ?? command,
+		worktree: place.worktree,
+		remote: place.remotePlan?.remote,
+		issues: sessionIssues(picked),
+		pr: parsePr(body.pr)
 	});
+	if (place.readOnly) Object.assign(session, updateSession(session.id, { readOnly: true }));
 
 	if (remember) rememberPicks(startCwd, kind, model, provider, effortLevel);
-
-	// Fire-and-forget, but not silent: a failed dispatch lands on the transcript
-	// so the fresh session says why nothing is happening.
-	void maybeDispatch(session, kind, asStr(prompt), picked).catch((e) => {
-		console.error(`[deck] first-turn dispatch failed for ${session.id}:`, e);
-		appendEvent(session.id, {
-			type: 'deck.error',
-			text: e instanceof Error ? e.message : 'failed to start the first turn',
-			ts: Date.now()
-		});
-	});
+	dispatchFirstTurn(session, kind, prompt, picked);
 	return session;
 }

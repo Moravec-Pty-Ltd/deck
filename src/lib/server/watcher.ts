@@ -87,7 +87,7 @@ async function check(watch: Watch, session: DeckSession): Promise<WatchResult | 
 	if (session.remote) return remoteCheck(watch.command, session);
 	const cwd = resolveWithinProjects(session.cwd);
 	if (!cwd) return { exitCode: null, output: "not run: the session's directory is outside deck's registered projects" };
-	return runCheck(watch.command, cwd, agentEnv(session.id, cwd));
+	return runCheck(watch.command, cwd, agentEnv(session, cwd));
 }
 
 // The watch stays active through its check, so it can still be cancelled and a

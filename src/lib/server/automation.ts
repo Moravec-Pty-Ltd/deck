@@ -4,10 +4,11 @@
 // independently. Idempotence is durable: a given issue/PR fires at most once ever,
 // across polls and restarts, tracked in ~/.deck/automation.json. The pure
 // key/dedupe logic and request bodies live in automation-core.ts.
-import type { Issue, Project, PullRequest } from '$lib/types';
+import { READ_ONLY_KINDS, type Issue, type Project, type PullRequest, type SessionKind } from '$lib/types';
 import { listProjects, listStoredSessions } from './store';
 import { getProjectIssues } from './issues';
 import { getProjectPrs } from './prs';
+import { prAuthorTrusted } from './issues/github';
 import { createSessionFromRequest } from './create-session';
 import { runIdempotent } from './idempotency';
 import { loadProcessed, persist } from './automation-ledger';
@@ -62,7 +63,17 @@ function startWork(project: Project, issue: Issue): Promise<unknown> {
 	return startRun({ cwd: project.path, category: 'dev', issue: runIssue(issue) });
 }
 
+// A fork's PR gets a plain read-only review session, by claude when the
+// project's review agent has no read-only mode. A workflow run's review posts
+// with gh, which a read-only session cannot run.
+function forkReviewBody(project: Project, pr: PullRequest): Record<string, unknown> {
+	const body = reviewBody(project, pr);
+	// The configured model and effort belong to the other agent, so claude runs with its own defaults.
+	return READ_ONLY_KINDS.includes(body.kind as SessionKind) ? body : { ...body, kind: 'claude', model: undefined, provider: undefined, effort: undefined };
+}
+
 function startReview(project: Project, pr: PullRequest): Promise<unknown> {
+	if (pr.isCrossRepository !== false) return createSessionFromRequest(forkReviewBody(project, pr), { remember: false });
 	if (!project.automation?.workflows) return createSessionFromRequest(reviewBody(project, pr), { remember: false });
 	return startRun({ cwd: project.path, category: 'review', pr: runPr(pr) });
 }
@@ -98,6 +109,18 @@ async function spawnReview(
 	{ key, candidate }: NewTrigger<PullRequest>
 ): Promise<void> {
 	if (pruneSupersededReviewKeys(processed, candidate)) persist(processed);
+	// A fork's PR is reviewed unasked only when its author has a role in the
+	// repository; otherwise this head is passed over, and a person can still
+	// start a (read-only) review by hand. When gh cannot say, the next tick asks.
+	if (candidate.isCrossRepository !== false) {
+		const trusted = await prAuthorTrusted(candidate.repo, candidate.number).catch(() => null);
+		if (trusted === null) return;
+		if (!trusted) {
+			processed[key] = Date.now();
+			persist(processed);
+			return;
+		}
+	}
 	await spawn(processed, key, () => startReview(project, candidate));
 }
 

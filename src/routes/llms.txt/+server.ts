@@ -28,7 +28,14 @@ Base URL: ${baseUrl}
 ## Authentication
 
 Send the shared token on every /api request (deck-spawned agents find it in
-\`$DECK_TOKEN\`, alongside \`$DECK_BASE_URL\`; otherwise it's in ~/.deck/token):
+\`$DECK_TOKEN\`, alongside \`$DECK_BASE_URL\`; otherwise it's in ~/.deck/token).
+A review session gets no token: it runs in a pull request's checkout. One
+reviewing a PR from a fork also runs read-only (claude with only its read and
+search tools and deck's MCP tools, without the checkout's own .claude settings
+and with no watch check commands; codex in its read-only sandbox; other agents
+cannot review or be switched to on a fork's PR). A fork's PR is reviewed in a
+review session, not a workflow run, and automatic review takes one only when
+its author has a role in the repository:
 
 - \`Authorization: Bearer <token>\` (preferred) or \`X-Deck-Token: <token>\`
 
@@ -1541,7 +1548,8 @@ event may repeat state the snapshot already reflects.
 - Worktree, issue, and PR operations require \`cwd\` to be a registered project
   (see Discovery); plain sessions can run in any existing directory.
 - All endpoints are also usable by deck-spawned agents: \`$DECK_BASE_URL\`,
-  \`$DECK_TOKEN\`, and \`$DECK_SESSION_ID\` are stamped into their environment.
+  \`$DECK_TOKEN\` (not in review sessions), and \`$DECK_SESSION_ID\` are stamped
+  into their environment.
 `;
 
 export const GET: RequestHandler = () => {

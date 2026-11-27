@@ -101,7 +101,7 @@ export async function runTurn(session: DeckSession, text: string, voice = false)
 	try {
 		child = await spawnAgent(turn.cmd, turn.args, {
 			cwd: session.cwd,
-			env: agentEnv(session.id, session.cwd),
+			env: agentEnv(session, session.cwd),
 			stdio: ['pipe', 'pipe', 'pipe']
 		});
 	} catch (err) {
