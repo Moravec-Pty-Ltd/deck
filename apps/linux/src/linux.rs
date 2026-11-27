@@ -52,6 +52,54 @@ pub fn tune_webview(window: &WebviewWindow) {
 	});
 }
 
+// Must run before GTK starts: WebKit reads the variable once, for its first view.
+pub fn choose_renderer() {
+	let user_set = std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER");
+	if crate::core::disable_dmabuf(is_wayland(), user_set.as_deref(), std::env::var_os("DECK_WEBKIT_DMABUF").as_deref()) {
+		std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+	}
+}
+
+// The WebKitGTK the shell is running on, for crash reports: the AppImage's own,
+// or the system's for the deb and the tarball.
+pub fn webkit_version() -> String {
+	use webkit2gtk::ffi;
+	unsafe { format!("{}.{}.{}", ffi::webkit_get_major_version(), ffi::webkit_get_minor_version(), ffi::webkit_get_micro_version()) }
+}
+
+// When the last "reloaded" notice went up: views that share a web process
+// (deck's windows, say) all report its crash, and one dialog is enough.
+static NOTICED: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+// A crashed web process leaves its view blank, so reload it and say so. A page
+// that crashes again within a minute is left alone rather than reloaded in a loop.
+pub fn recover_crashes(webview: &tauri::Webview, what: &'static str) {
+	let app = webview.app_handle().clone();
+	let _ = webview.with_webview(move |webview| {
+		use webkit2gtk::{WebProcessTerminationReason, WebViewExt};
+		let last = std::cell::Cell::new(None::<std::time::Instant>);
+		webview.inner().connect_web_process_terminated(move |view, reason| {
+			if reason == WebProcessTerminationReason::TerminatedByApi {
+				return;
+			}
+			eprintln!("deck: the web process for {what} ended ({reason:?})");
+			let now = std::time::Instant::now();
+			let again = last.replace(Some(now)).is_some_and(|t| now - t < std::time::Duration::from_secs(60));
+			if again {
+				crate::tell(&app, format!("{what} crashed again within a minute, so it was not reloaded. Quit deck from the tray and start it again."));
+				return;
+			}
+			view.reload();
+			let mut noticed = NOTICED.lock().unwrap();
+			if noticed.is_none_or(|t| now - t > std::time::Duration::from_secs(2)) {
+				*noticed = Some(now);
+				drop(noticed);
+				crate::tell(&app, format!("{what} crashed and was reloaded."));
+			}
+		});
+	});
+}
+
 // A window's webviews share a vertical box on Linux (Tauri ignores their
 // bounds there), each taking an equal share. The dev browser's toolbar keeps its
 // height, and the one tab shown fills the rest: hidden ones take no space.

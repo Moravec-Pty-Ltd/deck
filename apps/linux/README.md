@@ -8,10 +8,30 @@ so a server update needs no new shell.
 
 ## Install
 
-Download the AppImage or the deb from the
+Download the AppImage, the deb, or `deck-linux-x86_64.tar.gz` from the
 [releases](https://github.com/Moravec-Pty-Ltd/deck/releases). The AppImage
 updates itself from there; the deb updates through your package manager when
 you install a newer one.
+
+The AppImage carries Ubuntu 22.04's WebKitGTK. On a rolling distro (Arch, say)
+the tarball is the better choice: it is the bare binary, so it runs on your
+distro's WebKitGTK, which gets fixes far sooner. It needs the runtime packages
+(Arch: `webkit2gtk-4.1 libayatana-appindicator`; Debian and Ubuntu:
+`libwebkit2gtk-4.1-0 libayatana-appindicator3-1`). Voice mode also needs the
+GStreamer plugins (Arch: `gst-plugins-good gst-plugin-pipewire`; Debian and
+Ubuntu: `gstreamer1.0-plugins-good gstreamer1.0-pipewire`). It does not update itself:
+download the next release and install it the same way.
+
+```sh
+tar -xzf deck-linux-x86_64.tar.gz
+install -Dm755 deck/deck ~/.local/bin/deck
+install -Dm644 deck/deck.desktop ~/.local/share/applications/deck.desktop
+install -Dm644 deck/deck.png ~/.local/share/icons/hicolor/128x128/apps/deck.png
+update-desktop-database ~/.local/share/applications   # for deck:// links
+ldd ~/.local/bin/deck | grep webkit                    # the system's libwebkit2gtk-4.1.so.0
+```
+
+The launcher runs `deck`, so `~/.local/bin` must be on your session's `PATH`.
 
 On first launch, enter the server address (the one you open deck at in a
 browser, for example `https://deck.example.ts.net`), then sign in as usual.
@@ -26,6 +46,27 @@ sign-in, so there is nothing to set up.
 
 `deck --toggle` shows or hides the window. On GNOME without the global
 shortcuts portal, bind that command to a key in the keyboard settings.
+
+## Crashes
+
+The settings page shows the shell's version and the WebKitGTK it runs on, and
+the shell prints both at start (`deck: deck shell <version>, WebKitGTK <version>`).
+Put that line in a crash report.
+
+When WebKit's web process crashes, the shell reloads the page and says so. A
+page that crashes again within a minute is left alone, and the shell says that
+instead. A crash of the shell's own process can't be caught: start deck again.
+
+Under Wayland the shell sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` before GTK
+starts, the usual fix for WebKitGTK crashes and blank windows with newer GPU
+drivers. It leaves the variable alone if you set it yourself. To turn the
+renderer back on, start deck with `DECK_WEBKIT_DMABUF=1`; for the launcher and
+autostart too, put `DECK_WEBKIT_DMABUF=1` in `~/.config/environment.d/deck.conf`
+and log in again. To tell whether
+turning it off helps, run a few days each way and compare: crashes show in
+`journalctl --user -b | grep -i -e deck -e WebKitWebProcess` and in
+`coredumpctl list`. If the renderer makes no difference, it is the faster
+choice, so turn it back on.
 
 ## Build
 

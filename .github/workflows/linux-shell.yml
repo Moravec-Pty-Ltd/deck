@@ -1,4 +1,5 @@
-# Builds the Linux desktop shell (apps/linux) as an AppImage and a deb. A run
+# Builds the Linux desktop shell (apps/linux) as an AppImage, a deb, and a
+# tarball of the bare binary that runs on the system's WebKitGTK. A run
 # from the Actions tab keeps them as artifacts; pushing a linux-v* tag on a
 # commit of main also publishes a release, whose latest.json is what the
 # AppImage's updater reads. Only that release job sees the signing key or may
@@ -51,12 +52,20 @@ jobs:
       - name: Build
         run: npx --yes @tauri-apps/cli@2.12.5 build --bundles appimage deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
+      - name: Tarball
+        run: |
+          mkdir -p target/tarball/deck
+          cp target/release/deck tarball/deck.desktop target/tarball/deck/
+          cp icons/128x128.png target/tarball/deck/deck.png
+          tar -czf target/release/bundle/deck-linux-x86_64.tar.gz -C target/tarball deck
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deck-linux
           path: |
             apps/linux/target/release/bundle/appimage/*.AppImage
             apps/linux/target/release/bundle/deb/*.deb
+            apps/linux/target/release/bundle/deck-linux-x86_64.tar.gz
 
   release:
     needs: build
@@ -92,5 +101,5 @@ jobs:
             --arg sig "$(cat "$image.sig")" \
             --arg url "https://github.com/${{ github.repository }}/releases/download/$TAG/$name" \
             '{version: $version, pub_date: $date, platforms: {"linux-x86_64": {signature: $sig, url: $url}}}' > latest.json
-          gh release create "$TAG" --repo "${{ github.repository }}" --verify-tag --latest --title "deck for Linux ${TAG#linux-v}" --notes "AppImage (updates itself) and deb." \
-            "$image" "$image.sig" bundle/deb/*.deb latest.json
+          gh release create "$TAG" --repo "${{ github.repository }}" --verify-tag --latest --title "deck for Linux ${TAG#linux-v}" --notes "AppImage (updates itself), deb, and deck-linux-x86_64.tar.gz (runs on your system's WebKitGTK; update it by hand)." \
+            "$image" "$image.sig" bundle/deb/*.deb bundle/deck-linux-x86_64.tar.gz latest.json

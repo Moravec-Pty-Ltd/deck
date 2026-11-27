@@ -74,7 +74,10 @@ pub async fn open(app: AppHandle, session: Option<String>, url: Option<String>) 
 		e.to_string()
 	})?;
 	#[cfg(target_os = "linux")]
-	crate::linux::pin_height(&bar, BAR as i32);
+	{
+		crate::linux::pin_height(&bar, BAR as i32);
+		crate::linux::recover_crashes(&bar, "The dev browser's toolbar");
+	}
 	want(Some(bar), url);
 	Ok(())
 }
@@ -210,6 +213,8 @@ fn add_tab(window: &Window, label: &str, tab: &str) -> Result<Webview, String> {
 		.add_child(builder, LogicalPosition::new(0.0, BAR), LogicalSize::new(size.width, (size.height - BAR).max(0.0)))
 		.map_err(|e| e.to_string())?;
 	let (report_app, tab) = (window.app_handle().clone(), tab.to_string());
+	#[cfg(target_os = "linux")]
+	crate::linux::recover_crashes(&view, "A dev browser page");
 	#[cfg(target_os = "linux")]
 	crate::linux::browse_through(&view, proxy, move |url, title| {
 		if let Some(bar) = report_app.get_webview(&bar) {

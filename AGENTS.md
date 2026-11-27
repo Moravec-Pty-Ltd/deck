@@ -65,7 +65,8 @@ A Tauri v2 window onto the deck server, with a tray, notifications and Open in
 Zed. It loads the web app from the server and never bundles it; the web side of
 its bridge is `src/lib/shell.ts`, a no-op in a normal browser. See
 [apps/linux/README.md](apps/linux/README.md). Linux is its only
-target; the `Linux shell` workflow builds the AppImage and deb.
+target; the `Linux shell` workflow builds the AppImage, the deb and a tarball
+of the bare binary.
 
 ## Native apps (`apps/ios`)
 

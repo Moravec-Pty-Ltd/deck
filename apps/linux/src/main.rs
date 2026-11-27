@@ -191,10 +191,16 @@ fn open_settings(app: &AppHandle) {
 		let _ = w.set_focus();
 		return;
 	}
-	let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(SETTINGS_PAGE.into()))
+	let built = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(SETTINGS_PAGE.into()))
 		.title("deck settings")
 		.inner_size(520.0, 560.0)
 		.build();
+	#[cfg(target_os = "linux")]
+	if let Ok(window) = built {
+		linux::recover_crashes(window.as_ref(), "The settings page");
+	}
+	#[cfg(not(target_os = "linux"))]
+	let _ = built;
 }
 
 fn open_external(app: &AppHandle, url: &Url) {
@@ -210,7 +216,10 @@ fn build_main(app: &AppHandle, path: Option<&str>) -> tauri::Result<WebviewWindo
 	};
 	let window = shell_window(app, MAIN, start).title("deck").inner_size(1280.0, 860.0).min_inner_size(420.0, 360.0).build()?;
 	#[cfg(target_os = "linux")]
-	linux::tune_webview(&window);
+	{
+		linux::tune_webview(&window);
+		linux::recover_crashes(window.as_ref(), "deck's page");
+	}
 	Ok(window)
 }
 
@@ -250,7 +259,11 @@ fn shell_window<'a>(app: &'a AppHandle, label: &str, url: WebviewUrl) -> Webview
 			let label = format!("view-{}", VIEWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
 			let blank = WebviewUrl::External("about:blank".parse().unwrap());
 			match shell_window(app, &label, blank).window_features(features).title("deck").inner_size(1000.0, 760.0).build() {
-				Ok(window) => NewWindowResponse::Create { window },
+				Ok(window) => {
+					#[cfg(target_os = "linux")]
+					linux::recover_crashes(window.as_ref(), "deck's page");
+					NewWindowResponse::Create { window }
+				}
 				Err(_) => NewWindowResponse::Deny,
 			}
 		})
@@ -417,6 +430,7 @@ struct SettingsView {
 	shortcut: Option<String>,
 	autostart: bool,
 	shortcut_note: String,
+	versions: String,
 }
 
 #[tauri::command]
@@ -429,7 +443,16 @@ fn get_settings(app: AppHandle) -> SettingsView {
 		shortcut: settings.shortcut,
 		autostart: app.autolaunch().is_enabled().unwrap_or(false),
 		shortcut_note,
+		versions: versions(&app),
 	}
+}
+
+// Which shell and which WebKit, so a crash report says what crashed.
+fn versions(app: &AppHandle) -> String {
+	#[cfg(target_os = "linux")]
+	return format!("deck shell {}, WebKitGTK {}", app.package_info().version, linux::webkit_version());
+	#[cfg(not(target_os = "linux"))]
+	format!("deck shell {}", app.package_info().version)
 }
 
 // Async so the portal's confirmation dialog doesn't freeze the window.
@@ -591,6 +614,8 @@ async fn check_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
 }
 
 fn main() {
+	#[cfg(target_os = "linux")]
+	linux::choose_renderer();
 	tauri::Builder::default()
 		.plugin(tauri_plugin_single_instance::init(|app, argv, _| {
 			if argv.iter().any(|a| a == "--toggle") {
@@ -625,6 +650,7 @@ fn main() {
 			// reqwest and the tunnel's TLS use the process's crypto provider.
 			let _ = rustls::crypto::ring::default_provider().install_default();
 			let handle = app.handle().clone();
+			eprintln!("deck: {}", versions(&handle));
 			if let Some(scratch) = scratch_dir(&handle) {
 				let _ = std::fs::remove_dir_all(scratch);
 			}
@@ -647,7 +673,7 @@ fn main() {
 			let shortcut_app = handle.clone();
 			tauri::async_runtime::spawn(async move { apply_shortcut(&shortcut_app, settings.shortcut.as_deref()).await });
 
-			// The deb's desktop file registers deck://; an AppImage registers itself.
+			// The deb's and the tarball's desktop files register deck://; an AppImage registers itself.
 			if std::env::var_os("APPIMAGE").is_some() {
 				let _ = app.deep_link().register_all();
 			}
