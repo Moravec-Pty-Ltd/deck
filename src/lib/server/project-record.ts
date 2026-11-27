@@ -130,9 +130,10 @@ export function planStartFolder(rawCwd: unknown, createDir: unknown, registerPro
 	const given = startPath(rawCwd);
 	if (!given) error(400, 'cwd does not exist');
 	const create = !fs.existsSync(given);
-	if (create && createDir !== true) error(400, 'cwd does not exist');
 	const made = create ? newFolder(given) : { real: given };
+	// A folder it would refuse anyway says why, rather than that it is missing.
 	if ('refusal' in made) error(400, made.refusal);
+	if (create && createDir !== true) error(400, 'cwd does not exist');
 	const cwd = made.real;
 	if (registerProject === undefined) return { cwd, create };
 	return { cwd, create, project: registration(registerProject, cwd, create) };
