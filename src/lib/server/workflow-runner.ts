@@ -139,14 +139,28 @@ function startStep(run: WorkflowRun, step: WorkflowStep, visit: PhaseVisit, epoc
 const verifying = new Map<string, AbortController>();
 
 async function startVerify(run: WorkflowRun, step: WorkflowStep, visit: PhaseVisit, epoch: number): Promise<void> {
-	const { command, tests } = wexec.planVerify(run.cwd, step.command, projectOf(run));
+	const { command, tests, changed } = wexec.planVerify(run.cwd, step.command, projectOf(run), await baseCommit(run, step.command));
 	visit.tests = tests;
+	if (changed) return finish(run, epoch, { pass: false, detail: 'package.json scripts changed', ask: changedQuestion(run, changed) });
 	if (tests === 'missing') return askForTests(run, epoch);
 	if (!command) return finish(run, epoch, { pass: true, skipped: true, detail: 'the project is set to have no tests' });
 	visit.detail = command;
 	commit(run);
 	const { code, output } = await trackedVerify(run, command);
 	await finish(run, epoch, { pass: code === 0, detail: `${command} exited ${code}`, output });
+}
+
+// The commit verify reads package.json's scripts at; none needed when a
+// command is set. A run from before deck recorded it at start works it out
+// now: where the branch left its base.
+async function baseCommit(run: WorkflowRun, stepCommand: string | undefined): Promise<string | undefined> {
+	if (stepCommand || projectOf(run).testCommand) return undefined;
+	run.baseCommit ??= await wexec.forkPoint(run.cwd, run.base);
+	return run.baseCommit;
+}
+
+function changedQuestion(run: WorkflowRun, changed: string[]): string {
+	return core.changedScriptsQuestion(run.base ?? 'the base branch', changed);
 }
 
 async function askForTests(run: WorkflowRun, epoch: number): Promise<void> {
@@ -311,9 +325,12 @@ const followUpGate: Gate = async (run) => {
 	const state = await wexec.pushState(run.cwd, run.followUp!.head);
 	const problem = core.followUpProblem(state, run.followUp!.head, run.branch);
 	if (problem) return { pass: false, detail: problem };
-	const { command, tests: plan } = followUpPlan(run);
+	const { command, tests: plan, changed } = await followUpPlan(run);
 	const visit = openVisit(run);
 	if (visit) visit.tests = plan;
+	// A plain failure, not a question: the run is on its fix step, which an
+	// answer would only re-run. followUpStart names the scripts up front.
+	if (changed) return { pass: false, detail: `${core.changedScriptsNotice(run.base ?? 'the base branch', changed)} ${SET_COMMAND}` };
 	if (plan === 'missing') return { pass: false, detail: NO_TEST_COMMAND };
 	const tests = command ? await trackedVerify(run, command) : { code: 0, output: '' };
 	if (tests.code !== 0) return { pass: false, detail: `${command} exited ${tests.code} on the pushed commit` };
@@ -321,9 +338,11 @@ const followUpGate: Gate = async (run) => {
 };
 
 const NO_TEST_COMMAND = 'no test command found; set one, or turn on "no tests", in the project settings';
+const SET_COMMAND = 'Set a test command, or turn on "no tests", in the project settings.';
 
-function followUpPlan(run: WorkflowRun): core.VerifyPlan {
-	return wexec.planVerify(run.cwd, run.steps.find((s) => s.role === 'verify')?.command, projectOf(run));
+async function followUpPlan(run: WorkflowRun): Promise<core.VerifyPlan> {
+	const command = run.steps.find((s) => s.role === 'verify')?.command;
+	return wexec.planVerify(run.cwd, command, projectOf(run), await baseCommit(run, command));
 }
 
 function gateFor(run: WorkflowRun, step: WorkflowStep): Gate {
@@ -602,11 +621,13 @@ export async function startRun(req: StartRunRequest): Promise<WorkflowRun> {
 	if (activeIn(real)) error(409, 'a run is already active in that worktree');
 	const place = await placeRun(project, req, real, base);
 	if (activeIn(resolveWithinProjects(place.cwd) ?? place.cwd)) error(409, 'a run is already active in that worktree');
+	const baseCommit = await wexec.forkPoint(place.cwd, place.base);
 	const run = core.newRun({
 		id: `r_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
 		def,
 		projectPath: project.path,
 		...place,
+		baseCommit,
 		title: startTitle(req, place.branch),
 		issue: req.issue,
 		pr: req.pr,
@@ -752,14 +773,15 @@ const cancel: Handler = async (run, _body, actor) => {
 // changed on the project meanwhile also counts; anything else would only block
 // the run on the same question again.
 // Returns whether the answer was such a setting.
-function answerNoTests(run: WorkflowRun, text: string, actor: Actor): boolean {
+async function answerNoTests(run: WorkflowRun, text: string, actor: Actor): Promise<boolean> {
 	if (actor.by === 'overseer') error(409, 'only a person can set or skip a project\'s tests');
 	const patch = core.parseTestsAnswer(text);
 	if (patch) {
 		if (!updateProject(run.projectPath, patch)) error(409, 'the project is no longer registered');
 		return true;
 	}
-	if (wexec.planVerify(run.cwd, core.currentStep(run)?.command, projectOf(run)).tests === 'missing') {
+	const command = core.currentStep(run)?.command;
+	if (wexec.planVerify(run.cwd, command, projectOf(run), await baseCommit(run, command)).tests === 'missing') {
 		error(400, 'answer "test: <command>" or "no tests"');
 	}
 	return false;
@@ -770,7 +792,7 @@ const answer: Handler = async (run, body, actor) => {
 	const text = str(body.text);
 	if (!text) error(400, 'text is required');
 	// A project setting is not advice for a later phase's prompt.
-	const setting = run.block?.kind === 'no-tests' && answerNoTests(run, text, actor);
+	const setting = run.block?.kind === 'no-tests' && (await answerNoTests(run, text, actor));
 	if (!setting) run.answers.push({ text, at: Date.now() });
 	await resume(run, {}, { ...actor, reason: actor.reason || text });
 };
@@ -869,7 +891,9 @@ function fixableStep(run: WorkflowRun): WorkflowStep {
 async function followUpStart(run: WorkflowRun): Promise<string> {
 	const view = await reviewView(run);
 	if (view.state !== 'OPEN') error(409, `the PR is ${view.state.toLowerCase()}, so there is nothing to push to`);
-	if (followUpPlan(run).tests === 'missing') error(409, NO_TEST_COMMAND);
+	const plan = await followUpPlan(run);
+	if (plan.changed) error(409, `${core.changedScriptsNotice(run.base ?? 'the base branch', plan.changed)} ${SET_COMMAND}`);
+	if (plan.tests === 'missing') error(409, NO_TEST_COMMAND);
 	return wexec.headCommit(run.cwd);
 }
 

@@ -867,14 +867,20 @@ project's \`testCommand\`, else the root package.json's \`test\` script (so a pr
 \`block.kind: "no-tests"\`; answering \`test: <command>\` or \`no tests\` saves
 \`testCommand\` or \`noTests\` on the project and resumes, and any other answer
 is a 400. A project with \`noTests\` goes on (running the type check if there is
-one). The digest carries \`testsSkipped\`, a sentence to show, when no tests ran:
-that, or a person resumed past the question (the overseer gets a 409). Implement, fix, arbiter and closer phases are told to check their work
+one). A detected command runs package.json scripts, so verify compares them
+with the commit the run started from; when the run changed them it blocks with
+the same \`no-tests\` question rather than run them. The digest carries
+\`testsSkipped\`, a sentence to show, when no passing tests stand behind the
+run: none ran, a person resumed past the question (the overseer gets a 409) or
+past a failing verify, or a dev workflow has no verify step. Implement, fix, arbiter and closer phases are told to check their work
 with at most a type check and the single test file they changed; the review
 phase runs no tests and reads verify's result instead. The verify command is
 stopped after 20 minutes of running time. Time spent queued for a shared test
 slot does not count: verify sets \`DECK_VERIFY_WAIT_FILE\` to a path, and a
 queueing wrapper creates that file while it waits and removes it once its turn
-comes, which pauses the clock.
+comes, which pauses the clock, up to two hours in all. The command runs with
+only the environment variables tools need (PATH, HOME, locale and toolchain
+homes, by name), not deck's token or other secrets.
 
 ### GET /api/agent/workflows
 

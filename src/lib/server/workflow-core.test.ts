@@ -27,7 +27,10 @@ import {
 	stepById,
 	type GateResult,
 	type PrReviewView,
-	verifyPlan
+	verifyPlan,
+	testsSkipped,
+	verifyEnv,
+	changedScriptsQuestion
 } from './workflow-core';
 import type { Finding, WorkflowRun } from '$lib/workflows';
 
@@ -400,6 +403,62 @@ describe('gates from outside data', () => {
 		expect(verifyPlan(undefined, { noTests: true }, { check: 'tsc' }, pnpm)).toEqual({ command: 'pnpm run check', tests: 'skipped' });
 		// Opting out never hides tests that exist.
 		expect(verifyPlan(undefined, { noTests: true }, { test: 'vitest' }, pnpm).tests).toBe('run');
+	});
+
+	it('asks a person when the run changed the scripts a detected command would run', () => {
+		const pnpm = ['pnpm-lock.yaml'];
+		const base = { check: 'tsc', test: 'vitest' };
+		expect(verifyPlan(undefined, {}, { test: 'vitest', check: 'tsc' }, pnpm, base).command).toBe('pnpm run check && pnpm test');
+		expect(verifyPlan(undefined, {}, { ...base, test: 'node x.js' }, pnpm, base)).toEqual({ command: null, tests: 'missing', changed: ['test'] });
+		expect(verifyPlan(undefined, {}, { ...base, pretest: 'node x.js' }, pnpm, base)).toEqual({ command: null, tests: 'missing', changed: ['pretest'] });
+		expect(verifyPlan(undefined, {}, base, pnpm, {}).changed).toEqual(['check', 'test']);
+		// The owner's command runs as given; an opt-out skips rather than asking again.
+		expect(verifyPlan('make test', {}, { test: 'node x.js' }, pnpm, base)).toEqual({ command: 'make test', tests: 'run' });
+		expect(verifyPlan(undefined, { noTests: true }, { test: 'node x.js' }, pnpm, base)).toEqual({ command: null, tests: 'skipped' });
+		expect(changedScriptsQuestion('main', ['pretest', 'test'])).toContain('(pretest, test)');
+	});
+
+	it('never says tests ran in a workflow with no Tests step', () => {
+		const run = devRun();
+		expect(testsSkipped(run)).toBeUndefined();
+		run.steps = run.steps.filter((s) => s.role !== 'verify');
+		expect(testsSkipped(run)).toContain('no Tests step');
+	});
+
+	it('says tests passed only after a passing Tests step', () => {
+		const run = devRun();
+		const at = (role: string) => run.steps.find((s) => s.role === role)!.id;
+		const visit = (role: string, extra = {}) => run.visits.push({ ...run.visits[0], step: at(role), ...extra });
+		visit('review'); // moved past verify without running it
+		expect(testsSkipped(run)).toContain('did not pass');
+		run.visits.splice(1);
+		// A failing verify going round its fix loop is not moved on.
+		visit('verify', { tests: 'run', result: 'fail' });
+		visit('fix');
+		expect(testsSkipped(run)).toBeUndefined();
+		visit('review'); // a person resumed past the failure
+		expect(testsSkipped(run)).toContain('did not pass');
+		visit('verify', { tests: 'run', result: 'pass' });
+		visit('review');
+		visit('fix');
+		expect(testsSkipped(run)).toBeUndefined();
+		// A review workflow has no Tests step and says nothing about tests.
+		expect(testsSkipped({ ...run, category: 'review', steps: run.steps.filter((s) => s.role !== 'verify') })).toBeUndefined();
+		// Cancelled mid-run is not "moved on".
+		run.visits.splice(1);
+		visit('verify', { tests: 'run', result: 'fail' });
+		expect(testsSkipped({ ...run, status: 'cancelled' })).toBeUndefined();
+		visit('review');
+		expect(testsSkipped({ ...run, status: 'cancelled' })).toBeUndefined();
+	});
+
+	it('keeps only what tools need from the environment', () => {
+		const kept = verifyEnv({
+			PATH: '/bin', HOME: '/home/a', LC_ALL: 'C', PNPM_HOME: '/p', HOMEBREW_PREFIX: '/opt/homebrew',
+			DECK_TOKEN: 'x', GITHUB_TOKEN: 'y', AWS_SECRET_ACCESS_KEY: 'z', HOMEBREW_GITHUB_API_TOKEN: 'w', GEM_HOST_API_KEY: 'v',
+			HTTPS_PROXY: 'http://u:p@proxy', LC_AUTH_TOKEN: 'u'
+		});
+		expect(kept).toEqual({ PATH: '/bin', HOME: '/home/a', LC_ALL: 'C', PNPM_HOME: '/p', HOMEBREW_PREFIX: '/opt/homebrew' });
 	});
 
 	it('names the sub-packages in the question, up to a limit', () => {

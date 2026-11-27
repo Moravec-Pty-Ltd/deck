@@ -12,7 +12,7 @@ vi.mock('./confine', () => ({
 	confineRelative: (root: string, rel: string) => path.join(root, rel)
 }));
 
-const { deltaBetween, pushState, runVerify, snapshotTree, testSubpackages, syncPullWorktree, toplevel } = await import('./workflow-exec');
+const { deltaBetween, forkPoint, planVerify, pushState, runVerify, snapshotTree, testSubpackages, syncPullWorktree, toplevel } = await import('./workflow-exec');
 
 const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-exec-'));
 const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
@@ -111,10 +111,58 @@ describe('runVerify', () => {
 		expect(result.code).not.toBe(0);
 	});
 
+	it('stops at the ceiling even while the command says it is waiting', async () => {
+		const result = await runVerify(repo, 'touch "$DECK_VERIFY_WAIT_FILE"; sleep 30', undefined, 10_000, 300);
+		expect(result.code).not.toBe(0);
+		expect(result.output).toContain('stopped by deck after');
+	});
+
+	it('runs without deck\'s own variables', async () => {
+		process.env.DECK_TOKEN = 'not-a-real-token';
+		try {
+			expect((await runVerify(repo, 'echo "[${DECK_TOKEN:-unset}] $CI"')).output).toBe('[unset] 1\n');
+		} finally {
+			delete process.env.DECK_TOKEN;
+		}
+	});
+
 	it('pauses the timeout while the command says it is waiting in a queue', async () => {
 		// Waits 600 ms behind the wait file, then runs for 100 ms: only the 100 ms count.
 		const queued = 'touch "$DECK_VERIFY_WAIT_FILE"; sleep 0.6; rm "$DECK_VERIFY_WAIT_FILE"; sleep 0.1; echo done';
 		expect(await runVerify(repo, queued, undefined, 400)).toEqual({ code: 0, output: 'done\n' });
+	});
+});
+
+describe('planVerify', () => {
+	it('compares the scripts at the commit the run started from, not with what the run wrote', async () => {
+		const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deck-plan-')));
+		const g = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+		const manifest = (test: string) => fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test } }));
+		const project = { name: 'acme', path: dir };
+		try {
+			g('init', '-q', '-b', 'main');
+			g('config', 'user.email', 'test@example.com');
+			g('config', 'user.name', 'test');
+			manifest('vitest');
+			g('add', '-A');
+			g('commit', '-qm', 'base');
+			g('checkout', '-qb', 'feature');
+			const start = await forkPoint(dir, 'main');
+			expect(start).toBe(g('rev-parse', 'main').trim());
+			expect(planVerify(dir, undefined, project, start)).toEqual({ command: 'npm test', tests: 'run' });
+			manifest('node x.js');
+			expect(planVerify(dir, undefined, project, start).changed).toEqual(['test']);
+			// Committing on the branch, or moving main to it, does not change the recorded start.
+			g('commit', '-qam', 'change');
+			g('branch', '-f', 'main', 'feature');
+			expect(planVerify(dir, undefined, project, start).changed).toEqual(['test']);
+			expect(planVerify(dir, undefined, { ...project, testCommand: 'make test' }, start).command).toBe('make test');
+			// No base to read reads as changed, never as the branch's own scripts.
+			expect(await forkPoint(dir, 'no-such-branch')).toBeUndefined();
+			expect(planVerify(dir, undefined, project, undefined).changed).toEqual(['test']);
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 
