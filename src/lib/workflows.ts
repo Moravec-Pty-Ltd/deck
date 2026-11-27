@@ -201,6 +201,9 @@ export interface WorkflowRun {
 	cwd: string;
 	branch: string;
 	base?: string;
+	// Where the branch left its base when the run started. Verify reads
+	// package.json's scripts here, where no phase of the run could change them.
+	baseCommit?: string;
 	title: string;
 	issue?: SessionIssue;
 	pr?: RunPr;

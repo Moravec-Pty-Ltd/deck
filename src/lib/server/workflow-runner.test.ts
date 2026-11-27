@@ -115,6 +115,7 @@ vi.mock('./workflow-exec', () => ({
 		return [`src/hand.ts:L1-3`];
 	},
 	currentBranch: async () => 'feature',
+	forkPoint: async () => 'abc1234',
 	headCommit: async () => fake.git.head,
 	pushState: async () => ({ branch: 'acme-web-7', upstreamRef: 'origin/acme-web-7', remote: 'origin', clean: true, descends: true, ...fake.git }),
 	syncPullWorktree: async (cwd: string, n: number) => void fake.synced.push([cwd, n]),
@@ -340,6 +341,18 @@ describe('a project with no test command', () => {
 		expect(run.block?.question).toContain('apps/web');
 		expect(fake.created).toHaveLength(1);
 		expect(fake.notified.at(-1)).toMatchObject({ reason: 'needs-you' });
+	});
+
+	it('asks for a command when the run changed package.json scripts', async () => {
+		fake.plan = { command: null, tests: 'missing', changed: ['test'] };
+		const run = await start();
+		await finishTurn(run);
+		expect(run).toMatchObject({ status: 'blocked', phase: 'verify', block: { kind: 'no-tests' } });
+		expect(run.block?.question).toContain('changed package.json scripts (test)');
+		expect(run.baseCommit).toBe('abc1234');
+		await runner.runAction(run.id, 'answer', { text: 'test: make test' });
+		await settle();
+		expect(run.visits.find((v) => v.step === 'verify' && v.result === 'pass')?.detail).toBe('make test exited 0');
 	});
 
 	it('saves a command answer on the project and runs it', async () => {
@@ -1036,6 +1049,13 @@ describe('fixing leftover findings', () => {
 		const run = await doneWithNit();
 		fake.plan = { command: null, tests: 'missing' };
 		await expect(runner.runAction(run.id, 'fix-findings', {})).rejects.toMatchObject({ status: 409 });
+		expect(run.status).toBe('done');
+	});
+
+	it('refuses, naming the scripts, when the branch changed package.json scripts', async () => {
+		const run = await doneWithNit();
+		fake.plan = { command: null, tests: 'missing', changed: ['test'] };
+		await expect(runner.runAction(run.id, 'fix-findings', {})).rejects.toMatchObject({ status: 409, body: { message: expect.stringContaining('(test)') } });
 		expect(run.status).toBe('done');
 	});
 

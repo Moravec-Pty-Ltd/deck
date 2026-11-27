@@ -2,7 +2,7 @@
 // of the working tree, the verify command, and the gh queries. Every one runs
 // inside a registered project or its worktrees (confine.ts); a run whose cwd
 // has left that set gets an error, not a command.
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,13 +10,16 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { confineRelative, resolveWithinProjects } from './confine';
 import { isFlagSafe } from './agents/args';
-import { deltaRanges, verifyPlan, type PrReviewView, type VerifyPlan } from './workflow-core';
+import { baseRefCandidates } from './diff-core';
+import { deltaRanges, verifyEnv, verifyPlan, type PrReviewView, type VerifyPlan } from './workflow-core';
 import type { Project } from '$lib/types';
 import type { PushState, WorkflowRun } from '$lib/workflows';
 
 const exec = promisify(execFile);
 const GH_TIMEOUT_MS = 30_000;
 const VERIFY_TIMEOUT_MS = 20 * 60_000;
+// However long it waits for a test slot, a verify command stops after this.
+const VERIFY_CEILING_MS = 2 * 60 * 60_000;
 const VERIFY_TICK_MS = 1000;
 const OUTPUT_TAIL = 4000;
 
@@ -108,11 +111,37 @@ function lockfiles(root: string): string[] {
 	return ['pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'].filter((f) => fs.existsSync(path.join(root, f)));
 }
 
+// Where HEAD left its base branch (origin's first, then local, then the
+// remote's default branch), for the run to record before any phase runs.
+// Undefined when none resolves, which verify reads as changed scripts.
+export async function forkPoint(cwd: string, base: string | undefined): Promise<string | undefined> {
+	const refs = [...(base && isFlagSafe(base) ? baseRefCandidates(base) : []), 'origin/HEAD'];
+	for (const ref of refs) {
+		const commit = await git(cwd, ['merge-base', ref, 'HEAD']).catch(() => '');
+		if (commit) return commit;
+	}
+	return undefined;
+}
+
+// package.json's scripts at the run's base commit. None there, or no commit,
+// reads as no scripts, so a run that adds them is asked about too.
+function baseScripts(root: string, commit: string | undefined): Record<string, string> {
+	if (!commit || !/^[0-9a-f]{7,64}$/.test(commit)) return {};
+	try {
+		const out = execFileSync('git', ['-C', root, 'show', `${commit}:./package.json`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 });
+		return JSON.parse(out).scripts || {};
+	} catch {
+		return {};
+	}
+}
+
 // A step's own command wins: a workflow may have several verify steps, and the
 // project's command must not replace a lint one.
-export function planVerify(cwd: string, stepCommand: string | undefined, project: Project): VerifyPlan {
+export function planVerify(cwd: string, stepCommand: string | undefined, project: Project, baseCommit?: string): VerifyPlan {
 	const root = confined(cwd);
-	return verifyPlan(stepCommand || project.testCommand, project, readScripts(root), lockfiles(root));
+	const command = stepCommand || project.testCommand;
+	const scripts = readScripts(root);
+	return verifyPlan(command, project, scripts, lockfiles(root), command ? scripts : baseScripts(root, baseCommit));
 }
 
 // Directories below the root whose package.json has a test script. Listed by
@@ -142,28 +171,35 @@ function killGroup(pid: number | undefined): void {
 // The timeout counts only time the command is running, not time it spends queued
 // for a shared resource (a test slot other runs hold). A queueing wrapper says it
 // is waiting by creating the file named in DECK_VERIFY_WAIT_FILE and removes it
-// once its turn comes; the clock is paused while that file exists.
+// once its turn comes; the clock is paused while that file exists, up to an
+// overall ceiling.
 export function runVerify(
 	cwd: string,
 	command: string,
 	signal?: AbortSignal,
-	timeoutMs = VERIFY_TIMEOUT_MS
+	timeoutMs = VERIFY_TIMEOUT_MS,
+	ceilingMs = VERIFY_CEILING_MS
 ): Promise<{ code: number; output: string }> {
 	const waitFile = path.join(os.tmpdir(), `deck-verify-wait-${process.pid}-${crypto.randomUUID()}`);
-	const env = { ...process.env, CI: '1', DECK_VERIFY_WAIT_FILE: waitFile };
+	const env = { ...verifyEnv(process.env), CI: '1', DECK_VERIFY_WAIT_FILE: waitFile };
 	const child = spawn('sh', ['-c', command], { cwd: confined(cwd), env, detached: true });
 	let output = '';
 	const collect = (chunk: Buffer) => (output = (output + chunk.toString()).slice(-OUTPUT_TAIL));
 	child.stdout.on('data', collect);
 	child.stderr.on('data', collect);
 	const stop = () => killGroup(child.pid);
+	let limit = '';
 	let ran = 0;
-	let last = Date.now();
+	const started = Date.now();
+	let last = started;
 	const clock = setInterval(() => {
 		const now = Date.now();
 		if (!fs.existsSync(waitFile)) ran += now - last;
 		last = now;
-		if (ran >= timeoutMs) stop();
+		if (!limit && (ran >= timeoutMs || now - started >= ceilingMs)) {
+			limit = `\n(stopped by deck after ${Math.round((ran >= timeoutMs ? timeoutMs : ceilingMs) / 60_000)} minutes)`;
+			stop();
+		}
 	}, Math.min(VERIFY_TICK_MS, timeoutMs / 4));
 	signal?.addEventListener('abort', stop, { once: true });
 	return new Promise((resolve) => {
@@ -172,7 +208,7 @@ export function runVerify(
 			clearInterval(clock);
 			fs.rmSync(waitFile, { force: true });
 			signal?.removeEventListener('abort', stop);
-			resolve({ code: code ?? 1, output: output || 'command failed' });
+			resolve({ code: code ?? 1, output: (output || 'command failed') + limit });
 		});
 	});
 }

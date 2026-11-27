@@ -23,6 +23,7 @@ import {
 	type RunPr,
 	type RunStarter,
 	type StepAgent,
+	type StepRole,
 	type VerifyTests,
 	type WorkflowCategory,
 	type WorkflowDef,
@@ -277,6 +278,7 @@ export interface NewRunInput {
 	cwd: string;
 	branch: string;
 	base?: string;
+	baseCommit?: string;
 	title: string;
 	issue?: SessionIssue;
 	pr?: RunPr;
@@ -297,6 +299,7 @@ export function newRun(input: NewRunInput): WorkflowRun {
 		cwd: input.cwd,
 		branch: input.branch,
 		base: input.base,
+		...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
 		title: input.title,
 		issue: input.issue,
 		pr: input.pr,
@@ -896,21 +899,65 @@ export function detectVerifyCommand(scripts: Record<string, string> | undefined,
 export interface VerifyPlan {
 	command: string | null;
 	tests: VerifyTests;
+	// The scripts the run changed, so a detected command would run what a phase
+	// wrote: verify waits for a person to set the command.
+	changed?: string[];
 }
 
+// Every script is compared, not just the ones verify names: a test script can
+// run any other.
+function changedScripts(a: Record<string, string> = {}, b: Record<string, string> = {}): string[] {
+	return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => a[k] !== b[k]).sort();
+}
+
+// A detected command runs package.json scripts, which a phase can edit, so they
+// must match the base branch's. A command set on the step or project is the
+// owner's and runs as given.
 export function verifyPlan(
 	override: string | undefined,
 	project: Pick<Project, 'noTests'>,
 	scripts: Record<string, string> | undefined,
-	lockfiles: string[]
+	lockfiles: string[],
+	baseScripts: Record<string, string> | undefined = scripts
 ): VerifyPlan {
 	if (override) return { command: override, tests: 'run' };
+	const changed = changedScripts(scripts, baseScripts);
+	if (changed.length) return project.noTests ? { command: null, tests: 'skipped' } : { command: null, tests: 'missing', changed };
 	const command = detectVerifyCommand(scripts, lockfiles);
 	if (scripts?.test) return { command, tests: 'run' };
 	return project.noTests ? { command, tests: 'skipped' } : { command: null, tests: 'missing' };
 }
 
 const SUBPACKAGES_SHOWN = 10;
+
+export function changedScriptsNotice(base: string, changed: string[]): string {
+	return `This run changed package.json scripts (${changed.join(', ')}), so the Tests step will not run them: it runs only the scripts on ${base}, or a command set for the project.`;
+}
+
+export function changedScriptsQuestion(base: string, changed: string[]): string {
+	return `${changedScriptsNotice(base, changed)} Answer "test: <command>" to set one for this project from now on, or "no tests" to skip tests for it. A command that runs package.json scripts, such as "pnpm test", runs this run's scripts.`;
+}
+
+// What a verify command keeps of deck's environment: what tools need to find
+// themselves and their caches, by exact name, and never a name that looks like
+// a credential. Not proxies, whose URLs can carry one.
+const VERIFY_ENV = new Set([
+	'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LANGUAGE', 'TZ', 'TERM',
+	'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR',
+	'NVM_DIR', 'NVM_BIN', 'NVM_INC', 'FNM_DIR', 'FNM_MULTISHELL_PATH', 'MISE_DATA_DIR', 'MISE_CONFIG_DIR', 'ASDF_DIR', 'ASDF_DATA_DIR',
+	'PNPM_HOME', 'COREPACK_HOME', 'VOLTA_HOME', 'BUN_INSTALL', 'NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS',
+	'JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'GOPATH', 'GOROOT', 'CARGO_HOME', 'RUSTUP_HOME',
+	'PYENV_ROOT', 'VIRTUAL_ENV', 'CONDA_PREFIX', 'CONDA_DEFAULT_ENV', 'GEM_HOME', 'GEM_PATH', 'RBENV_ROOT',
+	'DEVELOPER_DIR', 'SDKROOT', 'HOMEBREW_PREFIX', 'HOMEBREW_CELLAR', 'HOMEBREW_REPOSITORY', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
+	'NO_PROXY', 'no_proxy', 'DOCKER_HOST', 'PLAYWRIGHT_BROWSERS_PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS'
+]);
+const CREDENTIAL_NAME = /TOKEN|KEY|SECRET|PASSWORD|PASSWD|AUTH|CRED/i;
+
+export function verifyEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	return Object.fromEntries(
+		Object.entries(env).filter(([k]) => (VERIFY_ENV.has(k) || k.startsWith('LC_')) && !CREDENTIAL_NAME.test(k))
+	);
+}
 
 export function noTestsQuestion(name: string, subpackages: string[]): string {
 	const more = subpackages.length - SUBPACKAGES_SHOWN;
@@ -1080,9 +1127,36 @@ export function testsUnsettled(run: WorkflowRun): boolean {
 // run hasn't got past verify).
 export function testsSkipped(run: WorkflowRun): string | undefined {
 	const outcome = testsOutcome(run);
+	if (!stepWithRole(run, 'verify')) return run.category === 'dev' ? 'Tests skipped: this workflow has no Tests step.' : undefined;
 	if (outcome === 'skipped') return 'Tests skipped: no test command was found and this project is set to have no tests.';
 	const past = outcome === 'missing' && !testsUnsettled(run);
-	return past ? 'Tests skipped: the run was moved past verify, which found no test command.' : undefined;
+	if (past) return 'Tests skipped: the run was moved past verify, which found no test command.';
+	if (outcome === 'missing' || !pastVerify(run) || testsPassed(run)) return undefined;
+	return 'Tests did not pass: the run was moved on without a passing Tests step.';
+}
+
+const AFTER_TESTS: StepRole[] = ['review', 'pr', 'feedback', 'pr-review'];
+
+// The run went on to a step that relies on the tests (review, PR) after its
+// last Tests visit, or is over. A fix loop back to the tests is not past them.
+function pastVerify(run: WorkflowRun): boolean {
+	if (run.status === 'done') return true;
+	if (run.status === 'cancelled') return false;
+	const last = run.visits.findLastIndex((v) => stepById(run, v.step)?.role === 'verify');
+	return run.visits.slice(last + 1).some((v) => AFTER_TESTS.includes(stepById(run, v.step)?.role as StepRole));
+}
+
+// Every Tests step's latest visit ran tests and passed; a follow-up fix's own
+// test run, when it is the newest, stands for them.
+function testsPassed(run: WorkflowRun): boolean {
+	const newest = run.visits.findLast((v) => v.tests);
+	if (newest && stepById(run, newest.step)?.role !== 'verify') return newest.tests === 'run' && newest.result === 'pass';
+	return run.steps
+		.filter((s) => s.role === 'verify')
+		.every((s) => {
+			const last = visitsOf(run, s.id).at(-1);
+			return last?.tests === 'run' && last.result === 'pass';
+		});
 }
 
 export function runDigest(run: WorkflowRun, baseUrl: string): RunDigest {
