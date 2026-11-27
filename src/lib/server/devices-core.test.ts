@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deviceFor, deviceName, mintDevice, upgradesCookie } from './devices-core';
+import { deviceFor, deviceName, mintDevice, upgradesCookie, withoutDevice } from './devices-core';
 
 describe('device credentials', () => {
 	it('matches only the device it was minted for, and stores no secret', () => {
@@ -14,6 +14,13 @@ describe('device credentials', () => {
 		expect(deviceFor([b.device], a.credential)).toBeNull();
 		expect(deviceFor([a.device], 'not-a-credential')).toBeNull();
 		expect(deviceFor([a.device], null)).toBeNull();
+	});
+
+	it('revokes the devices a device made along with it', () => {
+		const d = (id: string, by?: string) => ({ id, name: id, createdAt: 0, hash: '', ...(by ? { by } : {}) });
+		const list = [d('a'), d('b', 'a'), d('c', 'b'), d('e')];
+		expect(withoutDevice(list, 'a').map((x) => x.id)).toEqual(['e']);
+		expect(withoutDevice(list, 'b').map((x) => x.id)).toEqual(['a', 'e']);
 	});
 
 	it('upgrades an old cookie only on a page load', () => {

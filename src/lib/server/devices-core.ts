@@ -10,6 +10,18 @@ export interface Device {
 	createdAt: number;
 	lastSeenAt?: number;
 	hash: string;
+	// The device that made this one (a sign-in QR), so revoking it revokes these.
+	by?: string;
+}
+
+// The devices left after revoking `id` and every device it made, at any depth.
+export function withoutDevice(devices: Device[], id: string): Device[] {
+	const gone = new Set([id]);
+	for (let grew = true; grew; ) {
+		grew = false;
+		for (const d of devices) if (d.by && gone.has(d.by) && !gone.has(d.id)) grew = !!gone.add(d.id);
+	}
+	return devices.filter((d) => !gone.has(d.id));
 }
 
 const CREDENTIAL = /^deck-device\.([\w-]{12})\.([\w-]{43})$/;

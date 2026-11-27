@@ -1,5 +1,5 @@
 import { readJson, tokenMatches, writeJson } from './config';
-import { deviceFor, mintDevice, SEEN_EVERY_MS, type Device } from './devices-core';
+import { deviceFor, mintDevice, SEEN_EVERY_MS, withoutDevice, type Device } from './devices-core';
 
 // The signed-in devices (S9), in ~/.deck/devices.json (mode 0600). Read once and
 // kept in memory: every request checks a credential against it.
@@ -25,15 +25,16 @@ export function listDevices(): Device[] {
 }
 
 // A new device and the credential to hand it; the credential is never stored.
-export function addDevice(name: string): { device: Device; credential: string } {
+export function addDevice(name: string, by?: string): { device: Device; credential: string } {
 	const minted = mintDevice(name, Date.now());
+	if (by) minted.device.by = by;
 	save([...devices(), minted.device]);
 	return minted;
 }
 
 export function revokeDevice(id: string): boolean {
 	const list = devices();
-	const next = list.filter((d) => d.id !== id);
+	const next = withoutDevice(list, id);
 	if (next.length === list.length) return false;
 	save(next);
 	return true;

@@ -1501,8 +1501,7 @@ Rotates deck's token: the old one, and every agent token derived from it, stop
 working at once. Devices with their own credential stay signed in; anything that
 still holds deck's token (an app signed in before devices had their own, a
 script) must sign in again. Open connections (a tunnel, a terminal, an event
-poll) run until they end. Any signed-in device can make credentials for others,
-and revoking it does not revoke those. The new token is written to
+poll) run until they end. Revoking a device also revokes the credentials it made. The new token is written to
 ~/.deck/token and never returned. A 409 when \`DECK_TOKEN\` pins the token.
 
 ## Push notifications
