@@ -65,6 +65,7 @@ actor OperatorConsent {
 	/// A plain yes: a yes word, one of a few short phrases, or both, with an
 	/// optional "please". Anything more ("yes, but...", "yes what is that") is not.
 	static func isYes(_ text: String) -> Bool {
+		// A number names something ("yes 2", "session 3"), so it is never a plain yes.
 		if text.contains(where: \.isNumber) { return false }
 		var words = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
 			.components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "'")).inverted)
