@@ -27,9 +27,12 @@ Base URL: ${baseUrl}
 
 ## Authentication
 
-Send the shared token on every /api request (deck-spawned agents find it in
-\`$DECK_TOKEN\`, alongside \`$DECK_BASE_URL\`; otherwise it's in ~/.deck/token).
-A review session gets no token: it runs in a pull request's checkout. One
+Send the shared token on every /api request (it's in ~/.deck/token).
+deck-spawned agents get their own token in \`$DECK_TOKEN\`, alongside
+\`$DECK_BASE_URL\`: it works only on /api/agent routes, not on
+/api/agent/settings, /credentials, /accounts, /pairing, /user or
+/projects/config, /sources and /remote; it lists projects but registers
+none; and it works only while its session exists. A review session gets no token: it runs in a pull request's checkout. One
 reviewing a PR from a fork also runs read-only (claude with only its read and
 search tools and deck's MCP tools, without the checkout's own .claude settings
 and with no watch check commands; codex in its read-only sandbox; other agents

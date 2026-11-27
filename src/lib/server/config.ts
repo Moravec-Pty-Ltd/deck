@@ -54,8 +54,15 @@ export const morabotStatusPath = process.env.DECK_MORABOT_STATUS?.trim() || null
 
 const tokenFile = path.join(dataDir, 'token');
 
+// A token set in the environment is read once and then taken out of it, so no
+// child process (git, tmux, a test command) inherits deck's whole access. Kept
+// on globalThis for a dev server's module reload, which reads this again.
+const tokenCache = globalThis as { __deckEnvToken?: string };
+tokenCache.__deckEnvToken ??= process.env.DECK_TOKEN || undefined;
+delete process.env.DECK_TOKEN;
+
 function loadToken(): string {
-	if (process.env.DECK_TOKEN) return process.env.DECK_TOKEN;
+	if (tokenCache.__deckEnvToken) return tokenCache.__deckEnvToken;
 	if (fs.existsSync(tokenFile)) {
 		// An empty/whitespace file would yield an empty token, which the auth gate
 		// would then accept from any empty credential. Treat it as absent and mint a

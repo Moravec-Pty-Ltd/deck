@@ -14,6 +14,7 @@ const restoreEnv = pinEnv({
 });
 
 const { agentEnv } = await import('./env');
+const { agentTokenSession } = await import('../agent-token');
 
 afterAll(() => {
 	restoreEnv();
@@ -25,10 +26,14 @@ describe('agentEnv', () => {
 		expect(agentEnv({ id: 'c_abc123' }, '/tmp').DECK_SESSION_ID).toBe('c_abc123');
 	});
 
-	it('stamps the API credentials, base URL trailing slash stripped', () => {
-		const env = agentEnv({ id: 'c_abc123' }, '/tmp');
-		expect(env.DECK_TOKEN).toBe('test-token');
-		expect(env.DECK_BASE_URL).toBe('http://example.test:4818');
+	it("stamps the session's own token, never deck's, and the base URL with its trailing slash stripped", () => {
+		const stamped = agentEnv({ id: 'c_abc123' }, '/tmp');
+		expect(stamped.DECK_TOKEN).toMatch(/^deck-agent\.c_abc123\./);
+		expect(agentTokenSession('test-token', stamped.DECK_TOKEN)).toBe('c_abc123');
+		// deck read its own token and took it out of the environment children inherit.
+		expect(process.env.DECK_TOKEN).toBeUndefined();
+		expect(stamped.DECK_DATA).toBeUndefined();
+		expect(stamped.DECK_BASE_URL).toBe('http://example.test:4818');
 	});
 
 	it('gives a review session no token, even one deck itself was started with', () => {
