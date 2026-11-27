@@ -68,6 +68,7 @@ function startWork(project: Project, issue: Issue): Promise<unknown> {
 // with gh, which a read-only session cannot run.
 function forkReviewBody(project: Project, pr: PullRequest): Record<string, unknown> {
 	const body = reviewBody(project, pr);
+	// The configured model and effort belong to the other agent, so claude runs with its own defaults.
 	return READ_ONLY_KINDS.includes(body.kind as SessionKind) ? body : { ...body, kind: 'claude', model: undefined, provider: undefined, effort: undefined };
 }
 
